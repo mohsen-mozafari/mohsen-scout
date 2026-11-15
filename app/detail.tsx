@@ -176,6 +176,11 @@ export default function Detail() {
           <Txt muted>
             {idea.region} · {idea.languages.map((l) => languages[l] || l).join(', ')}
           </Txt>
+          {idea.sourceUrl ? (
+            <Action secondary onPress={() => void Linking.openURL(idea.sourceUrl!).catch(() => {})}>
+              Open original source · {idea.sourceName || 'Publisher'}
+            </Action>
+          ) : null}
           <Panel>
             <Heading>Continue this research</Heading>
             <Txt muted>Each tool opens with this idea's topic. Results can be connected back here without creating a second copy of the idea.</Txt>
