@@ -38,7 +38,7 @@ export const DEFAULT_SPACE_NEWS_SOURCES: SpaceNewsSourceId[] = [
 export const SPACE_NICHES = [
   { id: 'exoplanets', title: 'Exoplanets & Habitable Worlds', description: 'Worlds orbiting other stars, atmospheres and the search for habitability.', topic: 'exoplanet discoveries', keywords: ['exoplanet', 'extrasolar planet', 'habitable', 'planet atmosphere', 'earth-like world'] },
   { id: 'black-holes', title: 'Black Holes & Extreme Gravity', description: 'Event horizons, neutron stars, gravitational waves and extreme physics.', topic: 'black hole discoveries', keywords: ['black hole', 'neutron star', 'gravitational wave', 'event horizon', 'pulsar'] },
-  { id: 'jwst', title: 'James Webb & Space Telescopes', description: 'New observations, early galaxies, star formation and telescope discoveries.', topic: 'James Webb Space Telescope discoveries', keywords: ['James Webb', 'JWST', 'space telescope', 'Hubble', 'early galaxy'] },
+  { id: 'jwst', title: 'James Webb & Space Telescopes', description: 'New observations, early galaxies, star formation and telescope discoveries.', topic: 'James Webb Space Telescope discoveries', keywords: ['James Webb', 'JWST', 'Webb', 'Webb telescope', 'space telescope', 'Hubble', 'NIRCam', 'NIRSpec', 'MIRI', 'early galaxy', 'early galaxies', 'first galaxies', 'deep field', 'star formation'] },
   { id: 'mars', title: 'Mars Exploration', description: 'Rovers, samples, geology, water history and future crewed missions.', topic: 'Mars exploration discoveries', keywords: ['Mars', 'Perseverance', 'Curiosity rover', 'Martian', 'Red Planet'] },
   { id: 'moon', title: 'Moon & Artemis', description: 'Lunar science, Artemis missions, landing systems and the next human exploration era.', topic: 'Moon exploration and Artemis', keywords: ['Moon', 'lunar', 'Artemis', 'Gateway', 'lunar lander'] },
   { id: 'astrobiology', title: 'Astrobiology & Life Beyond Earth', description: 'Biosignatures, ocean worlds, habitability and how scientists test life-related claims.', topic: 'astrobiology and life beyond Earth', keywords: ['astrobiology', 'biosignature', 'Europa', 'Enceladus', 'life beyond Earth', 'habitable'] },
@@ -48,7 +48,7 @@ export const SPACE_NICHES = [
   { id: 'cosmology', title: 'Cosmology & Dark Universe', description: 'Dark matter, dark energy, cosmic expansion and the structure of the universe.', topic: 'dark matter dark energy cosmology', keywords: ['dark matter', 'dark energy', 'cosmology', 'cosmic expansion', 'universe'] },
 ] as const;
 
-const newsItemLimitPerFeed = 25;
+const newsItemLimitPerFeed = 80;
 const newsCache = new Map<string, { at: number; value: { items: SpaceNewsItem[]; warnings: string[] } }>();
 const wikiCache = new Map<string, { at: number; value: WikiSignal }>();
 const CACHE_MS = 10 * 60 * 1000;
@@ -83,6 +83,16 @@ function xmlTag(block: string, tag: string): string {
   const match = block.match(new RegExp(expression, 'i'));
   return match ? decodeXml(match[1]) : '';
 }
+function xmlLink(block: string): string {
+  const links = [...block.matchAll(/<link\b([^>]*?)(?:\/\s*>|>([\s\S]*?)<\/link\s*>)/gi)];
+  if (!links.length) return '';
+  const preferred = links.find((entry) => {
+    const rel = entry[1].match(/\brel=["']([^"']+)["']/i)?.[1]?.toLowerCase();
+    return !rel || rel === 'alternate';
+  }) ?? links[0];
+  const href = preferred[1].match(/\bhref=["']([^"']+)["']/i)?.[1];
+  return decodeXml((href || preferred[2] || '').trim());
+}
 
 function safeOfficialImageUrl(value: string): string | undefined {
   try {
@@ -114,7 +124,7 @@ export function parseRssFeed(xml: string, source: SpaceNewsSource): SpaceNewsIte
     const block = match[2];
     const title = xmlTag(block, 'title');
     const summary = xmlTag(block, 'description') || xmlTag(block, 'summary') || xmlTag(block, 'content:encoded');
-    const rawLink = xmlTag(block, 'link') || block.match(/<link\b[^>]*href=["']([^"']+)["'][^>]*>/i)?.[1] || '';
+    const rawLink = xmlLink(block);
     let url = '';
     try {
       const parsed = new URL(rawLink);
@@ -122,7 +132,7 @@ export function parseRssFeed(xml: string, source: SpaceNewsSource): SpaceNewsIte
     } catch {
       url = '';
     }
-    const rawDate = xmlTag(block, 'pubDate') || xmlTag(block, 'published') || xmlTag(block, 'updated') || xmlTag(block, 'date');
+    const rawDate = xmlTag(block, 'pubDate') || xmlTag(block, 'published') || xmlTag(block, 'updated') || xmlTag(block, 'dc:date') || xmlTag(block, 'date');
     const parsedDate = rawDate ? Date.parse(rawDate) : NaN;
     const publishedAt = Number.isFinite(parsedDate) ? new Date(parsedDate).toISOString() : null;
     if (!title || !url) return [];
@@ -139,59 +149,140 @@ export function parseRssFeed(xml: string, source: SpaceNewsSource): SpaceNewsIte
   });
 }
 
+const newsInflight = new Map<string, Promise<{ items: SpaceNewsItem[]; warnings: string[] }>>();
 export async function fetchSpaceNews(
   enabledSources: readonly string[] = DEFAULT_SPACE_NEWS_SOURCES,
   fetcher: Fetcher = fetch,
+  force = false,
 ): Promise<{ items: SpaceNewsItem[]; warnings: string[] }> {
   const ids = SPACE_NEWS_SOURCES.filter((source) => enabledSources.includes(source.id)).map((source) => source.id);
   const cacheKey = [...ids].sort().join(',');
   const cached = newsCache.get(cacheKey);
-  if (cached && Date.now() - cached.at < CACHE_MS) return cached.value;
+  if (!force && cached && Date.now() - cached.at < CACHE_MS) return cached.value;
   if (!ids.length) return { items: [], warnings: ['Enable at least one official news feed in Space Radar sources.'] };
-  const selected = SPACE_NEWS_SOURCES.filter((source) => ids.includes(source.id));
-  const results = await Promise.all(selected.map(async (source) => {
-    try {
+  const inflight = newsInflight.get(cacheKey);
+  if (inflight) return inflight;
+
+  const request = (async () => {
+    const selected = SPACE_NEWS_SOURCES.filter((source) => ids.includes(source.id));
+    const results = await Promise.all(selected.map(async (source) => {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 12000);
-      let response: Response;
-      let xml: string;
+      const timeout = setTimeout(() => controller.abort(), 20000);
       try {
-        response = await fetcher(source.url, {
-          headers: { Accept: 'application/rss+xml, application/atom+xml, application/xml, text/xml' },
+        const response = await fetcher(source.url, {
+          headers: {
+            Accept: 'application/rss+xml, application/atom+xml, application/xml, text/xml;q=0.9, */*;q=0.5',
+            'Cache-Control': 'no-cache',
+            'User-Agent': 'MOHSEN-SCOUT/1.2 (+https://github.com/mohsen-mozafari/mohsen-scout)',
+          },
           signal: controller.signal,
         });
-        if (!response.ok) throw new Error('Feed request was not successful.');
-        xml = await response.text();
+        if (!response.ok) {
+          const reason = response.status === 403
+            ? 'access was refused by the publisher'
+            : response.status === 404
+              ? 'the configured feed was not found'
+              : response.status === 429
+                ? 'the publisher is rate-limiting requests'
+                : response.status >= 500
+                  ? 'the publisher service is temporarily unavailable'
+                  : 'the publisher returned an unsuccessful response';
+          return { items: [] as SpaceNewsItem[], warning: source.label + ' returned HTTP ' + response.status + ': ' + reason + '.' };
+        }
+        const xml = await response.text();
+        const items = parseRssFeed(xml, source);
+        if (!items.length) return {
+          items: [] as SpaceNewsItem[],
+          warning: source.label + ' responded, but no readable RSS/Atom entries were found. The feed format may have changed.',
+        };
+        return { items, warning: '' };
+      } catch (error) {
+        const timedOut = controller.signal.aborted || (error instanceof Error && error.name === 'AbortError');
+        return {
+          items: [] as SpaceNewsItem[],
+          warning: source.label + (timedOut
+            ? ' timed out while refreshing. Check the network and retry.'
+            : ' could not connect to the publisher (network, DNS or TLS). Other sources remain available.'),
+        };
       } finally {
         clearTimeout(timeout);
       }
-      const items = parseRssFeed(xml, source);
-      if (!items.length) throw new Error('Feed returned no readable items.');
-      return { items, warning: '' };
-    } catch {
-      return { items: [] as SpaceNewsItem[], warning: source.label + ' could not be refreshed. Other sources remain available.' };
-    }
-  }));
-  const warnings = results.map((result) => result.warning).filter(Boolean);
-  const unique = new Map<string, SpaceNewsItem>();
-  for (const result of results) for (const item of result.items) unique.set(item.url, item);
-  const items = [...unique.values()].sort((a, b) => {
-    if (!a.publishedAt) return 1;
-    if (!b.publishedAt) return -1;
-    return Date.parse(b.publishedAt) - Date.parse(a.publishedAt);
-  });
-  const value = { items, warnings };
-  if (items.length) newsCache.set(cacheKey, { at: Date.now(), value });
-  return value;
+    }));
+    const warnings = results.map((result) => result.warning).filter(Boolean);
+    const unique = new Map<string, SpaceNewsItem>();
+    for (const result of results) for (const item of result.items) unique.set(item.url, item);
+    const items = [...unique.values()].sort((a, b) => {
+      if (!a.publishedAt) return 1;
+      if (!b.publishedAt) return -1;
+      return Date.parse(b.publishedAt) - Date.parse(a.publishedAt);
+    });
+    const value = { items, warnings };
+    if (items.length && !warnings.length) newsCache.set(cacheKey, { at: Date.now(), value });
+    else newsCache.delete(cacheKey);
+    return value;
+  })();
+  newsInflight.set(cacheKey, request);
+  try { return await request; }
+  finally { newsInflight.delete(cacheKey); }
 }
 
-export function newsForNiche(items: SpaceNewsItem[], nicheId: string): SpaceNewsItem[] {
+function normalizeMatchText(value: string) {
+  return value.toLocaleLowerCase().replace(/&amp;/g, 'and').replace(/[^\p{L}\p{N}]+/gu, ' ').replace(/\s+/g, ' ').trim();
+}
+export function newsForNiche(items: SpaceNewsItem[], nicheId: string, customNiche = ''): SpaceNewsItem[] {
+  if (nicheId === 'all' || nicheId === 'auto') return items;
   const niche = SPACE_NICHES.find((entry) => entry.id === nicheId);
-  if (!niche) return items;
+  const rawTerms = niche
+    ? [...niche.keywords]
+    : nicheId === 'custom'
+      ? customNiche.split(/[,;\n]+/).map((term) => term.trim()).filter(Boolean)
+      : [];
+  if (!rawTerms.length) return [];
+  const terms = rawTerms.map(normalizeMatchText).filter(Boolean);
   return items.filter((item) => {
-    const haystack = (item.title + ' ' + item.summary).toLowerCase();
-    return niche.keywords.some((keyword) => haystack.includes(keyword.toLowerCase()));
+    const haystack = normalizeMatchText(item.title + ' ' + item.summary);
+    return terms.some((term) => haystack.includes(term));
   });
+}
+export type SpaceNicheSuggestion = {
+  id: string; title: string; topic: string; description: string;
+  matchedStories: number; newestAt: string | null;
+};
+export function buildNicheSuggestions(items: SpaceNewsItem[], limit = 6): SpaceNicheSuggestion[] {
+  const maxItems = Math.max(1, Math.min(10, limit));
+  const curated = SPACE_NICHES.map((niche) => {
+    const matches = newsForNiche(items, niche.id);
+    const newestAt = matches.map((item) => item.publishedAt)
+      .filter((date): date is string => Boolean(date))
+      .sort((a, b) => Date.parse(b) - Date.parse(a))[0] ?? null;
+    return {
+      id: niche.id, title: niche.title, topic: niche.topic,
+      description: niche.description + ' Current match count reflects only selected official publisher feeds.',
+      matchedStories: matches.length, newestAt,
+    };
+  }).filter((item) => item.matchedStories > 0)
+    .sort((a, b) => b.matchedStories - a.matchedStories ||
+      (b.newestAt ? Date.parse(b.newestAt) : 0) - (a.newestAt ? Date.parse(a.newestAt) : 0))
+    .slice(0, Math.min(4, maxItems));
+
+  // Combine established subject areas with actual new headlines so the dashboard
+  // is not limited to a fixed niche catalogue.
+  const storyLeads = [...items]
+    .sort((a, b) => {
+      if (!a.publishedAt) return 1;
+      if (!b.publishedAt) return -1;
+      return Date.parse(b.publishedAt) - Date.parse(a.publishedAt);
+    })
+    .slice(0, Math.max(0, maxItems - curated.length))
+    .map((item) => ({
+      id: 'story:' + item.id,
+      title: item.title,
+      topic: item.title,
+      description: 'Fresh official headline from ' + item.sourceName + '. Open the original report and verify its scientific claims before treating it as a full niche.',
+      matchedStories: 1,
+      newestAt: item.publishedAt,
+    }));
+  return [...curated, ...storyLeads];
 }
 
 export type DiscoveryOpportunity = {
@@ -212,8 +303,9 @@ export function buildDiscoveryOpportunities(
   items: SpaceNewsItem[],
   nicheId: string,
   now = Date.now(),
+  customNiche = '',
 ): DiscoveryOpportunity[] {
-  const relevant = newsForNiche(items, nicheId);
+  const relevant = newsForNiche(items, nicheId, customNiche);
   const groups = new Map<string, SpaceNewsItem[]>();
   for (const item of relevant) {
     const normalized = item.title.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
@@ -255,7 +347,7 @@ export function buildDiscoveryOpportunities(
     if (!a.publishedAt) return 1;
     if (!b.publishedAt) return -1;
     return Date.parse(b.publishedAt) - Date.parse(a.publishedAt);
-  });
+  }).slice(0, 40);
 }
 
 const wikiSearchSchema = z.object({ query: z.object({ search: z.array(z.object({ title: z.string() })) }) });
@@ -288,7 +380,11 @@ export async function getWikipediaSignal(
   if (cached && Date.now() - cached.at < CACHE_MS) return cached.value;
   const searchParams = new URLSearchParams({ action: 'query', list: 'search', srsearch: query, srlimit: '1', format: 'json', origin: '*' });
   const searchUrl = 'https://' + language + '.wikipedia.org/w/api.php?' + searchParams.toString();
-  const search = wikiSearchSchema.safeParse(await requestJson(searchUrl, { headers: { 'Api-User-Agent': 'MOHSEN-SCOUT/1.0' } }, fetcher));
+  const wikiHeaders = {
+    'User-Agent': 'MOHSEN-SCOUT/1.2 (+https://github.com/mohsen-mozafari/mohsen-scout)',
+    'Api-User-Agent': 'MOHSEN-SCOUT/1.2 (https://github.com/mohsen-mozafari/mohsen-scout)',
+  };
+  const search = wikiSearchSchema.safeParse(await requestJson(searchUrl, { headers: wikiHeaders }, fetcher));
   if (!search.success || !search.data.query.search.length) throw new Error('No Wikipedia article matched "' + query + '". Try a more specific phrase.');
   const articleTitle = search.data.query.search[0].title;
   const articlePath = encodeURIComponent(articleTitle.replace(/ /g, '_'));
@@ -296,7 +392,7 @@ export async function getWikipediaSignal(
   let summary = '';
   let articleUrl = 'https://' + language + '.wikipedia.org/wiki/' + articlePath;
   try {
-    const parsedSummary = wikiSummarySchema.safeParse(await requestJson(summaryUrl, { headers: { 'Api-User-Agent': 'MOHSEN-SCOUT/1.0' } }, fetcher));
+    const parsedSummary = wikiSummarySchema.safeParse(await requestJson(summaryUrl, { headers: wikiHeaders }, fetcher));
     if (parsedSummary.success) {
       summary = parsedSummary.data.extract;
       articleUrl = parsedSummary.data.content_urls?.desktop.page ?? articleUrl;
@@ -308,7 +404,7 @@ export async function getWikipediaSignal(
   const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
   const project = language + '.wikipedia.org';
   const apiUrl = 'https://wikimedia.org/api/rest_v1/metrics/pageviews/per-article/' + project + '/all-access/all-agents/' + articlePath + '/monthly/' + formatApiMonth(start) + '/' + formatApiMonth(end);
-  const views = pageviewsSchema.safeParse(await requestJson(apiUrl, { headers: { 'Api-User-Agent': 'MOHSEN-SCOUT/1.0' } }, fetcher));
+  const views = pageviewsSchema.safeParse(await requestJson(apiUrl, { headers: wikiHeaders }, fetcher));
   if (!views.success) throw new Error('Wikimedia pageview data could not be read for this article.');
   const value: WikiSignal = {
     provider: 'wikimedia-pageviews',

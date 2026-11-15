@@ -207,14 +207,32 @@ export default function Settings() {
       <Fold title="Content discovery defaults">
         <Txt muted>These preferences are saved on this device and used automatically by Discovery and research screens.</Txt>
         <Choices
-          label="Primary content niche"
-          options={SPACE_NICHES.map((niche) => niche.title)}
-          selected={[SPACE_NICHES.find((niche) => niche.id === prefs.selectedSpaceNiche)?.title ?? SPACE_NICHES[0].title]}
+          label="Discovery scope"
+          options={['All space topics', 'Custom niche', ...SPACE_NICHES.map((niche) => niche.title)]}
+          selected={[prefs.selectedSpaceNiche === 'all'
+            ? 'All space topics'
+            : prefs.selectedSpaceNiche === 'custom'
+              ? 'Custom niche'
+              : SPACE_NICHES.find((niche) => niche.id === prefs.selectedSpaceNiche)?.title ?? 'All space topics']}
           onChange={(values) => {
             const selected = SPACE_NICHES.find((niche) => niche.title === values[0]);
-            if (selected) setPrefs({ ...prefs, selectedSpaceNiche: selected.id });
+            setPrefs({
+              ...prefs,
+              selectedSpaceNiche: values[0] === 'All space topics'
+                ? 'all'
+                : values[0] === 'Custom niche'
+                  ? 'custom'
+                  : selected?.id ?? 'all',
+            });
           }}
         />
+        <Field
+          label="Custom niche / topic terms"
+          value={prefs.customSpaceNiche}
+          onChange={(customSpaceNiche) => setPrefs({ ...prefs, customSpaceNiche })}
+          placeholder="e.g. JWST spectroscopy, exoplanet atmospheres"
+        />
+        <Txt muted>Separate related terms with commas. All-space mode scans every enabled official feed; custom mode matches these terms in publisher titles and summaries. This is source coverage, not search-volume or audience-demand data.</Txt>
         <Choices
           label="Official news sources"
           options={SPACE_NEWS_SOURCES.map((source) => source.label)}
@@ -488,7 +506,7 @@ export default function Settings() {
       </Fold>
       <Fold title="App info">
         <Heading>MOHSEN SCOUT</Heading>
-        <Txt>Version 1.1.0 · Personal research assistant</Txt>
+        <Txt>Version 1.2.0 · Personal research assistant</Txt>
         <Txt muted>
           YouTube is a trademark of Google LLC. This app is not affiliated with YouTube. No
           comprehensive trend coverage or guaranteed results.

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Linking, Text, View } from 'react-native';
 import { Button } from 'heroui-native';
 import { router } from 'expo-router';
@@ -10,8 +10,10 @@ import { uid, type Idea, languages } from '@/lib/types';
 import {
   SPACE_NICHES,
   buildDiscoveryOpportunities,
+  buildNicheSuggestions,
   fetchSpaceNews,
   type DiscoveryOpportunity,
+  type SpaceNicheSuggestion,
 } from '@/lib/space';
 import { MediaPreview } from '@/components/MediaPreview';
 import { buildInternalResearch, type InternalResearchResult } from '@/lib/engine';
@@ -35,17 +37,62 @@ function DiscoveryDashboardReady() {
   const [warnings, setWarnings] = useState<string[]>([]);
   const [lastScannedAt, setLastScannedAt] = useState<number | null>(null);
   const [analyses, setAnalyses] = useState<Record<string, InternalResearchResult>>({});
+  const [nicheSuggestions, setNicheSuggestions] = useState<SpaceNicheSuggestion[]>([]);
+  const [radarBrief, setRadarBrief] = useState<InternalResearchResult>();
+  const [autoScanning, setAutoScanning] = useState(false);
   const op = useOperation();
-  const niche = SPACE_NICHES.find((item) => item.id === preferences.selectedSpaceNiche) ?? SPACE_NICHES[0];
-
-  const discover = () => void op.run(async () => {
-    const result = await fetchSpaceNews(preferences.spaceNewsSources);
-    const built = buildDiscoveryOpportunities(result.items, preferences.selectedSpaceNiche);
-    setOpportunities(built);
+  const niche = SPACE_NICHES.find((item) => item.id === preferences.selectedSpaceNiche);
+  const nicheTitle = preferences.selectedSpaceNiche === 'all'
+    ? 'All space topics'
+    : preferences.selectedSpaceNiche === 'custom'
+      ? (preferences.customSpaceNiche.trim() || 'Custom niche')
+      : niche?.title ?? 'All space topics';
+  const discoveryTopic = preferences.selectedSpaceNiche === 'all'
+    ? 'Space science and exploration'
+    : preferences.selectedSpaceNiche === 'custom'
+      ? preferences.customSpaceNiche
+      : niche?.topic ?? 'Space science and exploration';
+  const applyScan = (result: Awaited<ReturnType<typeof fetchSpaceNews>>) => {
+    setOpportunities(buildDiscoveryOpportunities(result.items, preferences.selectedSpaceNiche, Date.now(), preferences.customSpaceNiche));
     setWarnings(result.warnings);
     setLastScannedAt(Date.now());
+    setNicheSuggestions(buildNicheSuggestions(result.items, 6));
+    setRadarBrief(result.items.length ? buildInternalResearch({
+      topic: discoveryTopic,
+      news: result.items.slice(0, 12).map((item) => ({
+        title: item.title, summary: item.summary, sourceName: item.sourceName,
+        sourceUrl: item.url, publishedAt: item.publishedAt, sourceId: item.sourceId,
+      })),
+    }) : undefined);
+  };
+  useEffect(() => {
+    let active = true;
+    setAutoScanning(true);
+    void fetchSpaceNews(preferences.spaceNewsSources).then((result) => {
+      if (!active) return;
+      setOpportunities(buildDiscoveryOpportunities(result.items, preferences.selectedSpaceNiche, Date.now(), preferences.customSpaceNiche));
+      setWarnings(result.warnings);
+      setLastScannedAt(Date.now());
+      setNicheSuggestions(buildNicheSuggestions(result.items, 6));
+      setRadarBrief(result.items.length ? buildInternalResearch({
+        topic: discoveryTopic,
+        news: result.items.slice(0, 12).map((item) => ({
+          title: item.title, summary: item.summary, sourceName: item.sourceName,
+          sourceUrl: item.url, publishedAt: item.publishedAt, sourceId: item.sourceId,
+        })),
+      }) : undefined);
+    }).catch(() => {
+      if (active) setWarnings(['Official news feeds could not be reached. Check the network and retry.']);
+    }).finally(() => {
+      if (active) setAutoScanning(false);
+    });
+    return () => { active = false; };
+  }, [preferences.spaceNewsSources, preferences.selectedSpaceNiche, preferences.customSpaceNiche]);
+  const discover = () => void op.run(async () => {
+    const result = await fetchSpaceNews(preferences.spaceNewsSources, fetch, true);
+    applyScan(result);
     if (!result.items.length && result.warnings.length) throw new Error(result.warnings.join(' '));
-  }, 'Discovery scan completed. This scan used official RSS feeds and did not consume YouTube quota.');
+  }, 'Discovery scan completed from selected official feeds without spending YouTube quota.');
 
   const saveIdea = (opportunity: DiscoveryOpportunity) => void op.run(async () => {
     const existing = useScout.getState().data.ideas.some((idea) => idea.topic === opportunity.topic && idea.sourceUrl === opportunity.sourceUrl);
@@ -120,22 +167,69 @@ function DiscoveryDashboardReady() {
       </View>
       <Panel>
         <Text style={styles.badge}>ACTIVE NICHE</Text>
-        <Heading>{niche.title}</Heading>
-        <Txt muted>{niche.description}</Txt>
+        <Heading>{nicheTitle}</Heading>
+        <Txt muted>{niche?.description ?? 'The app checks all selected NASA, JPL and ESA feeds, then groups their current reports into research topics.'}</Txt>
         <Txt muted>Research defaults are managed in Settings. Current region: {preferences.region} · Languages: {preferences.languages.map((code) => languages[code] ?? code).join(', ')}</Txt>
-        <Action busy={op.busy} onPress={discover}>Discover Opportunities</Action>
+        <Action busy={op.busy || autoScanning} onPress={discover}>Refresh Space Radar</Action>
         <Action secondary onPress={() => router.push({ pathname: '/youtube', params: { topic: niche.topic } })}>Search Manually</Action>
         <Action secondary onPress={() => router.push('/settings')}>Change discovery settings</Action>
-        {lastScannedAt ? <Txt muted>Last scanned {new Date(lastScannedAt).toLocaleString()}</Txt> : <Txt muted>Run a scan when you are ready. Nothing polls in the background.</Txt>}
-        <Txt muted>Initial discovery checks official RSS feeds only. YouTube quota is used only when you choose to check a topic. The Internal Story Engine runs locally on loaded evidence and does not call OpenRouter.</Txt>
+        {lastScannedAt ? <Txt muted>Last scanned {new Date(lastScannedAt).toLocaleString()}</Txt> : <Txt muted>Checking official feeds when Space Radar opens…</Txt>}
+        <Txt muted>News and niche suggestions refresh on entry using a short in-memory cache. No background polling or YouTube quota is used. The local Story Engine analyzes loaded reports without sending them to AI.</Txt>
       </Panel>
 
       {warnings.map((warning) => <Txt muted key={warning}>{warning}</Txt>)}
+
+      {nicheSuggestions.length > 0 && (
+        <Panel>
+          <Heading>Active topics in official feeds</Heading>
+          <Txt muted>These are topics with the most matching stories in the selected publisher feeds—not audience-demand or YouTube trend rankings.</Txt>
+          {nicheSuggestions.map((suggestion) => (
+            <View key={suggestion.id} style={{ gap: 5 }}>
+              <Text style={styles.badge}>{suggestion.id.startsWith('story:') ? 'FRESH OFFICIAL STORY' : 'ACTIVE FEED NICHE'}</Text>
+              <Heading>{suggestion.title}</Heading>
+              <Txt muted>{suggestion.description}</Txt>
+              <Txt muted>{suggestion.matchedStories} matching publisher stories{suggestion.newestAt ? ' · latest ' + new Date(suggestion.newestAt).toLocaleDateString() : ''}</Txt>
+              <Action secondary onPress={() => router.push({ pathname: '/youtube', params: { topic: suggestion.topic } })}>Research {suggestion.title}</Action>
+            </View>
+          ))}
+        </Panel>
+      )}
+
+      {radarBrief && (
+        <Panel>
+          <Text style={styles.badge}>LOCAL INTERNAL STORY ENGINE</Text>
+          <Heading>What the current evidence can support</Heading>
+          <Txt muted>{radarBrief.summary}</Txt>
+          {radarBrief.evidence.map((item) => (
+            <View key={item.id} style={{ gap: 3 }}>
+              <Text style={styles.badge}>{item.label}</Text>
+              <Txt muted>{item.detail}</Txt>
+            </View>
+          ))}
+          <Fold title="Editorial angles generated from current sources">
+            {radarBrief.angles.map((angle) => (
+              <View key={angle.id} style={{ gap: 5 }}>
+                <Heading>{angle.title}</Heading>
+                <Txt>{angle.hook}</Txt>
+                <Txt muted>{angle.approach}</Txt>
+                <Txt muted>Verify: {angle.verification}</Txt>
+                <Action secondary onPress={() => router.push({ pathname: '/deep-research', params: { topic: discoveryTopic } })}>Deep Research this angle</Action>
+              </View>
+            ))}
+            {radarBrief.limitations.map((item) => <Txt muted key={item}>{item}</Txt>)}
+          </Fold>
+        </Panel>
+      )}
       {lastScannedAt !== null && opportunities.length === 0 && (
         <Panel>
           <Heading>No matching opportunities found</Heading>
-          <Txt muted>No current items from the selected official feeds matched {niche.title}. Try another niche in Settings or use manual search.</Txt>
-          <Action secondary onPress={() => router.push({ pathname: '/youtube', params: { topic: niche.topic } })}>Search this niche manually</Action>
+          <Txt muted>{warnings.length && !nicheSuggestions.length
+            ? 'The official feeds did not return readable items. Review the source-specific warnings and retry.'
+            : 'Current source items did not match ' + nicheTitle + '. Other space topics remain available above.'}</Txt>
+          <Action secondary onPress={() => void op.run(async () => {
+            await useScout.getState().commit((data) => ({ ...data, preferences: { ...data.preferences, selectedSpaceNiche: 'all' } }));
+          }, 'Discovery scope changed to all space topics.')}>Show all space topics</Action>
+          <Action secondary onPress={() => router.push({ pathname: '/youtube', params: { topic: discoveryTopic } })}>Search this niche manually</Action>
         </Panel>
       )}
 

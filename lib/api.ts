@@ -52,23 +52,29 @@ export async function requestJson(
       clearTimeout(timer);
       if (response.ok) return body;
       const serialized = JSON.stringify(body);
-      if (/quotaExceeded|dailyLimitExceeded/.test(serialized))
-        throw new ApiError(
-          'YouTube quota is exhausted. Check Google Cloud before trying again.',
-          'quota',
-        );
-      if (response.status === 401 || /keyInvalid|API_KEY_INVALID/.test(serialized))
-        throw new ApiError('The API key is invalid. Replace it in Settings.', 'key');
+      const hostname = (() => { try { return new URL(url).hostname.toLowerCase(); } catch { return ''; } })();
+      const isGoogleApi = hostname === 'www.googleapis.com';
+      const isOpenRouter = hostname === 'openrouter.ai' || hostname.endsWith('.openrouter.ai');
+      const isWikimedia = hostname.endsWith('wikipedia.org') || hostname === 'wikimedia.org' || hostname.endsWith('.wikimedia.org');
+      if (isGoogleApi && /quotaExceeded|dailyLimitExceeded/.test(serialized))
+        throw new ApiError('YouTube quota is exhausted. Check Google Cloud before trying again.', 'quota');
+      if (/keyInvalid|API_KEY_INVALID/.test(serialized) ||
+          (response.status === 401 && (isGoogleApi || isOpenRouter)))
+        throw new ApiError(isOpenRouter
+          ? 'The OpenRouter key was rejected. Check or replace it in Settings.'
+          : 'The API key is invalid. Replace it in Settings.', 'key');
+      if (response.status === 403 && isGoogleApi)
+        throw new ApiError('YouTube API access was denied. Enable YouTube Data API v3 and check key restrictions in Google Cloud.', 'permission');
+      if (response.status === 403 && isWikimedia)
+        throw new ApiError('Wikimedia refused this request. The app identification header may be missing, or the service may be rate-limiting this network. Retry later or open the article directly.', 'permission');
+      if (response.status === 403 && isOpenRouter)
+        throw new ApiError('OpenRouter refused this request. Check the key, model access and provider limits.', 'permission');
       if (response.status === 403)
-        throw new ApiError(
-          'Access denied. Enable the API and check key restrictions in Google Cloud.',
-          'permission',
-        );
+        throw new ApiError('The external service refused the request. Check its access policy or retry later.', 'permission');
       if (response.status === 404)
-        throw new ApiError(
-          'That model or endpoint is unavailable. Refresh the model list.',
-          'model',
-        );
+        throw new ApiError(isOpenRouter
+          ? 'That model or endpoint is unavailable. Refresh the model list.'
+          : 'The requested data endpoint was not found.', 'endpoint');
       if (response.status === 429 || response.status >= 500) {
         if (attempt < attempts - 1) {
           const delay = retryDelayMs(
@@ -199,9 +205,7 @@ export async function searchYouTube(
   ]);
   for (const search of searches) {
     if (calls >= 12) {
-      warnings.push(
-        'Stopped at the 12-search safety cap. Not all query and language combinations were sampled.',
-      );
+      warnings.push('Stopped at the 12-search safety cap. Not all query and language combinations were sampled.');
       break;
     }
     onProgress?.(`Searching ${search.query} · ${search.language}`);
@@ -209,23 +213,16 @@ export async function searchYouTube(
     let page = 0;
     do {
       const params: Record<string, string> = {
-        part: 'snippet',
-        type: 'video',
-        q: search.query,
-        order: search.order,
+        part: 'snippet', type: 'video', q: search.query, order: search.order,
         relevanceLanguage: search.language,
-        maxResults: String(
-          Math.min(50, Math.max(1, Math.ceil(input.maxResults / searches.length))),
-        ),
+        maxResults: String(Math.min(50, Math.max(1, Math.ceil(input.maxResults / searches.length)))),
         videoDuration: input.duration,
-        fields:
-          'nextPageToken,items(id/videoId,snippet(title,description,channelTitle,publishedAt,thumbnails))',
+        fields: 'nextPageToken,items(id/videoId,snippet(title,description,channelTitle,publishedAt,thumbnails))',
       };
       const regionCodes: Partial<Record<Region, string>> = { 'United States': 'US', Iran: 'IR', 'United Kingdom': 'GB', Germany: 'DE' };
       if (regionCodes[input.region]) params.regionCode = regionCodes[input.region]!;
       if (input.category) params.videoCategoryId = input.category;
-      if (input.days)
-        params.publishedAfter = new Date(Date.now() - input.days * 86400000).toISOString();
+      if (input.days) params.publishedAfter = new Date(Date.now() - input.days * 86400000).toISOString();
       if (pageToken) params.pageToken = pageToken;
       let raw: unknown;
       try {
@@ -237,27 +234,47 @@ export async function searchYouTube(
       }
       calls++;
       const parsed = searchSchema.safeParse(raw);
-      if (!parsed.success)
-        throw new ApiError('YouTube returned an invalid search response.', 'invalid');
+      if (!parsed.success) throw new ApiError('YouTube returned an invalid search response.', 'invalid');
       for (const item of parsed.data.items) {
         if (!videos.has(item.id.videoId) && videos.size < input.maxResults)
           videos.set(item.id.videoId, {
-            id: item.id.videoId,
-            title: item.snippet.title,
-            description: item.snippet.description,
-            channel: item.snippet.channelTitle,
-            publishedAt: item.snippet.publishedAt,
-            thumbnail:
-              item.snippet.thumbnails.medium?.url ?? item.snippet.thumbnails.default?.url ?? '',
-            fetchedAt: Date.now(),
-            query: search.order === 'viewCount' ? 'YouTube popularity order' : search.query,
+            id: item.id.videoId, title: item.snippet.title, description: item.snippet.description,
+            channel: item.snippet.channelTitle, publishedAt: item.snippet.publishedAt,
+            thumbnail: item.snippet.thumbnails.medium?.url ?? item.snippet.thumbnails.default?.url ?? '',
+            fetchedAt: Date.now(), query: search.order === 'viewCount' ? 'YouTube popularity order' : search.query,
           });
       }
       pageToken = parsed.data.nextPageToken ?? '';
       page++;
     } while (pageToken && page < 2 && calls < 12 && videos.size < input.maxResults);
   }
-  return { videos: [...videos.values()], queries, warnings };
+  const collected = [...videos.values()];
+  for (let offset = 0; offset < collected.length; offset += 50) {
+    const batch = collected.slice(offset, offset + 50);
+    try {
+      const raw = await youtube('videos', {
+        part: 'statistics', id: batch.map((item) => item.id).join(','),
+        fields: 'items(id,statistics(viewCount,likeCount))',
+      }, options, 1);
+      const parsed = z.object({
+        items: z.array(z.object({
+          id: z.string(),
+          statistics: z.object({ viewCount: z.string().optional(), likeCount: z.string().optional() }).optional(),
+        })),
+      }).safeParse(raw);
+      if (!parsed.success) throw new ApiError('Video statistics returned an invalid response.', 'invalid');
+      const counts = new Map(parsed.data.items.map((item) => [item.id, item.statistics]));
+      for (const video of batch) {
+        const stats = counts.get(video.id);
+        video.viewCount = stats?.viewCount && /^\d+$/.test(stats.viewCount) ? Number(stats.viewCount) : null;
+        video.likeCount = stats?.likeCount && /^\d+$/.test(stats.likeCount) ? Number(stats.likeCount) : null;
+      }
+    } catch {
+      warnings.push('Video titles and dates were retrieved, but raw view/like counts could not be loaded. Sorting falls back to available fields.');
+      break;
+    }
+  }
+  return { videos: collected, queries, warnings };
 }
 const modelSchema = z.object({
   data: z.array(
@@ -285,7 +302,11 @@ export async function testOpenRouter(key: string) {
     throw new ApiError('OpenRouter returned an invalid response.', 'invalid');
 }
 export function opinionPrompt(topic: string, concept: string, decision: string) {
-  return `Give a concise English second opinion on this user-created editorial idea. No YouTube API data or performance statistics are provided. Topic: ${topic.slice(0, 300)}. Proposed concept: ${concept.slice(0, 1200)}. Personal decision: ${decision.slice(0, 600)}. Assess useful angles, competition uncertainty, video concepts, and prioritization. Say insufficient evidence for demand/competition claims. Do not invent trends, scores, probabilities, or percentages. Distinguish subjective judgment from evidence; you may disagree. Do not request or analyze YouTube API data.`;
+  const cleanTopic = topic.trim();
+  const cleanConcept = concept.trim();
+  if (!cleanTopic || cleanTopic.toLowerCase() === 'untitled idea' || !cleanConcept)
+    throw new ApiError('Complete the idea title and video concept before requesting an AI second opinion.', 'input');
+  return `Give a concise English second opinion on this user-created editorial idea. No YouTube API data or performance statistics are provided. Topic: ${cleanTopic.slice(0, 300)}. Proposed concept: ${cleanConcept.slice(0, 1200)}. Personal decision: ${decision.trim().slice(0, 600) || 'No personal decision supplied yet.'}. Assess the clarity and originality of the concept, useful angles, competition uncertainty, validation steps and practical prioritization. Say insufficient evidence for demand/competition claims. Do not invent trends, scores, probabilities, or percentages. Distinguish subjective judgment from evidence; you may disagree. Do not request or analyze YouTube API data.`;
 }
 export type YouTubeSampleVideo = {
   id: string;
@@ -306,8 +327,10 @@ export type YouTubeSampleFilters = {
   order?: 'date' | 'viewCount' | 'relevance';
   region?: Region;
   language?: string;
+  pageToken?: string;
 };
 const spaceSearchSchema = z.object({
+  nextPageToken: z.string().optional(),
   items: z.array(z.object({
     id: z.object({ videoId: z.string().regex(/^[\w-]{11}$/) }),
     snippet: z.object({
@@ -349,7 +372,7 @@ export async function searchYouTubeSample(
   options: YouTubeOptions,
   maxResults = 12,
   filters: YouTubeSampleFilters = {},
-): Promise<{ videos: YouTubeSampleVideo[]; warning: string }> {
+): Promise<{ videos: YouTubeSampleVideo[]; warning: string; nextPageToken?: string }> {
   const query = topic.trim().slice(0, 120);
   if (!query) throw new ApiError('Enter a space topic before measuring YouTube competition.', 'input');
   const days = filters.days ?? 30;
@@ -360,7 +383,7 @@ export async function searchYouTubeSample(
     q: query,
     order,
     maxResults: String(Math.min(25, Math.max(1, maxResults))),
-    fields: 'items(id/videoId,snippet(title,description,channelTitle,channelId,publishedAt,thumbnails(high/url,medium/url,default/url)))',
+    fields: 'nextPageToken,items(id/videoId,snippet(title,description,channelTitle,channelId,publishedAt,thumbnails(high/url,medium/url,default/url)))',
   };
   const regionCodes: Partial<Record<Region, string>> = {
     'United States': 'US',
@@ -371,11 +394,12 @@ export async function searchYouTubeSample(
   if (filters.region && regionCodes[filters.region]) searchParams.regionCode = regionCodes[filters.region]!;
   if (filters.language) searchParams.relevanceLanguage = filters.language;
   if (days > 0) searchParams.publishedAfter = new Date(Date.now() - days * 86400000).toISOString();
+  if (filters.pageToken) searchParams.pageToken = filters.pageToken;
   const raw = await youtube('search', searchParams, options, 100);
   const parsed = spaceSearchSchema.safeParse(raw);
   if (!parsed.success) throw new ApiError('YouTube returned an invalid topic sample.', 'invalid');
   const selected = parsed.data.items;
-  if (!selected.length) return { videos: [], warning: 'YouTube returned no matching videos in this period.' };
+  if (!selected.length) return { videos: [], warning: 'YouTube returned no matching videos in this period.', nextPageToken: parsed.data.nextPageToken };
   const ids = selected.map((item) => item.id.videoId);
   const statsRaw = await youtube('videos', {
     part: 'statistics',
@@ -434,6 +458,7 @@ export async function searchYouTubeSample(
   return {
     videos,
     warning: 'Limited YouTube sample. Sorting is applied only within returned results; this is not a complete market census or a growth-rate/saturation score.' + (channelWarning ? ' ' + channelWarning : ''),
+    nextPageToken: parsed.data.nextPageToken,
   };
 }
 

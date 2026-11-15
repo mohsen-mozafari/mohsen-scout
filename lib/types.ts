@@ -42,6 +42,8 @@ export type Video = {
   publishedAt: string;
   fetchedAt: number;
   query: string;
+  viewCount?: number | null;
+  likeCount?: number | null;
 };
 export type Assessment =
   | 'Strong Opportunity'
@@ -138,6 +140,7 @@ export type Preferences = {
   spaceNewsSources: SpaceNewsSourceId[];
   spaceInterestLanguage: WikiLanguage;
   selectedSpaceNiche: string;
+  customSpaceNiche: string;
 };
 export type Budget = { date: string; units: number; requests: number; exhausted: boolean };
 export type LocalData = {
@@ -166,7 +169,8 @@ export function defaults(): LocalData {
       paused: false,
       spaceNewsSources: ['nasa', 'jpl', 'esa-space', 'esa-science'],
       spaceInterestLanguage: 'en',
-      selectedSpaceNiche: 'exoplanets',
+      selectedSpaceNiche: 'all',
+      customSpaceNiche: '',
     },
     ideas: [],
     links: [],

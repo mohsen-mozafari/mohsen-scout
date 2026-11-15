@@ -52,6 +52,25 @@ export type InternalResearchResult = {
 function cleanTopic(topic: string) {
   return topic.trim().replace(/\s+/g, ' ').slice(0, 180) || 'this topic';
 }
+export function createManualIdea(
+  topic: string,
+  concept: string,
+  decision: string,
+  region: Idea['region'],
+  languages: string[],
+): Idea {
+  const cleanTitle = topic.trim().replace(/\s+/g, ' ').slice(0, 180);
+  const cleanConcept = concept.trim().slice(0, 4000);
+  if (!cleanTitle || cleanTitle.toLowerCase() === 'untitled idea')
+    throw new Error('Enter a real topic before saving this idea.');
+  if (!cleanConcept) throw new Error('Add a video concept before saving this idea.');
+  return {
+    id: uid(), topic: cleanTitle, concept: cleanConcept, note: '',
+    status: 'New Discoveries', decision: decision.trim().slice(0, 1200),
+    videoIds: [], createdAt: Date.now(), archived: false,
+    assessment: 'Uncertain', region, languages: [...languages],
+  };
+}
 
 /**
  * Local-only editorial analysis. It consumes already fetched evidence and never
@@ -204,10 +223,17 @@ export function buildIdeas(report: Report): Idea[] {
     },
     {
       suffix: 'A useful comparison',
-      queries: [report.input.topic + ' comparison', report.input.topic + ' common mistakes'],
+      queries: [report.input.topic + ' comparison'],
       concept:
-        'Develop a focused comparison or misconception-check around ' + topic +
-        '. Use the returned search examples as prompts, then verify the claims rather than assuming the sample represents the whole topic.',
+        'Develop a focused comparison around ' + topic +
+        '. State what is being compared, keep the criteria consistent and verify every factual claim rather than assuming the sample represents the whole topic.',
+    },
+    {
+      suffix: 'A misconception to verify',
+      queries: [report.input.topic + ' common mistakes'],
+      concept:
+        'Choose one commonly repeated claim about ' + topic +
+        ' only if a reliable source documents it. Test the claim against primary evidence, explain what is accurate or incomplete, and do not invent a myth if none is supported.',
     },
   ];
 

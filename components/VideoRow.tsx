@@ -1,4 +1,4 @@
-import { View, Text } from 'react-native';
+import { View, Text, Linking } from 'react-native';
 import { router } from 'expo-router';
 import { Button } from 'heroui-native';
 import { ArrowUpRight, Bookmark } from 'lucide-react-native';
@@ -25,12 +25,18 @@ export function VideoRow({ video, topic }: { video: Video; topic: string }) {
           <Txt muted>
             {video.channel} · {new Date(video.publishedAt).toLocaleDateString('en-US')}
           </Txt>
+          {(video.viewCount != null || video.likeCount != null) && (
+            <Txt muted>{video.viewCount == null ? 'Views unavailable' : video.viewCount.toLocaleString() + ' views'} · {video.likeCount == null ? 'Likes unavailable' : video.likeCount.toLocaleString() + ' likes'}</Txt>
+          )}
           <View style={styles.row}>
             <Text style={styles.badge}>YouTube</Text>
             <ArrowUpRight size={14} color={p.purple} />
           </View>
         </View>
       </Button>
+      <Action secondary onPress={() => void Linking.openURL('https://www.youtube.com/watch?v=' + video.id).catch(() => {})}>
+        Open on YouTube
+      </Action>
       <Action
         icon={Bookmark}
         secondary

@@ -10,6 +10,7 @@ import {
   SEARCH_DEMAND_PROVIDERS,
   SPACE_NEWS_SOURCES,
   DEFAULT_SPACE_NEWS_SOURCES,
+  buildNicheSuggestions,
 } from '../lib/space';
 
 void test('RSS parser reads RSS items, CDATA, entities and safe HTTPS links', () => {
@@ -67,6 +68,18 @@ void test('Niche matching filters source headlines without assigning a market sc
   assert.equal(newsForNiche(parsed, 'moon').length, 1);
 });
 
+void test('JWST matching includes Webb and instrument aliases and accepts custom niche terms', () => {
+  const feed = SPACE_NEWS_SOURCES[0];
+  const stories = parseRssFeed(
+    '<rss><item><title>Webb NIRSpec reveals a distant galaxy</title><link>https://www.nasa.gov/webb-nirspec</link><description>New JWST observations.</description></item><item><title>Artemis lunar mission update</title><link>https://www.nasa.gov/artemis-custom</link></item></rss>',
+    feed,
+  );
+  assert.equal(newsForNiche(stories, 'jwst').length, 1);
+  assert.equal(newsForNiche(stories, 'custom', 'NIRSpec, exoplanet atmospheres').length, 1);
+  assert.ok(buildNicheSuggestions(stories).some((item) => item.id === 'jwst' && item.matchedStories === 1));
+  assert.ok(buildNicheSuggestions(stories).some((item) => item.id.startsWith('story:') && item.title.includes('Webb NIRSpec')));
+});
+
 void test('Research outline keeps unknowns and verification questions explicit', () => {
   const outline = buildResearchOutline('Europa ocean worlds', ['New plume observation']);
   assert.equal(outline.titleIdeas.length, 3);
@@ -82,8 +95,11 @@ void test('Provider defaults are official source IDs and can be replaced by loca
 
 void test('Wikimedia provider returns language-scoped article pageviews, not a synthetic trend score', async () => {
   const calls: string[] = [];
-  const mockedFetch: typeof fetch = async (input) => {
+  const mockedFetch: typeof fetch = async (input, init) => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+    const headers = new Headers(init?.headers);
+    assert.match(headers.get('User-Agent') ?? '', /^MOHSEN-SCOUT\/1\.2/);
+    assert.match(headers.get('Api-User-Agent') ?? '', /^MOHSEN-SCOUT\/1\.2/);
     calls.push(url);
     if (url.includes('/w/api.php')) {
       return new Response(JSON.stringify({ query: { search: [{ title: 'Exoplanet' }] } }), { status: 200 });
@@ -110,6 +126,52 @@ void test('Wikimedia provider returns language-scoped article pageviews, not a s
   assert.equal(signal.monthlyViews[0].views, 130);
   assert.equal(calls.length, 3);
   assert.equal(SEARCH_DEMAND_PROVIDERS[0].id, 'wikimedia-pageviews');
+});
+
+void test('A forced partial refresh clears stale complete cache so later entry can retry', async () => {
+  const nasa = SPACE_NEWS_SOURCES.find((source) => source.id === 'esa-space')!;
+  let attempts = 0;
+  const fetcher: typeof fetch = async () => {
+    attempts++;
+    if (attempts === 1) return new Response('<rss><item><title>ESA Space News baseline</title><link>https://www.esa.int/baseline</link></item></rss>', { status: 200 });
+    if (attempts === 2) return new Response('Unavailable', { status: 503 });
+    return new Response('<rss><item><title>ESA Space News recovered</title><link>https://www.esa.int/recovered</link></item></rss>', { status: 200 });
+  };
+  const initial = await fetchSpaceNews([nasa.id], fetcher);
+  assert.equal(initial.warnings.length, 0);
+  assert.equal(attempts, 1);
+  const cached = await fetchSpaceNews([nasa.id], fetcher);
+  assert.equal(cached.items[0].title, 'ESA Space News baseline');
+  assert.equal(attempts, 1);
+  const partial = await fetchSpaceNews([nasa.id], fetcher, true);
+  assert.equal(partial.warnings.length, 1);
+  const recovered = await fetchSpaceNews([nasa.id], fetcher);
+  assert.equal(recovered.items[0].title, 'ESA Space News recovered');
+  assert.equal(attempts, 3);
+});
+
+void test('Space News retries only the unavailable official feed instead of caching partial results', async () => {
+  const nasa = SPACE_NEWS_SOURCES.find((source) => source.id === 'nasa')!;
+  const jpl = SPACE_NEWS_SOURCES.find((source) => source.id === 'jpl')!;
+  let jplAttempts = 0;
+  const fetcher: typeof fetch = async (input) => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+    if (url === jpl.url) {
+      jplAttempts++;
+      if (jplAttempts === 1) return new Response('Unavailable', { status: 503 });
+      return new Response('<rss><item><title>JPL Webb update</title><link>https://www.jpl.nasa.gov/recovered</link></item></rss>', { status: 200 });
+    }
+    if (url === nasa.url) return new Response('<rss><item><title>NASA Webb telescope story</title><link>https://www.nasa.gov/working</link></item></rss>', { status: 200 });
+    throw new Error('Unexpected feed URL: ' + url);
+  };
+  const first = await fetchSpaceNews([nasa.id, jpl.id], fetcher);
+  assert.equal(first.items.length, 1);
+  assert.equal(first.warnings.length, 1);
+  assert.match(first.warnings[0], /HTTP 503/);
+  const second = await fetchSpaceNews([nasa.id, jpl.id], fetcher);
+  assert.equal(second.items.length, 2);
+  assert.equal(second.warnings.length, 0);
+  assert.equal(jplAttempts, 2);
 });
 
 void test('RSS parser extracts only trusted official HTTPS image URLs', () => {

@@ -15,7 +15,8 @@ import {
   Txt,
 } from '@/components/ScoutUI';
 import { useScout } from '@/lib/store';
-import { statuses, uid, type Idea } from '@/lib/types';
+import { statuses } from '@/lib/types';
+import { createManualIdea } from '@/lib/engine';
 import { palette as p } from '@/lib/theme';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 import { MediaPreview } from '@/components/MediaPreview';
@@ -24,34 +25,36 @@ export default function Opportunities() {
   const [status, setStatus] = useState('All');
   const [search, setSearch] = useState('');
   const [archive, setArchive] = useState(false);
+  const [draftOpen, setDraftOpen] = useState(false);
+  const [draftTopic, setDraftTopic] = useState('');
+  const [draftConcept, setDraftConcept] = useState('');
+  const [draftDecision, setDraftDecision] = useState('');
+  const preferences = useScout((s) => s.data.preferences);
   const op = useOperation();
   const filtered = ideas.filter(
     (i) =>
       i.archived === archive &&
       (status === 'All' || i.status === status) &&
-      `${i.topic} ${i.note} ${i.decision}`.toLowerCase().includes(search.toLowerCase()),
+      `${i.topic} ${i.concept} ${i.note} ${i.decision}`.toLowerCase().includes(search.toLowerCase()),
   );
-  const create = () =>
-    void op.run(async () => {
-      const id = uid();
-      const prefs = useScout.getState().data.preferences;
-      const idea: Idea = {
-        id,
-        topic: 'Untitled idea',
-        concept: '',
-        note: '',
-        decision: '',
-        videoIds: [],
-        createdAt: Date.now(),
-        archived: false,
-        status: 'New Discoveries',
-        assessment: 'Uncertain',
-        region: prefs.region,
-        languages: prefs.languages,
-      };
-      await useScout.getState().commit((data) => ({ ...data, ideas: [idea, ...data.ideas] }));
-      router.push({ pathname: '/detail', params: { idea: id } });
-    });
+  const openCreate = () => {
+    setDraftTopic(preferences.lastInput?.topic ?? '');
+    setDraftConcept('');
+    setDraftDecision('');
+    setDraftOpen(true);
+  };
+  const create = () => void op.run(async () => {
+    const idea = createManualIdea(
+      draftTopic,
+      draftConcept,
+      draftDecision,
+      preferences.region,
+      preferences.languages,
+    );
+    await useScout.getState().commit((data) => ({ ...data, ideas: [idea, ...data.ideas] }));
+    setDraftOpen(false);
+    router.push({ pathname: '/detail', params: { idea: idea.id } });
+  }, 'Complete idea saved.');
   return (
     <Page scroll={false}>
       <FlatList
@@ -73,9 +76,20 @@ export default function Opportunities() {
               selected={[status]}
               onChange={(v) => setStatus(v[0])}
             />
+            {draftOpen && (
+              <View style={[styles.panel, { gap: 12 }]}>
+                <Text style={styles.heading}>Create a complete idea</Text>
+                <Field label="Topic / working title" value={draftTopic} onChange={setDraftTopic} placeholder="e.g. What JWST reveals about exoplanet atmospheres" />
+                <Field label="Video concept" value={draftConcept} onChange={setDraftConcept} multiline placeholder="What is the central question, what will the viewer learn, and what makes your explanation useful?" />
+                <Field label="Your initial decision (optional)" value={draftDecision} onChange={setDraftDecision} multiline placeholder="What would make this worth producing?" />
+                <Txt muted>Ideas are saved only after you provide a real topic and a concept. This prevents empty records from reaching AI Second Opinion.</Txt>
+                <Action busy={op.busy} disabled={!draftTopic.trim() || !draftConcept.trim()} onPress={create}>Save idea</Action>
+                <Action secondary disabled={op.busy} onPress={() => setDraftOpen(false)}>Cancel</Action>
+              </View>
+            )}
             <View style={{ flexDirection: 'row', gap: 10 }}>
               <View style={{ flex: 1 }}>
-                <Action icon={Plus} busy={op.busy} onPress={create}>
+                <Action icon={Plus} busy={op.busy} onPress={openCreate}>
                   New idea
                 </Action>
               </View>
@@ -101,10 +115,11 @@ export default function Opportunities() {
               onPress={() => router.push({ pathname: '/detail', params: { idea: item.id } })}
             >
               <View style={{ flex: 1, gap: 8 }}>
-                <Text style={styles.badge}>{item.assessment}</Text>
-                <Text style={styles.heading}>{item.topic}</Text>
-                <Txt muted>{item.status}</Txt>
-                {item.decision ? <Txt>{item.decision}</Txt> : null}
+                <Text style={styles.badge}>{item.assessment} · {item.status}</Text>
+                <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 15, lineHeight: 20, color: '#F4F2FF' }}>{item.topic}</Text>
+                {item.concept ? <Text numberOfLines={3} style={styles.muted}>{item.concept}</Text> : <Txt muted>Concept missing — open the editor to complete this draft before requesting an AI opinion.</Txt>}
+                {item.sourceName ? <Text style={styles.badge}>Source: {item.sourceName}</Text> : null}
+                {item.decision ? <Txt muted>{item.decision}</Txt> : null}
               </View>
               <ArrowUpRight color={p.purple} size={20} />
             </Button>
@@ -123,7 +138,7 @@ export default function Opportunities() {
                     setStatus('All');
                     setArchive(false);
                   }
-                : create
+                : openCreate
             }
           />
         }

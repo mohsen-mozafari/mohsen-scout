@@ -17,24 +17,51 @@ export default function TrendIntelligence() {
   const [warning, setWarning] = useState('');
   const [days, setDays] = useState(String(preferences.defaultResearchDays ?? 30));
   const [sort, setSort] = useState('Most Views');
+  const [nextPageToken, setNextPageToken] = useState('');
+  const [activeSearch, setActiveSearch] = useState<{ topic: string; days: 0 | 7 | 30 | 90; sort: string }>();
   const op = useOperation();
-
-  const run = () => void op.run(async () => {
+  const executeSample = async (
+    search: { topic: string; days: 0 | 7 | 30 | 90; sort: string },
+    pageToken = '',
+    append = false,
+  ) => {
     const key = await getKey('youtube');
     if (!key) throw new Error('Save your personal YouTube Data API key in Settings before running a YouTube sample.');
-    const result = await searchYouTubeSample(topic, {
+    const result = await searchYouTubeSample(search.topic, {
       key,
       charge: useScout.getState().charge,
       onQuota: () => useScout.getState().commit((data) => ({ ...data, budget: { ...data.budget, exhausted: true } })),
     }, 25, {
-      days: days === '7' ? 7 : days === '90' ? 90 : days === '0' ? 0 : 30,
-      order: sort === 'Newest' ? 'date' : 'viewCount',
+      days: search.days,
+      order: search.sort === 'Newest' ? 'date' : 'viewCount',
       region: preferences.region,
       language: preferences.languages[0],
+      ...(pageToken ? { pageToken } : {}),
     });
-    setVideos(result.videos);
+    setVideos((current) => append
+      ? [...current, ...result.videos.filter((video) => !current.some((item) => item.id === video.id))]
+      : result.videos);
+    setNextPageToken(result.nextPageToken ?? '');
     setWarning(result.warning);
+    setActiveSearch(search);
+  };
+  const run = () => void op.run(async () => {
+    const search = {
+      topic: topic.trim(),
+      days: (days === '7' ? 7 : days === '90' ? 90 : days === '0' ? 0 : 30) as 0 | 7 | 30 | 90,
+      sort,
+    };
+    if (!search.topic) throw new Error('Enter a topic before sampling YouTube.');
+    setVideos([]);
+    setNextPageToken('');
+    setActiveSearch(undefined);
+    setWarning('');
+    await executeSample(search);
   }, 'YouTube sample refreshed.');
+  const loadMore = () => {
+    if (!activeSearch || !nextPageToken) return;
+    void op.run(() => executeSample(activeSearch, nextPageToken, true), 'Loaded the next YouTube result page.');
+  };
 
   const sortedVideos = [...videos].sort((a, b) => {
     if (sort === 'Newest') return Date.parse(b.publishedAt) - Date.parse(a.publishedAt);
@@ -50,7 +77,7 @@ export default function TrendIntelligence() {
     <Page title="TREND INTELLIGENCE">
       <Txt muted>Measure YouTube separately from search interest and publisher news. This view uses the official YouTube Data API, not scraping.</Txt>
       <Panel>
-        <Field label="Space topic" value={topic} onChange={setTopic} placeholder="e.g. exoplanet atmosphere discoveries" />
+        <Field label="Space topic" value={topic} onChange={(value) => { setTopic(value); setNextPageToken(''); }} placeholder="e.g. exoplanet atmosphere discoveries" />
         <Choices
           label="Publication period"
           options={['Last 7 days', 'Last 30 days', 'Last 90 days', 'All time']}
@@ -58,17 +85,18 @@ export default function TrendIntelligence() {
           onChange={(values) => {
             const value = values[0];
             setDays(value === 'Last 7 days' ? '7' : value === 'Last 90 days' ? '90' : value === 'All time' ? '0' : '30');
+            setNextPageToken('');
           }}
         />
         <Choices
           label="Sort sample by"
           options={['Newest', 'Most Views', 'Most Likes']}
           selected={[sort]}
-          onChange={(values) => setSort(values[0])}
+          onChange={(values) => { setSort(values[0]); setNextPageToken(''); }}
         />
         <Action busy={op.busy} disabled={!topic.trim()} onPress={run}>Sample YouTube videos</Action>
-        <Txt muted>One search plus batched video and channel statistics requests. Sorting is limited to the returned sample; YouTube search itself cannot order directly by likes.</Txt>
-        <Txt muted>Changes to period or sort order apply when you press Sample YouTube videos again.</Txt>
+        <Txt muted>Each page uses one official search request plus batched video and channel statistics. A page costs about 102 YouTube quota units. Sorting by likes is local to the returned sample because YouTube search cannot order directly by likes.</Txt>
+        <Txt muted>Use Load next 25 to continue with the same saved search filters. Nothing loads automatically in the background.</Txt>
       </Panel>
       {Boolean(warning) && <Txt muted>{warning}</Txt>}
       {videos.length > 0 && (
@@ -91,6 +119,8 @@ export default function TrendIntelligence() {
           <Action secondary onPress={() => void Linking.openURL(video.url).catch(() => {})}>Open video on YouTube</Action>
         </Panel>
       ))}
+      {nextPageToken.length > 0 && <Action secondary busy={op.busy} onPress={loadMore}>Load next 25 videos</Action>}
+      {videos.length > 0 && !nextPageToken && <Txt muted>YouTube has no next page for this query and filter set.</Txt>}
       {Boolean(op.error) && <ErrorBox message={op.error} onRetry={run} />}
       {Boolean(op.message) && <Txt muted>{op.message}</Txt>}
       <Action secondary onPress={() => router.push('/settings')}>Manage YouTube API key and research defaults</Action>

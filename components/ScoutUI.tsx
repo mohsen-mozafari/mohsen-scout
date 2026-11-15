@@ -93,7 +93,7 @@ export function Action({
       onPress={onPress}
       variant={secondary ? 'secondary' : 'primary'}
       isDisabled={disabled || busy}
-      className="rounded-2xl"
+      className="rounded-2xl px-4"
       accessibilityLabel={children}
     >
       {Icon && <Icon size={18} color={secondary ? p.purple : p.white} strokeWidth={1.8} />}

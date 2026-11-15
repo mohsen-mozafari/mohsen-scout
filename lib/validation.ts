@@ -21,6 +21,8 @@ const video = z.object({
   publishedAt: z.string().datetime(),
   fetchedAt: time,
   query: text,
+  viewCount: z.number().nonnegative().nullable().optional(),
+  likeCount: z.number().nonnegative().nullable().optional(),
 });
 const schema = z.object({
   preferences: z.object({
@@ -36,7 +38,8 @@ const schema = z.object({
     lastInput: inputSchema.optional(),
     spaceNewsSources: z.array(z.enum(['nasa', 'jpl', 'esa-space', 'esa-science'])).max(4).optional().default(['nasa', 'jpl', 'esa-space', 'esa-science']),
     spaceInterestLanguage: z.enum(['en', 'fa', 'de', 'fr', 'es', 'ja']).optional().default('en'),
-    selectedSpaceNiche: z.string().max(100).optional().default('exoplanets'),
+    selectedSpaceNiche: z.string().max(100).optional().default('all'),
+    customSpaceNiche: z.string().max(160).optional().default(''),
   }),
   ideas: z.array(
     z.object({

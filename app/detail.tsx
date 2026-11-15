@@ -44,10 +44,16 @@ export default function Detail() {
     setEdit(original);
   }
   const idea = edit ?? original;
+  const ideaReadyForOpinion = Boolean(
+    idea?.topic.trim() &&
+    idea.topic.trim().toLowerCase() !== 'untitled idea' &&
+    idea.concept.trim(),
+  );
   const related = idea ? data.videos.filter((v) => idea.videoIds.includes(v.id)) : [];
   const secondOpinion = () =>
     void op.run(async () => {
       if (!idea) return;
+      if (!ideaReadyForOpinion) throw new Error('Complete the idea title and video concept before requesting an AI opinion.');
       const key = await getKey('openrouter');
       if (!key) throw new Error('Add your OpenRouter key in Settings first.');
       const models = await getFreeModels();
@@ -263,9 +269,12 @@ export default function Detail() {
             No YouTube titles, descriptions, statistics or notes are sent.
           </Txt>
           {!consent ? (
-            <Action icon={Sparkles} secondary onPress={() => setConsent(true)}>
-              Request AI Second Opinion
-            </Action>
+            <>
+              {!ideaReadyForOpinion && <Txt muted>AI Second Opinion is enabled after this idea has a real title and a non-empty video concept. Open Edit idea to complete both fields.</Txt>}
+              <Action icon={Sparkles} secondary disabled={!ideaReadyForOpinion} onPress={() => setConsent(true)}>
+                Request AI Second Opinion
+              </Action>
+            </>
           ) : (
             <Panel>
               <Heading>Share this idea with OpenRouter?</Heading>
@@ -276,7 +285,7 @@ export default function Detail() {
               <Txt>Topic: {idea.topic}</Txt>
               <Txt>Concept: {idea.concept}</Txt>
               <Txt>Decision: {idea.decision || 'Not set'}</Txt>
-              <Action busy={op.busy} onPress={secondOpinion}>
+              <Action busy={op.busy} disabled={!ideaReadyForOpinion} onPress={secondOpinion}>
                 Send for second opinion
               </Action>
               <Action secondary disabled={op.busy} onPress={() => setConsent(false)}>

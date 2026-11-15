@@ -1,13 +1,13 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Linking, View, Text } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { Button } from 'heroui-native';
-import { Page, Panel, Heading, Txt, Action, styles, ErrorBox, useOperation } from '@/components/ScoutUI';
+import { Page, Panel, Heading, Txt, Action, Choices, styles, ErrorBox, useOperation } from '@/components/ScoutUI';
 import { useScout } from '@/lib/store';
 import { SPACE_NICHES, fetchSpaceNews, newsForNiche, type SpaceNewsItem } from '@/lib/space';
 import { uid } from '@/lib/types';
 import { getKey } from '@/lib/vault';
-import { translateNewsToPersian } from '@/lib/api';
+import { getFreeModels, translateNewsToPersian } from '@/lib/api';
 import { MediaPreview } from '@/components/MediaPreview';
 
 export default function CosmicNews() {
@@ -17,6 +17,10 @@ export default function CosmicNews() {
   const niche = SPACE_NICHES.find((item) => item.id === nicheId);
   const [items, setItems] = useState<SpaceNewsItem[]>([]);
   const [warnings, setWarnings] = useState<string[]>([]);
+  const [scope, setScope] = useState('All selected feeds');
+  const displayedItems = scope === 'Selected niche'
+    ? newsForNiche(items, nicheId, preferences.customSpaceNiche)
+    : items;
   const [translations, setTranslations] = useState<Record<string, { title: string; summary: string }>>({});
   const [showTranslation, setShowTranslation] = useState<Record<string, boolean>>({});
   const op = useOperation();
@@ -38,9 +42,21 @@ export default function CosmicNews() {
     await useScout.getState().commit((data) => ({ ...data, notes: [note, ...data.notes] }));
   }, 'Source saved to the Space Research folder in Notes.');
 
+  useEffect(() => {
+    let active = true;
+    void fetchSpaceNews(preferences.spaceNewsSources).then((result) => {
+      if (!active) return;
+      setItems(result.items);
+      setWarnings(result.warnings);
+    }).catch(() => {
+      if (active) setWarnings(['Official news feeds could not be reached. Check the network and retry.']);
+    });
+    return () => { active = false; };
+  }, [preferences.spaceNewsSources]);
+
   const refresh = () => void op.run(async () => {
-    const result = await fetchSpaceNews(preferences.spaceNewsSources);
-    setItems(niche ? newsForNiche(result.items, nicheId) : result.items);
+    const result = await fetchSpaceNews(preferences.spaceNewsSources, fetch, true);
+    setItems(result.items);
     setWarnings(result.warnings);
     if (!result.items.length && result.warnings.length) throw new Error(result.warnings.join(' '));
   }, 'Space news updated from selected feeds.');
@@ -48,24 +64,36 @@ export default function CosmicNews() {
   const translate = (item: SpaceNewsItem) => void op.run(async () => {
     const key = await getKey('openrouter');
     if (!key) throw new Error('Add your OpenRouter key in Settings to translate news.');
-    if (!preferences.model) throw new Error('Choose a free OpenRouter model in Settings first.');
-    const result = await translateNewsToPersian(key, preferences.model, item.title, item.summary);
+    let model = preferences.model;
+    if (!model) {
+      const models = await getFreeModels();
+      model = models[0]?.id ?? '';
+      if (!model) throw new Error('No free OpenRouter model is currently available. Refresh models in Settings and try again.');
+      await useScout.getState().commit((data) => ({
+        ...data,
+        preferences: { ...data.preferences, model },
+      }));
+    }
+    const result = await translateNewsToPersian(key, model, item.title, item.summary);
     setTranslations((current) => ({ ...current, [item.id]: result }));
     setShowTranslation((current) => ({ ...current, [item.id]: true }));
   }, 'Persian translation ready.');
 
   return (
     <Page title="COSMIC NEWS">
-      <Txt muted>{niche ? 'Tracking: ' + niche.title : 'Recent space and astronomy updates from selected official feeds.'}</Txt>
+      <Txt muted>Official NASA, JPL and ESA headlines with the original publisher link and publication date. These are source reports, not independent scientific verification.</Txt>
       <Panel>
-        <Heading>Primary-source monitoring</Heading>
-        <Txt muted>NASA, NASA JPL and ESA RSS headlines. Images appear only when the official feed supplies a trusted image URL.</Txt>
+        <Heading>How Cosmic News works</Heading>
+        <Txt muted>Refresh retrieves the RSS/Atom feeds enabled in Settings. Stories show the publisher headline, summary, date and original link. Open the original story to verify its claims. You can translate one selected headline and RSS summary into Persian on demand.</Txt>
+        <Choices label="Show stories" options={['All selected feeds', 'Selected niche']} selected={[scope]} onChange={(values) => setScope(values[0])} />
+        <Txt muted>{niche?.title ?? (nicheId === 'custom' ? 'Custom niche: ' + preferences.customSpaceNiche : 'All space topics')}</Txt>
         <Action busy={op.busy} onPress={refresh}>Refresh selected feeds</Action>
         {warnings.map((warning) => <Txt muted key={warning}>{warning}</Txt>)}
-        <Text style={styles.badge}>{items.length} matching reports</Text>
-        {!items.length && <Txt muted>Refresh to retrieve the latest source items. Manage sources in Settings.</Txt>}
+        <Text style={styles.badge}>{displayedItems.length} {scope === 'Selected niche' ? 'matching niche reports' : 'source reports'}</Text>
+        {!items.length && <Txt muted>Refresh to retrieve the latest stories. Source-specific warnings now identify HTTP status, timeout, network or feed-format problems.</Txt>}
+        <Txt muted>Persian translation requires your OpenRouter key; the app selects an available free model when none is saved. Only the item you explicitly choose is sent; there is no automatic or batch translation.</Txt>
       </Panel>
-      {items.map((item) => {
+      {displayedItems.map((item) => {
         const translated = translations[item.id];
         const showing = Boolean(showTranslation[item.id] && translated);
         return (

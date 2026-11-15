@@ -15,6 +15,7 @@ export default function SearchDemand() {
   const [period, setPeriod] = useState('Past 12 months');
   const [topics, setTopics] = useState<string[]>([typeof params.topic === 'string' ? params.topic : 'exoplanet', '', '']);
   const [results, setResults] = useState<WikiSignal[]>([]);
+  const [failures, setFailures] = useState<string[]>([]);
   const op = useOperation();
   const setTopic = (index: number, value: string) =>
     setTopics((current) => current.map((item, position) => position === index ? value : item));
@@ -22,8 +23,14 @@ export default function SearchDemand() {
   const compare = () => void op.run(async () => {
     if (!active.length) throw new Error('Enter at least one topic.');
     const provider = SEARCH_DEMAND_PROVIDERS[0];
-    const values = await Promise.all(active.map((topic) => provider.run(topic, language)));
+    const settled = await Promise.allSettled(active.map((topic) => provider.run(topic, language)));
+    const values = settled.flatMap((result) => result.status === 'fulfilled' ? [result.value] : []);
+    const issues = settled.flatMap((result, index) => result.status === 'rejected'
+      ? [active[index] + ': ' + (result.reason instanceof Error ? result.reason.message : 'Wikimedia data unavailable.')]
+      : []);
     setResults(values);
+    setFailures(issues);
+    if (!values.length) throw new Error(issues.join(' · ') || 'No public-interest data was returned.');
   }, 'Public-interest pageview data updated.');
   const maxViews = Math.max(1, ...results.flatMap((result) => result.monthlyViews.map((point) => point.views)));
   const countryCodes: Record<string, string> = { Worldwide: '', 'United States': 'US', 'United Kingdom': 'GB', Germany: 'DE', Iran: 'IR', Canada: 'CA', Australia: 'AU', Japan: 'JP', India: 'IN', France: 'FR', Brazil: 'BR' };
@@ -49,12 +56,17 @@ export default function SearchDemand() {
       </Panel>
       <Panel>
         <Heading>Provider: {SEARCH_DEMAND_PROVIDERS[0].label}</Heading>
-        <Txt muted>Wikimedia Pageviews is a free public API. Its figures count views of an encyclopedia article in the selected language project over the last six months. They are an attention proxy—not Google search volume, not unique people, not YouTube views, and not country-level audience data. Country and time range selected above apply only to the external Google Trends comparison page.</Txt>
+        <Txt muted>Wikimedia Pageviews is a free public API and does not use your YouTube API key. Its figures count views of an encyclopedia article in the selected language project over the last six months. They are an attention proxy—not Google search volume, not unique people, not YouTube views, and not country-level audience data. Country and time range selected above apply only to the external Google Trends comparison page.</Txt>
         <Txt muted>Google Trends has a separate API, but official programmatic access is currently a limited alpha. Until public access is available, the app opens the Trends website for manual comparison rather than pretending to call an unavailable API.</Txt>
-        <Button variant="tertiary" className="h-auto justify-start px-0" onPress={() => void Linking.openURL(trendsUrl).catch(() => {})}>
-          <Button.Label>Open Google Trends for entered topics ↗</Button.Label>
-        </Button>
+        <Action secondary onPress={() => void Linking.openURL(trendsUrl).catch(() => {})}>Open Google Trends for entered topics</Action>
       </Panel>
+      {failures.length > 0 && (
+        <Panel>
+          <Heading>Some comparisons were unavailable</Heading>
+          {failures.map((failure) => <Txt muted key={failure}>{failure}</Txt>)}
+          <Txt muted>Successful topics remain visible below; one failed article lookup no longer discards all comparison results.</Txt>
+        </Panel>
+      )}
       {results.map((result) => (
         <Panel key={result.language + ':' + result.articleTitle}>
           <Heading>{result.articleTitle}</Heading>

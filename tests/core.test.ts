@@ -28,7 +28,7 @@ import {
   testYouTube,
   type Fetcher,
 } from '../lib/api';
-import { buildIdeas, buildInternalResearch } from '../lib/engine';
+import { buildIdeas, buildInternalResearch, createManualIdea } from '../lib/engine';
 const input: ResearchInput = {
   topic: 'Small-space home studios',
   region: 'Iran',
@@ -74,7 +74,8 @@ void test('Migration: older saved preferences receive safe Space defaults', () =
   const migrated = validateLocal(legacy);
   assert.deepEqual(migrated.preferences.spaceNewsSources, ['nasa', 'jpl', 'esa-space', 'esa-science']);
   assert.equal(migrated.preferences.spaceInterestLanguage, 'en');
-  assert.equal(migrated.preferences.selectedSpaceNiche, 'exoplanets');
+  assert.equal(migrated.preferences.selectedSpaceNiche, 'all');
+  assert.equal(migrated.preferences.customSpaceNiche, '');
   assert.equal(migrated.preferences.defaultResearchDays, 30);
 });
 void test('YouTube trend sample uses official search and video statistics endpoints with bounded quota', async () => {
@@ -91,7 +92,7 @@ void test('YouTube trend sample uses official search and video statistics endpoi
         searchCalls++;
         assert.equal(parsed.searchParams.get('order'), 'viewCount');
         assert.equal(parsed.searchParams.has('videoCategoryId'), false);
-        return response({ items: [{
+        return response({ nextPageToken: 'MOCK_NEXT_PAGE', items: [{
           id: { videoId: 'dQw4w9WgXcQ' },
           snippet: {
             title: 'MOCK: Mars science video',
@@ -123,7 +124,38 @@ void test('YouTube trend sample uses official search and video statistics endpoi
   assert.equal(result.videos[0].thumbnailUrl, 'https://example.com/high.jpg');
   assert.equal(result.videos[0].channelSubscriberCount, 500000);
   assert.equal(result.videos[0].channelVideoCount, 200);
+  assert.equal(result.nextPageToken, 'MOCK_NEXT_PAGE');
   assert.equal(result.videos[0].url, 'https://www.youtube.com/watch?v=dQw4w9WgXcQ');
+});
+
+void test('YouTube sample forwards the supplied next-page token and returns the next token', async () => {
+  let seenToken = '';
+  const result = await searchYouTubeSample('JWST exoplanets', {
+    key: 'MOCK_PAGE_TOKEN',
+    charge: async () => {},
+    fetcher: async (url) => {
+      const parsed = new URL(typeof url === 'string' ? url : url instanceof URL ? url.href : url.url);
+      if (parsed.pathname.endsWith('/search')) {
+        seenToken = parsed.searchParams.get('pageToken') ?? '';
+        return response({ nextPageToken: 'next-page-token', items: [{
+          id: { videoId: 'dQw4w9WgXcQ' },
+          snippet: {
+            title: 'MOCK: Webb exoplanet observations',
+            description: 'MOCK description',
+            channelTitle: 'MOCK space channel',
+            channelId: 'UCmockchannel',
+            publishedAt: '2026-11-01T12:00:00Z',
+            thumbnails: { high: { url: 'https://example.com/high.jpg' } },
+          },
+        }] });
+      }
+      if (parsed.pathname.endsWith('/videos')) return response({ items: [{ id: 'dQw4w9WgXcQ', statistics: { viewCount: '3000', likeCount: '80' } }] });
+      if (parsed.pathname.endsWith('/channels')) return response({ items: [{ id: 'UCmockchannel', statistics: { subscriberCount: '1000', videoCount: '20' } }] });
+      throw new Error('Unexpected endpoint: ' + parsed.pathname);
+    },
+  }, 25, { pageToken: 'existing-page-token' });
+  assert.equal(seenToken, 'existing-page-token');
+  assert.equal(result.nextPageToken, 'next-page-token');
 });
 
 void test('Backup compatibility: version-1 backups without Space preferences still import', () => {
@@ -136,11 +168,13 @@ void test('Backup compatibility: version-1 backups without Space preferences sti
   Reflect.deleteProperty(preferences, 'spaceNewsSources');
   Reflect.deleteProperty(preferences, 'spaceInterestLanguage');
   Reflect.deleteProperty(preferences, 'selectedSpaceNiche');
+  Reflect.deleteProperty(preferences, 'customSpaceNiche');
   Reflect.deleteProperty(preferences, 'defaultResearchDays');
   const restored = importBackup(JSON.stringify(backup));
   assert.deepEqual(restored.preferences.spaceNewsSources, ['nasa', 'jpl', 'esa-space', 'esa-science']);
   assert.equal(restored.preferences.spaceInterestLanguage, 'en');
-  assert.equal(restored.preferences.selectedSpaceNiche, 'exoplanets');
+  assert.equal(restored.preferences.selectedSpaceNiche, 'all');
+  assert.equal(restored.preferences.customSpaceNiche, '');
   assert.equal(restored.preferences.defaultResearchDays, 30);
 });
 void test('Foundation: defaults belong to Mohsen and have no secrets', () => {
@@ -240,32 +274,38 @@ void test('Research: creates explicit related queries without inventing stats', 
   assert.equal(queries.length, 4);
   assert(queries.every((q) => q.includes(input.topic)));
 });
-void test('YouTube MOCK: official endpoint, independent region/language filters, deduplication', async () => {
+void test('YouTube MOCK: official endpoint, independent region/language filters, deduplication and raw counts', async () => {
   const urls: string[] = [];
   let units = 0;
   const result = await searchYouTube(input, {
     key: 'MOCK_NOT_REAL',
-    charge: async (cost) => {
-      units += cost;
-    },
+    charge: async (cost) => { units += cost; },
     fetcher: fetcher((url) => {
       urls.push(url);
+      const parsed = new URL(url);
+      if (parsed.pathname.endsWith('/videos'))
+        return response({ items: [{ id: 'dQw4w9WgXcQ', statistics: { viewCount: '1234', likeCount: '56' } }] });
       return response({ items: [mockItem('dQw4w9WgXcQ'), mockItem('dQw4w9WgXcQ')] });
     }),
   });
   assert.equal(result.videos.length, 1);
   assert.equal(result.videos[0].title, video.title);
-  assert.equal(units, 500);
-  for (const url of urls) {
+  assert.equal(result.videos[0].viewCount, 1234);
+  assert.equal(result.videos[0].likeCount, 56);
+  assert.equal(units, 501);
+  const searchUrls = urls.filter((url) => new URL(url).pathname.endsWith('/search'));
+  assert.ok(searchUrls.length > 0);
+  for (const url of searchUrls) {
     const parsed = new URL(url);
     assert.equal(parsed.hostname, 'www.googleapis.com');
     assert.equal(parsed.searchParams.get('regionCode'), 'IR');
     assert.equal(parsed.searchParams.get('relevanceLanguage'), 'en');
     assert.equal(parsed.searchParams.get('videoDuration'), 'short');
     assert.equal(parsed.searchParams.get('videoCategoryId'), '27');
-    assert(!parsed.searchParams.get('part')?.includes('statistics'));
+    assert.equal(parsed.searchParams.get('part'), 'snippet');
   }
 });
+
 void test('YouTube MOCK: pagination bounded to two pages per query', async () => {
   let calls = 0;
   const result = await searchYouTube(input, {
@@ -276,7 +316,7 @@ void test('YouTube MOCK: pagination bounded to two pages per query', async () =>
       return response({ nextPageToken: 'next', items: [mockItem('dQw4w9WgXcQ')] });
     }),
   });
-  assert.equal(calls, 10);
+  assert.equal(calls, 11);
   assert.equal(result.videos.length, 1);
 });
 void test('YouTube MOCK: quota exhaustion stops without retries and invokes stop hook', async () => {
@@ -463,12 +503,72 @@ void test('OpenRouter MOCK: unavailable model/rate limit rejected clearly', asyn
     (e) => e instanceof ApiError && e.code === 'service',
   );
 });
+void test('Manual Ideas: reject untitled and empty concepts before they reach storage', () => {
+  assert.throws(() => createManualIdea('', 'A useful explanation', '', 'Germany', ['en']));
+  assert.throws(() => createManualIdea('Untitled idea', 'A useful explanation', '', 'Germany', ['en']));
+  assert.throws(() => createManualIdea('James Webb observations', '', '', 'Germany', ['en']));
+  const idea = createManualIdea(
+    'James Webb observations',
+    'Explain one verified observation and its uncertainty.',
+    'Check the paper first.',
+    'Germany',
+    ['en'],
+  );
+  assert.equal(idea.topic, 'James Webb observations');
+  assert.ok(idea.concept.length > 10);
+  assert.equal(idea.decision, 'Check the paper first.');
+  assert.equal(idea.status, 'New Discoveries');
+});
+
+void test('News translation sends only the selected RSS title and summary on explicit request and caches it', async () => {
+  let calls = 0;
+  let requestBody: unknown;
+  let authorization = '';
+  const fetcher: Fetcher = async (url, init) => {
+    calls++;
+    assert.equal(typeof url === 'string' ? new URL(url).hostname : '', 'openrouter.ai');
+    assert.equal(init?.method, 'POST');
+    const headers = new Headers(init?.headers);
+    authorization = headers.get('Authorization') ?? '';
+    requestBody = JSON.parse(String(init?.body));
+    return response({ choices: [{ message: { content: JSON.stringify({
+      title: 'کشف تازه تلسکوپ وب',
+      summary: 'این رصد تازه، شواهدی مقدماتی درباره جو سیاره ارائه می‌کند.',
+    }) } }] });
+  };
+  const translated = await translateNewsToPersian(
+    'MOCK_TRANSLATION_KEY',
+    'mock/free-model',
+    'New Webb observation',
+    'The observation provides preliminary evidence about an exoplanet atmosphere.',
+    fetcher,
+  );
+  assert.equal(translated.title, 'کشف تازه تلسکوپ وب');
+  assert.match(translated.summary, /شواهدی مقدماتی/);
+  assert.equal(authorization, 'Bearer MOCK_TRANSLATION_KEY');
+  const serialized = JSON.stringify(requestBody);
+  assert(serialized.includes('New Webb observation'));
+  assert(serialized.includes('preliminary evidence'));
+  assert(!serialized.includes('MOCK API description'));
+  assert(!serialized.includes('thumbnail'));
+  await translateNewsToPersian(
+    'MOCK_TRANSLATION_KEY',
+    'mock/free-model',
+    'New Webb observation',
+    'The observation provides preliminary evidence about an exoplanet atmosphere.',
+    fetcher,
+  );
+  assert.equal(calls, 1);
+});
+
 void test('AI: prompt contains only user editorial input, not API metadata', () => {
   const prompt = opinionPrompt(input.topic, 'A hands-on concept', 'Try it');
   assert(!prompt.includes(video.title));
   assert(!prompt.includes(video.description));
   assert(!prompt.includes(video.thumbnail));
   assert(prompt.includes('insufficient evidence'));
+  assert.throws(() => opinionPrompt('Untitled idea', '', ''));
+  assert.throws(() => opinionPrompt('James Webb', '', 'Decision only'));
 });
 void test('Analysis: ideas are cautious hypotheses, not performance scores', () => {
   const report: Report = {
@@ -481,7 +581,7 @@ void test('Analysis: ideas are cautious hypotheses, not performance scores', () 
     analyzed: false,
   };
   const ideas = buildIdeas(report);
-  assert.equal(ideas.length, 3);
+  assert.equal(ideas.length, 4);
   assert.equal(ideas[0].assessment, 'Worth Exploring');
   assert.deepEqual(ideas[0].videoIds, [video.id]);
   assert.equal(ideas[0].imageUrl, video.thumbnail);

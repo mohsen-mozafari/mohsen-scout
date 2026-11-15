@@ -42,6 +42,7 @@ export default function Discover() {
   const [duration, setDuration] = useState('Any duration');
   const [category, setCategory] = useState('All categories');
   const [maximum, setMaximum] = useState('25');
+  const [sort, setSort] = useState('Newest');
   const [reportId, setReportId] = useState('');
   const [hasKey, setHasKey] = useState(false);
   const op = useOperation();
@@ -76,6 +77,14 @@ export default function Discover() {
     }, []),
   );
   const report: Report | undefined = reports.find((r) => r.id === reportId);
+  const sortedReportVideos = report ? [...report.videos].sort((a, b) => {
+    if (sort === 'Newest') return Date.parse(b.publishedAt) - Date.parse(a.publishedAt);
+    const first = sort === 'Most Likes' ? a.likeCount : a.viewCount;
+    const second = sort === 'Most Likes' ? b.likeCount : b.viewCount;
+    if (first == null) return second == null ? 0 : 1;
+    if (second == null) return -1;
+    return second - first;
+  }) : [];
   const run = async () => {
     const input: ResearchInput = {
       topic,
@@ -129,7 +138,7 @@ export default function Discover() {
           placeholder="e.g. Small-space home studios"
         />
         <Txt muted>Using Settings defaults: {region} · {selectedLanguages.map((code) => languages[code] || code).join(', ')}</Txt>
-        <Fold title="Research filters">
+        <Fold title="Research filters" open>
           <Choices
             label="Publication period"
             options={['Last 7 days', 'Last 30 days', 'Last 90 days', 'Any time']}
@@ -245,7 +254,7 @@ export default function Discover() {
           </Fold>
           <Fold title="Emerging Topics" open>
             <Txt muted>Recent examples, not proof of an emerging trend.</Txt>
-            {report.videos.slice(0, 2).map((v) => (
+            {[...report.videos].sort((a, b) => Date.parse(b.publishedAt) - Date.parse(a.publishedAt)).slice(0, 2).map((v) => (
               <View style={{ gap: 6 }} key={v.id}>
                 <MediaPreview uri={v.thumbnail} aspectRatio={16 / 9} onPress={() => void Linking.openURL('https://www.youtube.com/watch?v=' + v.id).catch(() => {})} alt={v.title} />
                 <Txt>{v.title}</Txt>
@@ -312,6 +321,10 @@ export default function Discover() {
             </View>
           )}
           <Fold title="Relevant Videos" open>
+            {report.videos.length > 1 && (
+              <Choices label="Sort this sample" options={['Newest', 'Most Views', 'Most Likes']} selected={[sort]} onChange={(values) => setSort(values[0])} />
+            )}
+            <Txt muted>Sort order applies to the returned sample only. View and like counts are fetched from YouTube when available; unavailable counts are not estimated.</Txt>
             {!report.videos.length ? (
               <Empty
                 title="No videos matched this search."
@@ -319,9 +332,14 @@ export default function Discover() {
                 onPress={() => setReportId('')}
               />
             ) : (
-              report.videos.map((v) => <VideoRow key={v.id} video={v} topic={topic} />)
+              sortedReportVideos.map((v) => <VideoRow key={v.id} video={v} topic={topic} />)
             )}
           </Fold>
+          {report.videos.length > 0 && (
+            <Action secondary onPress={() => router.push({ pathname: '/trend-intelligence', params: { topic: report.input.topic } })}>
+              Explore more results with paginated YouTube search
+            </Action>
+          )}
         </>
       )}
       {!report && !busy && reports.length > 0 && (
