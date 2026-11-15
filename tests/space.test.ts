@@ -209,26 +209,26 @@ void test('A failed forced refresh labels last-good feed data stale and retries 
 
 void test('Space News retries only the unavailable official feed instead of caching partial results', async () => {
   const nasa = SPACE_NEWS_SOURCES.find((source) => source.id === 'nasa')!;
-  const jpl = SPACE_NEWS_SOURCES.find((source) => source.id === 'jpl')!;
-  let jplAttempts = 0;
+  const science = SPACE_NEWS_SOURCES.find((source) => source.id === 'esa-science')!;
+  let scienceAttempts = 0;
   const fetcher: typeof fetch = async (input) => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
-    if (url === jpl.url || url === jpl.fallbackUrls?.[0]) {
-      jplAttempts++;
-      if (jplAttempts <= 2) return new Response('Unavailable', { status: 503 });
-      return new Response('<rss><item><title>JPL Webb update</title><link>https://www.jpl.nasa.gov/recovered</link></item></rss>', { status: 200 });
+    if (url === science.url || url === science.fallbackUrls?.[0]) {
+      scienceAttempts++;
+      if (scienceAttempts <= 2) return new Response('Unavailable', { status: 503 });
+      return new Response('<rss><item><title>ESA science story</title><link>https://www.esa.int/science-recovered</link></item></rss>', { status: 200 });
     }
     if (url === nasa.url) return new Response('<rss><item><title>NASA Webb telescope story</title><link>https://www.nasa.gov/working</link></item></rss>', { status: 200 });
     throw new Error('Unexpected feed URL: ' + url);
   };
-  const first = await fetchSpaceNews([nasa.id, jpl.id], fetcher, true);
+  const first = await fetchSpaceNews([nasa.id, science.id], fetcher, true);
   assert.equal(first.items.length, 1);
   assert.equal(first.warnings.length, 1);
   assert.match(first.warnings[0], /HTTP 503/);
-  const second = await fetchSpaceNews([nasa.id, jpl.id], fetcher);
+  const second = await fetchSpaceNews([nasa.id, science.id], fetcher);
   assert.equal(second.items.length, 2);
   assert.equal(second.warnings.length, 0);
-  assert.equal(jplAttempts, 3);
+  assert.equal(scienceAttempts, 3);
 });
 
 void test('RSS parser extracts only trusted official HTTPS image URLs', () => {
