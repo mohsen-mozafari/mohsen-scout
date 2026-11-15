@@ -116,6 +116,8 @@ export type Note = {
   tags: string[];
   blocks: NoteBlock[];
   updatedAt: number;
+  /** Optional relationship to a personal research idea. */
+  ideaId?: string;
 };
 export type Opinion = {
   id: string;
