@@ -31,6 +31,15 @@ YouTube policy sources reviewed:
 
 Do not assume the optional audited analytics amendment applies to this app or that every video ID is exempt from retention.
 
+## Personal research continuity — version 1.3.0
+
+- Keep one local Idea as the anchor when the user moves from an official source story into YouTube sampling, Wikimedia comparison or Deep Research. Reuse the same idea by source URL and topic rather than creating duplicates.
+- A linked YouTube report may reference existing expiring report/video metadata. Only a user-selected video may be saved as a durable personal bookmark; save its URL reference only, not its API title, description, thumbnail or statistics.
+- Deep Research and Wikimedia comparison notes may carry an optional local ideaId relationship. Keep old notes and version-1 backups valid when that relationship is absent.
+- Detail pages should act as a small personal research hub: continue research in existing routes and open only notes/references explicitly linked to that idea.
+- Do not introduce teams, accounts, billing, server infrastructure, project boards or background research workflows. Prefer existing SQLite personal tables, current API providers and manual actions.
+- Keep OpenRouter strictly opt-in and editorial-only; never send attached research evidence or YouTube metadata as part of these new connections.
+
 ## Space research provider rules
 
 - The Space Radar screens are a unified extension of the existing product. Preserve the original YouTube research route (/youtube), Opportunities, Library, Notes, Settings, credentials, quota accounting, SQLite schema boundaries, backup/restore and scheduler.
