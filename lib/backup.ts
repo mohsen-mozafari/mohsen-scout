@@ -77,7 +77,8 @@ const preferences = z.object({
   defaultResearchDays: z.union([z.literal(0), z.literal(7), z.literal(30), z.literal(90)]).optional().default(30),
   spaceNewsSources: z.array(z.enum(['nasa', 'jpl', 'esa-space', 'esa-science'])).max(4).optional().default(['nasa', 'jpl', 'esa-space', 'esa-science']),
   spaceInterestLanguage: z.enum(['en', 'fa', 'de', 'fr', 'es', 'ja']).optional().default('en'),
-  selectedSpaceNiche: z.string().max(100).optional().default('exoplanets'),
+  selectedSpaceNiche: z.string().max(100).optional().default('all'),
+  customSpaceNiche: z.string().max(160).optional().default(''),
 });
 const backupSchema = z.object({
   app: z.literal('MOHSEN SCOUT'),
@@ -125,6 +126,7 @@ export function exportBackup(data: LocalData) {
           spaceNewsSources: data.preferences.spaceNewsSources,
           spaceInterestLanguage: data.preferences.spaceInterestLanguage,
           selectedSpaceNiche: data.preferences.selectedSpaceNiche,
+          customSpaceNiche: data.preferences.customSpaceNiche,
         },
       },
     },

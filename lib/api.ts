@@ -74,7 +74,7 @@ export async function requestJson(
       if (response.status === 404)
         throw new ApiError(isOpenRouter
           ? 'That model or endpoint is unavailable. Refresh the model list.'
-          : 'The requested data endpoint was not found.', 'endpoint');
+          : 'The requested data endpoint was not found.', 'model');
       if (response.status === 429 || response.status >= 500) {
         if (attempt < attempts - 1) {
           const delay = retryDelayMs(

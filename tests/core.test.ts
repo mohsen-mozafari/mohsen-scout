@@ -209,6 +209,7 @@ void test('Storage: API metadata expires at 29 days while personal notes and lin
 void test('Backup: round trip preserves personal data and strips all API metadata/opinions/schedules', () => {
   const d = defaults();
   d.videos = [video];
+  d.preferences.customSpaceNiche = 'JWST, NIRSpec';
   d.opinions = [
     { id: 'x', ideaId: 'x', text: 'private AI response', model: 'mock', createdAt: now },
   ];
@@ -230,6 +231,7 @@ void test('Backup: round trip preserves personal data and strips all API metadat
   assert.equal(imported.notes[0].blocks[0].checked, true);
   assert.equal(imported.videos.length, 0);
   assert.equal(imported.preferences.schedule, 'Manual');
+  assert.equal(imported.preferences.customSpaceNiche, 'JWST, NIRSpec');
 });
 void test('Backup: malformed/oversized/wrong version files rejected before mutation', () => {
   assert.throws(() => importBackup('{'));
