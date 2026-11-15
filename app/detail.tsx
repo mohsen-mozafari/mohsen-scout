@@ -178,12 +178,12 @@ export default function Detail() {
           </Txt>
           {idea.sourceUrl ? (
             <Action secondary onPress={() => void Linking.openURL(idea.sourceUrl!).catch(() => {})}>
-              Open original source · {idea.sourceName || 'Publisher'}
+              {'Open original source · ' + (idea.sourceName || 'Publisher')}
             </Action>
           ) : null}
           <Panel>
             <Heading>Continue this research</Heading>
-            <Txt muted>Each tool opens with this idea's topic. Results can be connected back here without creating a second copy of the idea.</Txt>
+            <Txt muted>Each tool opens with this idea&apos;s topic. Results can be connected back here without creating a second copy of the idea.</Txt>
             <Action secondary onPress={() => router.push({ pathname: '/youtube', params: { topic: idea.topic, idea: idea.id } })}>YouTube research</Action>
             <Action secondary onPress={() => router.push({ pathname: '/trend-intelligence', params: { topic: idea.topic, idea: idea.id } })}>Explore a paginated YouTube sample</Action>
             <Action secondary onPress={() => router.push({ pathname: '/search-demand', params: { topic: idea.topic, idea: idea.id } })}>Compare public interest</Action>
