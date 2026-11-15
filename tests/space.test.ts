@@ -98,8 +98,8 @@ void test('Wikimedia provider returns language-scoped article pageviews, not a s
   const mockedFetch: typeof fetch = async (input, init) => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
     const headers = new Headers(init?.headers);
-    assert.match(headers.get('User-Agent') ?? '', /^MOHSEN-SCOUT\/1\.2/);
-    assert.match(headers.get('Api-User-Agent') ?? '', /^MOHSEN-SCOUT\/1\.2/);
+    assert.match(headers.get('User-Agent') ?? '', /^MOHSEN-SCOUT\/1\.3/);
+    assert.match(headers.get('Api-User-Agent') ?? '', /^MOHSEN-SCOUT\/1\.3/);
     calls.push(url);
     if (url.includes('/w/api.php')) {
       return new Response(JSON.stringify({ query: { search: [{ title: 'Exoplanet' }] } }), { status: 200 });
