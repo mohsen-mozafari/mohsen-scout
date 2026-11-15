@@ -3,6 +3,7 @@ import * as TaskManager from 'expo-task-manager';
 import * as Notifications from 'expo-notifications';
 import { useScout } from './store';
 import { type Preferences } from './types';
+import { researchNotification } from './schedule';
 const TASK = 'mohsen-scout-research';
 if (!TaskManager.isTaskDefined(TASK))
   TaskManager.defineTask(TASK, async () => {
@@ -16,11 +17,7 @@ if (!TaskManager.isTaskDefined(TASK))
       const result = await useScout.getState().research(prefs.lastInput);
       if (!result) return BackgroundTask.BackgroundTaskResult.Failed;
       const permissions = await Notifications.getPermissionsAsync();
-      if (permissions.granted)
-        await Notifications.scheduleNotificationAsync({
-          content: { title: 'MOHSEN SCOUT', body: 'Your scheduled research is ready to review.' },
-          trigger: null,
-        });
+      if (permissions.granted) await Notifications.scheduleNotificationAsync(researchNotification);
       return BackgroundTask.BackgroundTaskResult.Success;
     } catch {
       return BackgroundTask.BackgroundTaskResult.Failed;

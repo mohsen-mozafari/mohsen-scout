@@ -16,6 +16,7 @@ import {
   type Fetcher,
 } from './api';
 import { buildIdeas } from './engine';
+import { scheduleChecks } from '../tests/schedule.cases';
 export type TestResult = { name: string; passed: boolean; detail?: string };
 const check = (value: unknown, message = 'Assertion failed') => {
   if (!value) throw new Error(message);
@@ -604,6 +605,7 @@ export async function runDiagnostics(): Promise<TestResult[]> {
       },
     ],
   ];
+  cases.push(...scheduleChecks);
   return Promise.all(
     cases.map(async ([name, run]) => {
       try {

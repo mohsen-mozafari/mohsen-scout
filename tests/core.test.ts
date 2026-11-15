@@ -1,4 +1,6 @@
 import { test } from 'node:test';
+import { scheduleChecks } from './schedule.cases';
+for (const [name, run] of scheduleChecks) void test(name, run);
 import assert from 'node:assert/strict';
 import { exportBackup, importBackup, personalLinks, restorePersonalData } from '../lib/backup';
 import { moveNoteBlock } from '../lib/utils';

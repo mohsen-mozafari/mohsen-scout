@@ -23,6 +23,7 @@ import { getFreeModels, testYouTube, testOpenRouter, quotaDay } from '@/lib/api'
 import { exportBackup, importBackup, restorePersonalData } from '@/lib/backup';
 import { shareText, readBackup, shareApk } from '@/lib/transfer';
 import { configureSchedule, enableNotifications, scheduleNotice } from '@/lib/scheduler';
+import { commitWithSchedule } from '@/lib/schedule';
 import { router } from 'expo-router';
 import { palette as p } from '@/lib/theme';
 function CredentialSection({ kind, label }: { kind: Credential; label: string }) {
@@ -131,8 +132,14 @@ export default function Settings() {
   const save = () =>
     void op.run(async () => {
       if (!prefs.languages.length) throw new Error('Choose at least one default language.');
-      await configureSchedule(prefs);
-      await useScout.getState().commit((d) => ({ ...d, preferences: prefs }));
+      const current = useScout.getState();
+      await commitWithSchedule(
+        current.ready,
+        current.data.preferences,
+        prefs,
+        () => current.commit((d) => ({ ...d, preferences: prefs })),
+        configureSchedule,
+      );
     }, 'Preferences saved.');
   const loadModels = () =>
     void op.run(async () => {
@@ -349,8 +356,14 @@ export default function Settings() {
               busy={op.busy}
               onPress={() =>
                 void op.run(async () => {
-                  await configureSchedule(restore.preferences);
-                  await useScout.getState().commit((d) => restorePersonalData(d, restore));
+                  const current = useScout.getState();
+                  await commitWithSchedule(
+                    current.ready,
+                    current.data.preferences,
+                    restore.preferences,
+                    () => current.commit((d) => restorePersonalData(d, restore)),
+                    configureSchedule,
+                  );
                   setRestore(undefined);
                 }, 'Backup restored. Re-enter keys on a new phone.')
               }
@@ -399,10 +412,18 @@ export default function Settings() {
               return;
             }
             void op.run(async () => {
-              await configureSchedule(defaults().preferences);
-              await deleteKey('youtube');
-              await deleteKey('openrouter');
-              await useScout.getState().commit(() => defaults());
+              const current = useScout.getState();
+              await commitWithSchedule(
+                current.ready,
+                current.data.preferences,
+                defaults().preferences,
+                async () => {
+                  await deleteKey('youtube');
+                  await deleteKey('openrouter');
+                  await current.commit(() => defaults());
+                },
+                configureSchedule,
+              );
               setConfirm('');
             }, 'Local data and keys cleared.');
           }}
