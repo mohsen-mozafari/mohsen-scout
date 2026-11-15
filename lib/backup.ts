@@ -25,6 +25,7 @@ const noteSchema = z.object({
   folder: text,
   tags: z.array(text).max(100),
   updatedAt: timestamp,
+  ideaId: identifierSchema.optional(),
   blocks: z
     .array(
       z.object({
