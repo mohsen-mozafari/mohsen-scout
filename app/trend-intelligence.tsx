@@ -48,7 +48,7 @@ export default function TrendIntelligence() {
   const run = () => void op.run(async () => {
     const search = {
       topic: topic.trim(),
-      days: (days === '7' ? 7 : days === '90' ? 90 : days === '0' ? 0 : 30) as 0 | 7 | 30 | 90,
+      days: days === '7' ? 7 : days === '90' ? 90 : days === '0' ? 0 : 30,
       sort,
     };
     if (!search.topic) throw new Error('Enter a topic before sampling YouTube.');

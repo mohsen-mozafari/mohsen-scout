@@ -39,7 +39,6 @@ function DiscoveryDashboardReady() {
   const [analyses, setAnalyses] = useState<Record<string, InternalResearchResult>>({});
   const [nicheSuggestions, setNicheSuggestions] = useState<SpaceNicheSuggestion[]>([]);
   const [radarBrief, setRadarBrief] = useState<InternalResearchResult>();
-  const [autoScanning, setAutoScanning] = useState(false);
   const op = useOperation();
   const niche = SPACE_NICHES.find((item) => item.id === preferences.selectedSpaceNiche);
   const nicheTitle = preferences.selectedSpaceNiche === 'all'
@@ -67,7 +66,6 @@ function DiscoveryDashboardReady() {
   };
   useEffect(() => {
     let active = true;
-    setAutoScanning(true);
     void fetchSpaceNews(preferences.spaceNewsSources).then((result) => {
       if (!active) return;
       setOpportunities(buildDiscoveryOpportunities(result.items, preferences.selectedSpaceNiche, Date.now(), preferences.customSpaceNiche));
@@ -84,10 +82,9 @@ function DiscoveryDashboardReady() {
     }).catch(() => {
       if (active) setWarnings(['Official news feeds could not be reached. Check the network and retry.']);
     }).finally(() => {
-      if (active) setAutoScanning(false);
     });
     return () => { active = false; };
-  }, [preferences.spaceNewsSources, preferences.selectedSpaceNiche, preferences.customSpaceNiche]);
+  }, [preferences.spaceNewsSources, preferences.selectedSpaceNiche, preferences.customSpaceNiche, discoveryTopic]);
   const discover = () => void op.run(async () => {
     const result = await fetchSpaceNews(preferences.spaceNewsSources, fetch, true);
     applyScan(result);
@@ -170,8 +167,8 @@ function DiscoveryDashboardReady() {
         <Heading>{nicheTitle}</Heading>
         <Txt muted>{niche?.description ?? 'The app checks all selected NASA, JPL and ESA feeds, then groups their current reports into research topics.'}</Txt>
         <Txt muted>Research defaults are managed in Settings. Current region: {preferences.region} · Languages: {preferences.languages.map((code) => languages[code] ?? code).join(', ')}</Txt>
-        <Action busy={op.busy || autoScanning} onPress={discover}>Refresh Space Radar</Action>
-        <Action secondary onPress={() => router.push({ pathname: '/youtube', params: { topic: niche.topic } })}>Search Manually</Action>
+        <Action busy={op.busy} onPress={discover}>Refresh Space Radar</Action>
+        <Action secondary onPress={() => router.push({ pathname: '/youtube', params: { topic: niche?.topic ?? discoveryTopic } })}>Search Manually</Action>
         <Action secondary onPress={() => router.push('/settings')}>Change discovery settings</Action>
         {lastScannedAt ? <Txt muted>Last scanned {new Date(lastScannedAt).toLocaleString()}</Txt> : <Txt muted>Checking official feeds when Space Radar opens…</Txt>}
         <Txt muted>News and niche suggestions refresh on entry using a short in-memory cache. No background polling or YouTube quota is used. The local Story Engine analyzes loaded reports without sending them to AI.</Txt>
@@ -189,7 +186,7 @@ function DiscoveryDashboardReady() {
               <Heading>{suggestion.title}</Heading>
               <Txt muted>{suggestion.description}</Txt>
               <Txt muted>{suggestion.matchedStories} matching publisher stories{suggestion.newestAt ? ' · latest ' + new Date(suggestion.newestAt).toLocaleDateString() : ''}</Txt>
-              <Action secondary onPress={() => router.push({ pathname: '/youtube', params: { topic: suggestion.topic } })}>Research {suggestion.title}</Action>
+              <Action secondary onPress={() => router.push({ pathname: '/youtube', params: { topic: suggestion.topic } })}>{'Research ' + suggestion.title}</Action>
             </View>
           ))}
         </Panel>

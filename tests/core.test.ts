@@ -526,13 +526,14 @@ void test('News translation sends only the selected RSS title and summary on exp
   let calls = 0;
   let requestBody: unknown;
   let authorization = '';
-  const fetcher: Fetcher = async (url, init) => {
+  const translationFetcher: Fetcher = async (url, init) => {
     calls++;
     assert.equal(typeof url === 'string' ? new URL(url).hostname : '', 'openrouter.ai');
     assert.equal(init?.method, 'POST');
     const headers = new Headers(init?.headers);
     authorization = headers.get('Authorization') ?? '';
-    requestBody = JSON.parse(String(init?.body));
+    const bodyText = typeof init?.body === 'string' ? init.body : '';
+    requestBody = JSON.parse(bodyText);
     return response({ choices: [{ message: { content: JSON.stringify({
       title: 'کشف تازه تلسکوپ وب',
       summary: 'این رصد تازه، شواهدی مقدماتی درباره جو سیاره ارائه می‌کند.',
@@ -543,7 +544,7 @@ void test('News translation sends only the selected RSS title and summary on exp
     'mock/free-model',
     'New Webb observation',
     'The observation provides preliminary evidence about an exoplanet atmosphere.',
-    fetcher,
+    translationFetcher,
   );
   assert.equal(translated.title, 'کشف تازه تلسکوپ وب');
   assert.match(translated.summary, /شواهدی مقدماتی/);
@@ -558,7 +559,7 @@ void test('News translation sends only the selected RSS title and summary on exp
     'mock/free-model',
     'New Webb observation',
     'The observation provides preliminary evidence about an exoplanet atmosphere.',
-    fetcher,
+    translationFetcher,
   );
   assert.equal(calls, 1);
 });
