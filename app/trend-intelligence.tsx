@@ -10,8 +10,9 @@ import { MediaPreview } from '@/components/MediaPreview';
 const formatCount = (value: number | null, label: string) => value === null ? label + ' unavailable' : value.toLocaleString() + ' ' + label;
 
 export default function TrendIntelligence() {
-  const params = useLocalSearchParams<{ topic?: string }>();
+  const params = useLocalSearchParams<{ topic?: string; idea?: string }>();
   const preferences = useScout((state) => state.data.preferences);
+  const linkedIdea = useScout((state) => state.data.ideas.find((idea) => idea.id === params.idea));
   const [topic, setTopic] = useState(typeof params.topic === 'string' ? params.topic : '');
   const [videos, setVideos] = useState<YouTubeSampleVideo[]>([]);
   const [warning, setWarning] = useState('');
@@ -46,9 +47,10 @@ export default function TrendIntelligence() {
     setActiveSearch(search);
   };
   const run = () => void op.run(async () => {
+    const selectedDays: 0 | 7 | 30 | 90 = days === '7' ? 7 : days === '90' ? 90 : days === '0' ? 0 : 30;
     const search = {
       topic: topic.trim(),
-      days: days === '7' ? 7 : days === '90' ? 90 : days === '0' ? 0 : 30,
+      days: selectedDays,
       sort,
     };
     if (!search.topic) throw new Error('Enter a topic before sampling YouTube.');
@@ -76,6 +78,7 @@ export default function TrendIntelligence() {
   return (
     <Page title="TREND INTELLIGENCE">
       <Txt muted>Measure YouTube separately from search interest and publisher news. This view uses the official YouTube Data API, not scraping.</Txt>
+      {linkedIdea ? <Txt muted>Research context: {linkedIdea.topic}. Only video links you explicitly save below become durable personal references.</Txt> : null}
       <Panel>
         <Field label="Space topic" value={topic} onChange={(value) => { setTopic(value); setNextPageToken(''); }} placeholder="e.g. exoplanet atmosphere discoveries" />
         <Choices
@@ -117,6 +120,19 @@ export default function TrendIntelligence() {
             <Txt muted>Published {new Date(video.publishedAt).toLocaleDateString()}</Txt>
           </View>
           <Action secondary onPress={() => void Linking.openURL(video.url).catch(() => {})}>Open video on YouTube</Action>
+            {linkedIdea ? (
+              <Action
+                secondary
+                busy={op.busy}
+                disabled={linkedIdea.videoIds.includes(video.id)}
+                onPress={() => void op.run(
+                  () => useScout.getState().bookmarkVideoForIdea(linkedIdea.id, video.id),
+                  'Personal video reference saved to this idea.',
+                )}
+              >
+                {linkedIdea.videoIds.includes(video.id) ? 'Saved to this idea' : 'Save link to this idea'}
+              </Action>
+            ) : null}
         </Panel>
       ))}
       {nextPageToken.length > 0 && <Action secondary busy={op.busy} onPress={loadMore}>Load next 25 videos</Action>}
