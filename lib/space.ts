@@ -173,7 +173,7 @@ export async function fetchSpaceNews(
           headers: {
             Accept: 'application/rss+xml, application/atom+xml, application/xml, text/xml;q=0.9, */*;q=0.5',
             'Cache-Control': 'no-cache',
-            'User-Agent': 'MOHSEN-SCOUT/1.2 (+https://github.com/mohsen-mozafari/mohsen-scout)',
+            'User-Agent': 'MOHSEN-SCOUT/1.3 (+https://github.com/mohsen-mozafari/mohsen-scout)',
           },
           signal: controller.signal,
         });
@@ -381,8 +381,8 @@ export async function getWikipediaSignal(
   const searchParams = new URLSearchParams({ action: 'query', list: 'search', srsearch: query, srlimit: '1', format: 'json', origin: '*' });
   const searchUrl = 'https://' + language + '.wikipedia.org/w/api.php?' + searchParams.toString();
   const wikiHeaders = {
-    'User-Agent': 'MOHSEN-SCOUT/1.2 (+https://github.com/mohsen-mozafari/mohsen-scout)',
-    'Api-User-Agent': 'MOHSEN-SCOUT/1.2 (https://github.com/mohsen-mozafari/mohsen-scout)',
+    'User-Agent': 'MOHSEN-SCOUT/1.3 (+https://github.com/mohsen-mozafari/mohsen-scout)',
+    'Api-User-Agent': 'MOHSEN-SCOUT/1.3 (https://github.com/mohsen-mozafari/mohsen-scout)',
   };
   const search = wikiSearchSchema.safeParse(await requestJson(searchUrl, { headers: wikiHeaders }, fetcher));
   if (!search.success || !search.data.query.search.length) throw new Error('No Wikipedia article matched "' + query + '". Try a more specific phrase.');
