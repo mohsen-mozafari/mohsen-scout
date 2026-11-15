@@ -43,7 +43,7 @@ export default function TabLayout() {
           name="index"
           options={{
             title: 'MOHSEN SCOUT',
-            tabBarLabel: 'Discover',
+            tabBarLabel: 'Space Radar',
             tabBarIcon: ({ color }) => <Compass size={22} strokeWidth={1.8} color={color} />,
           }}
         />

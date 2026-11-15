@@ -1,381 +1,149 @@
-import { useCallback, useState } from 'react';
-import { Text, View } from 'react-native';
-import { router, useFocusEffect } from 'expo-router';
-import { Button, Skeleton } from 'heroui-native';
-import { ArrowRight, SlidersHorizontal, Sparkles, KeyRound, Search } from 'lucide-react-native';
-import { LinearGradient } from '@/components/ui/primitives/LinearGradient';
+import { useEffect, useState } from 'react';
+import { Linking, View, Text } from 'react-native';
+import { router } from 'expo-router';
+import { Button } from 'heroui-native';
 import {
-  Page,
-  Panel,
-  Txt,
-  Heading,
-  Field,
-  Choices,
-  Action,
-  Fold,
-  Empty,
-  styles,
-  useOperation,
-  ErrorBox,
+  Page, Panel, Heading, Txt, Choices, Action, Fold, styles, ErrorBox, useOperation,
 } from '@/components/ScoutUI';
-import { VideoRow } from '@/components/VideoRow';
-import { palette as p } from '@/lib/theme';
 import { useScout } from '@/lib/store';
-import { regions, languages, type ResearchInput, type Report } from '@/lib/types';
-import { relatedQueries } from '@/lib/api';
-import { limitations } from '@/lib/engine';
-import { getKey } from '@/lib/vault';
-export default function Discover() {
-  const preferences = useScout((s) => s.data.preferences);
-  const ready = useScout((s) => s.ready);
-  const busy = useScout((s) => s.busy);
-  const progress = useScout((s) => s.progress);
-  const reports = useScout((s) => s.data.reports);
-  const ideas = useScout((s) => s.data.ideas);
-  const [topic, setTopic] = useState('');
-  const [region, setRegion] = useState<ResearchInput['region']>(preferences.region);
-  const [selectedLanguages, setLanguages] = useState(preferences.languages);
-  const [period, setPeriod] = useState('Last 30 days');
-  const [duration, setDuration] = useState('Any duration');
-  const [category, setCategory] = useState('All categories');
-  const [maximum, setMaximum] = useState('25');
-  const [reportId, setReportId] = useState('');
-  const [hasKey, setHasKey] = useState(false);
+import {
+  SPACE_NICHES, SPACE_NEWS_SOURCES, DEFAULT_SPACE_NEWS_SOURCES,
+  fetchSpaceNews, newsForNiche,
+  type SpaceNewsSourceId, type WikiLanguage,
+} from '@/lib/space';
+
+export default function SpaceRadar() {
+  const preferences = useScout((state) => state.data.preferences);
+  const ready = useScout((state) => state.ready);
+  const [selectedId, setSelectedId] = useState(preferences.selectedSpaceNiche || 'exoplanets');
+  const [sources, setSources] = useState<SpaceNewsSourceId[]>(preferences.spaceNewsSources ?? DEFAULT_SPACE_NEWS_SOURCES);
+  const [language, setLanguage] = useState<WikiLanguage>(preferences.spaceInterestLanguage ?? 'en');
+  const [news, setNews] = useState<Awaited<ReturnType<typeof fetchSpaceNews>>>();
   const op = useOperation();
-  const [previousDefaults, setPreviousDefaults] = useState({
-    ready,
-    region: preferences.region,
-    languages: preferences.languages,
-  });
-  if (
-    previousDefaults.ready !== ready ||
-    previousDefaults.region !== preferences.region ||
-    previousDefaults.languages !== preferences.languages
-  ) {
-    setPreviousDefaults({ ready, region: preferences.region, languages: preferences.languages });
-    if (ready) {
-      setRegion(preferences.region);
-      setLanguages(preferences.languages);
-    }
-  }
-  useFocusEffect(
-    useCallback(() => {
-      let active = true;
-      void getKey('youtube').then((key) => {
-        if (active) setHasKey(Boolean(key));
-      });
-      return () => {
-        active = false;
-      };
-    }, []),
-  );
-  const report: Report | undefined = reports.find((r) => r.id === reportId);
-  const run = async () => {
-    const input: ResearchInput = {
-      topic,
-      region,
-      languages: selectedLanguages,
-      days:
-        period === 'Last 7 days'
-          ? 7
-          : period === 'Last 90 days'
-            ? 90
-            : period === 'Any time'
-              ? 0
-              : 30,
-      duration:
-        duration === 'Short (<4 min)'
-          ? 'short'
-          : duration === 'Medium (4–20 min)'
-            ? 'medium'
-            : duration === 'Long (>20 min)'
-              ? 'long'
-              : 'any',
-      category:
-        category === 'Education'
-          ? '27'
-          : category === 'Science & tech'
-            ? '28'
-            : category === 'Entertainment'
-              ? '24'
-              : category === 'How-to & style'
-                ? '26'
-                : '',
-      maxResults: Number(maximum),
-    };
-    const result = await useScout.getState().research(input);
-    if (result) setReportId(result.id);
-  };
+  const selected = SPACE_NICHES.find((niche) => niche.id === selectedId) ?? SPACE_NICHES[0];
+
+  useEffect(() => {
+    setSelectedId(preferences.selectedSpaceNiche || 'exoplanets');
+    setSources(preferences.spaceNewsSources ?? DEFAULT_SPACE_NEWS_SOURCES);
+    setLanguage(preferences.spaceInterestLanguage ?? 'en');
+  }, [preferences.selectedSpaceNiche, preferences.spaceNewsSources, preferences.spaceInterestLanguage]);
+
+  const saveSettings = () => void op.run(async () => {
+    if (!ready) throw new Error('Local settings are still loading.');
+    await useScout.getState().commit((data) => ({
+      ...data,
+      preferences: {
+        ...data.preferences,
+        selectedSpaceNiche: selectedId,
+        spaceNewsSources: sources,
+        spaceInterestLanguage: language,
+      },
+    }));
+  }, 'Space preferences saved on this device.');
+
+  const scan = () => void op.run(async () => {
+    const result = await fetchSpaceNews(sources);
+    setNews(result);
+    if (!result.items.length && result.warnings.length) throw new Error(result.warnings.join(' '));
+  }, 'Official space feeds refreshed.');
+
+  const matched = news ? newsForNiche(news.items, selectedId) : [];
+  const nicheCoverage = news ? SPACE_NICHES.map((niche) => ({
+    ...niche,
+    items: newsForNiche(news.items, niche.id),
+  })).sort((a, b) => b.items.length - a.items.length) : [];
+  const navigate = (path: '/cosmic-news' | '/trend-intelligence' | '/search-demand' | '/deep-research') =>
+    router.push({ pathname: path, params: { niche: selectedId, topic: selected.topic } });
+
   return (
-    <Page>
-      <View style={{ gap: 10, paddingVertical: 4 }}>
-        <Text style={[styles.title, { fontSize: 38, lineHeight: 44 }]}>
-          Find your{'\n'}
-          <Text style={{ color: p.purple }}>next angle.</Text>
-        </Text>
-        <Txt muted>A research desk for your next YouTube idea.</Txt>
+    <Page title="SPACE RADAR">
+      <View style={{ gap: 8 }}>
+        <Text style={[styles.title, { fontSize: 34, lineHeight: 40 }]}>Find the next space story.</Text>
+        <Txt muted>One research desk for space niches, primary-source news, YouTube competition and public-interest signals.</Txt>
       </View>
       <Panel>
-        <Field
-          label="What are you exploring?"
-          value={topic}
-          onChange={setTopic}
-          placeholder="e.g. Small-space home studios"
-        />
+        <Heading>Choose a niche</Heading>
         <Choices
-          label="Target region"
-          options={regions}
-          selected={[region]}
-          onChange={(values) => setRegion(values[0])}
+          options={SPACE_NICHES.map((niche) => niche.title)}
+          selected={[selected.title]}
+          onChange={(values) => {
+            const next = SPACE_NICHES.find((niche) => niche.title === values[0]);
+            if (next) setSelectedId(next.id);
+          }}
         />
-        <Choices
-          label="Video language"
-          options={['English', 'Persian', 'Spanish']}
-          selected={selectedLanguages.map((code) => languages[code])}
-          multiple
-          onChange={(names) =>
-            setLanguages([
-              ...selectedLanguages.filter((code) => !['en', 'fa', 'es'].includes(code)),
-              ...names
-                .map((name) => Object.keys(languages).find((code) => languages[code] === name)!)
-                .filter(Boolean),
-            ])
-          }
-        />
-        <Fold title={`More languages · ${selectedLanguages.length} selected`}>
-          <Choices
-            options={Object.values(languages).filter(
-              (name) => !['English', 'Persian', 'Spanish'].includes(name),
-            )}
-            selected={selectedLanguages.map((code) => languages[code])}
-            multiple
-            onChange={(names) =>
-              setLanguages([
-                ...selectedLanguages.filter((code) => ['en', 'fa', 'es'].includes(code)),
-                ...names
-                  .map((name) => Object.keys(languages).find((code) => languages[code] === name)!)
-                  .filter(Boolean),
-              ])
-            }
-          />
-        </Fold>
-        <Fold title="Research filters">
-          <Choices
-            label="Publication period"
-            options={['Last 7 days', 'Last 30 days', 'Last 90 days', 'Any time']}
-            selected={[period]}
-            onChange={(v) => setPeriod(v[0])}
-          />
-          <Choices
-            label="Duration"
-            options={['Any duration', 'Short (<4 min)', 'Medium (4–20 min)', 'Long (>20 min)']}
-            selected={[duration]}
-            onChange={(v) => setDuration(v[0])}
-          />
-          <Choices
-            label="Category"
-            options={[
-              'All categories',
-              'Education',
-              'Science & tech',
-              'Entertainment',
-              'How-to & style',
-            ]}
-            selected={[category]}
-            onChange={(v) => setCategory(v[0])}
-          />
-          <Choices
-            label="Maximum unique videos"
-            options={['10', '25', '50', '100']}
-            selected={[maximum]}
-            onChange={(v) => setMaximum(v[0])}
-          />
-        </Fold>
-        <View style={{ borderRadius: 16, overflow: 'hidden' }}>
-          <LinearGradient
-            colors={[p.violet, p.indigo]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={{ padding: 2 }}
-          >
-            <Button
-              className="rounded-2xl bg-transparent"
-              isDisabled={busy || !ready}
-              onPress={() => void run()}
-            >
-              <Search size={18} color={p.white} strokeWidth={1.8} />
-              <Button.Label>{busy ? 'Researching…' : 'START RESEARCH'}</Button.Label>
-              <ArrowRight size={18} color={p.white} strokeWidth={1.8} />
-            </Button>
-          </LinearGradient>
+        <View style={{ gap: 6 }}>
+          <Text style={styles.heading}>{selected.title}</Text>
+          <Txt muted>{selected.description}</Txt>
+          <Text style={styles.badge}>Starting query: {selected.topic}</Text>
         </View>
+        <Action disabled={!ready || op.busy} onPress={saveSettings} busy={op.busy}>Save niche & source settings</Action>
       </Panel>
-      {Boolean(topic.trim()) && !report && (
-        <View style={{ gap: 12 }}>
-          <Heading>Query map</Heading>
-          {relatedQueries(topic).map((query, index) => (
-            <View style={[styles.row, { marginLeft: index ? 16 : 0 }]} key={query}>
-              <View
-                style={{
-                  width: index ? 18 : 6,
-                  height: index ? 1 : 6,
-                  backgroundColor: index ? p.border : p.purple,
-                  borderRadius: 3,
-                }}
-              />
-              <Txt muted>{query}</Txt>
-            </View>
-          ))}
-        </View>
-      )}
-      {!hasKey && !report && (
-        <Button
-          variant="tertiary"
-          onPress={() => router.push('/settings')}
-          className="h-auto justify-start px-0"
-        >
-          <KeyRound size={18} color={p.purple} />
-          <Button.Label className="flex-1">Set up your YouTube API key</Button.Label>
-          <ArrowRight size={16} color={p.muted} />
-        </Button>
-      )}
-      {busy && (
-        <View style={{ gap: 12 }}>
-          <Txt muted>{progress}</Txt>
-          <Skeleton className="h-36 rounded-2xl" />
-          <Skeleton className="h-16 rounded-2xl" />
-        </View>
-      )}
-      {Boolean(op.error) && (
-        <ErrorBox
-          message={op.error}
-          onRetry={() => void op.run(() => useScout.getState().analyze(reportId))}
+
+      <Panel>
+        <Heading>Official news providers</Heading>
+        <Txt muted>Choose which public RSS feeds are included in scans. No API key or account is required.</Txt>
+        <Choices
+          options={SPACE_NEWS_SOURCES.map((source) => source.label)}
+          selected={sources.map((id) => SPACE_NEWS_SOURCES.find((source) => source.id === id)?.label ?? id)}
+          multiple
+          onChange={(labels) => setSources(SPACE_NEWS_SOURCES.filter((source) => labels.includes(source.label)).map((source) => source.id))}
         />
-      )}
-      {report && (
-        <>
-          <View style={styles.row}>
-            <Heading>Research desk</Heading>
-            <Text style={[styles.badge, { marginLeft: 'auto' }]}>
-              {report.videos.length} {report.videos.length === 1 ? 'video' : 'videos'}
-            </Text>
+        <Heading>Public-interest language</Heading>
+        <Choices
+          options={['en', 'fa', 'de', 'fr', 'es', 'ja']}
+          selected={[language]}
+          onChange={(values) => setLanguage(values[0] as WikiLanguage)}
+        />
+        <Txt muted>Wikipedia language projects are not country-level audience data. This setting changes the language edition used for pageview comparisons.</Txt>
+        <Action secondary busy={op.busy} onPress={scan}>Scan official news now</Action>
+        {Boolean(news) && (
+          <View style={{ gap: 6 }}>
+            <Text style={styles.badge}>{news?.items.length ?? 0} source items · {matched.length} matched to {selected.title}</Text>
+            {news?.warnings.map((warning) => <Txt muted key={warning}>{warning}</Txt>)}
           </View>
-          {report.warnings.map((w) => (
-            <Txt muted key={w}>
-              {w}
-            </Txt>
-          ))}
-          <Fold title="Evidence & limitations">
-            <Txt muted>{limitations}</Txt>
-            <Txt muted>
-              Collected {new Date(report.createdAt).toLocaleString('en-US')}. Cached for 15 minutes.
-              Metadata expires after 29 days.
-            </Txt>
-            <Txt muted>Queries: {report.queries.join(' · ')}</Txt>
-          </Fold>
-          <Fold title="Emerging Topics" open>
-            <Txt muted>Recent examples, not proof of an emerging trend.</Txt>
-            {report.videos.slice(0, 2).map((v) => (
-              <View style={{ gap: 6 }} key={v.id}>
-                <Txt>{v.title}</Txt>
-                <Txt muted>
-                  Observed publication: {new Date(v.publishedAt).toLocaleDateString('en-US')}
-                </Txt>
-              </View>
+        )}
+        {news && (
+          <View style={{ gap: 10 }}>
+            <Heading>News coverage by niche</Heading>
+            <Txt muted>Ranked by matching items in the selected publisher feeds. This is source coverage, not audience demand or a trend score.</Txt>
+            {nicheCoverage.map((niche) => (
+              <Button key={niche.id} variant={selectedId === niche.id ? 'secondary' : 'tertiary'} className="h-auto justify-start px-0" onPress={() => setSelectedId(niche.id)}>
+                <View style={{ flex: 1, gap: 3 }}>
+                  <Button.Label>{niche.title}</Button.Label>
+                  <Text style={styles.badge}>{niche.items.length} matching source items</Text>
+                  {Boolean(niche.items[0]) && <Txt muted>{niche.items[0].title}</Txt>}
+                </View>
+              </Button>
             ))}
-          </Fold>
-          <Fold title="Popular Topics">
-            <Txt muted>
-              Examples ordered by YouTube popularity, not an estimate of market demand.
-            </Txt>
-            {report.videos
-              .filter((v) => v.query.includes('YouTube popularity order'))
-              .map((v) => (
-                <VideoRow key={v.id} video={v} topic={topic} />
-              ))}
-            {!report.videos.some((v) => v.query.includes('YouTube popularity order')) && (
-              <Txt muted>No distinct popularity-ordered examples in this sample.</Txt>
-            )}
-          </Fold>
-          <Fold title="Interesting Subtopics">
-            <Txt muted>Generated search angles to investigate, not discovered trends.</Txt>
-            {report.queries.slice(1).map((q) => (
-              <Txt key={q}>{q}</Txt>
-            ))}
-          </Fold>
-          <Fold title="Research Questions">
-            <Txt>
-              Who is this useful for? Which claim can you demonstrate? What would your version add?
-              Which assumptions need direct audience research?
-            </Txt>
-          </Fold>
-          {!report.analyzed && (
-            <Action
-              icon={Sparkles}
-              busy={op.busy}
-              onPress={() => void op.run(() => useScout.getState().analyze(report.id))}
-            >
-              CONTINUE ANALYSIS
-            </Action>
-          )}
-          {report.analyzed && (
-            <View style={{ gap: 14 }}>
-              <Heading>Content Opportunities</Heading>
-              {ideas
-                .filter((i) => i.reportId === report.id)
-                .map((idea) => (
-                  <Button
-                    variant="secondary"
-                    key={idea.id}
-                    onPress={() => router.push({ pathname: '/detail', params: { idea: idea.id } })}
-                    className="h-auto justify-start p-4"
-                  >
-                    <View style={{ flex: 1, gap: 8 }}>
-                      <Txt>{idea.topic}</Txt>
-                      <Text style={styles.badge}>{idea.assessment}</Text>
-                    </View>
-                    <ArrowRight color={p.purple} size={18} />
-                  </Button>
-                ))}
+          </View>
+        )}
+        {news?.items.slice(0, 3).map((item) => (
+          <Button key={item.id} variant="tertiary" className="h-auto justify-start px-0" onPress={() => void Linking.openURL(item.url).catch(() => {})}>
+            <View style={{ flex: 1, gap: 4 }}>
+              <Button.Label numberOfLines={2}>{item.title}</Button.Label>
+              <Text style={styles.badge}>{item.sourceName} · {item.publishedAt ? new Date(item.publishedAt).toLocaleDateString() : 'Date not supplied'}</Text>
             </View>
-          )}
-          <Fold title="Relevant Videos" open>
-            {!report.videos.length ? (
-              <Empty
-                title="No videos matched this search."
-                action="Change filters"
-                onPress={() => setReportId('')}
-              />
-            ) : (
-              report.videos.map((v) => <VideoRow key={v.id} video={v} topic={topic} />)
-            )}
-          </Fold>
-        </>
-      )}
-      {!report && !busy && reports.length > 0 && (
-        <Fold title="Recent research">
-          {reports.slice(0, 10).map((r) => (
-            <Action
-              key={r.id}
-              secondary
-              onPress={() => {
-                setReportId(r.id);
-                setTopic(r.input.topic);
-              }}
-            >
-              {r.input.topic}
-            </Action>
-          ))}
-        </Fold>
-      )}
-      {!report && !busy && (
-        <View style={[styles.row, { paddingBottom: 8 }]}>
-          <SlidersHorizontal size={16} color={p.muted} />
-          <Text style={[styles.muted, { flex: 1 }]}>
-            Region and language are independent. No AI required.
-          </Text>
-        </View>
-      )}
+          </Button>
+        ))}
+      </Panel>
+
+      <Panel>
+        <Heading>Research this niche</Heading>
+        <Txt muted>Run each evidence stream on demand. Space Radar does not poll in the background or rank topics with a fabricated market score.</Txt>
+        <Action onPress={() => navigate('/cosmic-news')}>Open Cosmic News</Action>
+        <Action secondary onPress={() => navigate('/trend-intelligence')}>Check YouTube competition</Action>
+        <Action secondary onPress={() => navigate('/search-demand')}>Compare public interest</Action>
+        <Action secondary onPress={() => navigate('/deep-research')}>Build a source-backed research brief</Action>
+        <Button variant="tertiary" className="h-auto justify-start px-0" onPress={() => router.push({ pathname: '/youtube', params: { topic: selected.topic } })}>
+          <Button.Label>Open the original general YouTube research workspace →</Button.Label>
+        </Button>
+        <Txt muted>The original Discover workflow, ideas, library, notes, API keys, budget controls and scheduler remain available.</Txt>
+      </Panel>
+      <Fold title="How opportunity signals are interpreted">
+        <Txt muted>Fresh NASA/JPL/ESA reporting indicates a new source-led story angle, not proven audience demand. YouTube view counts belong to individual sampled videos and are not hourly growth. Wikimedia pageviews indicate attention to an encyclopedia article, not Google searches or YouTube views. The evidence streams are displayed separately so their limitations remain visible.</Txt>
+      </Fold>
+      {Boolean(op.error) && <ErrorBox message={op.error} onRetry={scan} />}
+      {Boolean(op.message) && <Txt muted>{op.message}</Txt>}
     </Page>
   );
 }

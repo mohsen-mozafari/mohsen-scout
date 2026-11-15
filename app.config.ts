@@ -56,6 +56,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       'expo-notifications',
       'expo-splash-screen',
       'expo-status-bar',
+      './plugins/with-workmanager-proguard',
       ...nativePlugins,
     ],
     experiments: {

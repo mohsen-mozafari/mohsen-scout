@@ -286,6 +286,125 @@ export async function testOpenRouter(key: string) {
 export function opinionPrompt(topic: string, concept: string, decision: string) {
   return `Give a concise English second opinion on this user-created editorial idea. No YouTube API data or performance statistics are provided. Topic: ${topic.slice(0, 300)}. Proposed concept: ${concept.slice(0, 1200)}. Personal decision: ${decision.slice(0, 600)}. Assess useful angles, competition uncertainty, video concepts, and prioritization. Say insufficient evidence for demand/competition claims. Do not invent trends, scores, probabilities, or percentages. Distinguish subjective judgment from evidence; you may disagree. Do not request or analyze YouTube API data.`;
 }
+export type YouTubeSampleVideo = {
+  id: string;
+  title: string;
+  description: string;
+  channel: string;
+  channelId: string;
+  publishedAt: string;
+  viewCount: number | null;
+  channelSubscriberCount: number | null;
+  channelVideoCount: number | null;
+  url: string;
+};
+const spaceSearchSchema = z.object({
+  items: z.array(z.object({
+    id: z.object({ videoId: z.string().regex(/^[\w-]{11}$/) }),
+    snippet: z.object({
+      title: z.string(),
+      description: z.string(),
+      channelTitle: z.string(),
+      channelId: z.string(),
+      publishedAt: z.string().datetime(),
+    }),
+  })),
+});
+const channelStatsSchema = z.object({
+  items: z.array(z.object({
+    id: z.string(),
+    statistics: z.object({
+      subscriberCount: z.string().optional(),
+      videoCount: z.string().optional(),
+    }).optional(),
+  })),
+});
+const spaceStatsSchema = z.object({
+  items: z.array(z.object({
+    id: z.string(),
+    statistics: z.object({ viewCount: z.string().optional() }).optional(),
+  })),
+});
+
+/** One YouTube search.list request plus videos.list and channels.list statistics requests.
+ * Search costs 100 quota units; each statistics request costs 1. This is a small observed sample,
+ * not a complete market census and not a growth-rate estimate.
+ */
+export async function searchYouTubeSample(
+  topic: string,
+  options: YouTubeOptions,
+  maxResults = 12,
+): Promise<{ videos: YouTubeSampleVideo[]; warning: string }> {
+  const query = topic.trim().slice(0, 120);
+  if (!query) throw new ApiError('Enter a space topic before measuring YouTube competition.', 'input');
+  const raw = await youtube('search', {
+    part: 'snippet',
+    type: 'video',
+    q: query,
+    order: 'viewCount',
+    maxResults: String(Math.min(25, Math.max(1, maxResults))),
+    fields: 'items(id/videoId,snippet(title,description,channelTitle,channelId,publishedAt))',
+  }, options, 100);
+  const parsed = spaceSearchSchema.safeParse(raw);
+  if (!parsed.success) throw new ApiError('YouTube returned an invalid topic sample.', 'invalid');
+  const selected = parsed.data.items;
+  if (!selected.length) return { videos: [], warning: 'YouTube returned no matching science and technology videos.' };
+  const ids = selected.map((item) => item.id.videoId);
+  const statsRaw = await youtube('videos', {
+    part: 'statistics',
+    id: ids.join(','),
+    fields: 'items(id,statistics(viewCount))',
+  }, options, 1);
+  const statistics = spaceStatsSchema.safeParse(statsRaw);
+  if (!statistics.success) throw new ApiError('YouTube view statistics could not be read.', 'invalid');
+  const views = new Map<string, number | null>(statistics.data.items.map((item): [string, number | null] => [
+    item.id,
+    item.statistics?.viewCount && /^\d+$/.test(item.statistics.viewCount)
+      ? Number(item.statistics.viewCount)
+      : null,
+  ]));
+  let channelMetrics = new Map<string, { subscribers: number | null; videos: number | null }>();
+  let channelWarning = '';
+  try {
+    const channelIds = [...new Set(selected.map((item) => item.snippet.channelId))];
+    const channelRaw = await youtube('channels', {
+      part: 'statistics',
+      id: channelIds.join(','),
+      fields: 'items(id,statistics(subscriberCount,videoCount))',
+    }, options, 1);
+    const channelParsed = channelStatsSchema.safeParse(channelRaw);
+    if (!channelParsed.success) throw new ApiError('Channel statistics returned an invalid response.', 'invalid');
+    channelMetrics = new Map(channelParsed.data.items.map((item): [string, { subscribers: number | null; videos: number | null }] => [
+      item.id,
+      {
+        subscribers: item.statistics?.subscriberCount && /^\d+$/.test(item.statistics.subscriberCount)
+          ? Number(item.statistics.subscriberCount)
+          : null,
+        videos: item.statistics?.videoCount && /^\d+$/.test(item.statistics.videoCount)
+          ? Number(item.statistics.videoCount)
+          : null,
+      },
+    ]));
+  } catch {
+    channelWarning = 'Public channel statistics could not be loaded; individual video views are still available.';
+  }
+  return {
+    videos: selected.map((item) => ({
+      id: item.id.videoId,
+      title: item.snippet.title,
+      description: item.snippet.description,
+      channel: item.snippet.channelTitle,
+      channelId: item.snippet.channelId,
+      publishedAt: item.snippet.publishedAt,
+      viewCount: views.get(item.id.videoId) ?? null,
+      channelSubscriberCount: channelMetrics.get(item.snippet.channelId)?.subscribers ?? null,
+      channelVideoCount: channelMetrics.get(item.snippet.channelId)?.videos ?? null,
+      url: 'https://www.youtube.com/watch?v=' + item.id.videoId,
+    })),
+    warning: 'A popularity-ordered sample only. Raw video views and public channel size are shown separately; this is not a complete market census or a growth-rate/saturation score.' + (channelWarning ? ' ' + channelWarning : ''),
+  };
+}
+
 export async function getOpinion(key: string, model: string, prompt: string) {
   const raw = await requestJson('https://openrouter.ai/api/v1/chat/completions', {
     method: 'POST',

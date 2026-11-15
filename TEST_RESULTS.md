@@ -1,5 +1,22 @@
 # MOHSEN SCOUT — test results
 
+## Space Intelligence + Android startup fix — implementation candidate (2026-11-15)
+
+**Status before CI: source changes prepared; no Actions run or APK build has yet been started.** This section must be replaced with actual CI results after the single authorized run.
+
+- Confirmed Android startup crash: AndroidX Startup could not initialize `WorkManagerInitializer` because R8 removed reflectively-instantiated Room/WorkManager constructors. A local Expo config plugin adds the two upstream keep rules while retaining R8; a post-prebuild check verifies the file is present and referenced by the generated app Gradle configuration.
+- Existing `expo-background-task`, scheduler, SQLite, SecureStore, notification, backup/restore, existing Opportunities/Library/Notes and API quota code are preserved. No scheduler feature is removed to hide the startup error.
+- New Space Radar replaces the Discover landing view; the original general YouTube research screen is preserved as `/youtube` and reachable from the Radar dashboard. Existing tabs remain one app.
+- Added on-demand NASA/JPL/ESA RSS reading, niche-by-source coverage, a bounded official YouTube popularity sample plus public channel-size metadata charged to the existing budget, Wikimedia monthly article pageviews, source-linked Deep Research outline and narration scaffold, and save-to-Notes.
+- RSS and Wikimedia results are in-memory cached for 10 minutes. No periodic news polling, server, large history store or new database table is introduced. YouTube key remains in SecureStore.
+- Version-1 backups without Space preferences remain importable. Legacy SQLite preferences merge with current defaults before validation. The original My Library continues to enforce its YouTube-link-only contract.
+- Google Trends API is not treated as public/available: its current official access is a limited alpha. The UI opens Google Trends for manual checks; Wikimedia Pageviews is explicitly labelled as article attention, not Google search volume or YouTube views.
+- Added Node regression coverage for RSS/Atom parsing, unsafe links, malformed XML numeric entities, feed recovery/cache behavior, niche matching, Wikimedia source data, YouTube video/channel quota accounting (102 units), and legacy data/backup migration. These tests are pending actual CI execution.
+
+### Release gate
+
+CI must pass `npm ci`, `npm test`, lint/type checks, CSS lint, `expo-doctor`, prebuild, ProGuard rule verification, release signing, ARM64/package checks and artifact upload in one run. Build success and valid signing do not replace a real cold-launch test on the S23 Ultra. Do not claim a feature is native-device-tested until that test is completed.
+
 Recorded: 2026-11-15. No real API keys were supplied. API checks use isolated synthetic responses, not live YouTube/OpenRouter calls.
 
 ## Focused release-readiness recheck — latest pass (2026-11-15)

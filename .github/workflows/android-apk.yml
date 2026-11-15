@@ -11,6 +11,9 @@ on:
       - 'package-lock.json'
       - 'scripts/setup-android-signing.sh'
 
+permissions:
+  contents: write
+
 jobs:
   build-android:
     runs-on: ubuntu-latest
@@ -38,8 +41,32 @@ jobs:
       - name: Install Android SDK packages
         run: sdkmanager "platforms;android-37.0" "build-tools;37.0.0" "ndk;27.1.12297006"
 
+      - name: Resolve and persist aligned SDK 58 lockfile
+        shell: bash
+        run: |
+          npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+          if ! git diff --quiet -- package-lock.json; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add package-lock.json
+            git commit -m "chore: align SDK 58 dependency lockfile [skip ci]"
+            git push origin "HEAD:${GITHUB_REF_NAME}"
+          fi
+
       - name: Install JavaScript dependencies
         run: npm ci
+
+      - name: Run Node regression suite
+        run: npm test
+
+      - name: Run source lint and type checks
+        run: npm run lint
+
+      - name: Run CSS lint
+        run: npm run lint:css
+
+      - name: Verify Expo dependency alignment
+        run: npx expo-doctor
 
       - name: Apply React Native WebView Android Gradle compatibility fix
         shell: bash
@@ -52,6 +79,9 @@ jobs:
 
       - name: Generate Android project
         run: npx expo prebuild --platform android --no-install
+
+      - name: Verify WorkManager R8 keep rules
+        run: bash scripts/verify-android-proguard.sh
 
       - name: Configure persistent Android release signing
         shell: bash
@@ -68,6 +98,14 @@ jobs:
 
       - name: Verify signed release APK
         run: $ANDROID_HOME/build-tools/37.0.0/apksigner verify --verbose --print-certs android/app/build/outputs/apk/release/app-release.apk
+
+      - name: Verify package identity and ARM64 ABI
+        shell: bash
+        run: |
+          APK="android/app/build/outputs/apk/release/app-release.apk"
+          BADGING="$("$ANDROID_HOME/build-tools/37.0.0/aapt" dump badging "$APK")"
+          echo "$BADGING" | grep -F "package: name='me.bilt.mohsenscout'"
+          echo "$BADGING" | grep -F "native-code: 'arm64-v8a'"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4

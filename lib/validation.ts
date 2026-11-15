@@ -33,6 +33,9 @@ const schema = z.object({
     schedule: z.enum(['Manual', 'Every 12 hours', 'Daily', 'Weekly']),
     paused: z.boolean(),
     lastInput: inputSchema.optional(),
+    spaceNewsSources: z.array(z.enum(['nasa', 'jpl', 'esa-space', 'esa-science'])).max(4).optional().default(['nasa', 'jpl', 'esa-space', 'esa-science']),
+    spaceInterestLanguage: z.enum(['en', 'fa', 'de', 'fr', 'es', 'ja']).optional().default('en'),
+    selectedSpaceNiche: z.string().max(100).optional().default('exoplanets'),
   }),
   ideas: z.array(
     z.object({

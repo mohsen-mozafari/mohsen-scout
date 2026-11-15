@@ -119,6 +119,8 @@ export type Opinion = {
   model: string;
   createdAt: number;
 };
+export type SpaceNewsSourceId = 'nasa' | 'jpl' | 'esa-space' | 'esa-science';
+export type WikiLanguage = 'en' | 'fa' | 'de' | 'fr' | 'es' | 'ja';
 export type Preferences = {
   name: string;
   email: string;
@@ -129,6 +131,9 @@ export type Preferences = {
   schedule: 'Manual' | 'Every 12 hours' | 'Daily' | 'Weekly';
   paused: boolean;
   lastInput?: ResearchInput;
+  spaceNewsSources: SpaceNewsSourceId[];
+  spaceInterestLanguage: WikiLanguage;
+  selectedSpaceNiche: string;
 };
 export type Budget = { date: string; units: number; requests: number; exhausted: boolean };
 export type LocalData = {
@@ -154,6 +159,9 @@ export function defaults(): LocalData {
       model: '',
       schedule: 'Manual',
       paused: false,
+      spaceNewsSources: ['nasa', 'jpl', 'esa-space', 'esa-science'],
+      spaceInterestLanguage: 'en',
+      selectedSpaceNiche: 'exoplanets',
     },
     ideas: [],
     links: [],

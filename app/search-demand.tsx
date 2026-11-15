@@ -1,0 +1,90 @@
+import { useEffect, useState } from 'react';
+import { Linking, View, Text } from 'react-native';
+import { useLocalSearchParams } from 'expo-router';
+import { Button } from 'heroui-native';
+import { Page, Panel, Heading, Txt, Field, Choices, Action, styles, ErrorBox, useOperation } from '@/components/ScoutUI';
+import { useScout } from '@/lib/store';
+import { palette as p } from '@/lib/theme';
+import { SEARCH_DEMAND_PROVIDERS, type WikiLanguage, type WikiSignal } from '@/lib/space';
+
+export default function SearchDemand() {
+  const params = useLocalSearchParams<{ topic?: string }>();
+  const preferences = useScout((state) => state.data.preferences);
+  const [language, setLanguage] = useState<WikiLanguage>(preferences.spaceInterestLanguage ?? 'en');
+  const [country, setCountry] = useState('Worldwide');
+  const [period, setPeriod] = useState('Past 12 months');
+  const [topics, setTopics] = useState<string[]>([typeof params.topic === 'string' ? params.topic : 'exoplanet', '', '']);
+  const [results, setResults] = useState<WikiSignal[]>([]);
+  const op = useOperation();
+  useEffect(() => {
+    if (typeof params.topic === 'string') setTopics([params.topic, '', '']);
+  }, [params.topic]);
+  const setTopic = (index: number, value: string) =>
+    setTopics((current) => current.map((item, position) => position === index ? value : item));
+  const active = topics.map((topic) => topic.trim()).filter(Boolean).slice(0, 3);
+  const compare = () => void op.run(async () => {
+    if (!active.length) throw new Error('Enter at least one topic.');
+    const provider = SEARCH_DEMAND_PROVIDERS[0];
+    const values = await Promise.all(active.map((topic) => provider.run(topic, language)));
+    setResults(values);
+  }, 'Public-interest pageview data updated.');
+  const maxViews = Math.max(1, ...results.flatMap((result) => result.monthlyViews.map((point) => point.views)));
+  const countryCodes: Record<string, string> = { Worldwide: '', 'United States': 'US', 'United Kingdom': 'GB', Germany: 'DE', Iran: 'IR', Canada: 'CA', Australia: 'AU', Japan: 'JP', India: 'IN', France: 'FR', Brazil: 'BR' };
+  const periods: Record<string, string> = { 'Past 7 days': 'now 7-d', 'Past 30 days': 'today 1-m', 'Past 90 days': 'today 3-m', 'Past 12 months': 'today 12-m', 'Past 5 years': 'today 5-y' };
+  const trendsParams = new URLSearchParams();
+  if (active.length) trendsParams.set('q', active.join(','));
+  if (countryCodes[country]) trendsParams.set('geo', countryCodes[country]);
+  trendsParams.set('date', periods[period] ?? 'today 12-m');
+  const trendsUrl = 'https://trends.google.com/trends/explore?' + trendsParams.toString();
+  return (
+    <Page title="SEARCH DEMAND & TRENDS">
+      <Txt muted>Compare public interest signals for up to three space topics. Search demand, YouTube views and news coverage remain separate measurements.</Txt>
+      <Panel>
+        <Heading>Topics to compare</Heading>
+        {topics.map((topic, index) => (
+          <Field key={index} label={'Topic ' + (index + 1)} value={topic} onChange={(value) => setTopic(index, value)} placeholder={index === 0 ? 'e.g. exoplanets' : 'Optional comparison topic'} />
+        ))}
+        <Choices label="Wikipedia language project" options={['en', 'fa', 'de', 'fr', 'es', 'ja']} selected={[language]} onChange={(values) => setLanguage(values[0] as WikiLanguage)} />
+        <Heading>Google Trends comparison settings</Heading>
+        <Choices label="Country / region" options={['Worldwide', 'United States', 'United Kingdom', 'Germany', 'Iran', 'Canada', 'Australia', 'Japan', 'India', 'France', 'Brazil']} selected={[country]} onChange={(values) => setCountry(values[0] as string)} />
+        <Choices label="Time range" options={['Past 7 days', 'Past 30 days', 'Past 90 days', 'Past 12 months', 'Past 5 years']} selected={[period]} onChange={(values) => setPeriod(values[0] as string)} />
+        <Action busy={op.busy} disabled={!active.length} onPress={compare}>Compare public-interest history</Action>
+      </Panel>
+      <Panel>
+        <Heading>Provider: {SEARCH_DEMAND_PROVIDERS[0].label}</Heading>
+        <Txt muted>Wikimedia Pageviews is a free public API. Its figures count views of an encyclopedia article in the selected language project over the last six months. They are an attention proxy—not Google search volume, not unique people, not YouTube views, and not country-level audience data. Country and time range selected above apply only to the external Google Trends comparison page.</Txt>
+        <Txt muted>Google Trends has a separate API, but official programmatic access is currently a limited alpha. Until public access is available, the app opens the Trends website for manual comparison rather than pretending to call an unavailable API.</Txt>
+        <Button variant="tertiary" className="h-auto justify-start px-0" onPress={() => void Linking.openURL(trendsUrl).catch(() => {})}>
+          <Button.Label>Open Google Trends for entered topics ↗</Button.Label>
+        </Button>
+      </Panel>
+      {results.map((result) => (
+        <Panel key={result.language + ':' + result.articleTitle}>
+          <Heading>{result.articleTitle}</Heading>
+          <Text style={styles.badge}>{result.language.toUpperCase()} Wikipedia · monthly article pageviews</Text>
+          {Boolean(result.summary) && <Txt muted>{result.summary}</Txt>}
+          {!result.monthlyViews.length && <Txt muted>No monthly pageview series was returned for this article.</Txt>}
+          {result.monthlyViews.map((point) => (
+            <View key={point.month} style={{ gap: 4 }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                <Txt>{point.month}</Txt>
+                <Text style={styles.badge}>{point.views.toLocaleString()}</Text>
+              </View>
+              <View style={{ height: 5, borderRadius: 4, backgroundColor: '#292936', overflow: 'hidden' }}>
+                <View style={{ height: 5, width: (result.monthlyViews.length ? (point.views / maxViews) * 100 : 0) + '%', backgroundColor: p.purple, borderRadius: 4 }} />
+              </View>
+            </View>
+          ))}
+          <Button variant="tertiary" className="h-auto justify-start px-0" onPress={() => void Linking.openURL(result.articleUrl).catch(() => {})}>
+            <Button.Label>Open Wikipedia article ↗</Button.Label>
+          </Button>
+          <Button variant="tertiary" className="h-auto justify-start px-0" onPress={() => void Linking.openURL(result.apiUrl).catch(() => {})}>
+            <Button.Label>Open raw pageview data ↗</Button.Label>
+          </Button>
+        </Panel>
+      ))}
+      {Boolean(op.error) && <ErrorBox message={op.error} onRetry={compare} />}
+      {Boolean(op.message) && <Txt muted>{op.message}</Txt>}
+    </Page>
+  );
+}

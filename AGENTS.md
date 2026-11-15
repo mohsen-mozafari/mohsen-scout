@@ -30,3 +30,14 @@ YouTube policy sources reviewed:
 - https://developers.google.com/youtube/terms/derived-metrics-policy
 
 Do not assume the optional audited analytics amendment applies to this app or that every video ID is exempt from retention.
+
+## Space research provider rules
+
+- The Space Radar screens are a unified extension of the existing product. Preserve the original YouTube research route (/youtube), Opportunities, Library, Notes, Settings, credentials, quota accounting, SQLite schema boundaries, backup/restore and scheduler.
+- Current space-news providers are official RSS sources. Keep source name, original URL and publisher date visible; do not turn publisher headlines into independently verified facts.
+- Demand data from Wikimedia is article pageviews in a language edition. Never label it Google search volume, geographic audience demand or YouTube views. Google Trends API access is a limited alpha; do not depend on it without a real approved credential/contract.
+- YouTube trend samples must use the official Data API and charge the existing local quota budget. View counts are raw per-video observations; do not infer views/hour, velocity, growth percentages, market-wide saturation or a composite opportunity score.
+- Do not add always-on scanning, scheduled news polling, bulk historic collection, backend services or paid providers without explicit approval. Space source caches remain short-lived and in memory.
+- Deep Research must preserve source URLs and uncertainty. No scientific claim is validated solely because a news headline or encyclopedia summary states it. Do not send news text, YouTube metadata or statistics to OpenRouter.
+- Existing persisted preferences and version-1 backups must migrate with defaults for any new optional Space settings. Do not change the personal/youtube SQLite table separation.
+- Android Release must retain R8. The local config plugin plugins/with-workmanager-proguard.js keeps the no-arg Room/WorkManager constructors needed by reflection; verify both keep rules are present and referenced by android/app/build.gradle after prebuild.

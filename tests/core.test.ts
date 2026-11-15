@@ -19,6 +19,7 @@ import {
   quotaDay,
   relatedQueries,
   searchYouTube,
+  searchYouTubeSample,
   requestJson,
   retryDelayMs,
   getFreeModels,
@@ -62,6 +63,73 @@ const mockItem = (id: string) => ({
     publishedAt: video.publishedAt,
     thumbnails: { medium: { url: video.thumbnail } },
   },
+});
+void test('Migration: older saved preferences receive safe Space defaults', () => {
+  const current = defaults();
+  const legacy = { ...current, preferences: {
+    name: 'Mohsen', email: '', region: 'United States' as const, languages: ['en'],
+    budget: 1500, model: '', schedule: 'Manual' as const, paused: false,
+  } };
+  const migrated = validateLocal(legacy);
+  assert.deepEqual(migrated.preferences.spaceNewsSources, ['nasa', 'jpl', 'esa-space', 'esa-science']);
+  assert.equal(migrated.preferences.spaceInterestLanguage, 'en');
+  assert.equal(migrated.preferences.selectedSpaceNiche, 'exoplanets');
+});
+void test('YouTube trend sample uses official search and video statistics endpoints with bounded quota', async () => {
+  let charges = 0;
+  let searchCalls = 0;
+  let statisticsCalls = 0;
+  const result = await searchYouTubeSample('Mars discoveries', {
+    key: 'MOCK_SPACE_KEY',
+    charge: async (units) => { charges += units; },
+    fetcher: async (url) => {
+      const parsed = new URL(typeof url === 'string' ? url : url instanceof URL ? url.href : url.url);
+      assert.equal(parsed.hostname, 'www.googleapis.com');
+      if (parsed.pathname.endsWith('/search')) {
+        searchCalls++;
+        assert.equal(parsed.searchParams.get('order'), 'viewCount');
+        assert.equal(parsed.searchParams.has('videoCategoryId'), false);
+        return response({ items: [{
+          id: { videoId: 'dQw4w9WgXcQ' },
+          snippet: {
+            title: 'MOCK: Mars science video',
+            description: 'MOCK description',
+            channelTitle: 'MOCK astronomy channel',
+            channelId: 'UCmockchannel',
+            publishedAt: '2026-11-01T12:00:00Z',
+          },
+        }] });
+      }
+      if (parsed.pathname.endsWith('/videos')) {
+        statisticsCalls++;
+        assert.equal(parsed.searchParams.get('part'), 'statistics');
+        return response({ items: [{ id: 'dQw4w9WgXcQ', statistics: { viewCount: '125000' } }] });
+      }
+      if (parsed.pathname.endsWith('/channels')) {
+        assert.equal(parsed.searchParams.get('part'), 'statistics');
+        return response({ items: [{ id: 'UCmockchannel', statistics: { subscriberCount: '500000', videoCount: '200' } }] });
+      }
+      throw new Error('Unexpected mocked YouTube endpoint: ' + parsed.pathname);
+    },
+  }, 12);
+  assert.equal(searchCalls, 1);
+  assert.equal(statisticsCalls, 1);
+  assert.equal(charges, 102);
+  assert.equal(result.videos[0].viewCount, 125000);
+  assert.equal(result.videos[0].channelSubscriberCount, 500000);
+  assert.equal(result.videos[0].channelVideoCount, 200);
+  assert.equal(result.videos[0].url, 'https://www.youtube.com/watch?v=dQw4w9WgXcQ');
+});
+
+void test('Backup compatibility: version-1 backups without Space preferences still import', () => {
+  const backup = JSON.parse(exportBackup(defaults())) as { personal: { preferences: Record<string, unknown> } };
+  delete backup.personal.preferences.spaceNewsSources;
+  delete backup.personal.preferences.spaceInterestLanguage;
+  delete backup.personal.preferences.selectedSpaceNiche;
+  const restored = importBackup(JSON.stringify(backup));
+  assert.deepEqual(restored.preferences.spaceNewsSources, ['nasa', 'jpl', 'esa-space', 'esa-science']);
+  assert.equal(restored.preferences.spaceInterestLanguage, 'en');
+  assert.equal(restored.preferences.selectedSpaceNiche, 'exoplanets');
 });
 void test('Foundation: defaults belong to Mohsen and have no secrets', () => {
   const d = defaults();

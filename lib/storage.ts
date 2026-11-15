@@ -24,7 +24,11 @@ export async function readData(): Promise<LocalData> {
   );
   const data = defaults();
   for (const row of rows) {
-    if (row.key in data) Object.assign(data, { [row.key]: JSON.parse(row.value) });
+    if (row.key === 'preferences') {
+      Object.assign(data, { preferences: { ...data.preferences, ...JSON.parse(row.value) } });
+    } else if (row.key in data) {
+      Object.assign(data, { [row.key]: JSON.parse(row.value) });
+    }
   }
   const clean = purgeExpired(validateLocal(data));
   await writeData(clean);
