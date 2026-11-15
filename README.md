@@ -1,158 +1,37 @@
-# Welcome to your Bilt project
+# MOHSEN SCOUT
 
-[![Built with Bilt](https://img.shields.io/endpoint?url=https%3A%2F%2Fapp.bilt.me%2Fapi%2Fbadge)](https://bilt.me)
+Personal, English-language YouTube research assistant for Mohsen. AMOLED black, violet/indigo action gradient, and a visible query map rather than invented trend charts.
 
-## Project info
+## Implemented
 
-**Project URL**: https://app.bilt.me/agent/a7e70ac6-993d-4740-923b-65144c2c2410
+- Five workspaces: Discover, Opportunities, My Library, Notes, Settings. Short tab labels `Ideas` and `Library` keep navigation readable at 320pt; screen titles retain the full names.
+- Native SQLite separates personal content from YouTube metadata. Keys use Expo SecureStore; browser preview keeps keys in memory only.
+- Official YouTube Data API v3 search: independent region/language, recency, duration, category, maximum results, query expansion, two-page/query and twelve-search/run caps, deduplication, timeouts, bounded GET retries, per-attempt budget, quota-stop handling, 15-minute result reuse.
+- Separate CONTINUE ANALYSIS produces explicitly labeled editorial hypotheses and actual reference videos, never performance scores. Automatic labels are cautious; all assessment/collection labels are available for personal decisions.
+- Opt-in OpenRouter opinions use live-discovered zero-price models and a consent preview. Only editorial topic, concept, personal decision are sent; no API titles/descriptions/statistics. POST generation is not automatically retried.
+- Editable local opportunities, bookmarks/folders/tags/notes, block-based pages, personal-link export, validated JSON backup/restore, Android share sheet, optional background research and notification permissions.
+- Native/PWA compass artwork, Persian setup/handoff documentation, isolated mocked regression checks.
 
-**Project ID**: `a7e70ac6-993d-4740-923b-65144c2c2410`
+## Verification
 
-## How can I edit this app?
+25 isolated mock regression checks executed in the web preview: **25 passed, 0 failed**. Open Settings → App info → Run mock regression checks. `npm test` provides a separate Node/tsx suite; it was authored and type-checked, but its execution was not independently confirmed here. Lint and TypeScript checks are clean after the final handoff refinements; see `TEST_RESULTS.md` for the recorded status.
 
-There are several ways of editing your application.
+**Not claimed:** live YouTube/OpenRouter access, an APK/AAB artifact, physical Android SQLite/SecureStore/share-sheet/scheduler verification. Expo Doctor resolves dependencies but reports newer recommended SDK patches; native preview-supported package versions are intentionally retained. Align and rerun checks before an external release build.
 
-**Use Bilt**
+## Setup and transfer
 
-Simply visit your [Bilt Project](https://app.bilt.me/agent/a7e70ac6-993d-4740-923b-65144c2c2410) and start sending messages. Describe what you want to change, add, or fix in natural language.
+See `README_FA.md` and `HANDOFF_FA.md`. Enter keys in Settings only, never in chat or source. Research needs a YouTube key; notes and personal links work without one. OpenRouter is optional.
 
-Changes made via Bilt are instant - just send a message and your app updates.
-
-**Use your preferred IDE**
-
-If you want to work locally using your own IDE, you can export the source code from Bilt and make changes directly.
-
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
-
-Follow these steps:
-
-```sh
-# Step 1: Export and clone your Bilt project.
-# (Download source from Bilt or connect to your git repo)
-git clone <YOUR_GIT_URL>
-
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
-
-# Step 3: Install the necessary dependencies.
-npm install
-
-# Step 4: Start the Expo development server.
-npx expo start
-```
-
-Scan the QR code with Expo Go on your phone to see your app running locally.
-
-**Edit a file directly in GitHub**
-
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
-
-**Use GitHub Codespaces**
-
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
-
-## What technologies are used for this project?
-
-This project is built with:
-
-- React Native
-- Expo
-- TypeScript
-- AsyncStorage (local data persistence)
-- Expo Router (navigation)
-
-All generated automatically by Bilt from your natural language instructions.
-
-## How can I test this project?
-
-**Option 1: Preview in Bilt (Recommended)**
-
-Open your [Bilt Project](https://app.bilt.me/agent/a7e70ac6-993d-4740-923b-65144c2c2410) and use the built-in preview.
-
-Open **Deploy & Share** to create a revocable preview link or build the app on your iPhone.
-
-**Option 2: Run Locally**
+Source is this project root. No backend or registration is required. `eas.json` includes an internal Android APK profile for an exported source build; it does not mean a build exists. Bilt documents signed **AAB** downloads, not a directly installable APK: https://bilt.me/docs/guides/publish-to-google-play#build-an-aab-without-google-play . Export source: https://bilt.me/docs/features/code-export .
 
 ```sh
 npm install
 npx expo start
+npm test
+npm run lint
+npm run lint:css
+# Optional external cloud build, requires your own Expo account/signing setup:
+npx eas-cli build --platform android --profile preview
 ```
 
-Then scan the QR code with Expo Go.
-
-## How can I deploy this project?
-
-Open your [Bilt Project](https://app.bilt.me/agent/a7e70ac6-993d-4740-923b-65144c2c2410), select **Deploy & Share**, then choose **Publish to web**, **Release on App Store**, or **Release on Play Store**.
-
-### Deploy with Bilt
-
-Publishing to web creates a public, installable web app at its own URL. Bilt also guides you through preparing native releases for the App Store and Play Store.
-
-## How can I make changes to my app?
-
-**Via Bilt (Easiest)**
-
-Visit your [Bilt Project](https://app.bilt.me/agent/a7e70ac6-993d-4740-923b-65144c2c2410) and send a message describing what you want:
-
-- "Add a dark mode toggle"
-- "Change the button color to blue"
-- "Add a new screen for user settings"
-- "Fix the navigation bar spacing"
-
-Bilt understands natural language and updates your app automatically.
-
-**Via Code**
-
-Export the source, make changes in your IDE, and test locally with `npx expo start`.
-
-## Can I use this with the MCP protocol?
-
-Yes! Bilt is available as a remote MCP server at `https://mcp.bilt.me/mcp`.
-
-Connect any MCP-compatible AI agent (Claude Desktop, OpenClaw, etc.) to programmatically build and modify mobile apps.
-
-**Example MCP integration:**
-
-```json
-{
-  "mcpServers": {
-    "bilt": {
-      "transport": {
-        "type": "sse",
-        "url": "https://mcp.bilt.me/mcp/sse",
-        "headers": {
-          "Authorization": "Bearer YOUR_API_KEY"
-        }
-      }
-    }
-  }
-}
-```
-
-Read more:
-
-- [Bilt MCP Documentation](https://bilt.me/docs)
-- [MCP Registry](https://registry.modelcontextprotocol.io/v0.1/servers/io.github.buildingapplications%2Fmcp/versions/latest)
-
-## Need help?
-
-- 📚 [Bilt Documentation](https://bilt.me/docs)
-- 💬 [Discord Community](https://discord.gg/3FqNgmSYdZ)
-- 🐦 [Twitter Updates](https://twitter.com/biltmeanapp)
-- 📧 Email: support@bilt.me
-
----
-
-<div align="center">
-
-**Built by AI. No code required.** ✨
-
-[Try Bilt](https://bilt.me) • [View Docs](https://bilt.me/docs) • [Docs MCP Server](https://bilt.me/docs/mcp)
-
-</div>
+No media download, unofficial endpoint, automated engagement, paid server, or AI hardware dependency.

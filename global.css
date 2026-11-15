@@ -40,3 +40,39 @@
 @source './node_modules/heroui-native/lib';
 
 /* Calculated HeroUI color tokens are registered for web in lib/registerColorTokens.ts. */
+@layer theme {
+  :root {
+    @variant light {
+      --background: oklch(0 0 0);
+      --foreground: oklch(0.97 0.01 290);
+      --surface: oklch(0.18 0.01 290);
+      --surface-foreground: oklch(0.97 0.01 290);
+      --accent: oklch(0.56 0.25 295);
+      --accent-foreground: oklch(1 0 0);
+      --muted: oklch(0.74 0.03 290);
+      --default: oklch(0.23 0.02 290);
+      --default-foreground: oklch(0.97 0.01 290);
+      --field-background: oklch(0.2 0.01 290);
+      --field-foreground: oklch(0.97 0.01 290);
+      --field-placeholder: oklch(0.74 0.03 290);
+      --border: oklch(0.29 0.02 290);
+      --focus: var(--accent);
+    }
+    @variant dark {
+      --background: oklch(0 0 0);
+      --foreground: oklch(0.97 0.01 290);
+      --surface: oklch(0.18 0.01 290);
+      --surface-foreground: oklch(0.97 0.01 290);
+      --accent: oklch(0.56 0.25 295);
+      --accent-foreground: oklch(1 0 0);
+      --muted: oklch(0.74 0.03 290);
+      --default: oklch(0.23 0.02 290);
+      --default-foreground: oklch(0.97 0.01 290);
+      --field-background: oklch(0.2 0.01 290);
+      --field-foreground: oklch(0.97 0.01 290);
+      --field-placeholder: oklch(0.74 0.03 290);
+      --border: oklch(0.29 0.02 290);
+      --focus: var(--accent);
+    }
+  }
+}

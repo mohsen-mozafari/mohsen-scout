@@ -1,13 +1,13 @@
 {
-  "name": "Your App Name",
-  "short_name": "Your App",
-  "description": "An app built with Bilt",
+  "name": "MOHSEN SCOUT",
+  "short_name": "MOHSEN SCOUT",
+  "description": "Mohsen's personal YouTube research desk",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait",
-  "theme_color": "#6366f1",
-  "background_color": "#ffffff",
+  "theme_color": "#000000",
+  "background_color": "#000000",
   "icons": [
     {
       "src": "/icons/icon-192.png",

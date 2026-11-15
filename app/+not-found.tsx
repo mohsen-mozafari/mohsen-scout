@@ -1,17 +1,14 @@
 import { Link, Stack } from 'expo-router';
-import { View, Text } from 'react-native';
-
+import { Page, Heading, Txt, styles } from '@/components/ScoutUI';
 export default function NotFoundScreen() {
   return (
-    <>
-      <Stack.Screen options={{ title: 'Oops!' }} />
-      <View>
-        <Text>This screen doesn&apos;t exist.</Text>
-
-        <Link href="/">
-          <Text>Go to home screen!</Text>
-        </Link>
-      </View>
-    </>
+    <Page>
+      <Stack.Screen options={{ title: 'Page not found' }} />
+      <Heading>This page is not available.</Heading>
+      <Txt muted>Your research desk is still here.</Txt>
+      <Link href="/" style={styles.badge}>
+        Go to Discover
+      </Link>
+    </Page>
   );
 }

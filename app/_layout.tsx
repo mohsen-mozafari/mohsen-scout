@@ -9,7 +9,7 @@ import {
   Inter_700Bold,
   useFonts,
 } from '@expo-google-fonts/inter';
-import { Platform } from 'react-native';
+import { AppState, Platform } from 'react-native';
 import { useEffect } from 'react';
 import { requireOptionalNativeModule } from 'expo';
 import * as DevClient from 'expo-dev-client';
@@ -24,7 +24,12 @@ import {
 
 import { patchExpoGoAssetUrls } from '@/lib/expoGoAssets';
 import { registerColorTokens } from '@/lib/registerColorTokens';
-import { initPostHog } from '@/lib/posthog';
+import { useScout } from '@/lib/store';
+// Registers the native background task at module load; required before scheduling.
+// oxlint-disable-next-line import/no-unassigned-import
+import '@/lib/scheduler';
+import { palette } from '@/lib/theme';
+import { purgeExpired } from '@/lib/types';
 import { registerServiceWorker } from '@/lib/registerServiceWorker';
 import { reportErrorToParent } from '@/lib/reportPreviewError';
 import { InstallPrompt } from '@/components/InstallPrompt';
@@ -49,8 +54,7 @@ export { ErrorBoundary };
 patchExpoGoAssetUrls();
 registerColorTokens();
 
-// Starter is light-only by default. Remove this when implementing requested dark mode.
-Uniwind.setTheme('light');
+Uniwind.setTheme('dark');
 
 void SplashScreen.preventAutoHideAsync();
 
@@ -125,9 +129,19 @@ export default function RootLayout() {
   }, []);
 
   useEffect(() => {
-    if (Platform.OS === 'web') {
-      initPostHog();
-    }
+    void useScout.getState().boot();
+    const sweep = () => {
+      const state = useScout.getState();
+      if (state.ready) void state.commit(purgeExpired).catch(() => {});
+    };
+    const listener = AppState.addEventListener('change', (state) => {
+      if (state === 'active') sweep();
+    });
+    const timer = setInterval(sweep, 60 * 60000);
+    return () => {
+      listener.remove();
+      clearInterval(timer);
+    };
   }, []);
 
   useEffect(() => {
@@ -147,8 +161,19 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <HeroUINativeProvider>
-        <Stack>
-          <Stack.Screen name="(tabs)" options={{ title: 'Habits', headerShown: false }} />
+        <Stack
+          screenOptions={{
+            headerStyle: { backgroundColor: palette.background },
+            headerTintColor: palette.text,
+            headerTitleStyle: { fontFamily: 'Inter_600SemiBold' },
+            headerShadowVisible: false,
+            contentStyle: { backgroundColor: palette.background },
+          }}
+        >
+          <Stack.Screen name="(tabs)" options={{ title: 'MOHSEN SCOUT', headerShown: false }} />
+          <Stack.Screen name="detail" options={{ title: 'Research detail' }} />
+          <Stack.Screen name="note" options={{ title: 'Edit page' }} />
+          <Stack.Screen name="diagnostics" options={{ title: 'Mock tests' }} />
         </Stack>
         <InstallPrompt />
       </HeroUINativeProvider>

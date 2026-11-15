@@ -1,8 +1,10 @@
 import type { ConfigContext, ExpoConfig } from '@expo/config';
+import { ensureScoutIcons } from './scripts/scout-icon.cjs';
 
 type ExpoPlugins = NonNullable<ExpoConfig['plugins']>;
 
 export default ({ config }: ConfigContext): ExpoConfig => {
+  ensureScoutIcons(process.cwd());
   const nativePlugins: ExpoPlugins =
     process.env.EXPO_PLATFORM === 'native'
       ? [['expo-dev-client', { launchMode: 'most-recent' }]]
@@ -12,9 +14,10 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     ...config,
     name: 'MOHSEN SCOUT',
     slug: 'mohsen-scout',
+    icon: './assets/scout-icon.png',
     version: process.env.BILT_APP_VERSION ?? '1.0.0',
     orientation: 'portrait',
-    userInterfaceStyle: 'automatic',
+    userInterfaceStyle: 'dark',
     scheme: 'mohsen-scout',
     runtimeVersion: {
       policy: 'appVersion',
@@ -29,6 +32,8 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       bundleIdentifier: process.env.BILT_IOS_BUNDLE_ID ?? 'me.bilt.mohsenscout',
     },
     android: {
+      allowBackup: false,
+      adaptiveIcon: { foregroundImage: './assets/scout-icon.png', backgroundColor: '#000000' },
       package: process.env.BILT_ANDROID_PACKAGE ?? 'me.bilt.mohsenscout',
     },
     web: {
@@ -41,7 +46,16 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     extra: {
       appStoreAppId: process.env.BILT_APP_STORE_APP_ID,
     },
-    plugins: ['expo-router', 'expo-font', ...nativePlugins],
+    plugins: [
+      'expo-router',
+      'expo-font',
+      'expo-secure-store',
+      'expo-sqlite',
+      'expo-sharing',
+      'expo-background-task',
+      'expo-notifications',
+      ...nativePlugins,
+    ],
     experiments: {
       typedRoutes: true,
       reactCompiler: true,
