@@ -6,10 +6,12 @@ import { Page, Panel, Heading, Txt, Field, Choices, Action, styles, ErrorBox, us
 import { useScout } from '@/lib/store';
 import { palette as p } from '@/lib/theme';
 import { SEARCH_DEMAND_PROVIDERS, type WikiLanguage, type WikiSignal } from '@/lib/space';
+import { uid, type Note } from '@/lib/types';
 
 export default function SearchDemand() {
-  const params = useLocalSearchParams<{ topic?: string }>();
+  const params = useLocalSearchParams<{ topic?: string; idea?: string }>();
   const preferences = useScout((state) => state.data.preferences);
+  const linkedIdea = useScout((state) => state.data.ideas.find((idea) => idea.id === params.idea));
   const language: WikiLanguage = preferences.spaceInterestLanguage ?? 'en';
   const [country, setCountry] = useState('Worldwide');
   const [period, setPeriod] = useState('Past 12 months');
@@ -32,6 +34,41 @@ export default function SearchDemand() {
     setFailures(issues);
     if (!values.length) throw new Error(issues.join(' · ') || 'No public-interest data was returned.');
   }, 'Public-interest pageview data updated.');
+  const saveComparisonToIdea = () => void op.run(async () => {
+    if (!linkedIdea) throw new Error('Open this comparison from a saved idea first.');
+    if (!results.length) throw new Error('Run a successful public-interest comparison before saving it.');
+    const title = ('Public interest: ' + active.join(' vs ')).slice(0, 120);
+    const existing = useScout.getState().data.notes.find((note) => note.ideaId === linkedIdea.id && note.title === title);
+    const blocks: Note['blocks'] = [
+      { id: uid(), type: 'heading', text: 'Wikimedia article pageviews' },
+      { id: uid(), type: 'paragraph', text: 'These observations count monthly pageviews for the matched article in the selected Wikipedia language edition. They are not search volume, unique people or YouTube views.' },
+      ...results.flatMap((result) => [
+        { id: uid(), type: 'heading' as const, text: result.articleTitle + ' · ' + result.language.toUpperCase() },
+        { id: uid(), type: 'link' as const, text: result.articleUrl },
+        { id: uid(), type: 'link' as const, text: result.apiUrl },
+        ...result.monthlyViews.map((point) => ({
+          id: uid(),
+          type: 'bullet' as const,
+          text: point.month + ': ' + point.views.toLocaleString() + ' article pageviews',
+        })),
+      ]),
+      ...failures.map((failure) => ({ id: uid(), type: 'paragraph' as const, text: 'Unavailable comparison: ' + failure })),
+    ];
+    const note: Note = {
+      id: existing?.id ?? uid(),
+      title,
+      folder: 'Space Research',
+      tags: ['space', 'wikimedia', 'public-interest'],
+      updatedAt: Date.now(),
+      ideaId: linkedIdea.id,
+      blocks,
+    };
+    await useScout.getState().commit((data) => ({
+      ...data,
+      notes: [note, ...data.notes.filter((item) => item.id !== note.id)],
+    }));
+  }, 'Public-interest comparison saved to the linked idea.');
+
   const maxViews = Math.max(1, ...results.flatMap((result) => result.monthlyViews.map((point) => point.views)));
   const countryCodes: Record<string, string> = { Worldwide: '', 'United States': 'US', 'United Kingdom': 'GB', Germany: 'DE', Iran: 'IR', Canada: 'CA', Australia: 'AU', Japan: 'JP', India: 'IN', France: 'FR', Brazil: 'BR' };
   const periods: Record<string, string> = { 'Past 7 days': 'now 7-d', 'Past 30 days': 'today 1-m', 'Past 90 days': 'today 3-m', 'Past 12 months': 'today 12-m', 'Past 5 years': 'today 5-y' };
@@ -43,6 +80,7 @@ export default function SearchDemand() {
   return (
     <Page title="SEARCH DEMAND & TRENDS">
       <Txt muted>Compare public interest signals for up to three space topics. Search demand, YouTube views and news coverage remain separate measurements.</Txt>
+      {linkedIdea ? <Txt muted>Connected idea: {linkedIdea.topic}. Save the comparison below to keep its source links and monthly pageview observations with this idea.</Txt> : null}
       <Panel>
         <Heading>Topics to compare</Heading>
         <Field label="Topic 1" value={topics[0]} onChange={(value) => setTopic(0, value)} placeholder="e.g. exoplanets" />
@@ -92,6 +130,7 @@ export default function SearchDemand() {
           </Button>
         </Panel>
       ))}
+      {linkedIdea && results.length > 0 ? <Action secondary busy={op.busy} onPress={saveComparisonToIdea}>Save comparison to this idea</Action> : null}
       {Boolean(op.error) && <ErrorBox message={op.error} onRetry={compare} />}
       {Boolean(op.message) && <Txt muted>{op.message}</Txt>}
     </Page>
