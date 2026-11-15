@@ -20,7 +20,7 @@ const input: ResearchInput = {
 };
 const now = 1794760000000;
 
-test('source stories reuse one local idea across research entry points', () => {
+void test('source stories reuse one local idea across research entry points', () => {
   const data = defaults();
   const source = {
     topic: 'James Webb new observation',
@@ -39,7 +39,7 @@ test('source stories reuse one local idea across research entry points', () => {
   assert.throws(() => getOrCreateSourceIdea(data, { ...source, sourceUrl: 'http://example.com' }, now));
 });
 
-test('a saved YouTube report connects to one idea without duplicate video references', () => {
+void test('a saved YouTube report connects to one idea without duplicate video references', () => {
   const data = defaults();
   const idea = createManualIdea('James Webb', 'Explain one verified observation.', '', 'Germany', ['en']);
   const sampleVideo = {
@@ -70,7 +70,7 @@ test('a saved YouTube report connects to one idea without duplicate video refere
   assert.throws(() => attachReportToIdea(data, idea.id, 'missing-report'));
 });
 
-test('only a manually selected YouTube URL becomes a durable personal reference', () => {
+void test('only a manually selected YouTube URL becomes a durable personal reference', () => {
   const data = defaults();
   const idea = createManualIdea('James Webb', 'Explain one verified observation.', '', 'Germany', ['en']);
   data.ideas = [idea];
@@ -86,7 +86,7 @@ test('only a manually selected YouTube URL becomes a durable personal reference'
 });
 
 
-test('linked research notes survive backup and legacy notes remain compatible', () => {
+void test('linked research notes survive backup and legacy notes remain compatible', () => {
   const data = defaults();
   data.notes = [{
     id: 'linked-note',
