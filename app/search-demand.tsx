@@ -19,8 +19,11 @@ export default function SearchDemand() {
   const [results, setResults] = useState<WikiSignal[]>([]);
   const [failures, setFailures] = useState<string[]>([]);
   const op = useOperation();
-  const setTopic = (index: number, value: string) =>
+  const setTopic = (index: number, value: string) => {
     setTopics((current) => current.map((item, position) => position === index ? value : item));
+    setResults([]);
+    setFailures([]);
+  };
   const active = topics.map((topic) => topic.trim()).filter(Boolean).slice(0, 3);
   const compare = () => void op.run(async () => {
     if (!active.length) throw new Error('Enter at least one topic.');
