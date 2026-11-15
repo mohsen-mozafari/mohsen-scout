@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Linking, View, Text } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { Button } from 'heroui-native';
@@ -16,9 +16,6 @@ export default function SearchDemand() {
   const [topics, setTopics] = useState<string[]>([typeof params.topic === 'string' ? params.topic : 'exoplanet', '', '']);
   const [results, setResults] = useState<WikiSignal[]>([]);
   const op = useOperation();
-  useEffect(() => {
-    if (typeof params.topic === 'string') setTopics([params.topic, '', '']);
-  }, [params.topic]);
   const setTopic = (index: number, value: string) =>
     setTopics((current) => current.map((item, position) => position === index ? value : item));
   const active = topics.map((topic) => topic.trim()).filter(Boolean).slice(0, 3);
@@ -41,13 +38,13 @@ export default function SearchDemand() {
       <Txt muted>Compare public interest signals for up to three space topics. Search demand, YouTube views and news coverage remain separate measurements.</Txt>
       <Panel>
         <Heading>Topics to compare</Heading>
-        {topics.map((topic, index) => (
-          <Field key={index} label={'Topic ' + (index + 1)} value={topic} onChange={(value) => setTopic(index, value)} placeholder={index === 0 ? 'e.g. exoplanets' : 'Optional comparison topic'} />
-        ))}
-        <Choices label="Wikipedia language project" options={['en', 'fa', 'de', 'fr', 'es', 'ja']} selected={[language]} onChange={(values) => setLanguage(values[0] as WikiLanguage)} />
+        <Field label="Topic 1" value={topics[0]} onChange={(value) => setTopic(0, value)} placeholder="e.g. exoplanets" />
+        <Field label="Topic 2" value={topics[1]} onChange={(value) => setTopic(1, value)} placeholder="Optional comparison topic" />
+        <Field label="Topic 3" value={topics[2]} onChange={(value) => setTopic(2, value)} placeholder="Optional comparison topic" />
+        <Choices label="Wikipedia language project" options={['en', 'fa', 'de', 'fr', 'es', 'ja']} selected={[language]} onChange={(values) => setLanguage(values[0])} />
         <Heading>Google Trends comparison settings</Heading>
-        <Choices label="Country / region" options={['Worldwide', 'United States', 'United Kingdom', 'Germany', 'Iran', 'Canada', 'Australia', 'Japan', 'India', 'France', 'Brazil']} selected={[country]} onChange={(values) => setCountry(values[0] as string)} />
-        <Choices label="Time range" options={['Past 7 days', 'Past 30 days', 'Past 90 days', 'Past 12 months', 'Past 5 years']} selected={[period]} onChange={(values) => setPeriod(values[0] as string)} />
+        <Choices label="Country / region" options={['Worldwide', 'United States', 'United Kingdom', 'Germany', 'Iran', 'Canada', 'Australia', 'Japan', 'India', 'France', 'Brazil']} selected={[country]} onChange={(values) => setCountry(values[0])} />
+        <Choices label="Time range" options={['Past 7 days', 'Past 30 days', 'Past 90 days', 'Past 12 months', 'Past 5 years']} selected={[period]} onChange={(values) => setPeriod(values[0])} />
         <Action busy={op.busy} disabled={!active.length} onPress={compare}>Compare public-interest history</Action>
       </Panel>
       <Panel>

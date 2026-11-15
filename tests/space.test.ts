@@ -11,7 +11,7 @@ import {
   DEFAULT_SPACE_NEWS_SOURCES,
 } from '../lib/space';
 
-test('RSS parser reads RSS items, CDATA, entities and safe HTTPS links', () => {
+void test('RSS parser reads RSS items, CDATA, entities and safe HTTPS links', () => {
   const feed = SPACE_NEWS_SOURCES.find((source) => source.id === 'nasa')!;
   const xml = '<rss><channel><item><title><![CDATA[Webb &amp; exoplanets]]></title><link>https://example.com/story</link><description><![CDATA[An atmosphere &amp; new result.]]></description><pubDate>Sun, 15 Nov 2026 12:00:00 GMT</pubDate></item></channel></rss>';
   const items = parseRssFeed(xml, feed);
@@ -22,14 +22,14 @@ test('RSS parser reads RSS items, CDATA, entities and safe HTTPS links', () => {
   assert.equal(items[0].publishedAt, '2026-11-15T12:00:00.000Z');
 });
 
-test('RSS parser safely handles invalid numeric entities in external feed text', () => {
+void test('RSS parser safely handles invalid numeric entities in external feed text', () => {
   const feed = SPACE_NEWS_SOURCES[0];
   const parsed = parseRssFeed('<rss><item><title>Exoplanets &#x110000; &amp; Webb</title><link>https://example.com/safe</link></item></rss>', feed);
   assert.equal(parsed.length, 1);
   assert.match(parsed[0].title, /Webb/);
 });
 
-test('A failed feed refresh is not cached and can recover on the next user request', async () => {
+void test('A failed feed refresh is not cached and can recover on the next user request', async () => {
   let attempts = 0;
   const feed = SPACE_NEWS_SOURCES.find((source) => source.id === 'nasa')!;
   const fetcher: typeof fetch = async () => {
@@ -45,13 +45,13 @@ test('A failed feed refresh is not cached and can recover on the next user reque
   assert.equal(attempts, 2);
 });
 
-test('RSS parser ignores entries without a title or HTTPS source link', () => {
+void test('RSS parser ignores entries without a title or HTTPS source link', () => {
   const feed = SPACE_NEWS_SOURCES[0];
   const xml = '<rss><item><title>Unsafe</title><link>http://example.com/no</link></item><item><link>https://example.com/no-title</link></item></rss>';
   assert.equal(parseRssFeed(xml, feed).length, 0);
 });
 
-test('RSS parser reads Atom link attributes', () => {
+void test('RSS parser reads Atom link attributes', () => {
   const feed = SPACE_NEWS_SOURCES.find((source) => source.id === 'jpl')!;
   const xml = '<feed><entry><title>Solar mission update</title><link href="https://example.com/solar"/><summary>Solar observation</summary><updated>2026-11-15T10:00:00Z</updated></entry></feed>';
   const parsed = parseRssFeed(xml, feed);
@@ -59,27 +59,27 @@ test('RSS parser reads Atom link attributes', () => {
   assert.equal(parsed[0].summary, 'Solar observation');
 });
 
-test('Niche matching filters source headlines without assigning a market score', () => {
+void test('Niche matching filters source headlines without assigning a market score', () => {
   const source = SPACE_NEWS_SOURCES[0];
   const parsed = parseRssFeed('<rss><item><title>New exoplanet atmosphere observed</title><link>https://example.com/a</link></item><item><title>Artemis lunar mission update</title><link>https://example.com/b</link></item></rss>', source);
   assert.equal(newsForNiche(parsed, 'exoplanets').length, 1);
   assert.equal(newsForNiche(parsed, 'moon').length, 1);
 });
 
-test('Research outline keeps unknowns and verification questions explicit', () => {
+void test('Research outline keeps unknowns and verification questions explicit', () => {
   const outline = buildResearchOutline('Europa ocean worlds', ['New plume observation']);
   assert.equal(outline.titleIdeas.length, 3);
   assert.ok(outline.outline.some((line) => line.includes('open scientific questions')));
   assert.equal(outline.verificationQuestions.length, 4);
 });
 
-test('Provider defaults are official source IDs and can be replaced by local settings', () => {
+void test('Provider defaults are official source IDs and can be replaced by local settings', () => {
   assert.deepEqual(DEFAULT_SPACE_NEWS_SOURCES, ['nasa', 'jpl', 'esa-space', 'esa-science']);
   assert.ok(DEFAULT_SPACE_NEWS_SOURCES.every((id) => SPACE_NEWS_SOURCES.some((source) => source.id === id)));
 });
 
 
-test('Wikimedia provider returns language-scoped article pageviews, not a synthetic trend score', async () => {
+void test('Wikimedia provider returns language-scoped article pageviews, not a synthetic trend score', async () => {
   const calls: string[] = [];
   const mockedFetch: typeof fetch = async (input) => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;

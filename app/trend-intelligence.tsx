@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Linking, View, Text } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { Button } from 'heroui-native';
@@ -15,9 +15,6 @@ export default function TrendIntelligence() {
   const [videos, setVideos] = useState<YouTubeSampleVideo[]>([]);
   const [warning, setWarning] = useState('');
   const op = useOperation();
-  useEffect(() => {
-    if (typeof params.topic === 'string') setTopic(params.topic);
-  }, [params.topic]);
   const run = () => void op.run(async () => {
     const key = await getKey('youtube');
     if (!key) throw new Error('Save your personal YouTube Data API key in Settings before running a YouTube sample.');

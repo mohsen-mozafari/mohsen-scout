@@ -122,10 +122,15 @@ void test('YouTube trend sample uses official search and video statistics endpoi
 });
 
 void test('Backup compatibility: version-1 backups without Space preferences still import', () => {
-  const backup = JSON.parse(exportBackup(defaults())) as { personal: { preferences: Record<string, unknown> } };
-  delete backup.personal.preferences.spaceNewsSources;
-  delete backup.personal.preferences.spaceInterestLanguage;
-  delete backup.personal.preferences.selectedSpaceNiche;
+  const backup: unknown = JSON.parse(exportBackup(defaults()));
+  assert.ok(backup && typeof backup === 'object' && 'personal' in backup);
+  const personal = backup.personal;
+  assert.ok(personal && typeof personal === 'object' && 'preferences' in personal);
+  const preferences = personal.preferences;
+  assert.ok(preferences && typeof preferences === 'object' && !Array.isArray(preferences));
+  Reflect.deleteProperty(preferences, 'spaceNewsSources');
+  Reflect.deleteProperty(preferences, 'spaceInterestLanguage');
+  Reflect.deleteProperty(preferences, 'selectedSpaceNiche');
   const restored = importBackup(JSON.stringify(backup));
   assert.deepEqual(restored.preferences.spaceNewsSources, ['nasa', 'jpl', 'esa-space', 'esa-science']);
   assert.equal(restored.preferences.spaceInterestLanguage, 'en');

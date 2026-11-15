@@ -128,7 +128,7 @@ export default function DeepResearch() {
             <Heading>{brief.topic}</Heading>
             <Text style={styles.badge}>Prepared {new Date(brief.createdAt).toLocaleString()}</Text>
             <Txt muted>Evidence is presented by provider. Wikipedia is not treated as a primary scientific source; confirm scientific claims in the linked NASA/JPL/ESA material and cited papers.</Txt>
-            {brief.warnings.map((warning, index) => <Txt muted key={index}>Limitation: {warning}</Txt>)}
+            {brief.warnings.map((warning) => <Txt muted key={warning}>Limitation: {warning}</Txt>)}
           </Panel>
           {brief.wiki && (
             <Panel>
@@ -170,12 +170,12 @@ export default function DeepResearch() {
           </Panel>
           <Panel>
             <Heading>Story structure</Heading>
-            {brief.outline.map((line, index) => <Txt key={index}>{index + 1}. {line}</Txt>)}
+            {brief.outline.map((line) => <Txt key={line}>{line}</Txt>)}
           </Panel>
           <Panel>
             <Heading>Suggested narration draft</Heading>
             <Txt muted>This is a source-aware script scaffold, not a finished fact-checked voiceover. Fill in specific numbers and scientific claims only after checking the linked primary material.</Txt>
-            {brief.scriptDraft.map((line, index) => <Txt key={index}>{line}</Txt>)}
+            {brief.scriptDraft.map((line) => <Txt key={line}>{line}</Txt>)}
           </Panel>
           <Panel>
             <Heading>Scientific verification checklist</Heading>

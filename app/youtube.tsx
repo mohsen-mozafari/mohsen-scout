@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { Text, View } from 'react-native';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { Button, Skeleton } from 'heroui-native';
@@ -70,9 +70,6 @@ export default function Discover() {
       };
     }, []),
   );
-  useEffect(() => {
-    if (typeof params.topic === 'string') setTopic(params.topic);
-  }, [params.topic]);
   const report: Report | undefined = reports.find((r) => r.id === reportId);
   const run = async () => {
     const input: ResearchInput = {

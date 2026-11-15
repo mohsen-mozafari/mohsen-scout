@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Linking, View, Text } from 'react-native';
 import { router } from 'expo-router';
 import { Button } from 'heroui-native';
@@ -13,8 +13,19 @@ import {
 } from '@/lib/space';
 
 export default function SpaceRadar() {
-  const preferences = useScout((state) => state.data.preferences);
   const ready = useScout((state) => state.ready);
+  if (!ready) {
+    return (
+      <Page title="SPACE RADAR">
+        <Txt muted>Loading your saved Space Radar settings…</Txt>
+      </Page>
+    );
+  }
+  return <SpaceRadarReady />;
+}
+
+function SpaceRadarReady() {
+  const preferences = useScout((state) => state.data.preferences);
   const [selectedId, setSelectedId] = useState(preferences.selectedSpaceNiche || 'exoplanets');
   const [sources, setSources] = useState<SpaceNewsSourceId[]>(preferences.spaceNewsSources ?? DEFAULT_SPACE_NEWS_SOURCES);
   const [language, setLanguage] = useState<WikiLanguage>(preferences.spaceInterestLanguage ?? 'en');
@@ -22,14 +33,7 @@ export default function SpaceRadar() {
   const op = useOperation();
   const selected = SPACE_NICHES.find((niche) => niche.id === selectedId) ?? SPACE_NICHES[0];
 
-  useEffect(() => {
-    setSelectedId(preferences.selectedSpaceNiche || 'exoplanets');
-    setSources(preferences.spaceNewsSources ?? DEFAULT_SPACE_NEWS_SOURCES);
-    setLanguage(preferences.spaceInterestLanguage ?? 'en');
-  }, [preferences.selectedSpaceNiche, preferences.spaceNewsSources, preferences.spaceInterestLanguage]);
-
   const saveSettings = () => void op.run(async () => {
-    if (!ready) throw new Error('Local settings are still loading.');
     await useScout.getState().commit((data) => ({
       ...data,
       preferences: {
@@ -76,7 +80,7 @@ export default function SpaceRadar() {
           <Txt muted>{selected.description}</Txt>
           <Text style={styles.badge}>Starting query: {selected.topic}</Text>
         </View>
-        <Action disabled={!ready || op.busy} onPress={saveSettings} busy={op.busy}>Save niche & source settings</Action>
+        <Action disabled={op.busy} onPress={saveSettings} busy={op.busy}>Save niche & source settings</Action>
       </Panel>
 
       <Panel>
@@ -92,7 +96,7 @@ export default function SpaceRadar() {
         <Choices
           options={['en', 'fa', 'de', 'fr', 'es', 'ja']}
           selected={[language]}
-          onChange={(values) => setLanguage(values[0] as WikiLanguage)}
+          onChange={(values) => setLanguage(values[0])}
         />
         <Txt muted>Wikipedia language projects are not country-level audience data. This setting changes the language edition used for pageview comparisons.</Txt>
         <Action secondary busy={op.busy} onPress={scan}>Scan official news now</Action>
