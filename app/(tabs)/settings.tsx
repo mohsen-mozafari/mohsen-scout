@@ -506,7 +506,7 @@ export default function Settings() {
       </Fold>
       <Fold title="App info">
         <Heading>MOHSEN SCOUT</Heading>
-        <Txt>Version 1.2.0 · Personal research assistant</Txt>
+        <Txt>Version 1.3.0 · Personal research assistant</Txt>
         <Txt muted>
           YouTube is a trademark of Google LLC. This app is not affiliated with YouTube. No
           comprehensive trend coverage or guaranteed results.
