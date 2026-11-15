@@ -1,5 +1,6 @@
 import { defaults, purgeExpired, RETENTION_MS, type ResearchInput, type Video } from './types';
-import { exportBackup, importBackup, personalLinks } from './backup';
+import { exportBackup, importBackup, personalLinks, restorePersonalData } from './backup';
+import { moveNoteBlock } from './utils';
 import { validateLocal } from './validation';
 import {
   ApiError,
@@ -10,6 +11,7 @@ import {
   testYouTube,
   getFreeModels,
   requestJson,
+  retryDelayMs,
   opinionPrompt,
   type Fetcher,
 } from './api';
@@ -72,7 +74,168 @@ export async function runDiagnostics(): Promise<TestResult[]> {
       thumbnails: { medium: { url: video.thumbnail } },
     },
   };
+  const report = {
+    id: 'MOCK-report',
+    input,
+    videos: [video],
+    queries: relatedQueries(input.topic),
+    warnings: [],
+    createdAt: now,
+    analyzed: false,
+  };
+  const idea = buildIdeas(report)[0];
+  const savedLink = {
+    id: video.id,
+    url: `https://www.youtube.com/watch?v=${video.id}`,
+    manualTitle: 'Personal label',
+    topic: input.topic,
+    note: 'My note',
+    folder: '',
+    tags: [],
+    savedAt: now,
+  };
   const cases: Array<[string, () => void | Promise<void>]> = [
+    [
+      'Retention removes expired report refs, keeps saved links',
+      () => {
+        const data = defaults();
+        data.links = [savedLink];
+        data.videos = [{ ...video, fetchedAt: now - RETENTION_MS }];
+        data.reports = [{ ...report, createdAt: now - RETENTION_MS }];
+        data.ideas = [{ ...idea, reportId: report.id, videoIds: [video.id, 'unsaved'] }];
+        const clean = purgeExpired(data, now);
+        check(clean.ideas[0].reportId === undefined);
+        check(clean.ideas[0].videoIds.join() === video.id);
+        check(clean.ideas[0].concept === idea.concept);
+      },
+    ],
+    [
+      'Clearing metadata removes automated references',
+      () => {
+        const data = defaults();
+        data.ideas = [{ ...idea, videoIds: [video.id], reportId: report.id }];
+        const clean = purgeExpired(data, now);
+        check(clean.ideas[0].videoIds.length === 0 && !clean.ideas[0].reportId);
+      },
+    ],
+    [
+      'Nested report videos obey their own expiry',
+      () => {
+        const data = defaults();
+        data.reports = [{ ...report, videos: [{ ...video, fetchedAt: now - RETENTION_MS }] }];
+        check(purgeExpired(data, now).reports[0].videos.length === 0);
+      },
+    ],
+    [
+      'Restore preserves device research and quota',
+      () => {
+        const current = defaults();
+        current.videos = [video];
+        current.reports = [report];
+        current.budget = { date: quotaDay(), requests: 9, units: 900, exhausted: true };
+        const restored = defaults();
+        restored.preferences.name = 'Restored owner';
+        const merged = restorePersonalData(current, restored);
+        check(merged.videos === current.videos && merged.reports === current.reports);
+        check(merged.budget === current.budget && merged.preferences.name === 'Restored owner');
+        check(merged.preferences.schedule === 'Manual' && !merged.preferences.lastInput);
+      },
+    ],
+    [
+      'Restore keeps opinions only for unchanged editorial prompts',
+      () => {
+        const current = defaults();
+        current.ideas = [idea];
+        current.opinions = [
+          { id: 'op', ideaId: idea.id, text: 'MOCK opinion', model: 'MOCK', createdAt: now },
+        ];
+        const restored = defaults();
+        restored.ideas = [{ ...idea }];
+        check(restorePersonalData(current, restored).opinions.length === 1);
+        restored.ideas = [{ ...idea, concept: 'Different concept' }];
+        check(restorePersonalData(current, restored).opinions.length === 0);
+        restored.ideas = [];
+        check(restorePersonalData(current, restored).opinions.length === 0);
+      },
+    ],
+    [
+      'Import rejects unsaved automatic video references',
+      () => {
+        const data = defaults();
+        data.links = [savedLink];
+        data.ideas = [idea];
+        const raw = JSON.parse(exportBackup(data));
+        raw.personal.ideas[0].videoIds = [video.id, 'unsaved'];
+        check(importBackup(JSON.stringify(raw)).ideas[0].videoIds.join() === video.id);
+      },
+    ],
+    [
+      'Note block reordering preserves content and boundaries',
+      () => {
+        const blocks = [
+          { id: 'a', type: 'paragraph' as const, text: 'Keep me' },
+          { id: 'b', type: 'checklist' as const, text: 'Done', checked: true },
+        ];
+        check(moveNoteBlock(blocks, 'b', -1)[0].checked === true);
+        check(blocks[0].id === 'a');
+        check(moveNoteBlock(blocks, 'a', -1) === blocks);
+        check(moveNoteBlock(blocks, 'b', 1) === blocks);
+      },
+    ],
+    [
+      'Retry-After parsing and bounded server delay',
+      () => {
+        check(retryDelayMs('2', 500, now) === 2000);
+        check(retryDelayMs(new Date(now + 5000).toUTCString(), 500, now) !== null);
+        check(retryDelayMs('invalid', 500, now) === 500);
+        check(retryDelayMs('60', 500, now) === null);
+      },
+    ],
+    [
+      'MOCK non-JSON transient HTTP responses retry',
+      async () => {
+        let calls = 0;
+        const result = await requestJson(
+          'https://example.com',
+          {},
+          async () => {
+            calls++;
+            return calls === 1
+              ? new Response('MOCK unavailable', { status: 503 })
+              : mock({ ok: true });
+          },
+          undefined,
+          15000,
+          1,
+        );
+        check(calls === 2 && typeof result === 'object');
+      },
+    ],
+    [
+      'MOCK long Retry-After stops instead of retrying early',
+      async () => {
+        let calls = 0;
+        await rejects(
+          () =>
+            requestJson(
+              'https://example.com',
+              {},
+              async () => {
+                calls++;
+                return new Response('MOCK rate limit', {
+                  status: 429,
+                  headers: { 'Retry-After': '60' },
+                });
+              },
+              undefined,
+              15000,
+              1,
+            ),
+          'service',
+        );
+        check(calls === 1);
+      },
+    ],
     [
       'Defaults & local-only profile',
       () => {

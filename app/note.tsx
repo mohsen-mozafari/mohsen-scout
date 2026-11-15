@@ -1,9 +1,21 @@
 import { useState } from 'react';
 import { View, Text, Linking, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
-import { Button } from 'heroui-native';
+import { Button, Skeleton } from 'heroui-native';
 import { router, useLocalSearchParams, Link } from 'expo-router';
-import { Plus, Trash2 } from 'lucide-react-native';
-import { styles, Field, Choices, Action, Txt, ErrorBox, useOperation } from '@/components/ScoutUI';
+import { Plus, Trash2, ChevronUp, ChevronDown } from 'lucide-react-native';
+import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
+import {
+  Page,
+  Empty,
+  styles,
+  Field,
+  Choices,
+  Action,
+  Txt,
+  ErrorBox,
+  useOperation,
+} from '@/components/ScoutUI';
+import { moveNoteBlock } from '@/lib/utils';
 import { useScout } from '@/lib/store';
 import { uid, type Note, type NoteBlock } from '@/lib/types';
 import { palette as p } from '@/lib/theme';
@@ -57,6 +69,22 @@ export default function NoteEditor() {
         .commit((d) => ({ ...d, notes: [value, ...d.notes.filter((n) => n.id !== note.id)] }));
       router.dismissTo('/notes');
     });
+  if (!ready)
+    return (
+      <Page>
+        <Skeleton className="h-44 rounded-2xl" />
+      </Page>
+    );
+  if (id && !existing)
+    return (
+      <Page>
+        <Empty
+          title="This page no longer exists."
+          action="Go to Notes"
+          onPress={() => router.replace('/notes')}
+        />
+      </Page>
+    );
   return (
     <KeyboardAvoidingView
       style={styles.page}
@@ -93,7 +121,12 @@ export default function NoteEditor() {
           }
         />
         {note.blocks.map((block, index) => (
-          <View key={block.id} style={{ gap: 8 }}>
+          <Animated.View
+            key={block.id}
+            entering={FadeIn.duration(160)}
+            exiting={FadeOut.duration(100)}
+            style={{ gap: 8 }}
+          >
             <View style={styles.row}>
               <Text style={[styles.label, { flex: 1 }]}>{block.type}</Text>
               {block.type === 'checklist' && (
@@ -126,24 +159,57 @@ export default function NoteEditor() {
               multiline={['paragraph', 'bullet', 'heading'].includes(block.type)}
               onChange={(text) => changeBlock(block.id, { text })}
             />
+            {note.blocks.length > 1 && (
+              <View style={styles.row}>
+                <Button
+                  size="sm"
+                  isIconOnly
+                  variant="tertiary"
+                  isDisabled={index === 0}
+                  accessibilityLabel="Move block up"
+                  onPress={() => {
+                    setNote((n) => ({ ...n, blocks: moveNoteBlock(n.blocks, block.id, -1) }));
+                    void Haptics.selectionAsync();
+                  }}
+                >
+                  <ChevronUp size={18} color={p.muted} />
+                </Button>
+                <Button
+                  size="sm"
+                  isIconOnly
+                  variant="tertiary"
+                  isDisabled={index === note.blocks.length - 1}
+                  accessibilityLabel="Move block down"
+                  onPress={() => {
+                    setNote((n) => ({ ...n, blocks: moveNoteBlock(n.blocks, block.id, 1) }));
+                    void Haptics.selectionAsync();
+                  }}
+                >
+                  <ChevronDown size={18} color={p.muted} />
+                </Button>
+              </View>
+            )}
             {['link', 'video', 'opportunity'].includes(block.type) && (
               <Action
                 secondary
-                onPress={() => {
-                  if (block.type === 'opportunity')
-                    router.push({ pathname: '/detail', params: { idea: block.text } });
-                  else
-                    void op.run(async () => {
+                onPress={() =>
+                  void op.run(async () => {
+                    if (block.type === 'opportunity') {
+                      if (!useScout.getState().data.ideas.some((entry) => entry.id === block.text))
+                        throw new Error('This opportunity is missing. Choose another reference.');
+                      router.push({ pathname: '/detail', params: { idea: block.text } });
+                    } else {
                       if (!block.text.startsWith('https://'))
                         throw new Error('Use a secure https link.');
                       await Linking.openURL(block.text);
-                    });
-                }}
+                    }
+                  })
+                }
               >
                 Open reference
               </Action>
             )}
-          </View>
+          </Animated.View>
         ))}
         <Choices
           label="Add block"

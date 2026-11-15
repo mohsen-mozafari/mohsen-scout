@@ -10,6 +10,21 @@ export class ApiError extends Error {
   }
 }
 const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+export function retryDelayMs(
+  retryAfter: string | null,
+  fallbackMs: number,
+  now = Date.now(),
+): number | null {
+  let delay = fallbackMs;
+  if (retryAfter) {
+    const value = retryAfter.trim();
+    const serverDelay = /^\d+(\.\d+)?$/.test(value)
+      ? Number(value) * 1000
+      : Date.parse(value) - now;
+    if (Number.isFinite(serverDelay)) delay = Math.max(delay, serverDelay);
+  }
+  return delay > 30000 ? null : Math.max(0, delay);
+}
 export async function requestJson(
   url: string,
   init: RequestInit = {},
@@ -28,9 +43,13 @@ export async function requestJson(
       let body: unknown;
       try {
         body = await response.json();
-      } catch {
-        throw new ApiError('The service returned an unreadable response.', 'invalid');
+      } catch (error) {
+        if (controller.signal.aborted) throw error;
+        if (response.ok)
+          throw new ApiError('The service returned an unreadable response.', 'invalid');
+        body = null;
       }
+      clearTimeout(timer);
       if (response.ok) return body;
       const serialized = JSON.stringify(body);
       if (/quotaExceeded|dailyLimitExceeded/.test(serialized))
@@ -52,8 +71,14 @@ export async function requestJson(
         );
       if (response.status === 429 || response.status >= 500) {
         if (attempt < attempts - 1) {
-          await wait(backoffBaseMs * 2 ** attempt);
-          continue;
+          const delay = retryDelayMs(
+            response.headers.get('Retry-After'),
+            backoffBaseMs * 2 ** attempt,
+          );
+          if (delay !== null) {
+            await wait(delay);
+            continue;
+          }
         }
         throw new ApiError(
           response.status === 429

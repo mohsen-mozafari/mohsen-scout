@@ -4,12 +4,17 @@ import { validateLocal } from './validation';
 let database: Promise<SQLite.SQLiteDatabase> | undefined;
 async function db() {
   if (!database)
-    database = SQLite.openDatabaseAsync('mohsen-scout.db').then(async (value) => {
-      await value.execAsync(
-        'PRAGMA journal_mode = WAL; CREATE TABLE IF NOT EXISTS personal (key TEXT PRIMARY KEY, value TEXT NOT NULL); CREATE TABLE IF NOT EXISTS youtube (key TEXT PRIMARY KEY, value TEXT NOT NULL);',
-      );
-      return value;
-    });
+    database = SQLite.openDatabaseAsync('mohsen-scout.db')
+      .then(async (value) => {
+        await value.execAsync(
+          'PRAGMA journal_mode = WAL; CREATE TABLE IF NOT EXISTS personal (key TEXT PRIMARY KEY, value TEXT NOT NULL); CREATE TABLE IF NOT EXISTS youtube (key TEXT PRIMARY KEY, value TEXT NOT NULL);',
+        );
+        return value;
+      })
+      .catch((error: unknown) => {
+        database = undefined;
+        throw error;
+      });
   return database;
 }
 export async function readData(): Promise<LocalData> {

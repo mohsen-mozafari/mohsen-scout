@@ -166,7 +166,13 @@ export function defaults(): LocalData {
 }
 export function purgeExpired(data: LocalData, now = Date.now()): LocalData {
   const videos = data.videos.filter((v) => now - v.fetchedAt < RETENTION_MS);
-  const reports = data.reports.filter((r) => now - r.createdAt < RETENTION_MS);
+  const reports = data.reports
+    .filter((r) => now - r.createdAt < RETENTION_MS)
+    .map((report) => ({
+      ...report,
+      videos: report.videos.filter((v) => now - v.fetchedAt < RETENTION_MS),
+    }));
+  const reportIds = new Set(reports.map((r) => r.id));
   const retainedIds = new Set([...videos.map((v) => v.id), ...data.links.map((l) => l.id)]);
   return {
     ...data,
@@ -174,7 +180,10 @@ export function purgeExpired(data: LocalData, now = Date.now()): LocalData {
     reports,
     ideas: data.ideas.map((idea) => {
       const videoIds = idea.videoIds.filter((id) => retainedIds.has(id));
-      return videoIds.length === idea.videoIds.length ? idea : { ...idea, videoIds };
+      const reportId = idea.reportId && reportIds.has(idea.reportId) ? idea.reportId : undefined;
+      return videoIds.length === idea.videoIds.length && reportId === idea.reportId
+        ? idea
+        : { ...idea, videoIds, reportId };
     }),
   };
 }

@@ -96,7 +96,7 @@ export default function Library() {
               label="Search library"
               value={search}
               onChange={setSearch}
-              placeholder="Videos, notes or tags"
+              placeholder="Titles, personal notes or tags"
             />
             <Choices
               options={['Newest', 'Oldest', 'Title']}

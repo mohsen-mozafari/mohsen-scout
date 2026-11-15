@@ -44,7 +44,7 @@ const noteSchema = z.object({
     )
     .max(1000),
 });
-const idea = z.object({
+const ideaSchema = z.object({
   id: identifierSchema,
   topic: text,
   concept: text,
@@ -79,7 +79,7 @@ const backupSchema = z.object({
   personal: z.object({
     links: z.array(link).max(20000),
     notes: z.array(noteSchema).max(20000),
-    ideas: z.array(idea).max(20000),
+    ideas: z.array(ideaSchema).max(20000),
     preferences,
   }),
 });
@@ -136,7 +136,38 @@ export function importBackup(raw: string): LocalData {
   return {
     ...fresh,
     ...result.data.personal,
+    ideas: result.data.personal.ideas.map((idea) => ({
+      ...idea,
+      videoIds: idea.videoIds.filter((id) =>
+        result.data.personal.links.some((savedLink) => savedLink.id === id),
+      ),
+    })),
     preferences: { ...fresh.preferences, ...result.data.personal.preferences },
+  };
+}
+export function restorePersonalData(current: LocalData, restored: LocalData): LocalData {
+  return {
+    ...current,
+    preferences: {
+      ...restored.preferences,
+      schedule: 'Manual',
+      paused: false,
+      lastInput: undefined,
+    },
+    ideas: restored.ideas,
+    links: restored.links,
+    notes: restored.notes,
+    opinions: current.opinions.filter((opinion) => {
+      const before = current.ideas.find((idea) => idea.id === opinion.ideaId);
+      const after = restored.ideas.find((idea) => idea.id === opinion.ideaId);
+      return (
+        before &&
+        after &&
+        before.topic === after.topic &&
+        before.concept === after.concept &&
+        before.decision === after.decision
+      );
+    }),
   };
 }
 export function personalLinks(data: LocalData) {

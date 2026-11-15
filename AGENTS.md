@@ -22,7 +22,7 @@ This is Mohsen's personal, local-first Android YouTube research desk. Exact bran
 
 Run `npm test`, `npm run lint`, `npm run lint:css`, and `npx expo-doctor` after changing dependencies/data rules. Browser tests: Settings → App info → Run mock regression checks, or `/diagnostics?run=1`. They use isolated mocked fetchers and must never mutate the owner's workspace. Node suite execution and native device tests must be recorded separately.
 
-Current recorded browser mock result: 25 passed / 0 failed. See TEST_RESULTS.md for status, screenshots and unverified items. Never claim a live API success or APK exists without actually observing it. Check Android device keys, SQLite persistence, backup transfer, notifications and background runs before release.
+Current recorded browser mock result: 35 passed / 0 failed. Restore uses `restorePersonalData` to preserve current device reports/videos/quota while replacing personal data; keep local AI opinions only when the idea ID and editorial topic/concept/decision still match. Imported idea video references must point to personal saved links. Retention also removes expired report IDs and nested video metadata. Respect Retry-After; stop rather than retry early when the server asks for a wait over 30 seconds. Fonts are bundled, with no extra Google Fonts CDN request. See TEST_RESULTS.md for status, screenshots and unverified items. Never claim a live API success or APK exists without actually observing it. Check Android device keys, SQLite persistence, backup transfer, notifications and background runs before release.
 
 YouTube policy sources reviewed:
 

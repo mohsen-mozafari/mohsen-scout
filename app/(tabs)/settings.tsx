@@ -1,3 +1,4 @@
+import * as Haptics from 'expo-haptics';
 import { useEffect, useState } from 'react';
 import { Text, View, Linking } from 'react-native';
 import { Button, Skeleton } from 'heroui-native';
@@ -19,7 +20,7 @@ import { useScout } from '@/lib/store';
 import { type Preferences, defaults, regions, languages } from '@/lib/types';
 import { getKey, setKey, deleteKey, credentialPersistence, type Credential } from '@/lib/vault';
 import { getFreeModels, testYouTube, testOpenRouter, quotaDay } from '@/lib/api';
-import { exportBackup, importBackup } from '@/lib/backup';
+import { exportBackup, importBackup, restorePersonalData } from '@/lib/backup';
 import { shareText, readBackup, shareApk } from '@/lib/transfer';
 import { configureSchedule, enableNotifications, scheduleNotice } from '@/lib/scheduler';
 import { router } from 'expo-router';
@@ -28,9 +29,15 @@ function CredentialSection({ kind, label }: { kind: Credential; label: string })
   const [key, setValue] = useState('');
   const [stored, setStored] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
+  const [readError, setReadError] = useState('');
   const op = useOperation();
   useEffect(() => {
-    void getKey(kind).then((value) => setStored(Boolean(value)));
+    void getKey(kind)
+      .then((value) => setStored(Boolean(value)))
+      .catch(() => {
+        setReadError('Could not read saved credentials. Reopen Settings to retry.');
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      });
   }, [kind]);
   const test = () =>
     void op.run(async () => {
@@ -101,6 +108,7 @@ function CredentialSection({ kind, label }: { kind: Credential; label: string })
           </Action>
         </View>
       </View>
+      {Boolean(readError) && <Txt muted>{readError}</Txt>}
       {Boolean(op.error) && <ErrorBox message={op.error} onRetry={test} />}
       {Boolean(op.message) && <Txt muted>{op.message}</Txt>}
     </View>
@@ -250,7 +258,7 @@ export default function Settings() {
           project are not counted. Daily reset follows Pacific time.
         </Txt>
         <Txt muted>
-          {data.budget.exhausted
+          {data.budget.date === quotaDay() && data.budget.exhausted
             ? 'YouTube reported quota exhaustion. Automatic requests are stopped for this quota day.'
             : 'Google may reject requests before this local budget is reached.'}
         </Txt>
@@ -300,7 +308,9 @@ export default function Settings() {
       <Fold title="Backup & phone transfer">
         <Txt muted>
           Exports your notes, links, folders, tags, ideas and preferences. API metadata, AI replies
-          and keys are excluded. Restore replaces personal data; your keys stay on this device.
+          and keys are excluded. Restore replaces personal data and resets scheduling to Manual.
+          Current research and quota remain; opinions stay only for unchanged ideas. Your keys stay
+          on this device.
         </Txt>
         <Action
           icon={Download}
@@ -340,16 +350,7 @@ export default function Settings() {
               onPress={() =>
                 void op.run(async () => {
                   await configureSchedule(restore.preferences);
-                  await useScout.getState().commit((d) => ({
-                    ...d,
-                    preferences: restore.preferences,
-                    ideas: restore.ideas,
-                    links: restore.links,
-                    notes: restore.notes,
-                    opinions: d.opinions.filter((o) =>
-                      restore.ideas.some((i) => i.id === o.ideaId),
-                    ),
-                  }));
+                  await useScout.getState().commit((d) => restorePersonalData(d, restore));
                   setRestore(undefined);
                 }, 'Backup restored. Re-enter keys on a new phone.')
               }

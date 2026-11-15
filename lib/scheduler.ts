@@ -9,6 +9,7 @@ if (!TaskManager.isTaskDefined(TASK))
     try {
       const store = useScout.getState();
       if (!store.ready) await store.boot();
+      if (!useScout.getState().ready) return BackgroundTask.BackgroundTaskResult.Failed;
       const prefs = useScout.getState().data.preferences;
       if (prefs.paused || prefs.schedule === 'Manual' || !prefs.lastInput)
         return BackgroundTask.BackgroundTaskResult.Success;

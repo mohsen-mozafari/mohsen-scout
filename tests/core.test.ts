@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { exportBackup, importBackup, personalLinks } from '../lib/backup';
+import { exportBackup, importBackup, personalLinks, restorePersonalData } from '../lib/backup';
+import { moveNoteBlock } from '../lib/utils';
 import {
   defaults,
   RETENTION_MS,
@@ -17,6 +18,7 @@ import {
   relatedQueries,
   searchYouTube,
   requestJson,
+  retryDelayMs,
   getFreeModels,
   opinionPrompt,
   testYouTube,
@@ -401,4 +403,141 @@ void test('Analysis: ideas are cautious hypotheses, not performance scores', () 
   assert(ideas.every((i) => i.assessment === 'Uncertain'));
   assert(!JSON.stringify(ideas).includes(video.title));
   assert(!JSON.stringify(ideas).includes('score'));
+});
+
+const regressionReport: Report = {
+  id: 'retention-report',
+  input,
+  videos: [video],
+  queries: relatedQueries(input.topic),
+  warnings: [],
+  createdAt: now,
+  analyzed: false,
+};
+const regressionIdea = buildIdeas(regressionReport)[0];
+const regressionLink = {
+  id: video.id,
+  url: `https://www.youtube.com/watch?v=${video.id}`,
+  manualTitle: 'Personal label',
+  topic: input.topic,
+  note: 'My note',
+  folder: '',
+  tags: [],
+  savedAt: now,
+};
+void test('Retention: expired reports lose references but personal bookmarked URLs remain', () => {
+  const data = defaults();
+  data.links = [regressionLink];
+  data.videos = [{ ...video, fetchedAt: now - RETENTION_MS }];
+  data.reports = [{ ...regressionReport, createdAt: now - RETENTION_MS }];
+  data.ideas = [{ ...regressionIdea, videoIds: [video.id, 'unsaved'] }];
+  const clean = purgeExpired(data, now);
+  assert.equal(clean.ideas[0].reportId, undefined);
+  assert.deepEqual(clean.ideas[0].videoIds, [video.id]);
+  assert.equal(clean.ideas[0].concept, regressionIdea.concept);
+});
+void test('Retention: metadata clearing removes automated report and video references', () => {
+  const data = defaults();
+  data.ideas = [{ ...regressionIdea, videoIds: [video.id] }];
+  const clean = purgeExpired(data, now);
+  assert.equal(clean.ideas[0].reportId, undefined);
+  assert.deepEqual(clean.ideas[0].videoIds, []);
+});
+void test('Retention: nested video metadata expires independently of a current report', () => {
+  const data = defaults();
+  data.reports = [{ ...regressionReport, videos: [{ ...video, fetchedAt: now - RETENTION_MS }] }];
+  assert.deepEqual(purgeExpired(data, now).reports[0].videos, []);
+});
+void test('Restore: replaces personal data without resetting research/quota, disables scheduling', () => {
+  const current = defaults();
+  current.videos = [video];
+  current.reports = [regressionReport];
+  current.budget = { date: quotaDay(), units: 900, requests: 9, exhausted: true };
+  current.preferences.schedule = 'Daily';
+  current.preferences.lastInput = input;
+  const restored = defaults();
+  restored.preferences.name = 'Restored owner';
+  const result = restorePersonalData(current, restored);
+  assert.equal(result.videos, current.videos);
+  assert.equal(result.reports, current.reports);
+  assert.equal(result.budget, current.budget);
+  assert.equal(result.preferences.name, 'Restored owner');
+  assert.equal(result.preferences.schedule, 'Manual');
+  assert.equal(result.preferences.lastInput, undefined);
+});
+void test('Restore: matching ID cannot attach an old AI opinion to different editorial content', () => {
+  const current = defaults();
+  current.ideas = [regressionIdea];
+  current.opinions = [
+    { id: 'op', ideaId: regressionIdea.id, text: 'MOCK opinion', model: 'MOCK', createdAt: now },
+  ];
+  const restored = defaults();
+  restored.ideas = [{ ...regressionIdea }];
+  assert.equal(restorePersonalData(current, restored).opinions.length, 1);
+  restored.ideas = [{ ...regressionIdea, decision: 'Changed decision' }];
+  assert.equal(restorePersonalData(current, restored).opinions.length, 0);
+  restored.ideas = [];
+  assert.equal(restorePersonalData(current, restored).opinions.length, 0);
+});
+void test('Import: only personal saved-video references may enter a backup', () => {
+  const data = defaults();
+  data.links = [regressionLink];
+  data.ideas = [regressionIdea];
+  const raw = JSON.parse(exportBackup(data));
+  raw.personal.ideas[0].videoIds = [video.id, 'unsaved'];
+  assert.deepEqual(importBackup(JSON.stringify(raw)).ideas[0].videoIds, [video.id]);
+});
+void test('Notes: ordering is immutable and keeps checklist content and boundaries', () => {
+  const blocks = [
+    { id: 'a', type: 'paragraph' as const, text: 'Keep me' },
+    { id: 'b', type: 'checklist' as const, text: 'Done', checked: true },
+  ];
+  assert.equal(moveNoteBlock(blocks, 'b', -1)[0].checked, true);
+  assert.equal(blocks[0].id, 'a');
+  assert.equal(moveNoteBlock(blocks, 'a', -1), blocks);
+  assert.equal(moveNoteBlock(blocks, 'b', 1), blocks);
+});
+void test('HTTP: Retry-After seconds/dates are respected and long waits stop retries', () => {
+  const date = Date.parse('2026-11-15T12:00:00Z');
+  assert.equal(retryDelayMs('2', 500, date), 2000);
+  assert.equal(retryDelayMs(new Date(date + 5000).toUTCString(), 500, date), 5000);
+  assert.equal(retryDelayMs('invalid', 500, date), 500);
+  assert.equal(retryDelayMs('60', 500, date), null);
+});
+void test('HTTP MOCK: non-JSON transient failures use bounded retries', async () => {
+  let calls = 0;
+  const result = await requestJson(
+    'https://example.com',
+    {},
+    async () => {
+      calls++;
+      return calls === 1
+        ? new Response('MOCK unavailable', { status: 503 })
+        : response({ ok: true });
+    },
+    undefined,
+    15000,
+    1,
+  );
+  assert.deepEqual(result, { ok: true });
+  assert.equal(calls, 2);
+});
+void test('HTTP MOCK: long Retry-After stops requests instead of retrying before allowed', async () => {
+  let calls = 0;
+  await assert.rejects(
+    () =>
+      requestJson(
+        'https://example.com',
+        {},
+        async () => {
+          calls++;
+          return new Response('MOCK rate limit', { status: 429, headers: { 'Retry-After': '60' } });
+        },
+        undefined,
+        15000,
+        1,
+      ),
+    (error) => error instanceof ApiError && error.code === 'service',
+  );
+  assert.equal(calls, 1);
 });
