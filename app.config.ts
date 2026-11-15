@@ -54,6 +54,8 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       'expo-sharing',
       'expo-background-task',
       'expo-notifications',
+      'expo-splash-screen',
+      'expo-status-bar',
       ...nativePlugins,
     ],
     experiments: {
