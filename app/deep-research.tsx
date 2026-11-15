@@ -43,7 +43,11 @@ export default function DeepResearch() {
     const warnings: string[] = [];
     const newsResult = await fetchSpaceNews(preferences.spaceNewsSources);
     warnings.push(...newsResult.warnings);
-    const nicheNews = niche ? newsForNiche(newsResult.items, nicheId) : newsResult.items;
+    const nicheNews = niche
+      ? newsForNiche(newsResult.items, nicheId)
+      : nicheId === 'custom'
+        ? newsForNiche(newsResult.items, nicheId, preferences.customSpaceNiche)
+        : newsResult.items;
     const topicWords = query.toLowerCase().split(/\s+/).filter((word) => word.length > 3);
     const topicNews = nicheNews.filter((item) => topicWords.some((word) => (item.title + ' ' + item.summary).toLowerCase().includes(word)));
     const selectedNews = topicNews.slice(0, 6);
