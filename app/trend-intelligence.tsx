@@ -32,9 +32,9 @@ export default function TrendIntelligence() {
       key,
       charge: useScout.getState().charge,
       onQuota: () => useScout.getState().commit((data) => ({ ...data, budget: { ...data.budget, exhausted: true } })),
-    }, 25, {
+    }, 50, {
       days: search.days,
-      order: search.sort === 'Newest' ? 'date' : 'viewCount',
+      order: search.sort === 'Newest' ? 'date' : search.sort === 'Most Likes' ? 'relevance' : 'viewCount',
       region: preferences.region,
       language: preferences.languages[0],
       ...(pageToken ? { pageToken } : {}),
@@ -98,8 +98,8 @@ export default function TrendIntelligence() {
           onChange={(values) => { setSort(values[0]); setNextPageToken(''); }}
         />
         <Action busy={op.busy} disabled={!topic.trim()} onPress={run}>Sample YouTube videos</Action>
-        <Txt muted>Each page uses one official search request plus batched video and channel statistics. A page costs about 102 YouTube quota units. Sorting by likes is local to the returned sample because YouTube search cannot order directly by likes.</Txt>
-        <Txt muted>Use Load next 25 to continue with the same saved search filters. Nothing loads automatically in the background.</Txt>
+        <Txt muted>Each page uses one official search request plus batched video and channel statistics (about 102 quota units). Most Likes starts with a relevance-first sample, then sorts raw like counts locally; YouTube does not provide a global like-count order.</Txt>
+        <Txt muted>Use Load next 50 to expand the same search. This remains a bounded sample, not a complete market ranking; nothing loads automatically in the background.</Txt>
       </Panel>
       {Boolean(warning) && <Txt muted>{warning}</Txt>}
       {videos.length > 0 && (
@@ -135,7 +135,7 @@ export default function TrendIntelligence() {
             ) : null}
         </Panel>
       ))}
-      {nextPageToken.length > 0 && <Action secondary busy={op.busy} onPress={loadMore}>Load next 25 videos</Action>}
+      {nextPageToken.length > 0 && <Action secondary busy={op.busy} onPress={loadMore}>Load next 50 videos</Action>}
       {videos.length > 0 && !nextPageToken && <Txt muted>YouTube has no next page for this query and filter set.</Txt>}
       {Boolean(op.error) && <ErrorBox message={op.error} onRetry={run} />}
       {Boolean(op.message) && <Txt muted>{op.message}</Txt>}

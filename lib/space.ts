@@ -13,7 +13,7 @@ export const SEARCH_DEMAND_PROVIDERS = [{
   apiKeyRequired: false,
   run: getWikipediaSignal,
 }];
-export type SpaceNewsSource = { id: SpaceNewsSourceId; name: string; url: string; label: string };
+export type SpaceNewsSource = { id: SpaceNewsSourceId; name: string; url: string; label: string; fallbackUrls?: string[] };
 export type SpaceNewsItem = {
   id: string;
   sourceId: SpaceNewsSourceId;
@@ -26,10 +26,22 @@ export type SpaceNewsItem = {
 };
 
 export const SPACE_NEWS_SOURCES: SpaceNewsSource[] = [
-  { id: 'nasa', name: 'NASA', label: 'NASA Science & News', url: 'https://www.nasa.gov/feed/' },
-  { id: 'jpl', name: 'NASA JPL', label: 'JPL News', url: 'https://www.jpl.nasa.gov/feeds/news/' },
-  { id: 'esa-space', name: 'ESA', label: 'ESA Space News', url: 'https://www.esa.int/rssfeed/Our_Activities/Space_News' },
-  { id: 'esa-science', name: 'ESA', label: 'ESA Space Science', url: 'https://www.esa.int/rssfeed/Our_Activities/Space_Science' },
+  {
+    id: 'nasa', name: 'NASA', label: 'NASA Science & News', url: 'https://www.nasa.gov/feed/',
+    fallbackUrls: ['https://science.nasa.gov/feed/', 'https://www.nasa.gov/news-release/feed/'],
+  },
+  {
+    id: 'jpl', name: 'NASA JPL', label: 'JPL News / CNEOS', url: 'https://www.jpl.nasa.gov/feeds/news/',
+    fallbackUrls: ['https://cneos.jpl.nasa.gov/feed/news.xml'],
+  },
+  {
+    id: 'esa-space', name: 'ESA', label: 'ESA Top News / Space News', url: 'https://www.esa.int/rssfeed/TopNews',
+    fallbackUrls: ['https://www.esa.int/rssfeed/Our_Activities/Space_News'],
+  },
+  {
+    id: 'esa-science', name: 'ESA', label: 'ESA Space Science', url: 'https://www.esa.int/rssfeed/Our_Activities/Space_Science',
+    fallbackUrls: ['https://www.esa.int/rssfeed/Science_Exploration/Space_Science'],
+  },
 ];
 export const DEFAULT_SPACE_NEWS_SOURCES: SpaceNewsSourceId[] = [
   'nasa', 'jpl', 'esa-space', 'esa-science',
@@ -49,7 +61,7 @@ export const SPACE_NICHES = [
 ] as const;
 
 const newsItemLimitPerFeed = 80;
-const newsCache = new Map<string, { at: number; value: { items: SpaceNewsItem[]; warnings: string[] } }>();
+const newsSourceCache = new Map<string, { at: number; items: SpaceNewsItem[] }>();
 const wikiCache = new Map<string, { at: number; value: WikiSignal }>();
 const CACHE_MS = 10 * 60 * 1000;
 
@@ -150,63 +162,85 @@ export function parseRssFeed(xml: string, source: SpaceNewsSource): SpaceNewsIte
 }
 
 const newsInflight = new Map<string, Promise<{ items: SpaceNewsItem[]; warnings: string[] }>>();
+
+function feedHttpReason(status: number) {
+  return status === 403 ? 'access was refused by the publisher'
+    : status === 404 ? 'the configured feed was not found'
+    : status === 429 ? 'the publisher is rate-limiting requests'
+    : status >= 500 ? 'the publisher service is temporarily unavailable'
+    : 'the publisher returned an unsuccessful response';
+}
+
+async function loadOfficialFeed(source: SpaceNewsSource, fetcher: Fetcher) {
+  const endpoints = [source.url, ...(source.fallbackUrls ?? [])];
+  const failures: string[] = [];
+  for (const endpoint of endpoints) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 12000);
+    try {
+      const response = await fetcher(endpoint, {
+        headers: {
+          Accept: 'application/rss+xml, application/atom+xml, application/xml, text/xml;q=0.9, */*;q=0.5',
+          'Cache-Control': 'no-cache',
+          'User-Agent': 'MOHSEN-SCOUT/1.3.1 (+https://github.com/mohsen-mozafari/mohsen-scout)',
+        },
+        signal: controller.signal,
+      });
+      if (!response.ok) {
+        failures.push('HTTP ' + response.status + ': ' + feedHttpReason(response.status));
+        continue;
+      }
+      const xml = await response.text();
+      const items = parseRssFeed(xml, source);
+      if (!items.length) {
+        failures.push('the endpoint responded but contained no readable RSS/Atom entries');
+        continue;
+      }
+      return { items, warning: '' };
+    } catch (error) {
+      const timedOut = controller.signal.aborted || (error instanceof Error && error.name === 'AbortError');
+      failures.push(timedOut
+        ? 'the request timed out'
+        : 'the publisher could not be reached over the network (DNS or TLS)');
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+  const lastFailure = failures[failures.length - 1] ?? 'no feed endpoint was available';
+  return { items: [] as SpaceNewsItem[], warning: source.label + ' could not refresh: ' + lastFailure + '. Other publishers remain available.' };
+}
+
 export async function fetchSpaceNews(
   enabledSources: readonly string[] = DEFAULT_SPACE_NEWS_SOURCES,
   fetcher: Fetcher = fetch,
   force = false,
 ): Promise<{ items: SpaceNewsItem[]; warnings: string[] }> {
   const ids = SPACE_NEWS_SOURCES.filter((source) => enabledSources.includes(source.id)).map((source) => source.id);
-  const cacheKey = [...ids].sort().join(',');
-  const cached = newsCache.get(cacheKey);
-  if (!force && cached && Date.now() - cached.at < CACHE_MS) return cached.value;
   if (!ids.length) return { items: [], warnings: ['Enable at least one official news feed in Space Radar sources.'] };
+  const cacheKey = [...ids].sort().join(',');
   const inflight = newsInflight.get(cacheKey);
   if (inflight) return inflight;
 
   const request = (async () => {
     const selected = SPACE_NEWS_SOURCES.filter((source) => ids.includes(source.id));
     const results = await Promise.all(selected.map(async (source) => {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 20000);
-      try {
-        const response = await fetcher(source.url, {
-          headers: {
-            Accept: 'application/rss+xml, application/atom+xml, application/xml, text/xml;q=0.9, */*;q=0.5',
-            'Cache-Control': 'no-cache',
-            'User-Agent': 'MOHSEN-SCOUT/1.3 (+https://github.com/mohsen-mozafari/mohsen-scout)',
-          },
-          signal: controller.signal,
-        });
-        if (!response.ok) {
-          const reason = response.status === 403
-            ? 'access was refused by the publisher'
-            : response.status === 404
-              ? 'the configured feed was not found'
-              : response.status === 429
-                ? 'the publisher is rate-limiting requests'
-                : response.status >= 500
-                  ? 'the publisher service is temporarily unavailable'
-                  : 'the publisher returned an unsuccessful response';
-          return { items: [] as SpaceNewsItem[], warning: source.label + ' returned HTTP ' + response.status + ': ' + reason + '.' };
-        }
-        const xml = await response.text();
-        const items = parseRssFeed(xml, source);
-        if (!items.length) return {
-          items: [] as SpaceNewsItem[],
-          warning: source.label + ' responded, but no readable RSS/Atom entries were found. The feed format may have changed.',
-        };
-        return { items, warning: '' };
-      } catch (error) {
-        const timedOut = controller.signal.aborted || (error instanceof Error && error.name === 'AbortError');
-        return {
-          items: [] as SpaceNewsItem[],
-          warning: source.label + (timedOut
-            ? ' timed out while refreshing. Check the network and retry.'
-            : ' could not connect to the publisher (network, DNS or TLS). Other sources remain available.'),
-        };
-      } finally {
-        clearTimeout(timeout);
+      const previous = newsSourceCache.get(source.id);
+      if (!force && previous && Date.now() - previous.at < CACHE_MS) {
+        return { items: previous.items, warning: '' };
       }
+      const refreshed = await loadOfficialFeed(source, fetcher);
+      if (refreshed.items.length) {
+        newsSourceCache.set(source.id, { at: Date.now(), items: refreshed.items });
+        return refreshed;
+      }
+      newsSourceCache.delete(source.id);
+      if (previous?.items.length) {
+        return {
+          items: previous.items,
+          warning: refreshed.warning + ' Showing the last successful copy; its contents may be out of date.',
+        };
+      }
+      return refreshed;
     }));
     const warnings = results.map((result) => result.warning).filter(Boolean);
     const unique = new Map<string, SpaceNewsItem>();
@@ -216,10 +250,7 @@ export async function fetchSpaceNews(
       if (!b.publishedAt) return -1;
       return Date.parse(b.publishedAt) - Date.parse(a.publishedAt);
     });
-    const value = { items, warnings };
-    if (items.length && !warnings.length) newsCache.set(cacheKey, { at: Date.now(), value });
-    else newsCache.delete(cacheKey);
-    return value;
+    return { items, warnings };
   })();
   newsInflight.set(cacheKey, request);
   try { return await request; }

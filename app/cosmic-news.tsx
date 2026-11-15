@@ -4,7 +4,7 @@ import { useLocalSearchParams, router } from 'expo-router';
 import { Button } from 'heroui-native';
 import { Page, Panel, Heading, Txt, Action, Choices, styles, ErrorBox, useOperation } from '@/components/ScoutUI';
 import { useScout } from '@/lib/store';
-import { SPACE_NICHES, fetchSpaceNews, newsForNiche, type SpaceNewsItem } from '@/lib/space';
+import { SPACE_NICHES, SPACE_NEWS_SOURCES, fetchSpaceNews, newsForNiche, type SpaceNewsItem } from '@/lib/space';
 import { uid } from '@/lib/types';
 import { getKey } from '@/lib/vault';
 import { getFreeModels, translateNewsToPersian } from '@/lib/api';
@@ -17,6 +17,7 @@ export default function CosmicNews() {
   const niche = SPACE_NICHES.find((item) => item.id === nicheId);
   const [items, setItems] = useState<SpaceNewsItem[]>([]);
   const [warnings, setWarnings] = useState<string[]>([]);
+  const [loading, setLoading] = useState(true);
   const [scope, setScope] = useState('All selected feeds');
   const displayedItems = scope === 'Selected niche'
     ? newsForNiche(items, nicheId, preferences.customSpaceNiche)
@@ -44,12 +45,15 @@ export default function CosmicNews() {
 
   useEffect(() => {
     let active = true;
+    setLoading(true);
     void fetchSpaceNews(preferences.spaceNewsSources).then((result) => {
       if (!active) return;
       setItems(result.items);
       setWarnings(result.warnings);
     }).catch(() => {
       if (active) setWarnings(['Official news feeds could not be reached. Check the network and retry.']);
+    }).finally(() => {
+      if (active) setLoading(false);
     });
     return () => { active = false; };
   }, [preferences.spaceNewsSources]);
@@ -103,9 +107,24 @@ export default function CosmicNews() {
         <Action busy={op.busy} onPress={refresh}>Refresh selected feeds</Action>
         {warnings.map((warning) => <Txt muted key={warning}>{warning}</Txt>)}
         <Text style={styles.badge}>{displayedItems.length} {scope === 'Selected niche' ? 'matching niche reports' : 'source reports'}</Text>
-        {!items.length && <Txt muted>Refresh to retrieve the latest stories. Source-specific warnings now identify HTTP status, timeout, network or feed-format problems.</Txt>}
+        {loading && <Txt muted>Checking enabled publishers independently…</Txt>}
+        {!loading && !items.length && <Txt muted>No live article was returned. This is a publisher/network availability issue, not proof that the topic has no news. Retry when the connection recovers, or continue researching below.</Txt>}
         <Txt muted>Persian translation requires your OpenRouter key; the app selects an available free model when none is saved. Only the item you explicitly choose is sent; there is no automatic or batch translation.</Txt>
       </Panel>
+      {!loading && !items.length && (
+        <Panel>
+          <Heading>Continue research without the news feed</Heading>
+          <Txt muted>The translator needs a real publisher article; no placeholder story is shown when feeds are unavailable. You can still investigate a topic using the other research routes.</Txt>
+          <Action secondary onPress={() => router.push({ pathname: '/youtube', params: { topic: niche?.topic ?? (nicheId === 'custom' ? preferences.customSpaceNiche : 'Space science discoveries') } })}>Search this topic on YouTube</Action>
+          <Action secondary onPress={() => router.push({ pathname: '/deep-research', params: { topic: niche?.topic ?? (nicheId === 'custom' ? preferences.customSpaceNiche : 'Space science discoveries'), niche: nicheId } })}>Start Deep Research anyway</Action>
+          {SPACE_NEWS_SOURCES.filter((source) => preferences.spaceNewsSources.includes(source.id)).map((source) => (
+            <Button key={source.id} variant="tertiary" className="h-auto justify-start px-0" onPress={() => void Linking.openURL(source.url).catch(() => {})}>
+              <Button.Label>{'Open official ' + source.label + ' feed ↗'}</Button.Label>
+            </Button>
+          ))}
+          <Txt muted>Persian translation appears on each real article after it loads. It requires your saved OpenRouter key and remains an explicit, one-item action.</Txt>
+        </Panel>
+      )}
       {displayedItems.map((item) => {
         const translated = translations[item.id];
         const showing = Boolean(showTranslation[item.id] && translated);

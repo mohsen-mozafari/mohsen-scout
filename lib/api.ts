@@ -148,9 +148,9 @@ const searchSchema = z.object({
 });
 export const relatedQueries = (topic: string) => [
   topic.trim(),
-  `${topic.trim()} beginner guide`,
-  `${topic.trim()} common mistakes`,
-  `${topic.trim()} comparison`,
+  `${topic.trim()} explained`,
+  'YouTube popularity order',
+  'YouTube recent results',
 ];
 const inflight = new Map<string, Promise<unknown>>();
 export type YouTubeOptions = {
@@ -159,12 +159,7 @@ export type YouTubeOptions = {
   fetcher?: Fetcher;
   onQuota?: () => Promise<void>;
 };
-async function youtube(
-  endpoint: string,
-  params: Record<string, string>,
-  options: YouTubeOptions,
-  units: number,
-) {
+async function youtube(endpoint: string, params: Record<string, string>, options: YouTubeOptions, units: number) {
   const query = new URLSearchParams({ ...params, key: options.key });
   const url = `https://www.googleapis.com/youtube/v3/${endpoint}?${query}`;
   const existing = inflight.get(url);
@@ -181,74 +176,102 @@ async function youtube(
   }
 }
 export async function testYouTube(options: YouTubeOptions) {
-  const raw = await youtube(
-    'videos',
-    { part: 'id', id: 'dQw4w9WgXcQ', fields: 'items(id)' },
-    options,
-    1,
-  );
+  const raw = await youtube('videos', { part: 'id', id: 'dQw4w9WgXcQ', fields: 'items(id)' }, options, 1);
   if (!z.object({ items: z.array(z.object({ id: z.string() })) }).safeParse(raw).success)
     throw new ApiError('YouTube returned an invalid response.', 'invalid');
 }
-export async function searchYouTube(
-  input: ResearchInput,
-  options: YouTubeOptions,
-  onProgress?: (text: string) => void,
-) {
-  const queries = relatedQueries(input.topic);
-  const videos = new Map<string, Video>();
-  const warnings: string[] = [];
-  let calls = 0;
+type SearchBucket = 'relevance' | 'popularity' | 'recent' | 'explainer';
+const SEARCH_BUCKET_ORDER: SearchBucket[] = ['relevance', 'popularity', 'recent', 'explainer'];
+const SEARCH_BUCKET_LABELS: Record<SearchBucket, (topic: string) => string> = {
+  relevance: (topic) => topic,
+  popularity: () => 'YouTube popularity order',
+  recent: () => 'YouTube recent results',
+  explainer: (topic) => topic + ' explained',
+};
+
+export async function searchYouTube(input: ResearchInput, options: YouTubeOptions, onProgress?: (text: string) => void) {
+  const topic = input.topic.trim();
+  if (!topic) throw new ApiError('Enter a topic before starting research.', 'input');
+  const resultLimit = Math.max(1, Math.min(50, Math.floor(input.maxResults) || 25));
   const searches = input.languages.flatMap((language) => [
-    ...queries.map((query) => ({ language, query, order: 'date' })),
-    { language, query: input.topic, order: 'viewCount' },
-  ]);
+    { language, query: topic, order: 'relevance', bucket: 'relevance' as const },
+    { language, query: topic, order: 'viewCount', bucket: 'popularity' as const },
+    { language, query: topic, order: 'date', bucket: 'recent' as const },
+    { language, query: topic + ' explained', order: 'relevance', bucket: 'explainer' as const },
+  ]).slice(0, 12);
+  const warnings: string[] = [];
+  if (searches.length < input.languages.length * 4) {
+    warnings.push('The 12-search safety cap limited language coverage. Not every selected language was sampled.');
+  }
+  const candidates = new Map<string, Video>();
+  const bucketIds: Record<SearchBucket, string[]> = { relevance: [], popularity: [], recent: [], explainer: [] };
+  let lastError: unknown;
   for (const search of searches) {
-    if (calls >= 12) {
-      warnings.push('Stopped at the 12-search safety cap. Not all query and language combinations were sampled.');
-      break;
-    }
-    onProgress?.(`Searching ${search.query} · ${search.language}`);
-    let pageToken = '';
-    let page = 0;
-    do {
-      const params: Record<string, string> = {
-        part: 'snippet', type: 'video', q: search.query, order: search.order,
-        relevanceLanguage: search.language,
-        maxResults: String(Math.min(50, Math.max(1, Math.ceil(input.maxResults / searches.length)))),
-        videoDuration: input.duration,
-        fields: 'nextPageToken,items(id/videoId,snippet(title,description,channelTitle,publishedAt,thumbnails))',
-      };
-      const regionCodes: Partial<Record<Region, string>> = { 'United States': 'US', Iran: 'IR', 'United Kingdom': 'GB', Germany: 'DE' };
-      if (regionCodes[input.region]) params.regionCode = regionCodes[input.region]!;
-      if (input.category) params.videoCategoryId = input.category;
-      if (input.days) params.publishedAfter = new Date(Date.now() - input.days * 86400000).toISOString();
-      if (pageToken) params.pageToken = pageToken;
-      let raw: unknown;
-      try {
-        raw = await youtube('search', params, options, 100);
-      } catch (error) {
-        if (!videos.size) throw error;
-        warnings.push(error instanceof Error ? error.message : 'A search failed.');
-        return { videos: [...videos.values()], queries, warnings };
-      }
-      calls++;
+    onProgress?.(`Sampling ${SEARCH_BUCKET_LABELS[search.bucket](topic)} · ${search.language} · ${search.order}`);
+    const params: Record<string, string> = {
+      part: 'snippet', type: 'video', q: search.query, order: search.order,
+      relevanceLanguage: search.language, maxResults: '50', videoDuration: input.duration,
+      fields: 'nextPageToken,items(id/videoId,snippet(title,description,channelTitle,publishedAt,thumbnails))',
+    };
+    const regionCodes: Partial<Record<Region, string>> = {
+      'United States': 'US', Iran: 'IR', 'United Kingdom': 'GB', Germany: 'DE',
+    };
+    if (regionCodes[input.region]) params.regionCode = regionCodes[input.region]!;
+    if (input.category) params.videoCategoryId = input.category;
+    if (input.days) params.publishedAfter = new Date(Date.now() - input.days * 86400000).toISOString();
+    try {
+      const raw = await youtube('search', params, options, 100);
       const parsed = searchSchema.safeParse(raw);
       if (!parsed.success) throw new ApiError('YouTube returned an invalid search response.', 'invalid');
       for (const item of parsed.data.items) {
-        if (!videos.has(item.id.videoId) && videos.size < input.maxResults)
-          videos.set(item.id.videoId, {
-            id: item.id.videoId, title: item.snippet.title, description: item.snippet.description,
+        const id = item.id.videoId;
+        if (!candidates.has(id)) {
+          candidates.set(id, {
+            id, title: item.snippet.title, description: item.snippet.description,
             channel: item.snippet.channelTitle, publishedAt: item.snippet.publishedAt,
             thumbnail: item.snippet.thumbnails.medium?.url ?? item.snippet.thumbnails.default?.url ?? '',
-            fetchedAt: Date.now(), query: search.order === 'viewCount' ? 'YouTube popularity order' : search.query,
+            fetchedAt: Date.now(), query: SEARCH_BUCKET_LABELS[search.bucket](topic),
           });
+        }
+        bucketIds[search.bucket].push(id);
       }
-      pageToken = parsed.data.nextPageToken ?? '';
-      page++;
-    } while (pageToken && page < 2 && calls < 12 && videos.size < input.maxResults);
+    } catch (error) {
+      lastError = error;
+      warnings.push((error instanceof Error ? error.message : 'A YouTube search failed.') + ' Another result bucket may still be available.');
+      if (error instanceof ApiError && ['quota', 'budget', 'key', 'permission', 'invalid', 'offline', 'timeout'].includes(error.code)) break;
+    }
   }
-  const collected = [...videos.values()];
+  if (!candidates.size && lastError) throw lastError;
+
+  const targets: Record<SearchBucket, number> = {
+    relevance: Math.ceil(resultLimit * 0.4),
+    popularity: Math.ceil(resultLimit * 0.3),
+    recent: Math.ceil(resultLimit * 0.2),
+    explainer: 0,
+  };
+  targets.explainer = Math.max(0, resultLimit - targets.relevance - targets.popularity - targets.recent);
+  const selected = new Map<string, Video>();
+  for (const bucket of SEARCH_BUCKET_ORDER) {
+    if (selected.size >= resultLimit) break;
+    let added = 0;
+    for (const id of bucketIds[bucket]) {
+      if (selected.size >= resultLimit) break;
+      if (selected.has(id) || !candidates.has(id)) continue;
+      selected.set(id, { ...candidates.get(id)!, query: SEARCH_BUCKET_LABELS[bucket](topic) });
+      added++;
+      if (added >= targets[bucket]) break;
+    }
+  }
+  for (const bucket of SEARCH_BUCKET_ORDER) {
+    for (const id of bucketIds[bucket]) {
+      if (selected.size >= resultLimit) break;
+      if (!selected.has(id) && candidates.has(id)) {
+        selected.set(id, { ...candidates.get(id)!, query: SEARCH_BUCKET_LABELS[bucket](topic) });
+      }
+    }
+    if (selected.size >= resultLimit) break;
+  }
+  const collected = [...selected.values()];
   for (let offset = 0; offset < collected.length; offset += 50) {
     const batch = collected.slice(offset, offset + 50);
     try {
@@ -274,7 +297,7 @@ export async function searchYouTube(
       break;
     }
   }
-  return { videos: collected, queries, warnings };
+  return { videos: collected, queries: relatedQueries(topic), warnings: [...new Set(warnings)] };
 }
 const modelSchema = z.object({
   data: z.array(
@@ -382,7 +405,7 @@ export async function searchYouTubeSample(
     type: 'video',
     q: query,
     order,
-    maxResults: String(Math.min(25, Math.max(1, maxResults))),
+    maxResults: String(Math.min(50, Math.max(1, maxResults))),
     fields: 'nextPageToken,items(id/videoId,snippet(title,description,channelTitle,channelId,publishedAt,thumbnails(high/url,medium/url,default/url)))',
   };
   const regionCodes: Partial<Record<Region, string>> = {

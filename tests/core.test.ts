@@ -28,7 +28,7 @@ import {
   testYouTube,
   type Fetcher,
 } from '../lib/api';
-import { buildIdeas, buildInternalResearch, createManualIdea } from '../lib/engine';
+import { buildIdeas, buildInternalResearch, createManualIdea, rankNewsForTopic, topicRelevanceScore } from '../lib/engine';
 const input: ResearchInput = {
   topic: 'Small-space home studios',
   region: 'Iran',
@@ -273,8 +273,7 @@ void test('Quota: resets on Pacific day, counts retries, rejects exhausted/budge
 });
 void test('Research: creates explicit related queries without inventing stats', () => {
   const queries = relatedQueries(input.topic);
-  assert.equal(queries.length, 4);
-  assert(queries.every((q) => q.includes(input.topic)));
+  assert.deepEqual(queries, [input.topic, input.topic + ' explained', 'YouTube popularity order', 'YouTube recent results']);
 });
 void test('YouTube MOCK: official endpoint, independent region/language filters, deduplication and raw counts', async () => {
   const urls: string[] = [];
@@ -294,9 +293,10 @@ void test('YouTube MOCK: official endpoint, independent region/language filters,
   assert.equal(result.videos[0].title, video.title);
   assert.equal(result.videos[0].viewCount, 1234);
   assert.equal(result.videos[0].likeCount, 56);
-  assert.equal(units, 501);
+  assert.equal(units, 401);
   const searchUrls = urls.filter((url) => new URL(url).pathname.endsWith('/search'));
-  assert.ok(searchUrls.length > 0);
+  assert.equal(searchUrls.length, 4);
+  assert.deepEqual(new Set(searchUrls.map((url) => new URL(url).searchParams.get('order'))), new Set(['relevance', 'viewCount', 'date']));
   for (const url of searchUrls) {
     const parsed = new URL(url);
     assert.equal(parsed.hostname, 'www.googleapis.com');
@@ -304,11 +304,46 @@ void test('YouTube MOCK: official endpoint, independent region/language filters,
     assert.equal(parsed.searchParams.get('relevanceLanguage'), 'en');
     assert.equal(parsed.searchParams.get('videoDuration'), 'short');
     assert.equal(parsed.searchParams.get('videoCategoryId'), '27');
+    assert.equal(parsed.searchParams.get('maxResults'), '50');
     assert.equal(parsed.searchParams.get('part'), 'snippet');
   }
 });
 
-void test('YouTube MOCK: pagination bounded to two pages per query', async () => {
+void test('YouTube sample keeps relevance, high-view, recent and explainer buckets in the final result', async () => {
+  const result = await searchYouTube({ ...input, maxResults: 10 }, {
+    key: 'MOCK_BUCKETS',
+    charge: async () => {},
+    fetcher: fetcher((url) => {
+      const parsed = new URL(url);
+      if (parsed.pathname.endsWith('/videos')) {
+        const ids = parsed.searchParams.get('id')?.split(',') ?? [];
+        return response({ items: ids.map((id) => ({
+          id,
+          statistics: { viewCount: '1000', likeCount: '50' },
+        })) });
+      }
+      const order = parsed.searchParams.get('order');
+      const query = parsed.searchParams.get('q') ?? '';
+      const prefix = order === 'viewCount' ? 'pop'
+        : order === 'date' ? 'new'
+        : query.endsWith(' explained') ? 'exp'
+        : 'rel';
+      return response({ items: Array.from({ length: 50 }, (_, index) =>
+        mockItem(prefix + String(index).padStart(8, '0'))) });
+    }),
+  });
+  assert.equal(result.videos.length, 10);
+  const counts = result.videos.reduce<Record<string, number>>((all, item) => {
+    all[item.query] = (all[item.query] ?? 0) + 1;
+    return all;
+  }, {});
+  assert.equal(counts[input.topic], 4);
+  assert.equal(counts['YouTube popularity order'], 3);
+  assert.equal(counts['YouTube recent results'], 2);
+  assert.equal(counts[input.topic + ' explained'], 1);
+});
+
+void test('YouTube MOCK: broad result buckets use one 50-result page each', async () => {
   let calls = 0;
   const result = await searchYouTube(input, {
     key: 'MOCK_PAGE',
@@ -318,7 +353,7 @@ void test('YouTube MOCK: pagination bounded to two pages per query', async () =>
       return response({ nextPageToken: 'next', items: [mockItem('dQw4w9WgXcQ')] });
     }),
   });
-  assert.equal(calls, 11);
+  assert.equal(calls, 5);
   assert.equal(result.videos.length, 1);
 });
 void test('YouTube MOCK: quota exhaustion stops without retries and invokes stop hook', async () => {
@@ -832,8 +867,19 @@ void test('Internal research engine joins publisher, Wikimedia and YouTube evide
   assert.ok(result.evidence.some((item) => item.id === 'publisher-news' && item.detail.includes('2 selected feed source(s)')));
   assert.ok(result.evidence.some((item) => item.id === 'wikimedia' && item.detail.includes('not search volume')));
   assert.ok(result.evidence.some((item) => item.id === 'youtube-sample' && item.detail.includes('1 returned video example')));
+  assert.ok(result.evidence.some((item) => item.id === 'youtube-sample' && item.detail.includes('median 1,000')));
+  assert.ok(result.evidence.some((item) => item.id === 'youtube-sample' && item.detail.includes('median 50')));
   assert.equal(result.verificationQuestions.length, 4);
   assert(!JSON.stringify(result).toLowerCase().includes('viral score'));
+});
+
+void test('Topic relevance ranks a direct publisher match above unrelated feed context', () => {
+  const items = [
+    { title: 'Artemis lunar mission update', summary: 'Crewed lunar exploration.', publishedAt: '2026-11-15T10:00:00Z' },
+    { title: 'Webb observes an exoplanet atmosphere', summary: 'Spectral evidence from an extrasolar planet.', publishedAt: '2026-11-14T10:00:00Z' },
+  ];
+  assert.ok(topicRelevanceScore('exoplanet atmospheres', items[1].title, items[1].summary) > 0);
+  assert.deepEqual(rankNewsForTopic('exoplanet atmospheres', items, 2), [items[1]]);
 });
 
 void test('Internal research engine without source evidence marks output as exploratory', () => {

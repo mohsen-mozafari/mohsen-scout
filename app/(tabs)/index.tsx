@@ -242,14 +242,16 @@ function DiscoveryDashboardReady() {
       )}
       {lastScannedAt !== null && opportunities.length === 0 && (
         <Panel>
-          <Heading>No matching opportunities found</Heading>
+          <Heading>{warnings.length && !nicheSuggestions.length ? 'Live publisher data is unavailable' : 'No matching opportunities found'}</Heading>
           <Txt muted>{warnings.length && !nicheSuggestions.length
-            ? 'The official feeds did not return readable items. Review the source-specific warnings and retry.'
+            ? 'The selected feeds could not provide current articles. This does not mean there are no opportunities. Review the source warnings, retry later, or continue with YouTube and Deep Research.'
             : 'Current source items did not match ' + nicheTitle + '. Other space topics remain available above.'}</Txt>
           <Action secondary onPress={() => void op.run(async () => {
             await useScout.getState().commit((data) => ({ ...data, preferences: { ...data.preferences, selectedSpaceNiche: 'all' } }));
           }, 'Discovery scope changed to all space topics.')}>Show all space topics</Action>
-          <Action secondary onPress={() => router.push({ pathname: '/youtube', params: { topic: discoveryTopic } })}>Search this niche manually</Action>
+          <Action secondary onPress={() => router.push({ pathname: '/youtube', params: { topic: discoveryTopic } })}>Search this niche on YouTube</Action>
+          <Action secondary onPress={() => router.push({ pathname: '/deep-research', params: { topic: discoveryTopic, niche: preferences.selectedSpaceNiche } })}>Start Deep Research without news</Action>
+          <Action secondary onPress={() => router.push('/cosmic-news')}>Open Cosmic News and source status</Action>
         </Panel>
       )}
 

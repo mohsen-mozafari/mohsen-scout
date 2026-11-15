@@ -4,9 +4,9 @@ import { useLocalSearchParams, router } from 'expo-router';
 import { Button } from 'heroui-native';
 import { Page, Panel, Heading, Txt, Field, Action, styles, ErrorBox, useOperation } from '@/components/ScoutUI';
 import { useScout } from '@/lib/store';
-import { uid } from '@/lib/types';
+import { uid, RETENTION_MS } from '@/lib/types';
 import { getKey } from '@/lib/vault';
-import { buildInternalResearch, type InternalResearchResult } from '@/lib/engine';
+import { buildInternalResearch, rankNewsForTopic, type InternalResearchResult } from '@/lib/engine';
 import { MediaPreview } from '@/components/MediaPreview';
 import { searchYouTubeSample, type YouTubeSampleVideo } from '@/lib/api';
 import {
@@ -32,6 +32,7 @@ export default function DeepResearch() {
   const params = useLocalSearchParams<{ topic?: string; niche?: string; idea?: string }>();
   const preferences = useScout((state) => state.data.preferences);
   const linkedIdea = useScout((state) => state.data.ideas.find((idea) => idea.id === params.idea));
+  const reports = useScout((state) => state.data.reports);
   const [topic, setTopic] = useState(typeof params.topic === 'string' ? params.topic : '');
   const [brief, setBrief] = useState<Brief>();
   const op = useOperation();
@@ -48,9 +49,7 @@ export default function DeepResearch() {
       : nicheId === 'custom'
         ? newsForNiche(newsResult.items, nicheId, preferences.customSpaceNiche)
         : newsResult.items;
-    const topicWords = query.toLowerCase().split(/\s+/).filter((word) => word.length > 3);
-    const topicNews = nicheNews.filter((item) => topicWords.some((word) => (item.title + ' ' + item.summary).toLowerCase().includes(word)));
-    const selectedNews = topicNews.slice(0, 6);
+    const selectedNews = rankNewsForTopic(query, nicheNews, 6);
     let wiki: WikiSignal | undefined;
     try {
       wiki = await getWikipediaSignal(query, preferences.spaceInterestLanguage ?? 'en');
@@ -58,24 +57,42 @@ export default function DeepResearch() {
       warnings.push(error instanceof Error ? error.message : 'Public-interest data was unavailable.');
     }
     let videos: YouTubeSampleVideo[] = [];
-    try {
-      const key = await getKey('youtube');
-      if (key) {
-        const sample = await searchYouTubeSample(query, {
-          key,
-          charge: useScout.getState().charge,
-          onQuota: () => useScout.getState().commit((data) => ({ ...data, budget: { ...data.budget, exhausted: true } })),
-        }, 8, { days: preferences.defaultResearchDays ?? 30, region: preferences.region, language: preferences.languages[0] });
-        videos = sample.videos;
-        if (sample.warning) warnings.push(sample.warning);
-      } else {
-        warnings.push('YouTube view sample skipped: add a YouTube API key in Settings to include it.');
+    const linkedReport = linkedIdea?.reportId ? reports.find((report) => report.id === linkedIdea.reportId) : undefined;
+    const reusableReport = linkedReport && linkedReport.videos.length > 0 && Date.now() - linkedReport.createdAt < RETENTION_MS
+      ? linkedReport
+      : undefined;
+    if (reusableReport) {
+      videos = reusableReport.videos.map((video) => ({
+        id: video.id, title: video.title, description: video.description,
+        channel: video.channel, channelId: '', publishedAt: video.publishedAt,
+        thumbnailUrl: video.thumbnail, viewCount: video.viewCount ?? null,
+        likeCount: video.likeCount ?? null, channelSubscriberCount: null,
+        channelVideoCount: null, url: 'https://www.youtube.com/watch?v=' + video.id,
+      }));
+      warnings.push('Reused the YouTube report already linked to this idea; no additional YouTube quota was used.');
+    } else {
+      try {
+        const key = await getKey('youtube');
+        if (key) {
+          const sample = await searchYouTubeSample(query, {
+            key,
+            charge: useScout.getState().charge,
+            onQuota: () => useScout.getState().commit((data) => ({ ...data, budget: { ...data.budget, exhausted: true } })),
+          }, 25, { days: preferences.defaultResearchDays ?? 30, region: preferences.region, language: preferences.languages[0] });
+          videos = sample.videos;
+          if (sample.warning) warnings.push(sample.warning);
+        } else {
+          warnings.push('YouTube view sample skipped: add a YouTube API key in Settings to include it.');
+        }
+      } catch (error) {
+        warnings.push(error instanceof Error ? error.message : 'YouTube sample was unavailable.');
       }
-    } catch (error) {
-      warnings.push(error instanceof Error ? error.message : 'YouTube sample was unavailable.');
     }
-    if (!selectedNews.length && !wiki && !videos.length) {
-      throw new Error('No selected source returned evidence. Check connectivity or enable an official feed, then retry.');
+    if (!selectedNews.length) {
+      warnings.push('No directly relevant publisher article was available for this topic. The internal report will remain exploratory until primary evidence is found.');
+    }
+    if (!wiki && !videos.length) {
+      warnings.push('No Wikimedia or YouTube evidence was available. No demand or competition conclusion can be drawn from this run.');
     }
     const outline = buildResearchOutline(query, selectedNews.map((item) => item.title));
     const internalAnalysis = buildInternalResearch({
