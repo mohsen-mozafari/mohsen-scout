@@ -102,6 +102,7 @@ const schema = z.object({
         }),
       ),
       updatedAt: time,
+      ideaId: text.optional(),
     }),
   ),
   opinions: z.array(z.object({ id, ideaId: text, text, model: text, createdAt: time })),
