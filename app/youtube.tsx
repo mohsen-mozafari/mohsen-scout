@@ -27,13 +27,14 @@ import { relatedQueries } from '@/lib/api';
 import { limitations } from '@/lib/engine';
 import { getKey } from '@/lib/vault';
 export default function Discover() {
-  const params = useLocalSearchParams<{ topic?: string }>();
+  const params = useLocalSearchParams<{ topic?: string; idea?: string }>();
   const preferences = useScout((s) => s.data.preferences);
   const ready = useScout((s) => s.ready);
   const busy = useScout((s) => s.busy);
   const progress = useScout((s) => s.progress);
   const reports = useScout((s) => s.data.reports);
   const ideas = useScout((s) => s.data.ideas);
+  const linkedIdea = ideas.find((idea) => idea.id === params.idea);
   const [topic, setTopic] = useState(typeof params.topic === 'string' ? params.topic : '');
   const [region, setRegion] = useState<ResearchInput['region']>(preferences.region);
   const [selectedLanguages, setLanguages] = useState(preferences.languages);
@@ -244,6 +245,23 @@ export default function Discover() {
               {w}
             </Txt>
           ))}
+          {linkedIdea ? (
+            <Panel>
+              <Heading>Connect this research</Heading>
+              <Txt muted>Current idea: {linkedIdea.topic}. Connecting stores this report and its temporary video references locally. YouTube metadata remains subject to the existing retention policy.</Txt>
+              <Action
+                secondary
+                busy={op.busy}
+                disabled={linkedIdea.reportId === report.id}
+                onPress={() => void op.run(
+                  () => useScout.getState().linkReportToIdea(linkedIdea.id, report.id),
+                  'YouTube report connected to this idea.',
+                )}
+              >
+                {linkedIdea.reportId === report.id ? 'This report is already connected' : 'Connect report to this idea'}
+              </Action>
+            </Panel>
+          ) : null}
           <Fold title="Evidence & limitations">
             <Txt muted>{limitations}</Txt>
             <Txt muted>
@@ -336,7 +354,7 @@ export default function Discover() {
             )}
           </Fold>
           {report.videos.length > 0 && (
-            <Action secondary onPress={() => router.push({ pathname: '/trend-intelligence', params: { topic: report.input.topic } })}>
+            <Action secondary onPress={() => router.push({ pathname: '/trend-intelligence', params: linkedIdea ? { topic: report.input.topic, idea: linkedIdea.id } : { topic: report.input.topic } })}>
               Explore more results with paginated YouTube search
             </Action>
           )}
