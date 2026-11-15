@@ -4,15 +4,17 @@ set -euo pipefail
 : "${ANDROID_KEYSTORE_BASE64:?Missing GitHub secret ANDROID_KEYSTORE_BASE64}"
 : "${ANDROID_KEYSTORE_PASSWORD:?Missing GitHub secret ANDROID_KEYSTORE_PASSWORD}"
 
-KEYSTORE_PATH="android/app/mohsen-scout-release.jks"
-SIGNING_GRADLE="android/app/release-signing.gradle"
+APP_DIR="android/app"
+KEYSTORE_PATH="$APP_DIR/mohsen-scout-release.jks"
+SIGNING_GRADLE="$APP_DIR/release-signing.gradle"
+APP_GRADLE="$APP_DIR/build.gradle"
 
-mkdir -p android/app
+mkdir -p "$APP_DIR"
 printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_PATH"
 test -s "$KEYSTORE_PATH"
 chmod 600 "$KEYSTORE_PATH"
 
-# Validate the supplied keystore before Gradle starts.
+# Check the keystore, alias, and credentials before invoking Gradle.
 keytool -list -keystore "$KEYSTORE_PATH" \
   -storepass "$ANDROID_KEYSTORE_PASSWORD" \
   -alias mohsenscout >/dev/null
@@ -20,8 +22,8 @@ keytool -list -keystore "$KEYSTORE_PATH" \
 cat > "$SIGNING_GRADLE" <<'GRADLE'
 android {
     signingConfigs {
-        release {
-            storeFile file("mohsen-scout-release.jks")
+        create("mohsenRelease") {
+            storeFile file("$projectDir/mohsen-scout-release.jks")
             storePassword System.getenv("ANDROID_KEYSTORE_PASSWORD")
             keyAlias "mohsenscout"
             keyPassword System.getenv("ANDROID_KEYSTORE_PASSWORD")
@@ -29,14 +31,16 @@ android {
     }
     buildTypes {
         release {
-            signingConfig signingConfigs.release
+            signingConfig signingConfigs.mohsenRelease
         }
     }
 }
 GRADLE
 
-if ! grep -q 'release-signing.gradle' android/app/build.gradle; then
-  printf '\napply from: "./release-signing.gradle"\n' >> android/app/build.gradle
+# Apply the signing configuration from the app module's own directory.
+APPLY_LINE='apply from: "$projectDir/release-signing.gradle"'
+if ! grep -Fq 'release-signing.gradle' "$APP_GRADLE"; then
+  printf '\n%s\n' "$APPLY_LINE" >> "$APP_GRADLE"
 fi
 
 echo "Persistent Android release signing is configured and keystore validation passed."
