@@ -29,8 +29,9 @@ type Brief = {
 };
 
 export default function DeepResearch() {
-  const params = useLocalSearchParams<{ topic?: string; niche?: string }>();
+  const params = useLocalSearchParams<{ topic?: string; niche?: string; idea?: string }>();
   const preferences = useScout((state) => state.data.preferences);
+  const linkedIdea = useScout((state) => state.data.ideas.find((idea) => idea.id === params.idea));
   const [topic, setTopic] = useState(typeof params.topic === 'string' ? params.topic : '');
   const [brief, setBrief] = useState<Brief>();
   const op = useOperation();
@@ -133,12 +134,14 @@ export default function DeepResearch() {
       tags: ['space', 'research'],
       blocks,
       updatedAt: Date.now(),
+      ...(linkedIdea ? { ideaId: linkedIdea.id } : {}),
     };
     await useScout.getState().commit((data) => ({ ...data, notes: [note, ...data.notes] }));
   }, 'Research brief saved to Notes.');
   return (
     <Page title="DEEP RESEARCH">
       <Txt muted>Choose a topic. The app combines selected official news, a clearly labelled public-interest proxy and an optional YouTube sample, then prepares a research structure with source links. The final topic choice and research start stay under your control.</Txt>
+      {linkedIdea ? <Action secondary onPress={() => router.push({ pathname: '/detail', params: { idea: linkedIdea.id } })}>Research linked to: {linkedIdea.topic} · Open idea</Action> : null}
       <Panel>
         <Field label="Research topic" value={topic} onChange={setTopic} placeholder="e.g. What JWST has found in exoplanet atmospheres" multiline />
         <Action busy={op.busy} disabled={!topic.trim()} onPress={run}>Start deep research</Action>
