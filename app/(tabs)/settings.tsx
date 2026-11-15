@@ -239,7 +239,7 @@ export default function Settings() {
           options={['Last 7 days', 'Last 30 days', 'Last 90 days', 'All time']}
           selected={[prefs.defaultResearchDays === 7 ? 'Last 7 days' : prefs.defaultResearchDays === 90 ? 'Last 90 days' : prefs.defaultResearchDays === 0 ? 'All time' : 'Last 30 days']}
           onChange={(values) => {
-            const days: Record<string, number> = { 'Last 7 days': 7, 'Last 30 days': 30, 'Last 90 days': 90, 'All time': 0 };
+            const days: Record<string, Preferences['defaultResearchDays']> = { 'Last 7 days': 7, 'Last 30 days': 30, 'Last 90 days': 90, 'All time': 0 };
             setPrefs({ ...prefs, defaultResearchDays: days[values[0]] ?? 30 });
           }}
         />

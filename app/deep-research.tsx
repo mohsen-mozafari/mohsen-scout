@@ -60,7 +60,7 @@ export default function DeepResearch() {
           key,
           charge: useScout.getState().charge,
           onQuota: () => useScout.getState().commit((data) => ({ ...data, budget: { ...data.budget, exhausted: true } })),
-        }, 8, { days: (preferences.defaultResearchDays ?? 30) as 0 | 7 | 30 | 90, region: preferences.region, language: preferences.languages[0] });
+        }, 8, { days: preferences.defaultResearchDays ?? 30, region: preferences.region, language: preferences.languages[0] });
         videos = sample.videos;
         if (sample.warning) warnings.push(sample.warning);
       } else {
