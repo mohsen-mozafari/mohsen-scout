@@ -156,6 +156,29 @@ function DiscoveryDashboardReady() {
 
   const saved = (opportunity: DiscoveryOpportunity) => ideas.some((idea) => idea.topic === opportunity.topic && idea.sourceUrl === opportunity.sourceUrl);
 
+  const openOpportunityResearch = (
+    opportunity: DiscoveryOpportunity,
+    destination: '/trend-intelligence' | '/search-demand' | '/deep-research',
+  ) => void op.run(async () => {
+    const idea = await useScout.getState().ensureSourceIdea({
+      topic: opportunity.topic,
+      concept: opportunity.summary || 'Review the original publisher report, verify its claims and develop an original explanatory angle.',
+      sourceUrl: opportunity.sourceUrl,
+      sourceName: opportunity.sourceName,
+      imageUrl: opportunity.imageUrl,
+      region: preferences.region,
+      languages: preferences.languages,
+    });
+    const params = { topic: opportunity.topic, idea: idea.id };
+    if (destination === '/deep-research') {
+      router.push({ pathname: '/deep-research', params: { ...params, niche: preferences.selectedSpaceNiche } });
+    } else if (destination === '/search-demand') {
+      router.push({ pathname: '/search-demand', params });
+    } else {
+      router.push({ pathname: '/trend-intelligence', params });
+    }
+  }, 'Research linked to the same saved idea.');
+
   return (
     <Page title="MOHSEN SCOUT">
       <View style={{ gap: 7 }}>
@@ -243,9 +266,9 @@ function DiscoveryDashboardReady() {
             <Txt muted>{opportunity.reason}</Txt>
             <Txt muted>{opportunity.sourceCount} matching official feed source{opportunity.sourceCount === 1 ? '' : 's'} · No YouTube competition check yet</Txt>
           </View>
-          <Action onPress={() => router.push({ pathname: '/trend-intelligence', params: { topic: opportunity.topic } })}>Check YouTube Competition</Action>
-          <Action secondary onPress={() => router.push({ pathname: '/search-demand', params: { topic: opportunity.topic } })}>Compare Public Interest</Action>
-          <Action secondary onPress={() => router.push({ pathname: '/deep-research', params: { topic: opportunity.topic, niche: preferences.selectedSpaceNiche } })}>Deep Research</Action>
+          <Action busy={op.busy} onPress={() => openOpportunityResearch(opportunity, '/trend-intelligence')}>Check YouTube Competition</Action>
+          <Action secondary busy={op.busy} onPress={() => openOpportunityResearch(opportunity, '/search-demand')}>Compare Public Interest</Action>
+          <Action secondary busy={op.busy} onPress={() => openOpportunityResearch(opportunity, '/deep-research')}>Deep Research</Action>
           <Action secondary disabled={saved(opportunity)} onPress={() => saveIdea(opportunity)}>{saved(opportunity) ? 'Saved to Ideas' : 'Save Idea'}</Action>
           <Action secondary onPress={() => runInternalEngine(opportunity)}>Run Internal Story Engine</Action>
           <Button variant="tertiary" className="h-auto justify-start px-0" onPress={() => void Linking.openURL(opportunity.sourceUrl).catch(() => {})}>
