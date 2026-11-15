@@ -2,7 +2,38 @@
 
 Recorded: 2026-11-15. No real API keys were supplied. API checks use isolated synthetic responses, not live YouTube/OpenRouter calls.
 
-## Focused pre-build release verification — latest pass (2026-11-15)
+## Focused release-readiness recheck — latest pass (2026-11-15)
+
+**Decision: HOLD. No APK build attempted.** This recheck found no new concrete source-level blocker. App code, dependencies, lockfile, design and previous documentation were preserved. No new fixes or regression tests were warranted; the existing eight schedule/channel regressions were rerun as browser mocks. This section records fresh observations; earlier results below remain historical.
+
+### Fresh execution evidence
+
+| Check / command | Fresh observed result |
+| --- | --- |
+| Browser `/diagnostics?run=1` | **43 passed, 0 failed**, using isolated synthetic responses. Not the Node test command and not native execution. |
+| Read-only project validator | **Lint: clean. Types: clean.** Configured scripts are `oxlint --type-aware --type-check` and `node scripts/lint-css.mjs`; validator exposes no separate CSS result or numeric exit codes. No formatting/autofix was requested in this recheck. |
+| `expo-doctor` via health checker | **Exit 1; 19/20 passed.** Same 23 version-alignment recommendations listed below. Wrapper invocation flags not exposed. |
+| `expo install --check` via health checker | **Exit 1**, same version differences. |
+| npm dependency-tree resolution via health checker | **Resolves cleanly**; underlying npm invocation and exit code not exposed. |
+| Native package availability | All eight feature packages are carried at their installed versions: background-task 58.0.11, task-manager 58.0.12, secure-store 58.0.2, sqlite 58.0.14, file-system 58.0.11, document-picker 58.0.4, sharing 58.0.20, notifications 58.1.6. Availability does not verify Android execution. |
+| Seven routes at 320 × 874 CSS pixels | `/`, `/settings`, `/library`, `/opportunities`, `/notes`, `/note`, `/detail` rendered with no capture diagnostics. Tab labels, wrapping, new-note save footer and missing-detail fallback visually checked. No taps, scrolling, keyboard or native back tests performed. |
+| Native preview log | `not_found`: preview never started. Mobile log shows Metro waiting, no device/runtime output. |
+| `**/*.{apk,aab}` search including ignored files | No matches; no APK/AAB artifact path. |
+| `npm test` → `tsx --test tests/core.test.ts` | **NOT RUN:** no general command executor exposed. Existing 43 registered Node cases are not counted as executed. |
+| `npm run export:web` → `expo export -p web` | **NOT RUN:** no general command executor exposed. Preview rendering is not a production export. |
+| Standalone `npx tsc --noEmit` | **NOT RUN:** validator type checks passed; no separate tsc execution claimed. |
+
+Browser regression evidence: https://files.bilt.me/app_screenshots/a7e70ac6-993d-4740-923b-65144c2c2410/1794709295.png . Settings evidence: https://files.bilt.me/app_screenshots/a7e70ac6-993d-4740-923b-65144c2c2410/1794709245.png . Note evidence: https://files.bilt.me/app_screenshots/a7e70ac6-993d-4740-923b-65144c2c2410/1794709249.png .
+
+### Native boundaries and build gate
+
+SQLite, SecureStore, native file export/import, task registration and notification integration received a fresh **read-only source audit**, not runtime tests. Backup/restore and scheduler commit/recovery/channel-selection logic passed browser synthetic checks; actual SQLite restart/rollback, SecureStore save/read/delete/restart, picker/share behavior, WorkManager execution, notification permissions/delivery, Android back and keyboard behavior remain unverified. No real or dummy credentials were written, no keys were requested, and no live API calls or physical-device/emulator tests occurred.
+
+**An APK build is not executable through this session's available tools.** No command/build executor or Android device/adb execution is exposed; no claim is made about software installed elsewhere. The failed dependency-alignment gate and unexecuted native/Node/export checks prevent release approval, but do not prove a Gradle build failure.
+
+**Lowest-cost next step:** run the existing command block below in a local release checkout before starting any paid/cloud build. Resolve dependency alignment there rather than changing this preview blindly. With an existing Android development client/device, perform smoke checks using disposable dummy credentials and synthetic personal data; do not tap Test key or start research. If no compatible native client exists, record the limitation and clear automated/dependency gates before deciding on a development build for native acceptance testing. No production APK is authorized by this recheck.
+
+## Previous focused pre-build release verification (2026-11-15)
 
 **Decision: HOLD the APK build.** No build was attempted. The code fixes below pass isolated checks, but the Node suite, standalone export and Android device verification cannot be executed through this session. Dependency alignment also remains unresolved; this is a failed readiness gate, not proof that Gradle would fail.
 
