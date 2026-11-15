@@ -50,6 +50,8 @@ export default function Detail() {
     idea.concept.trim(),
   );
   const related = idea ? data.videos.filter((v) => idea.videoIds.includes(v.id)) : [];
+  const savedReferences = idea ? data.links.filter((link) => idea.videoIds.includes(link.id)) : [];
+  const researchNotes = idea ? data.notes.filter((note) => note.ideaId === idea.id) : [];
   const secondOpinion = () =>
     void op.run(async () => {
       if (!idea) return;
@@ -174,6 +176,33 @@ export default function Detail() {
           <Txt muted>
             {idea.region} · {idea.languages.map((l) => languages[l] || l).join(', ')}
           </Txt>
+          <Panel>
+            <Heading>Continue this research</Heading>
+            <Txt muted>Each tool opens with this idea's topic. Results can be connected back here without creating a second copy of the idea.</Txt>
+            <Action secondary onPress={() => router.push({ pathname: '/youtube', params: { topic: idea.topic, idea: idea.id } })}>YouTube research</Action>
+            <Action secondary onPress={() => router.push({ pathname: '/trend-intelligence', params: { topic: idea.topic, idea: idea.id } })}>Explore a paginated YouTube sample</Action>
+            <Action secondary onPress={() => router.push({ pathname: '/search-demand', params: { topic: idea.topic, idea: idea.id } })}>Compare public interest</Action>
+            <Action secondary onPress={() => router.push({ pathname: '/deep-research', params: { topic: idea.topic, idea: idea.id } })}>Prepare a deep research brief</Action>
+          </Panel>
+          {savedReferences.length > 0 && (
+            <Fold title={`Saved video references (${savedReferences.length})`}>
+              <Txt muted>These are personal YouTube links you chose to keep. API titles, thumbnails and statistics remain temporary and are not copied into your notes or backup.</Txt>
+              {savedReferences.map((link) => (
+                <Action key={link.id} secondary onPress={() => void Linking.openURL(link.url).catch(() => {})}>
+                  {link.manualTitle.trim() || 'Open saved YouTube reference'}
+                </Action>
+              ))}
+            </Fold>
+          )}
+          {researchNotes.length > 0 && (
+            <Fold title={`Linked research notes (${researchNotes.length})`}>
+              {researchNotes.map((note) => (
+                <Action key={note.id} secondary onPress={() => router.push({ pathname: '/note', params: { id: note.id } })}>
+                  {note.title}
+                </Action>
+              ))}
+            </Fold>
+          )}
           <Fold title="Observed evidence" open>
             {related.length ? (
               related.map((v) => <VideoRow key={v.id} video={v} topic={idea.topic} />)
