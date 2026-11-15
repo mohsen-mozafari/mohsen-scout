@@ -30,6 +30,14 @@ Required icons include `assets/scout-icon.svg`, `assets/scout-icon.png`, and `pu
 
 Do not export `node_modules/`, `.expo/`, caches, private environment files, keystores, or credentials. Dependencies are restored from the lockfile. Android/iOS generated directories are absent from this source and ignored by Git; generate Android locally below. The app needs no mandatory backend or real API key to compile and open.
 
+### Connected-account export safety check
+
+The connected-account follow-up rechecked all 38 expected checklist paths: they are present locally. No confirmed hardcoded credentials, environment files, signing files, runtime databases or personal backup artifacts were found in the inspected source. This is not a remote-repository or Git-history audit: Git metadata is inaccessible in this session, and repository creation, Sync/Resync, commit/push and Android build execution are not available here. No remote URL, commit or APK has been verified.
+
+`.gitignore` excludes environment files, common keystores, runtime database files and designated personal backup files/folders. No `.env.example` is required by the current build. If one is added later, use placeholders only; its name is explicitly allowed through the environment exclusion. Ignore rules do not remove already tracked files or erase Git history. Before sharing the repository, inspect its files and history; if an actual credential was previously committed, revoke it and remove it from history before sharing. Keep personal JSON exports outside the source folder, especially ones whose names do not match the backup exclusions.
+
+Because the account is already connected, the next user action is **Bilt project Settings → GitHub → Repository → Sync to GitHub**, choose the connected account, and confirm. The documented first sync creates a repository. If the Repository tab already shows a linked repository, use **Resync to GitHub** instead. Open the URL displayed after completion and verify the checklist above and the latest `.gitignore` before downloading **Code → Download ZIP**. For a personal project, check repository visibility and keep it private unless intentionally sharing.
+
 ## Windows prerequisites
 
 - Windows with PowerShell, Node.js compatible with `package.json` (`>=20.19.4`; use a supported Node LTS), and npm (project records `10.9.0`).

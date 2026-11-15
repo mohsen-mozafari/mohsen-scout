@@ -12,6 +12,7 @@ web-build/
 # Native
 *.orig.*
 *.jks
+*.keystore
 *.p8
 *.p12
 *.key
@@ -29,8 +30,21 @@ yarn-error.*
 .DS_Store
 *.pem
 
-# local env files
-.env*.local
+# environment files (only reviewed placeholder examples may be committed)
+.env
+.env.*
+!.env.example
+
+# runtime databases and personal backups
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+backups/
+*.backup.json
+mohsen-scout-backup*.json
 
 # typescript
 *.tsbuildinfo
