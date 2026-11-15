@@ -16,6 +16,8 @@ on:
       - 'tests/**'
       - 'plugins/**'
       - 'scripts/**'
+      - 'assets/**'
+      - 'public/icons/**'
       - 'README_FA.md'
       - 'AGENTS.md'
 
@@ -85,6 +87,9 @@ jobs:
           fi
           grep -n 'com.android.tools.build:gradle' "$FILE"
 
+      - name: Validate custom launcher icon generator
+        run: node --check scripts/scout-icon.cjs
+
       - name: Generate Android project
         run: npx expo prebuild --platform android --no-install
 
@@ -112,8 +117,10 @@ jobs:
         run: |
           APK="android/app/build/outputs/apk/release/app-release.apk"
           BADGING="$("$ANDROID_HOME/build-tools/37.0.0/aapt" dump badging "$APK")"
-          echo "$BADGING" | grep -F "package: name='me.bilt.mohsenscout'"
+          echo "$BADGING" | grep -F "package: name='me.bilt.mohsenscout' versionCode='2' versionName='1.1.0'"
           echo "$BADGING" | grep -F "native-code: 'arm64-v8a'"
+          CERT_SHA="$("$ANDROID_HOME/build-tools/37.0.0/apksigner" verify --print-certs "$APK" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | tr '[:upper:]' '[:lower:]')"
+          test "$CERT_SHA" = "8e951f99da896948aa6af5fae37a6ae870c4263bde99ce942d3ef5fb507364de"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { View, Text, Linking, Image, FlatList } from 'react-native';
+import { View, Text, Linking, FlatList } from 'react-native';
 import { Button } from 'heroui-native';
 import { router } from 'expo-router';
 import { ArrowUpRight, Plus, Download } from 'lucide-react-native';
@@ -20,6 +20,7 @@ import { type SavedLink } from '@/lib/types';
 import { palette as p } from '@/lib/theme';
 import { personalLinks } from '@/lib/backup';
 import { shareText } from '@/lib/transfer';
+import { MediaPreview } from '@/components/MediaPreview';
 export default function Library() {
   const data = useScout((s) => s.data);
   const [search, setSearch] = useState('');
@@ -213,11 +214,7 @@ export default function Library() {
               style={[styles.rule, { gap: 12, marginBottom: 20 }]}
             >
               {Boolean(video?.thumbnail) && (
-                <Image
-                  source={{ uri: video?.thumbnail }}
-                  resizeMode="cover"
-                  style={{ width: '100%', height: 180, borderRadius: 14 }}
-                />
+                <MediaPreview uri={video?.thumbnail} aspectRatio={16 / 9} viewer alt={video?.title ?? 'Saved video'} />
               )}
               <Button
                 variant="tertiary"

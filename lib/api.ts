@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { type Budget, type ResearchInput, type Video } from './types';
+import { type Budget, type ResearchInput, type Video, type Region } from './types';
 export type Fetcher = typeof fetch;
 export class ApiError extends Error {
   constructor(
@@ -221,7 +221,8 @@ export async function searchYouTube(
         fields:
           'nextPageToken,items(id/videoId,snippet(title,description,channelTitle,publishedAt,thumbnails))',
       };
-      if (input.region !== 'Worldwide') params.regionCode = input.region === 'Iran' ? 'IR' : 'US';
+      const regionCodes: Partial<Record<Region, string>> = { 'United States': 'US', Iran: 'IR', 'United Kingdom': 'GB', Germany: 'DE' };
+      if (regionCodes[input.region]) params.regionCode = regionCodes[input.region]!;
       if (input.category) params.videoCategoryId = input.category;
       if (input.days)
         params.publishedAfter = new Date(Date.now() - input.days * 86400000).toISOString();
@@ -293,10 +294,18 @@ export type YouTubeSampleVideo = {
   channel: string;
   channelId: string;
   publishedAt: string;
+  thumbnailUrl: string;
   viewCount: number | null;
+  likeCount: number | null;
   channelSubscriberCount: number | null;
   channelVideoCount: number | null;
   url: string;
+};
+export type YouTubeSampleFilters = {
+  days?: 0 | 7 | 30 | 90;
+  order?: 'date' | 'viewCount' | 'relevance';
+  region?: Region;
+  language?: string;
 };
 const spaceSearchSchema = z.object({
   items: z.array(z.object({
@@ -307,6 +316,11 @@ const spaceSearchSchema = z.object({
       channelTitle: z.string(),
       channelId: z.string(),
       publishedAt: z.string().datetime(),
+      thumbnails: z.object({
+        high: z.object({ url: z.string().url() }).optional(),
+        medium: z.object({ url: z.string().url() }).optional(),
+        default: z.object({ url: z.string().url() }).optional(),
+      }).optional(),
     }),
   })),
 });
@@ -322,47 +336,62 @@ const channelStatsSchema = z.object({
 const spaceStatsSchema = z.object({
   items: z.array(z.object({
     id: z.string(),
-    statistics: z.object({ viewCount: z.string().optional() }).optional(),
+    statistics: z.object({
+      viewCount: z.string().optional(),
+      likeCount: z.string().optional(),
+    }).optional(),
   })),
 });
 
-/** One YouTube search.list request plus videos.list and channels.list statistics requests.
- * Search costs 100 quota units; each statistics request costs 1. This is a small observed sample,
- * not a complete market census and not a growth-rate estimate.
- */
+/** One search.list request plus batched video and channel statistics requests. */
 export async function searchYouTubeSample(
   topic: string,
   options: YouTubeOptions,
   maxResults = 12,
+  filters: YouTubeSampleFilters = {},
 ): Promise<{ videos: YouTubeSampleVideo[]; warning: string }> {
   const query = topic.trim().slice(0, 120);
   if (!query) throw new ApiError('Enter a space topic before measuring YouTube competition.', 'input');
-  const raw = await youtube('search', {
+  const days = filters.days ?? 30;
+  const order = filters.order ?? 'viewCount';
+  const searchParams: Record<string, string> = {
     part: 'snippet',
     type: 'video',
     q: query,
-    order: 'viewCount',
+    order,
     maxResults: String(Math.min(25, Math.max(1, maxResults))),
-    fields: 'items(id/videoId,snippet(title,description,channelTitle,channelId,publishedAt))',
-  }, options, 100);
+    fields: 'items(id/videoId,snippet(title,description,channelTitle,channelId,publishedAt,thumbnails(high/url,medium/url,default/url)))',
+  };
+  const regionCodes: Partial<Record<Region, string>> = {
+    'United States': 'US',
+    Iran: 'IR',
+    'United Kingdom': 'GB',
+    Germany: 'DE',
+  };
+  if (filters.region && regionCodes[filters.region]) searchParams.regionCode = regionCodes[filters.region]!;
+  if (filters.language) searchParams.relevanceLanguage = filters.language;
+  if (days > 0) searchParams.publishedAfter = new Date(Date.now() - days * 86400000).toISOString();
+  const raw = await youtube('search', searchParams, options, 100);
   const parsed = spaceSearchSchema.safeParse(raw);
   if (!parsed.success) throw new ApiError('YouTube returned an invalid topic sample.', 'invalid');
   const selected = parsed.data.items;
-  if (!selected.length) return { videos: [], warning: 'YouTube returned no matching science and technology videos.' };
+  if (!selected.length) return { videos: [], warning: 'YouTube returned no matching videos in this period.' };
   const ids = selected.map((item) => item.id.videoId);
   const statsRaw = await youtube('videos', {
     part: 'statistics',
     id: ids.join(','),
-    fields: 'items(id,statistics(viewCount))',
+    fields: 'items(id,statistics(viewCount,likeCount))',
   }, options, 1);
   const statistics = spaceStatsSchema.safeParse(statsRaw);
-  if (!statistics.success) throw new ApiError('YouTube view statistics could not be read.', 'invalid');
-  const views = new Map<string, number | null>(statistics.data.items.map((item): [string, number | null] => [
-    item.id,
-    item.statistics?.viewCount && /^\d+$/.test(item.statistics.viewCount)
-      ? Number(item.statistics.viewCount)
-      : null,
-  ]));
+  if (!statistics.success) throw new ApiError('YouTube video statistics could not be read.', 'invalid');
+  const views = new Map<string, number | null>();
+  const likes = new Map<string, number | null>();
+  for (const item of statistics.data.items) {
+    const viewText = item.statistics?.viewCount;
+    const likeText = item.statistics?.likeCount;
+    views.set(item.id, viewText && /^\d+$/.test(viewText) ? Number(viewText) : null);
+    likes.set(item.id, likeText && /^\d+$/.test(likeText) ? Number(likeText) : null);
+  }
   let channelMetrics = new Map<string, { subscribers: number | null; videos: number | null }>();
   let channelWarning = '';
   try {
@@ -386,25 +415,77 @@ export async function searchYouTubeSample(
       },
     ]));
   } catch {
-    channelWarning = 'Public channel statistics could not be loaded; individual video views are still available.';
+    channelWarning = 'Public channel statistics could not be loaded; video statistics remain available.';
   }
+  const videos = selected.map((item) => ({
+    id: item.id.videoId,
+    title: item.snippet.title,
+    description: item.snippet.description,
+    channel: item.snippet.channelTitle,
+    channelId: item.snippet.channelId,
+    publishedAt: item.snippet.publishedAt,
+    thumbnailUrl: item.snippet.thumbnails?.high?.url ?? item.snippet.thumbnails?.medium?.url ?? item.snippet.thumbnails?.default?.url ?? '',
+    viewCount: views.get(item.id.videoId) ?? null,
+    likeCount: likes.get(item.id.videoId) ?? null,
+    channelSubscriberCount: channelMetrics.get(item.snippet.channelId)?.subscribers ?? null,
+    channelVideoCount: channelMetrics.get(item.snippet.channelId)?.videos ?? null,
+    url: 'https://www.youtube.com/watch?v=' + item.id.videoId,
+  }));
   return {
-    videos: selected.map((item) => ({
-      id: item.id.videoId,
-      title: item.snippet.title,
-      description: item.snippet.description,
-      channel: item.snippet.channelTitle,
-      channelId: item.snippet.channelId,
-      publishedAt: item.snippet.publishedAt,
-      viewCount: views.get(item.id.videoId) ?? null,
-      channelSubscriberCount: channelMetrics.get(item.snippet.channelId)?.subscribers ?? null,
-      channelVideoCount: channelMetrics.get(item.snippet.channelId)?.videos ?? null,
-      url: 'https://www.youtube.com/watch?v=' + item.id.videoId,
-    })),
-    warning: 'A popularity-ordered sample only. Raw video views and public channel size are shown separately; this is not a complete market census or a growth-rate/saturation score.' + (channelWarning ? ' ' + channelWarning : ''),
+    videos,
+    warning: 'Limited YouTube sample. Sorting is applied only within returned results; this is not a complete market census or a growth-rate/saturation score.' + (channelWarning ? ' ' + channelWarning : ''),
   };
 }
 
+
+export type NewsTranslation = { title: string; summary: string };
+const newsTranslationCache = new Map<string, NewsTranslation>();
+export async function translateNewsToPersian(
+  key: string,
+  model: string,
+  title: string,
+  summary: string,
+  fetcher: Fetcher = fetch,
+): Promise<NewsTranslation> {
+  const cleanTitle = title.trim().slice(0, 500);
+  const cleanSummary = summary.trim().slice(0, 1800);
+  if (!cleanTitle && !cleanSummary) throw new ApiError('This news item has no text to translate.', 'input');
+  const cacheKey = JSON.stringify([model, cleanTitle, cleanSummary]);
+  const cached = newsTranslationCache.get(cacheKey);
+  if (cached) return cached;
+  const raw = await requestJson('https://openrouter.ai/api/v1/chat/completions', {
+    method: 'POST',
+    headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model,
+      max_tokens: 650,
+      messages: [{
+        role: 'user',
+        content: 'Translate the following news title and RSS summary into clear, natural Persian. Preserve all names, dates, measurements, numbers and scientific uncertainty. Do not add facts. Return only valid JSON with exactly two string properties: title and summary.\nTITLE: ' + cleanTitle + '\nSUMMARY: ' + cleanSummary,
+      }],
+    }),
+  }, fetcher);
+  const parsed = z.object({
+    choices: z.array(z.object({ message: z.object({ content: z.string() }) })).min(1),
+  }).safeParse(raw);
+  if (!parsed.success) throw new ApiError('The Persian translation response could not be read.', 'invalid');
+  const responseText = parsed.data.choices[0].message.content.trim().replace(/^\x60{3}(?:json)?\s*/i, '').replace(/\x60{3}$/, '').trim();
+  let translated: NewsTranslation;
+  try {
+    const value = JSON.parse(responseText) as unknown;
+    const result = z.object({ title: z.string(), summary: z.string() }).safeParse(value);
+    if (!result.success) throw new Error('Invalid translation fields');
+    translated = result.data;
+  } catch {
+    throw new ApiError('The model did not return a valid title and summary translation. Try again.', 'invalid');
+  }
+  newsTranslationCache.set(cacheKey, translated);
+  if (newsTranslationCache.size > 50) {
+    const oldest = newsTranslationCache.keys().next().value;
+    if (oldest) newsTranslationCache.delete(oldest);
+  }
+  return translated;
+}
 export async function getOpinion(key: string, model: string, prompt: string) {
   const raw = await requestJson('https://openrouter.ai/api/v1/chat/completions', {
     method: 'POST',

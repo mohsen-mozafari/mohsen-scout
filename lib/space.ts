@@ -22,6 +22,7 @@ export type SpaceNewsItem = {
   summary: string;
   url: string;
   publishedAt: string | null;
+  imageUrl?: string;
 };
 
 export const SPACE_NEWS_SOURCES: SpaceNewsSource[] = [
@@ -82,6 +83,31 @@ function xmlTag(block: string, tag: string): string {
   const match = block.match(new RegExp(expression, 'i'));
   return match ? decodeXml(match[1]) : '';
 }
+
+function safeOfficialImageUrl(value: string): string | undefined {
+  try {
+    const parsed = new URL(value.trim());
+    const host = parsed.hostname.toLowerCase();
+    const trusted = host === 'nasa.gov' || host.endsWith('.nasa.gov') ||
+      host === 'jpl.nasa.gov' || host.endsWith('.jpl.nasa.gov') ||
+      host === 'esa.int' || host.endsWith('.esa.int');
+    return parsed.protocol === 'https:' && trusted ? parsed.href : undefined;
+  } catch {
+    return undefined;
+  }
+}
+function rssImageUrl(block: string): string | undefined {
+  const candidates = [
+    block.match(/<(?:media:content|media:thumbnail)\b[^>]*\burl=["']([^"']+)["'][^>]*\/?\s*>/i)?.[1],
+    block.match(/<enclosure\b(?=[^>]*\btype=["']image\/)[^>]*\burl=["']([^"']+)["'][^>]*>/i)?.[1],
+    block.match(/<img\b[^>]*\bsrc=["']([^"']+)["'][^>]*>/i)?.[1],
+  ].filter((value): value is string => Boolean(value));
+  for (const candidate of candidates) {
+    const safe = safeOfficialImageUrl(decodeXml(candidate));
+    if (safe) return safe;
+  }
+  return undefined;
+}
 export function parseRssFeed(xml: string, source: SpaceNewsSource): SpaceNewsItem[] {
   const blocks = [...xml.matchAll(/<(item|entry)\b[^>]*>([\s\S]*?)<\/\1>/gi)].slice(0, newsItemLimitPerFeed);
   return blocks.flatMap((match) => {
@@ -108,6 +134,7 @@ export function parseRssFeed(xml: string, source: SpaceNewsSource): SpaceNewsIte
       summary: summary.slice(0, 1200),
       url,
       publishedAt,
+      imageUrl: rssImageUrl(block),
     }];
   });
 }
@@ -164,6 +191,70 @@ export function newsForNiche(items: SpaceNewsItem[], nicheId: string): SpaceNews
   return items.filter((item) => {
     const haystack = (item.title + ' ' + item.summary).toLowerCase();
     return niche.keywords.some((keyword) => haystack.includes(keyword.toLowerCase()));
+  });
+}
+
+export type DiscoveryOpportunity = {
+  id: string;
+  topic: string;
+  summary: string;
+  publishedAt: string | null;
+  sourceName: string;
+  sourceCount: number;
+  sourceUrl: string;
+  imageUrl?: string;
+  labels: string[];
+  reason: string;
+};
+
+/** Build source-backed opportunities only; no YouTube API is called here. */
+export function buildDiscoveryOpportunities(
+  items: SpaceNewsItem[],
+  nicheId: string,
+  now = Date.now(),
+): DiscoveryOpportunity[] {
+  const relevant = newsForNiche(items, nicheId);
+  const groups = new Map<string, SpaceNewsItem[]>();
+  for (const item of relevant) {
+    const normalized = item.title.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+    const key = normalized || item.id;
+    const group = groups.get(key) ?? [];
+    group.push(item);
+    groups.set(key, group);
+  }
+  return [...groups.entries()].map(([key, group]) => {
+    const ordered = [...group].sort((a, b) => {
+      if (!a.publishedAt) return 1;
+      if (!b.publishedAt) return -1;
+      return Date.parse(b.publishedAt) - Date.parse(a.publishedAt);
+    });
+    const latest = ordered[0];
+    const sources = [...new Set(group.map((item) => item.sourceId))];
+    const age = latest.publishedAt ? now - Date.parse(latest.publishedAt) : Number.POSITIVE_INFINITY;
+    const recent = age >= 0 && age <= 7 * 24 * 60 * 60 * 1000;
+    const labels = ['New Source Story'];
+    if (recent) labels.push('Recently Reported');
+    if (sources.length > 1) labels.push('Multiple Source Coverage');
+    const sourceName = [...new Set(group.map((item) => item.sourceName))].join(' · ');
+    let reason = 'A report from ' + latest.sourceName + ' matches your selected niche. Check its date and validate audience interest before prioritizing it.';
+    if (recent) reason = 'A recent report from ' + latest.sourceName + ' matches your selected niche. Audience demand and YouTube competition have not yet been checked.';
+    if (sources.length > 1) reason = 'Matching reports appeared in ' + sources.length + ' selected official feeds. This is source coverage, not proof of audience demand.';
+    return {
+      id: latest.id || key,
+      topic: latest.title,
+      summary: latest.summary,
+      publishedAt: latest.publishedAt,
+      sourceName,
+      sourceCount: sources.length,
+      sourceUrl: latest.url,
+      imageUrl: ordered.find((item) => item.imageUrl)?.imageUrl,
+      labels,
+      reason,
+    };
+  }).sort((a, b) => {
+    if (!a.publishedAt) return 1;
+    if (!b.publishedAt) return -1;
+    return Date.parse(b.publishedAt) - Date.parse(a.publishedAt);
   });
 }
 

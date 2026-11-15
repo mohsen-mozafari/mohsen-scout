@@ -28,6 +28,7 @@ const schema = z.object({
     email: text,
     region: z.enum(regions),
     languages: z.array(text).min(1),
+    defaultResearchDays: z.union([z.literal(0), z.literal(7), z.literal(30), z.literal(90)]).optional().default(30),
     budget: z.number().int().min(100).max(10000),
     model: text,
     schedule: z.enum(['Manual', 'Every 12 hours', 'Daily', 'Weekly']),
@@ -58,6 +59,9 @@ const schema = z.object({
       region: z.enum(regions),
       languages: z.array(text),
       reportId: text.optional(),
+      imageUrl: text.url().optional(),
+      sourceUrl: text.url().optional(),
+      sourceName: text.optional(),
     }),
   ),
   links: z.array(

@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { Text, View } from 'react-native';
+import { Text, View, Linking } from 'react-native';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { Button, Skeleton } from 'heroui-native';
 import { ArrowRight, SlidersHorizontal, Sparkles, KeyRound, Search } from 'lucide-react-native';
@@ -19,9 +19,10 @@ import {
   ErrorBox,
 } from '@/components/ScoutUI';
 import { VideoRow } from '@/components/VideoRow';
+import { MediaPreview } from '@/components/MediaPreview';
 import { palette as p } from '@/lib/theme';
 import { useScout } from '@/lib/store';
-import { regions, languages, type ResearchInput, type Report } from '@/lib/types';
+import { languages, type ResearchInput, type Report } from '@/lib/types';
 import { relatedQueries } from '@/lib/api';
 import { limitations } from '@/lib/engine';
 import { getKey } from '@/lib/vault';
@@ -36,7 +37,8 @@ export default function Discover() {
   const [topic, setTopic] = useState(typeof params.topic === 'string' ? params.topic : '');
   const [region, setRegion] = useState<ResearchInput['region']>(preferences.region);
   const [selectedLanguages, setLanguages] = useState(preferences.languages);
-  const [period, setPeriod] = useState('Last 30 days');
+  const defaultPeriod = preferences.defaultResearchDays === 7 ? 'Last 7 days' : preferences.defaultResearchDays === 90 ? 'Last 90 days' : preferences.defaultResearchDays === 0 ? 'Any time' : 'Last 30 days';
+  const [period, setPeriod] = useState(defaultPeriod);
   const [duration, setDuration] = useState('Any duration');
   const [category, setCategory] = useState('All categories');
   const [maximum, setMaximum] = useState('25');
@@ -47,16 +49,19 @@ export default function Discover() {
     ready,
     region: preferences.region,
     languages: preferences.languages,
+    defaultResearchDays: preferences.defaultResearchDays,
   });
   if (
     previousDefaults.ready !== ready ||
     previousDefaults.region !== preferences.region ||
-    previousDefaults.languages !== preferences.languages
+    previousDefaults.languages !== preferences.languages ||
+    previousDefaults.defaultResearchDays !== preferences.defaultResearchDays
   ) {
-    setPreviousDefaults({ ready, region: preferences.region, languages: preferences.languages });
+    setPreviousDefaults({ ready, region: preferences.region, languages: preferences.languages, defaultResearchDays: preferences.defaultResearchDays });
     if (ready) {
       setRegion(preferences.region);
       setLanguages(preferences.languages);
+      setPeriod(defaultPeriod);
     }
   }
   useFocusEffect(
@@ -110,7 +115,7 @@ export default function Discover() {
   return (
     <Page>
       <View style={{ gap: 10, paddingVertical: 4 }}>
-        <Text style={[styles.title, { fontSize: 38, lineHeight: 44 }]}>
+        <Text style={[styles.title, { fontSize: 32, lineHeight: 38 }]}>
           Find your{'\n'}
           <Text style={{ color: p.purple }}>next angle.</Text>
         </Text>
@@ -123,43 +128,7 @@ export default function Discover() {
           onChange={setTopic}
           placeholder="e.g. Small-space home studios"
         />
-        <Choices
-          label="Target region"
-          options={regions}
-          selected={[region]}
-          onChange={(values) => setRegion(values[0])}
-        />
-        <Choices
-          label="Video language"
-          options={['English', 'Persian', 'Spanish']}
-          selected={selectedLanguages.map((code) => languages[code])}
-          multiple
-          onChange={(names) =>
-            setLanguages([
-              ...selectedLanguages.filter((code) => !['en', 'fa', 'es'].includes(code)),
-              ...names
-                .map((name) => Object.keys(languages).find((code) => languages[code] === name)!)
-                .filter(Boolean),
-            ])
-          }
-        />
-        <Fold title={`More languages · ${selectedLanguages.length} selected`}>
-          <Choices
-            options={Object.values(languages).filter(
-              (name) => !['English', 'Persian', 'Spanish'].includes(name),
-            )}
-            selected={selectedLanguages.map((code) => languages[code])}
-            multiple
-            onChange={(names) =>
-              setLanguages([
-                ...selectedLanguages.filter((code) => ['en', 'fa', 'es'].includes(code)),
-                ...names
-                  .map((name) => Object.keys(languages).find((code) => languages[code] === name)!)
-                  .filter(Boolean),
-              ])
-            }
-          />
-        </Fold>
+        <Txt muted>Using Settings defaults: {region} · {selectedLanguages.map((code) => languages[code] || code).join(', ')}</Txt>
         <Fold title="Research filters">
           <Choices
             label="Publication period"
@@ -278,6 +247,7 @@ export default function Discover() {
             <Txt muted>Recent examples, not proof of an emerging trend.</Txt>
             {report.videos.slice(0, 2).map((v) => (
               <View style={{ gap: 6 }} key={v.id}>
+                <MediaPreview uri={v.thumbnail} aspectRatio={16 / 9} onPress={() => void Linking.openURL('https://www.youtube.com/watch?v=' + v.id).catch(() => {})} alt={v.title} />
                 <Txt>{v.title}</Txt>
                 <Txt muted>
                   Observed publication: {new Date(v.publishedAt).toLocaleDateString('en-US')}

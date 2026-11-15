@@ -1,4 +1,4 @@
-export const regions = ['United States', 'Worldwide', 'Iran'] as const;
+export const regions = ['United States', 'Worldwide', 'Iran', 'United Kingdom', 'Germany'] as const;
 export type Region = (typeof regions)[number];
 export const languages: Record<string, string> = {
   en: 'English',
@@ -78,6 +78,9 @@ export type Idea = {
   region: Region;
   languages: string[];
   reportId?: string;
+  imageUrl?: string;
+  sourceUrl?: string;
+  sourceName?: string;
 };
 export type Report = {
   id: string;
@@ -126,6 +129,7 @@ export type Preferences = {
   email: string;
   region: Region;
   languages: string[];
+  defaultResearchDays: number;
   budget: number;
   model: string;
   schedule: 'Manual' | 'Every 12 hours' | 'Daily' | 'Weekly';
@@ -155,6 +159,7 @@ export function defaults(): LocalData {
       email: '',
       region: 'United States',
       languages: ['en'],
+      defaultResearchDays: 30,
       budget: 1500,
       model: '',
       schedule: 'Manual',

@@ -10,7 +10,7 @@ import { SEARCH_DEMAND_PROVIDERS, type WikiLanguage, type WikiSignal } from '@/l
 export default function SearchDemand() {
   const params = useLocalSearchParams<{ topic?: string }>();
   const preferences = useScout((state) => state.data.preferences);
-  const [language, setLanguage] = useState<WikiLanguage>(preferences.spaceInterestLanguage ?? 'en');
+  const language: WikiLanguage = preferences.spaceInterestLanguage ?? 'en';
   const [country, setCountry] = useState('Worldwide');
   const [period, setPeriod] = useState('Past 12 months');
   const [topics, setTopics] = useState<string[]>([typeof params.topic === 'string' ? params.topic : 'exoplanet', '', '']);
@@ -41,7 +41,7 @@ export default function SearchDemand() {
         <Field label="Topic 1" value={topics[0]} onChange={(value) => setTopic(0, value)} placeholder="e.g. exoplanets" />
         <Field label="Topic 2" value={topics[1]} onChange={(value) => setTopic(1, value)} placeholder="Optional comparison topic" />
         <Field label="Topic 3" value={topics[2]} onChange={(value) => setTopic(2, value)} placeholder="Optional comparison topic" />
-        <Choices label="Wikipedia language project" options={['en', 'fa', 'de', 'fr', 'es', 'ja']} selected={[language]} onChange={(values) => setLanguage(values[0])} />
+        <Txt muted>{language.toUpperCase()} Wikipedia project · change this default in Settings.</Txt>
         <Heading>Google Trends comparison settings</Heading>
         <Choices label="Country / region" options={['Worldwide', 'United States', 'United Kingdom', 'Germany', 'Iran', 'Canada', 'Australia', 'Japan', 'India', 'France', 'Brazil']} selected={[country]} onChange={(values) => setCountry(values[0])} />
         <Choices label="Time range" options={['Past 7 days', 'Past 30 days', 'Past 90 days', 'Past 12 months', 'Past 5 years']} selected={[period]} onChange={(values) => setPeriod(values[0])} />

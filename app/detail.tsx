@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Text, Linking, Image } from 'react-native';
+import { Text, Linking } from 'react-native';
 import { Skeleton } from 'heroui-native';
 import { Link, router, useLocalSearchParams } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
@@ -25,6 +25,7 @@ import { limitations, reasoning } from '@/lib/engine';
 import { getKey } from '@/lib/vault';
 import { getFreeModels, getOpinion, opinionPrompt } from '@/lib/api';
 import { uid } from '@/lib/types';
+import { MediaPreview } from '@/components/MediaPreview';
 export default function Detail() {
   const params = useLocalSearchParams<{ idea?: string; video?: string }>();
   const data = useScout((s) => s.data);
@@ -91,6 +92,7 @@ export default function Detail() {
         assessment: 'Uncertain',
         region: report?.input.region || data.preferences.region,
         languages: report?.input.languages || data.preferences.languages,
+        imageUrl: video?.thumbnail || undefined,
       };
       await useScout.getState().saveIdea(draft);
       router.replace({ pathname: '/detail', params: { idea: draft.id } });
@@ -127,11 +129,7 @@ export default function Detail() {
       </Text>
       {video && (
         <>
-          <Image
-            source={{ uri: video.thumbnail }}
-            resizeMode="cover"
-            style={{ width: '100%', height: 210, borderRadius: 18 }}
-          />
+          <MediaPreview uri={video.thumbnail} aspectRatio={16 / 9} onPress={() => void Linking.openURL('https://www.youtube.com/watch?v=' + video.id).catch(() => {})} alt={video.title} />
           <Txt>
             {video.channel} · {new Date(video.publishedAt).toLocaleDateString('en-US')}
           </Txt>
@@ -159,6 +157,7 @@ export default function Detail() {
       )}
       {idea && (
         <>
+          {idea.imageUrl ? <MediaPreview uri={idea.imageUrl} aspectRatio={16 / 9} viewer alt={idea.topic} /> : null}
           <Panel>
             <Text style={styles.badge}>{idea.assessment}</Text>
             <Heading>Video concept</Heading>

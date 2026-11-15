@@ -6,6 +6,7 @@ import { Page, Panel, Heading, Txt, Field, Action, styles, ErrorBox, useOperatio
 import { useScout } from '@/lib/store';
 import { uid } from '@/lib/types';
 import { getKey } from '@/lib/vault';
+import { MediaPreview } from '@/components/MediaPreview';
 import { searchYouTubeSample, type YouTubeSampleVideo } from '@/lib/api';
 import {
   SPACE_NICHES, fetchSpaceNews, newsForNiche, getWikipediaSignal, buildResearchOutline,
@@ -57,7 +58,7 @@ export default function DeepResearch() {
           key,
           charge: useScout.getState().charge,
           onQuota: () => useScout.getState().commit((data) => ({ ...data, budget: { ...data.budget, exhausted: true } })),
-        }, 8);
+        }, 8, { days: (preferences.defaultResearchDays ?? 30) as 0 | 7 | 30 | 90, region: preferences.region, language: preferences.languages[0] });
         videos = sample.videos;
         if (sample.warning) warnings.push(sample.warning);
       } else {
@@ -145,6 +146,7 @@ export default function DeepResearch() {
             {!brief.news.length && <Txt muted>No selected-feed headline directly matched this topic. Use the source links from Cosmic News for a broader scan.</Txt>}
             {brief.news.map((item) => (
               <View key={item.id} style={{ gap: 6 }}>
+                {item.imageUrl ? <MediaPreview uri={item.imageUrl} aspectRatio={16 / 9} viewer alt={item.title} /> : null}
                 <Text style={styles.badge}>{item.sourceName} · {item.publishedAt ? new Date(item.publishedAt).toLocaleDateString() : 'Date not supplied'}</Text>
                 <Txt>{item.title}</Txt>
                 {Boolean(item.summary) && <Txt muted>{item.summary}</Txt>}
@@ -158,8 +160,9 @@ export default function DeepResearch() {
             <Heading>YouTube evidence</Heading>
             {brief.videos.length > 0 ? brief.videos.map((video) => (
               <View key={video.id} style={{ gap: 4 }}>
+                <MediaPreview uri={video.thumbnailUrl} aspectRatio={16 / 9} onPress={() => void Linking.openURL(video.url).catch(() => {})} alt={video.title} />
                 <Txt>{video.title}</Txt>
-                <Text style={styles.badge}>{video.channel} · {video.viewCount === null ? 'Views unavailable' : video.viewCount.toLocaleString() + ' views'}</Text>
+                <Text style={styles.badge}>{video.channel} · {video.viewCount === null ? 'Views unavailable' : video.viewCount.toLocaleString() + ' views'} · {video.likeCount === null ? 'Likes unavailable' : video.likeCount.toLocaleString() + ' likes'}</Text>
                 <Txt muted>{video.channelSubscriberCount === null ? 'Subscribers unavailable' : video.channelSubscriberCount.toLocaleString() + ' subscribers'} · {video.channelVideoCount === null ? 'Channel video total unavailable' : video.channelVideoCount.toLocaleString() + ' uploads'}</Txt>
               </View>
             )) : <Txt muted>No YouTube sample was available. This does not block the source-led brief.</Txt>}

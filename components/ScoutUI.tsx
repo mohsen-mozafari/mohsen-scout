@@ -8,24 +8,24 @@ import { useScout } from '@/lib/store';
 export const styles = StyleSheet.create({
   page: { flex: 1, backgroundColor: p.background },
   content: {
-    padding: 20,
-    paddingBottom: 32,
-    gap: 20,
+    padding: 18,
+    paddingBottom: 28,
+    gap: 18,
     width: '100%',
     maxWidth: 720,
     alignSelf: 'center',
   },
-  title: { fontFamily: 'Inter_700Bold', fontSize: 30, color: p.text, letterSpacing: -1 },
-  heading: { fontFamily: 'Inter_600SemiBold', fontSize: 18, color: p.text },
+  title: { fontFamily: 'Inter_700Bold', fontSize: 28, lineHeight: 34, color: p.text, letterSpacing: -0.8 },
+  heading: { fontFamily: 'Inter_600SemiBold', fontSize: 16, lineHeight: 22, color: p.text, letterSpacing: -0.2 },
   text: { fontFamily: 'Inter_400Regular', fontSize: 14, lineHeight: 22, color: p.text },
-  muted: { fontFamily: 'Inter_400Regular', fontSize: 13, lineHeight: 20, color: p.muted },
-  panel: { padding: 18, borderRadius: 20, backgroundColor: p.surface, gap: 14 },
+  muted: { fontFamily: 'Inter_400Regular', fontSize: 12, lineHeight: 18, color: p.muted },
+  panel: { padding: 16, borderRadius: 18, backgroundColor: p.surface, gap: 12 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   // eslint-disable-next-line react-native/no-unused-styles -- Exported shared style used by screens and VideoRow; the rule only checks this file.
   rule: { borderBottomColor: p.border, borderBottomWidth: 1, paddingBottom: 18 },
   label: { fontFamily: 'Inter_500Medium', fontSize: 13, color: p.muted },
   // eslint-disable-next-line react-native/no-unused-styles -- Exported shared style used by screens and VideoRow; the rule only checks this file.
-  badge: { fontFamily: 'Inter_500Medium', fontSize: 12, color: p.purple },
+  badge: { fontFamily: 'Inter_500Medium', fontSize: 11, color: p.purple },
   input: { fontFamily: 'Inter_400Regular' },
 });
 export function Txt({ children, muted = false }: { children: ReactNode; muted?: boolean }) {

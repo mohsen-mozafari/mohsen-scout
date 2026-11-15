@@ -26,6 +26,7 @@ import { configureSchedule, enableNotifications, scheduleNotice } from '@/lib/sc
 import { commitWithSchedule } from '@/lib/schedule';
 import { router } from 'expo-router';
 import { palette as p } from '@/lib/theme';
+import { SPACE_NICHES, SPACE_NEWS_SOURCES, type WikiLanguage } from '@/lib/space';
 function CredentialSection({ kind, label }: { kind: Credential; label: string }) {
   const [key, setValue] = useState('');
   const [stored, setStored] = useState(false);
@@ -201,6 +202,48 @@ export default function Settings() {
         <Action busy={op.busy} disabled={!ready} onPress={save}>
           Save defaults
         </Action>
+      </Fold>
+
+      <Fold title="Content discovery defaults">
+        <Txt muted>These preferences are saved on this device and used automatically by Discovery and research screens.</Txt>
+        <Choices
+          label="Primary content niche"
+          options={SPACE_NICHES.map((niche) => niche.title)}
+          selected={[SPACE_NICHES.find((niche) => niche.id === prefs.selectedSpaceNiche)?.title ?? SPACE_NICHES[0].title]}
+          onChange={(values) => {
+            const selected = SPACE_NICHES.find((niche) => niche.title === values[0]);
+            if (selected) setPrefs({ ...prefs, selectedSpaceNiche: selected.id });
+          }}
+        />
+        <Choices
+          label="Official news sources"
+          options={SPACE_NEWS_SOURCES.map((source) => source.label)}
+          selected={(prefs.spaceNewsSources ?? []).map((id) => SPACE_NEWS_SOURCES.find((source) => source.id === id)?.label ?? id)}
+          multiple
+          onChange={(labels) => setPrefs({
+            ...prefs,
+            spaceNewsSources: SPACE_NEWS_SOURCES.filter((source) => labels.includes(source.label)).map((source) => source.id),
+          })}
+        />
+        <Choices
+          label="Wikimedia article language"
+          options={['English', 'Persian', 'German', 'French', 'Spanish', 'Japanese']}
+          selected={[({ en: 'English', fa: 'Persian', de: 'German', fr: 'French', es: 'Spanish', ja: 'Japanese' } as Record<WikiLanguage, string>)[prefs.spaceInterestLanguage ?? 'en']]}
+          onChange={(values) => {
+            const codes: Record<string, WikiLanguage> = { English: 'en', Persian: 'fa', German: 'de', French: 'fr', Spanish: 'es', Japanese: 'ja' };
+            setPrefs({ ...prefs, spaceInterestLanguage: codes[values[0]] ?? 'en' });
+          }}
+        />
+        <Choices
+          label="Default YouTube research period"
+          options={['Last 7 days', 'Last 30 days', 'Last 90 days', 'All time']}
+          selected={[prefs.defaultResearchDays === 7 ? 'Last 7 days' : prefs.defaultResearchDays === 90 ? 'Last 90 days' : prefs.defaultResearchDays === 0 ? 'All time' : 'Last 30 days']}
+          onChange={(values) => {
+            const days: Record<string, number> = { 'Last 7 days': 7, 'Last 30 days': 30, 'Last 90 days': 90, 'All time': 0 };
+            setPrefs({ ...prefs, defaultResearchDays: days[values[0]] ?? 30 });
+          }}
+        />
+        <Action busy={op.busy} disabled={!ready} onPress={save}>Save discovery preferences</Action>
       </Fold>
       <Fold title="YouTube API" open>
         <CredentialSection kind="youtube" label="YouTube Data API v3" />
@@ -445,7 +488,7 @@ export default function Settings() {
       </Fold>
       <Fold title="App info">
         <Heading>MOHSEN SCOUT</Heading>
-        <Txt>Version 1.0.0 · Personal research assistant for Mohsen</Txt>
+        <Txt>Version 1.1.0 · Personal research assistant</Txt>
         <Txt muted>
           YouTube is a trademark of Google LLC. This app is not affiliated with YouTube. No
           comprehensive trend coverage or guaranteed results.

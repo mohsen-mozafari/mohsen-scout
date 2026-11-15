@@ -36,6 +36,7 @@ export function buildIdeas(report: Report): Idea[] {
         status: 'New Discoveries',
         decision: '',
         videoIds: report.videos.filter((v) => v.query === angle.query).map((v) => v.id),
+        imageUrl: report.videos.find((v) => v.query === angle.query)?.thumbnail,
         createdAt: Date.now(),
         archived: false,
         assessment: report.videos.some((v) => v.query === angle.query)

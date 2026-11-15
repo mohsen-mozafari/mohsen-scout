@@ -24,6 +24,7 @@ import {
   retryDelayMs,
   getFreeModels,
   opinionPrompt,
+  translateNewsToPersian,
   testYouTube,
   type Fetcher,
 } from '../lib/api';
@@ -74,6 +75,7 @@ void test('Migration: older saved preferences receive safe Space defaults', () =
   assert.deepEqual(migrated.preferences.spaceNewsSources, ['nasa', 'jpl', 'esa-space', 'esa-science']);
   assert.equal(migrated.preferences.spaceInterestLanguage, 'en');
   assert.equal(migrated.preferences.selectedSpaceNiche, 'exoplanets');
+  assert.equal(migrated.preferences.defaultResearchDays, 30);
 });
 void test('YouTube trend sample uses official search and video statistics endpoints with bounded quota', async () => {
   let charges = 0;
@@ -97,13 +99,14 @@ void test('YouTube trend sample uses official search and video statistics endpoi
             channelTitle: 'MOCK astronomy channel',
             channelId: 'UCmockchannel',
             publishedAt: '2026-11-01T12:00:00Z',
+            thumbnails: { high: { url: 'https://example.com/high.jpg' } },
           },
         }] });
       }
       if (parsed.pathname.endsWith('/videos')) {
         statisticsCalls++;
         assert.equal(parsed.searchParams.get('part'), 'statistics');
-        return response({ items: [{ id: 'dQw4w9WgXcQ', statistics: { viewCount: '125000' } }] });
+        return response({ items: [{ id: 'dQw4w9WgXcQ', statistics: { viewCount: '125000', likeCount: '2500' } }] });
       }
       if (parsed.pathname.endsWith('/channels')) {
         assert.equal(parsed.searchParams.get('part'), 'statistics');
@@ -116,6 +119,8 @@ void test('YouTube trend sample uses official search and video statistics endpoi
   assert.equal(statisticsCalls, 1);
   assert.equal(charges, 102);
   assert.equal(result.videos[0].viewCount, 125000);
+  assert.equal(result.videos[0].likeCount, 2500);
+  assert.equal(result.videos[0].thumbnailUrl, 'https://example.com/high.jpg');
   assert.equal(result.videos[0].channelSubscriberCount, 500000);
   assert.equal(result.videos[0].channelVideoCount, 200);
   assert.equal(result.videos[0].url, 'https://www.youtube.com/watch?v=dQw4w9WgXcQ');
@@ -131,10 +136,12 @@ void test('Backup compatibility: version-1 backups without Space preferences sti
   Reflect.deleteProperty(preferences, 'spaceNewsSources');
   Reflect.deleteProperty(preferences, 'spaceInterestLanguage');
   Reflect.deleteProperty(preferences, 'selectedSpaceNiche');
+  Reflect.deleteProperty(preferences, 'defaultResearchDays');
   const restored = importBackup(JSON.stringify(backup));
   assert.deepEqual(restored.preferences.spaceNewsSources, ['nasa', 'jpl', 'esa-space', 'esa-science']);
   assert.equal(restored.preferences.spaceInterestLanguage, 'en');
   assert.equal(restored.preferences.selectedSpaceNiche, 'exoplanets');
+  assert.equal(restored.preferences.defaultResearchDays, 30);
 });
 void test('Foundation: defaults belong to Mohsen and have no secrets', () => {
   const d = defaults();
@@ -613,6 +620,68 @@ void test('HTTP MOCK: long Retry-After stops requests instead of retrying before
         1,
       ),
     (error) => error instanceof ApiError && error.code === 'service',
+  );
+  assert.equal(calls, 1);
+});
+
+void test('YouTube trend sample applies All Time, publication order, region and language filters', async () => {
+  let searchSeen = false;
+  await searchYouTubeSample('Mars discoveries', {
+    key: 'MOCK_FILTERS',
+    charge: async () => {},
+    fetcher: async (url) => {
+      const parsed = new URL(typeof url === 'string' ? url : url instanceof URL ? url.href : url.url);
+      if (parsed.pathname.endsWith('/search')) {
+        searchSeen = true;
+        assert.equal(parsed.searchParams.get('order'), 'date');
+        assert.equal(parsed.searchParams.get('regionCode'), 'DE');
+        assert.equal(parsed.searchParams.get('relevanceLanguage'), 'de');
+        assert.equal(parsed.searchParams.has('publishedAfter'), false);
+        return response({ items: [{
+          id: { videoId: 'dQw4w9WgXcQ' },
+          snippet: {
+            title: 'MOCK newest Mars video',
+            description: 'MOCK description',
+            channelTitle: 'MOCK channel',
+            channelId: 'UCmockchannel',
+            publishedAt: '2026-11-14T12:00:00Z',
+            thumbnails: { medium: { url: 'https://example.com/thumb.jpg' } },
+          },
+        }] });
+      }
+      if (parsed.pathname.endsWith('/videos'))
+        return response({ items: [{ id: 'dQw4w9WgXcQ', statistics: { viewCount: '100', likeCount: '9' } }] });
+      if (parsed.pathname.endsWith('/channels'))
+        return response({ items: [{ id: 'UCmockchannel', statistics: { subscriberCount: '20', videoCount: '4' } }] });
+      throw new Error('Unexpected endpoint ' + parsed.pathname);
+    },
+  }, 12, { days: 0, order: 'date', region: 'Germany', language: 'de' });
+  assert.equal(searchSeen, true);
+});
+
+void test('OpenRouter news translation parses and caches a Persian title and summary', async () => {
+  let calls = 0;
+  const translated = await translateNewsToPersian(
+    'MOCK_TRANSLATION_KEY',
+    'mock:free',
+    'New exoplanet observed',
+    'Scientists reported a new atmosphere measurement.',
+    fetcher(() => {
+      calls++;
+      return response({ choices: [{ message: { content: JSON.stringify({
+        title: 'سیاره فراخورشیدی جدید رصد شد',
+        summary: 'دانشمندان اندازه‌گیری تازه‌ای از جو گزارش کردند.',
+      }) } }] });
+    }),
+  );
+  assert.match(translated.title, /سیاره/);
+  assert.match(translated.summary, /دانشمندان/);
+  await translateNewsToPersian(
+    'MOCK_TRANSLATION_KEY',
+    'mock:free',
+    'New exoplanet observed',
+    'Scientists reported a new atmosphere measurement.',
+    fetcher(() => { calls++; return response({ choices: [] }); }),
   );
   assert.equal(calls, 1);
 });

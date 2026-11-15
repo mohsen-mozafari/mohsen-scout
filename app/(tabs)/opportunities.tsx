@@ -18,6 +18,7 @@ import { useScout } from '@/lib/store';
 import { statuses, uid, type Idea } from '@/lib/types';
 import { palette as p } from '@/lib/theme';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
+import { MediaPreview } from '@/components/MediaPreview';
 export default function Opportunities() {
   const ideas = useScout((s) => s.data.ideas);
   const [status, setStatus] = useState('All');
@@ -93,6 +94,7 @@ export default function Opportunities() {
             exiting={FadeOut.duration(100)}
             style={[styles.rule, { marginBottom: 18 }]}
           >
+            {item.imageUrl ? <MediaPreview uri={item.imageUrl} aspectRatio={16 / 9} viewer alt={item.topic} /> : null}
             <Button
               variant="tertiary"
               className="h-auto justify-start px-0"

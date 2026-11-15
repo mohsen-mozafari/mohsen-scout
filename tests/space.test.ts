@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   parseRssFeed,
+  buildDiscoveryOpportunities,
   fetchSpaceNews,
   newsForNiche,
   buildResearchOutline,
@@ -109,4 +110,35 @@ void test('Wikimedia provider returns language-scoped article pageviews, not a s
   assert.equal(signal.monthlyViews[0].views, 130);
   assert.equal(calls.length, 3);
   assert.equal(SEARCH_DEMAND_PROVIDERS[0].id, 'wikimedia-pageviews');
+});
+
+void test('RSS parser extracts only trusted official HTTPS image URLs', () => {
+  const feed = SPACE_NEWS_SOURCES.find((source) => source.id === 'nasa')!;
+  const trusted = parseRssFeed('<rss><item><title>Exoplanet atmosphere report</title><link>https://www.nasa.gov/story</link><media:content url="https://images-assets.nasa.gov/image/example.jpg" medium="image" /></item></rss>', feed);
+  assert.equal(trusted[0].imageUrl, 'https://images-assets.nasa.gov/image/example.jpg');
+  const untrusted = parseRssFeed('<rss><item><title>Exoplanet atmosphere report</title><link>https://www.nasa.gov/story-2</link><media:thumbnail url="https://evil.example/image.jpg" /></item></rss>', feed);
+  assert.equal(untrusted[0].imageUrl, undefined);
+});
+
+void test('Discovery groups exact matching official headlines and labels evidence without scoring demand', () => {
+  const nasa = SPACE_NEWS_SOURCES.find((source) => source.id === 'nasa')!;
+  const jpl = SPACE_NEWS_SOURCES.find((source) => source.id === 'jpl')!;
+  const xmlA = '<rss><item><title>New exoplanet atmosphere observed</title><link>https://www.nasa.gov/story-a</link><description>Researchers report an exoplanet atmosphere observation.</description><pubDate>Sat, 14 Nov 2026 12:00:00 GMT</pubDate></item></rss>';
+  const xmlB = '<rss><item><title>New exoplanet atmosphere observed</title><link>https://www.jpl.nasa.gov/story-b</link><description>Researchers report an exoplanet atmosphere observation.</description><pubDate>Sat, 14 Nov 2026 13:00:00 GMT</pubDate></item></rss>';
+  const opportunities = buildDiscoveryOpportunities(
+    [...parseRssFeed(xmlA, nasa), ...parseRssFeed(xmlB, jpl)],
+    'exoplanets',
+    Date.parse('2026-11-15T12:00:00Z'),
+  );
+  assert.equal(opportunities.length, 1);
+  assert.equal(opportunities[0].sourceCount, 2);
+  assert.ok(opportunities[0].labels.includes('Recently Reported'));
+  assert.ok(opportunities[0].labels.includes('Multiple Source Coverage'));
+  assert.match(opportunities[0].reason, /not proof of audience demand/);
+});
+
+void test('Discovery does not invent an opportunity when the selected niche has no matching report', () => {
+  const feed = SPACE_NEWS_SOURCES[0];
+  const news = parseRssFeed('<rss><item><title>Artemis lunar mission update</title><link>https://www.nasa.gov/artemis</link></item></rss>', feed);
+  assert.equal(buildDiscoveryOpportunities(news, 'exoplanets').length, 0);
 });

@@ -1,1 +1,59 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512"><rect width="512" height="512" rx="112" fill="#000000"/><circle cx="256" cy="256" r="162" fill="none" stroke="#A78BFA" stroke-width="18"/><path d="M326 156L278 278L156 326L204 204Z" fill="#7C3AED"/><path d="M326 156L278 278L256 256Z" fill="#F6F5FF"/><circle cx="256" cy="256" r="14" fill="#000000"/><path d="M256 68V108M404 256H444M256 404V444M68 256H108" fill="none" stroke="#60A5FA" stroke-linecap="round" stroke-width="12"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="48%" r="70%">
+      <stop offset="0" stop-color="#151A46"/>
+      <stop offset="1" stop-color="#020513"/>
+    </radialGradient>
+    <linearGradient id="radar" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#A855F7"/>
+      <stop offset="1" stop-color="#38BDF8"/>
+    </linearGradient>
+    <linearGradient id="tube" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0" stop-color="#27245F"/>
+      <stop offset=".6" stop-color="#5146A8"/>
+      <stop offset="1" stop-color="#9C8CFF"/>
+    </linearGradient>
+    <radialGradient id="lens" cx="70%" cy="30%" r="80%">
+      <stop offset="0" stop-color="#66D9FF"/>
+      <stop offset=".4" stop-color="#3B35A7"/>
+      <stop offset="1" stop-color="#070D2E"/>
+    </radialGradient>
+    <linearGradient id="planet" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#244C9C"/>
+      <stop offset="1" stop-color="#08132F"/>
+    </linearGradient>
+    <filter id="glow" x="-80%" y="-80%" width="260%" height="260%">
+      <feGaussianBlur stdDeviation="9" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <clipPath id="round"><rect width="512" height="512" rx="112"/></clipPath>
+  </defs>
+  <g clip-path="url(#round)">
+    <rect width="512" height="512" fill="url(#bg)"/>
+    <circle cx="256" cy="586" r="158" fill="url(#planet)"/>
+    <path d="M100 476a158 158 0 0 1 312 0" fill="none" stroke="#60CFFF" stroke-width="5" filter="url(#glow)"/>
+    <circle cx="256" cy="256" r="218" fill="none" stroke="url(#radar)" stroke-width="11"/>
+    <circle cx="256" cy="256" r="157" fill="none" stroke="#49539E" stroke-opacity=".75" stroke-width="2.5"/>
+    <circle cx="256" cy="256" r="94" fill="none" stroke="#3F4D9D" stroke-opacity=".8" stroke-width="2"/>
+    <path d="M256 52v408M52 256h408" stroke="#38468D" stroke-width="2" stroke-opacity=".75"/>
+    <path d="M326 235 395 111 379 206Z" fill="#2AA7FF" fill-opacity=".2"/>
+    <path d="m258 293-73 162m73-162v175m0-175 79 161" stroke="#4E559A" stroke-width="13" stroke-linecap="round"/>
+    <path d="m258 293-73 162m73-162 79 161" stroke="#9D91F6" stroke-opacity=".55" stroke-width="3" stroke-linecap="round"/>
+    <path d="m112 344 25 35 219-131-27-37Z" fill="url(#tube)" stroke="#8D86F3" stroke-width="3"/>
+    <path d="m116 343 13 16 216-128" fill="none" stroke="#C3BDFF" stroke-opacity=".7" stroke-width="3"/>
+    <circle cx="343" cy="231" r="54" fill="#17164D" stroke="url(#radar)" stroke-width="13"/>
+    <circle cx="343" cy="231" r="39" fill="url(#lens)" stroke="#8ADFFF" stroke-width="3"/>
+    <path d="m326 208 25 1 10 15-22 6Z" fill="#D4F2FF" fill-opacity=".65"/>
+    <circle cx="394" cy="112" r="47" fill="none" stroke="#43B9FF" stroke-width="2.5"/>
+    <g filter="url(#glow)">
+      <path d="M394 82v60M364 112h60" stroke="#D5F5FF" stroke-width="2.5" stroke-linecap="round"/>
+      <path d="m394 94 6 18-6 18-6-18Z" fill="#F8FDFF"/>
+      <path d="m376 112 18-6 18 6-18 6Z" fill="#F8FDFF"/>
+    </g>
+    <g fill="#AFC7FF">
+      <circle cx="137" cy="143" r="2.4"/><circle cx="92" cy="240" r="1.7"/>
+      <circle cx="436" cy="270" r="2"/><circle cx="160" cy="278" r="1.8"/>
+      <circle cx="420" cy="361" r="2.2"/>
+    </g>
+  </g>
+</svg>
