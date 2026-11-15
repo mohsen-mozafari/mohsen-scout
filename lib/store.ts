@@ -14,6 +14,7 @@ import { readData, writeData } from './storage';
 import { getKey } from './vault';
 import { ApiError, nextBudget, searchYouTube } from './api';
 import { buildIdeas } from './engine';
+import { attachReportToIdea as attachReport, attachVideoReferenceToIdea as attachVideoReference, getOrCreateSourceIdea, type SourceIdeaInput } from './idea-research';
 type State = {
   data: LocalData;
   ready: boolean;
@@ -26,6 +27,9 @@ type State = {
   analyze: (id: string) => Promise<void>;
   saveVideo: (video: Video, topic: string) => Promise<void>;
   saveIdea: (idea: Idea) => Promise<void>;
+  ensureSourceIdea: (input: SourceIdeaInput) => Promise<Idea>;
+  linkReportToIdea: (ideaId: string, reportId: string) => Promise<void>;
+  bookmarkVideoForIdea: (ideaId: string, videoId: string) => Promise<void>;
   charge: (units: number) => Promise<void>;
   clearError: () => void;
 };
@@ -159,6 +163,26 @@ export const useScout = create<State>((set, get) => ({
         ...data.ideas.filter((i) => i.id !== idea.id),
       ],
     }));
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  },
+  ensureSourceIdea: async (input) => {
+    const preview = getOrCreateSourceIdea(get().data, input);
+    if (!preview.created) return preview.idea;
+    let saved: Idea | undefined;
+    await get().commit((data) => {
+      const result = getOrCreateSourceIdea(data, input);
+      saved = result.idea;
+      return result.data;
+    });
+    if (!saved) throw new Error('The source idea could not be saved on this device.');
+    return saved;
+  },
+  linkReportToIdea: async (ideaId, reportId) => {
+    await get().commit((data) => attachReport(data, ideaId, reportId));
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  },
+  bookmarkVideoForIdea: async (ideaId, videoId) => {
+    await get().commit((data) => attachVideoReference(data, ideaId, videoId));
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   },
 }));
