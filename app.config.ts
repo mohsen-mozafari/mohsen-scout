@@ -15,7 +15,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     name: 'MOHSEN SCOUT',
     slug: 'mohsen-scout',
     icon: './assets/scout-icon.png',
-    version: process.env.BILT_APP_VERSION ?? '1.2.0',
+    version: process.env.BILT_APP_VERSION ?? '1.3.0',
     orientation: 'portrait',
     userInterfaceStyle: 'dark',
     scheme: 'mohsen-scout',
@@ -32,7 +32,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       bundleIdentifier: process.env.BILT_IOS_BUNDLE_ID ?? 'me.bilt.mohsenscout',
     },
     android: {
-      versionCode: 3,
+      versionCode: 4,
       allowBackup: false,
       adaptiveIcon: { foregroundImage: './assets/scout-icon.png', backgroundColor: '#000000' },
       package: process.env.BILT_ANDROID_PACKAGE ?? 'me.bilt.mohsenscout',
