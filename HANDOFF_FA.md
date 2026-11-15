@@ -2,7 +2,7 @@
 
 ## مکان سورس و خروجی
 
-سورس کامل در `/home/daytona/project` است. فایل APK/AAB وجود ندارد؛ هیچ مسیر خروجی نصب‌شده ادعا نمی‌شود. [Code Export](https://bilt.me/docs/features/code-export) راه خروجی سورس Bilt است. راهنمای استفاده و انتقال گوشی در `README_FA.md` است.
+سورس کامل در `/home/daytona/project` است. فایل APK/AAB وجود ندارد؛ هیچ مسیر خروجی نصب‌شده ادعا نمی‌شود. [Code Export](https://bilt.me/docs/features/code-export) راه خروجی سورس Bilt است. راهنمای استفاده و انتقال گوشی در `README_FA.md` است. راهنمای خروجی GitHub، فهرست فایل‌های لازم و ساخت APK محلی و رایگان در Windows در `README_WINDOWS.md` است؛ ZIP یا لینک مخزن در این جلسه تولید یا تأیید نشده است.
 
 ## اجزای اصلی
 
