@@ -145,7 +145,7 @@ export default function DeepResearch() {
   return (
     <Page title="DEEP RESEARCH">
       <Txt muted>Choose a topic. The app combines selected official news, a clearly labelled public-interest proxy and an optional YouTube sample, then prepares a research structure with source links. The final topic choice and research start stay under your control.</Txt>
-      {linkedIdea ? <Action secondary onPress={() => router.push({ pathname: '/detail', params: { idea: linkedIdea.id } })}>Research linked to: {linkedIdea.topic} · Open idea</Action> : null}
+      {linkedIdea ? <Action secondary onPress={() => router.push({ pathname: '/detail', params: { idea: linkedIdea.id } })}>{'Research linked to: ' + linkedIdea.topic + ' · Open idea'}</Action> : null}
       <Panel>
         <Field label="Research topic" value={topic} onChange={setTopic} placeholder="e.g. What JWST has found in exoplanet atmospheres" multiline />
         <Action busy={op.busy} disabled={!topic.trim()} onPress={run}>Start deep research</Action>
