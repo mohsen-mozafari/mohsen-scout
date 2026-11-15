@@ -45,7 +45,6 @@ export default function CosmicNews() {
 
   useEffect(() => {
     let active = true;
-    setLoading(true);
     void fetchSpaceNews(preferences.spaceNewsSources).then((result) => {
       if (!active) return;
       setItems(result.items);
