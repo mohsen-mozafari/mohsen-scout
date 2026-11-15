@@ -291,7 +291,8 @@ export default function Discover() {
           )}
           {report.analyzed && (
             <View style={{ gap: 14 }}>
-              <Heading>Content Opportunities</Heading>
+              <Heading>Internal Engine · Content Angles</Heading>
+              <Txt muted>The local engine converts the real query buckets returned in this report into evidence-linked ideas, links matching video IDs, and leaves unsupported angles marked as uncertain. YouTube titles and statistics are not sent to AI.</Txt>
               {ideas
                 .filter((i) => i.reportId === report.id)
                 .map((idea) => (

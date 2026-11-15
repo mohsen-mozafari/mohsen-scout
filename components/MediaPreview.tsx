@@ -30,12 +30,23 @@ export function MediaPreview({
 }: Props) {
   const [failed, setFailed] = useState(false);
   const [open, setOpen] = useState(false);
+  const [containerWidth, setContainerWidth] = useState(0);
+  const safeAspectRatio = Number.isFinite(aspectRatio) && aspectRatio > 0 ? aspectRatio : 16 / 9;
+  const imageHeight = containerWidth > 0
+    ? Math.min(320, Math.max(150, Math.round(containerWidth / safeAspectRatio)))
+    : 200;
   const safeUri = validImageUri(uri) && !failed ? uri : undefined;
   const usable = Boolean(safeUri);
   const press = onPress ?? (viewer ? () => setOpen(true) : undefined);
 
   return (
-    <View style={{ width: '100%' }}>
+    <View
+      style={{ width: '100%' }}
+      onLayout={(event) => {
+        const width = event.nativeEvent.layout.width;
+        setContainerWidth((current) => Math.abs(current - width) < 1 ? current : width);
+      }}
+    >
       {usable ? (
         press ? (
           <Pressable
@@ -48,7 +59,7 @@ export function MediaPreview({
               source={{ uri: safeUri }}
               resizeMode="cover"
               onError={() => setFailed(true)}
-              style={{ width: '100%', aspectRatio, backgroundColor: '#111827' }}
+              style={{ width: '100%', height: imageHeight, backgroundColor: '#111827' }}
             />
           </Pressable>
         ) : (
@@ -56,7 +67,7 @@ export function MediaPreview({
             source={{ uri: safeUri }}
             resizeMode="cover"
             onError={() => setFailed(true)}
-            style={{ width: '100%', aspectRatio, borderRadius: 14, backgroundColor: '#111827' }}
+            style={{ width: '100%', height: imageHeight, borderRadius: 14, backgroundColor: '#111827' }}
           />
         )
       ) : (

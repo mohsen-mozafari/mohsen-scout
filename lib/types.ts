@@ -129,7 +129,7 @@ export type Preferences = {
   email: string;
   region: Region;
   languages: string[];
-  defaultResearchDays: number;
+  defaultResearchDays: 0 | 7 | 30 | 90;
   budget: number;
   model: string;
   schedule: 'Manual' | 'Every 12 hours' | 'Daily' | 'Weekly';

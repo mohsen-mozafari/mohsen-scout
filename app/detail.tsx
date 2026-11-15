@@ -163,7 +163,7 @@ export default function Detail() {
             <Heading>Video concept</Heading>
             <Txt>{idea.concept || 'Add your own concept.'}</Txt>
             <Heading>Why investigate it?</Heading>
-            <Txt>{reasoning(idea)}</Txt>
+            <Txt>{reasoning(idea, related.length)}</Txt>
           </Panel>
           <Txt muted>
             {idea.region} · {idea.languages.map((l) => languages[l] || l).join(', ')}

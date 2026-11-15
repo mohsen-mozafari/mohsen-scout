@@ -27,7 +27,7 @@ export default function TrendIntelligence() {
       charge: useScout.getState().charge,
       onQuota: () => useScout.getState().commit((data) => ({ ...data, budget: { ...data.budget, exhausted: true } })),
     }, 25, {
-      days: Number(days) as 0 | 7 | 30 | 90,
+      days: days === '7' ? 7 : days === '90' ? 90 : days === '0' ? 0 : 30,
       order: sort === 'Newest' ? 'date' : 'viewCount',
       region: preferences.region,
       language: preferences.languages[0],

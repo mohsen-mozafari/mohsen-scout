@@ -6,6 +6,7 @@ import { Page, Panel, Heading, Txt, Field, Action, styles, ErrorBox, useOperatio
 import { useScout } from '@/lib/store';
 import { uid } from '@/lib/types';
 import { getKey } from '@/lib/vault';
+import { buildInternalResearch, type InternalResearchResult } from '@/lib/engine';
 import { MediaPreview } from '@/components/MediaPreview';
 import { searchYouTubeSample, type YouTubeSampleVideo } from '@/lib/api';
 import {
@@ -24,6 +25,7 @@ type Brief = {
   outline: string[];
   verificationQuestions: string[];
   scriptDraft: string[];
+  internalAnalysis: InternalResearchResult;
 };
 
 export default function DeepResearch() {
@@ -71,6 +73,19 @@ export default function DeepResearch() {
       throw new Error('No selected source returned evidence. Check connectivity or enable an official feed, then retry.');
     }
     const outline = buildResearchOutline(query, selectedNews.map((item) => item.title));
+    const internalAnalysis = buildInternalResearch({
+      topic: query,
+      news: selectedNews.map((item) => ({
+        title: item.title,
+        summary: item.summary,
+        sourceName: item.sourceName,
+        sourceUrl: item.url,
+        publishedAt: item.publishedAt,
+        sourceId: item.sourceId,
+      })),
+      wiki,
+      videos,
+    });
     setBrief({
       topic: query,
       createdAt: Date.now(),
@@ -78,6 +93,7 @@ export default function DeepResearch() {
       wiki,
       videos,
       warnings,
+      internalAnalysis,
       ...outline,
       scriptDraft: [
         'HOOK — Open with the central question: ' + outline.titleIdeas[0],
@@ -96,6 +112,10 @@ export default function DeepResearch() {
       { id: uid(), type: 'heading' as const, text: 'Source findings' },
       ...(brief.wiki ? [{ id: uid(), type: 'paragraph' as const, text: brief.wiki.articleTitle + ': ' + brief.wiki.summary + '\nArticle: ' + brief.wiki.articleUrl }] : []),
       ...brief.news.map((item) => ({ id: uid(), type: 'link' as const, text: item.sourceName + ': ' + item.title + '\n' + item.summary + '\n' + item.url })),
+      { id: uid(), type: 'heading' as const, text: 'Internal research engine' },
+      { id: uid(), type: 'paragraph' as const, text: brief.internalAnalysis.summary },
+      ...brief.internalAnalysis.evidence.map((item) => ({ id: uid(), type: 'bullet' as const, text: item.label + ': ' + item.detail })),
+      ...brief.internalAnalysis.angles.map((angle) => ({ id: uid(), type: 'bullet' as const, text: angle.title + '\n' + angle.hook + '\n' + angle.approach + '\nVerify: ' + angle.verification })),
       { id: uid(), type: 'heading' as const, text: 'Suggested video titles' },
       ...brief.titleIdeas.map((title) => ({ id: uid(), type: 'bullet' as const, text: title })),
       { id: uid(), type: 'heading' as const, text: 'Video outline' },
@@ -130,6 +150,31 @@ export default function DeepResearch() {
             <Text style={styles.badge}>Prepared {new Date(brief.createdAt).toLocaleString()}</Text>
             <Txt muted>Evidence is presented by provider. Wikipedia is not treated as a primary scientific source; confirm scientific claims in the linked NASA/JPL/ESA material and cited papers.</Txt>
             {brief.warnings.map((warning) => <Txt muted key={warning}>Limitation: {warning}</Txt>)}
+          </Panel>
+          <Panel>
+            <Heading>Internal Research Engine</Heading>
+            <Txt muted>{brief.internalAnalysis.summary}</Txt>
+            {brief.internalAnalysis.evidence.map((item) => (
+              <View key={item.id} style={{ gap: 3 }}>
+                <Text style={styles.badge}>{item.label}</Text>
+                <Txt muted>{item.detail}</Txt>
+                {item.sourceUrl ? (
+                  <Button variant="tertiary" className="h-auto justify-start px-0" onPress={() => void Linking.openURL(item.sourceUrl!).catch(() => {})}>
+                    <Button.Label>Open evidence source ↗</Button.Label>
+                  </Button>
+                ) : null}
+              </View>
+            ))}
+            {brief.internalAnalysis.angles.map((angle) => (
+              <View key={angle.id} style={{ gap: 5 }}>
+                <Heading>{angle.title}</Heading>
+                <Txt>{angle.hook}</Txt>
+                <Txt muted>{angle.approach}</Txt>
+                <Txt muted>Verify: {angle.verification}</Txt>
+              </View>
+            ))}
+            {brief.internalAnalysis.verificationQuestions.map((question) => <Txt muted key={question}>{question}</Txt>)}
+            {brief.internalAnalysis.limitations.map((limitation) => <Txt muted key={limitation}>{limitation}</Txt>)}
           </Panel>
           {brief.wiki && (
             <Panel>

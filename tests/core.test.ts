@@ -28,7 +28,7 @@ import {
   testYouTube,
   type Fetcher,
 } from '../lib/api';
-import { buildIdeas } from '../lib/engine';
+import { buildIdeas, buildInternalResearch } from '../lib/engine';
 const input: ResearchInput = {
   topic: 'Small-space home studios',
   region: 'Iran',
@@ -482,8 +482,12 @@ void test('Analysis: ideas are cautious hypotheses, not performance scores', () 
   };
   const ideas = buildIdeas(report);
   assert.equal(ideas.length, 3);
-  assert(ideas.every((i) => i.assessment === 'Uncertain'));
+  assert.equal(ideas[0].assessment, 'Worth Exploring');
+  assert.deepEqual(ideas[0].videoIds, [video.id]);
+  assert.equal(ideas[0].imageUrl, video.thumbnail);
+  assert.equal(ideas[1].assessment, 'Uncertain');
   assert(!JSON.stringify(ideas).includes(video.title));
+  assert(!JSON.stringify(ideas).includes(video.description));
   assert(!JSON.stringify(ideas).includes('score'));
 });
 
@@ -684,4 +688,54 @@ void test('OpenRouter news translation parses and caches a Persian title and sum
     fetcher(() => { calls++; return response({ choices: [] }); }),
   );
   assert.equal(calls, 1);
+});
+
+void test('Internal research engine joins publisher, Wikimedia and YouTube evidence without a composite score', () => {
+  const result = buildInternalResearch({
+    topic: 'Exoplanet atmospheres',
+    news: [
+      {
+        title: 'New atmosphere observation',
+        summary: 'A source-reported observation for testing.',
+        sourceName: 'NASA',
+        sourceUrl: 'https://www.nasa.gov/mock-report',
+        sourceId: 'nasa',
+        publishedAt: '2026-11-14T12:00:00.000Z',
+      },
+      {
+        title: 'New atmosphere observation',
+        summary: 'A matching report from another selected feed.',
+        sourceName: 'NASA JPL',
+        sourceUrl: 'https://www.jpl.nasa.gov/mock-report',
+        sourceId: 'jpl',
+        publishedAt: '2026-11-14T13:00:00.000Z',
+      },
+    ],
+    wiki: {
+      articleTitle: 'Exoplanet',
+      language: 'en',
+      monthlyViews: [{ month: '2026-10', views: 1250 }],
+    },
+    videos: [{
+      id: 'dQw4w9WgXcQ',
+      title: 'MOCK video evidence',
+      channel: 'MOCK science channel',
+      publishedAt: '2026-11-13T12:00:00.000Z',
+      viewCount: 1000,
+      likeCount: 50,
+    }],
+  });
+  assert.equal(result.angles.length, 3);
+  assert.ok(result.evidence.some((item) => item.id === 'publisher-news' && item.detail.includes('2 selected feed source(s)')));
+  assert.ok(result.evidence.some((item) => item.id === 'wikimedia' && item.detail.includes('not search volume')));
+  assert.ok(result.evidence.some((item) => item.id === 'youtube-sample' && item.detail.includes('1 returned video example')));
+  assert.equal(result.verificationQuestions.length, 4);
+  assert(!JSON.stringify(result).toLowerCase().includes('viral score'));
+});
+
+void test('Internal research engine without source evidence marks output as exploratory', () => {
+  const result = buildInternalResearch({ topic: 'Black holes' });
+  assert.match(result.summary, /no source evidence/i);
+  assert.ok(result.limitations.some((item) => item.includes('starting questions only')));
+  assert.ok(result.evidence.every((item) => !item.sourceUrl));
 });
