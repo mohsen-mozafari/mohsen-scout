@@ -165,7 +165,7 @@ export function buildInternalResearch(input: InternalResearchInput): InternalRes
     'This engine runs locally on evidence already loaded in the app; it does not fetch new sources.',
     'Editorial angles are hypotheses, not scientific findings or predictions of views, growth or virality.',
     'Publisher feed coverage, Wikimedia article pageviews and YouTube samples are separate signals and must not be combined into a score.',
-    ...(hasAnyEvidence ? [] : ['No source evidence was supplied. Treat every angle as a starting question only.']),
+    ...(hasAnyEvidence ? [] : ['No source evidence was supplied. Treat all angles as starting questions only.']),
   ];
 
   return {
