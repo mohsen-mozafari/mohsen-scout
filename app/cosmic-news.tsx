@@ -61,6 +61,19 @@ export default function CosmicNews() {
     if (!result.items.length && result.warnings.length) throw new Error(result.warnings.join(' '));
   }, 'Space news updated from selected feeds.');
 
+  const researchStory = (item: SpaceNewsItem) => void op.run(async () => {
+    const idea = await useScout.getState().ensureSourceIdea({
+      topic: item.title,
+      concept: item.summary || 'Review the original publisher report, verify its scientific claims and develop an original explanatory angle.',
+      sourceUrl: item.url,
+      sourceName: item.sourceName,
+      imageUrl: item.imageUrl,
+      region: preferences.region,
+      languages: preferences.languages,
+    });
+    router.push({ pathname: '/deep-research', params: { topic: item.title, niche: nicheId, idea: idea.id } });
+  }, 'Story connected to your personal research ideas.');
+
   const translate = (item: SpaceNewsItem) => void op.run(async () => {
     const key = await getKey('openrouter');
     if (!key) throw new Error('Add your OpenRouter key in Settings to translate news.');
@@ -115,7 +128,7 @@ export default function CosmicNews() {
               <Button.Label>Open original source ↗</Button.Label>
             </Button>
             <Action secondary onPress={() => saveItem(item)} busy={op.busy}>Save source to Notes</Action>
-            <Action secondary onPress={() => router.push({ pathname: '/deep-research', params: { topic: item.title, niche: nicheId } })}>Research this story</Action>
+            <Action secondary busy={op.busy} onPress={() => researchStory(item)}>Research this story</Action>
           </Panel>
         );
       })}
