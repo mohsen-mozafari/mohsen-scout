@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { defaults, purgeExpired, RETENTION_MS, type Report, type ResearchInput } from '../lib/types';
 import { createManualIdea } from '../lib/engine';
+import { exportBackup, importBackup } from '../lib/backup';
 import {
   attachReportToIdea,
   attachVideoReferenceToIdea,
@@ -82,4 +83,23 @@ test('only a manually selected YouTube URL becomes a durable personal reference'
   assert.deepEqual(expired.ideas[0].videoIds, ['dQw4w9WgXcQ']);
   assert.equal(attachVideoReferenceToIdea(linked, idea.id, 'dQw4w9WgXcQ', now + 2).links.length, 1);
   assert.throws(() => attachVideoReferenceToIdea(data, idea.id, 'invalid-id', now));
+});
+
+
+test('linked research notes survive backup and legacy notes remain compatible', () => {
+  const data = defaults();
+  data.notes = [{
+    id: 'linked-note',
+    title: 'Wikimedia comparison',
+    folder: 'Space Research',
+    tags: ['space'],
+    blocks: [{ id: 'block-1', type: 'paragraph', text: 'Article pageviews, not search volume.' }],
+    updatedAt: now,
+    ideaId: 'idea-1',
+  }];
+  const restored = importBackup(exportBackup(data));
+  assert.equal(restored.notes[0].ideaId, 'idea-1');
+  const legacy = defaults();
+  legacy.notes = [{ ...data.notes[0], ideaId: undefined }];
+  assert.equal(importBackup(exportBackup(legacy)).notes[0].ideaId, undefined);
 });
