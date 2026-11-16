@@ -365,7 +365,7 @@ export function buildDiscoveryOpportunities(
       reason = 'The reported publication date is in the future; verify the publisher page before treating this item as current.';
     }
     if (sourceCount > 1) {
-      reason = 'Matching reports appeared in ' + sourceCount + ' selected official feeds. This is feed coverage, not proof of independent verification or audience demand.';
+      reason = 'Matching reports appeared in ' + sourceCount + ' selected official feeds. This is feed coverage, not proof of independent verification and not proof of audience demand.';
     }
     return {
       id: latest.id,
