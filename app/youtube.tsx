@@ -27,6 +27,13 @@ import { relatedQueries } from '@/lib/api';
 import { limitations } from '@/lib/engine';
 import { sortResearchVideos, type ResearchVideoSort } from '@/lib/intelligence';
 import { getKey } from '@/lib/vault';
+const RESEARCH_SORT_OPTIONS: ResearchVideoSort[] = [
+  'Newest', 'Oldest', 'Most Views', 'Least Views',
+  'Most Likes', 'Least Likes', 'Most Relevant', 'A-Z', 'Z-A',
+];
+const isResearchVideoSort = (value: string): value is ResearchVideoSort =>
+  RESEARCH_SORT_OPTIONS.some((option) => option === value);
+
 export default function Discover() {
   const params = useLocalSearchParams<{ topic?: string; idea?: string }>();
   const preferences = useScout((s) => s.data.preferences);
@@ -336,7 +343,7 @@ export default function Discover() {
           )}
           <Fold title="Relevant Videos" open>
             {report.videos.length > 1 && (
-              <Choices label="Sort this sample" options={['Newest', 'Most Views', 'Most Likes', 'Most Relevant']} selected={[sort]} onChange={(values) => setSort(values[0])} />
+              <Choices label="Sort this sample" options={RESEARCH_SORT_OPTIONS} selected={[sort]} onChange={(values) => { const value = values[0]; if (value && isResearchVideoSort(value)) setSort(value); }} />
             )}
             <Txt muted>Sort order applies to the returned sample only. View and like counts are fetched from YouTube when available; unavailable counts are not estimated.</Txt>
             {!report.videos.length ? (

@@ -351,7 +351,7 @@ export function analyzeMonthlyViews(
   };
 }
 
-export type ResearchVideoSort = 'Newest' | 'Most Views' | 'Most Likes' | 'Most Relevant';
+export type ResearchVideoSort = 'Newest' | 'Oldest' | 'Most Views' | 'Least Views' | 'Most Likes' | 'Least Likes' | 'Most Relevant' | 'A-Z' | 'Z-A';
 
 export function sortResearchVideos<T extends {
   id?: string;
@@ -365,20 +365,29 @@ export function sortResearchVideos<T extends {
   topic = '',
 ): T[] {
   return [...videos].sort((a, b) => {
+    let primary = 0;
     if (sort === 'Most Relevant') {
-      const relevance = scoreResearchText(topic, b.title) - scoreResearchText(topic, a.title);
-      if (relevance) return relevance;
-    } else if (sort === 'Most Views' || sort === 'Most Likes') {
-      const field = sort === 'Most Views' ? 'viewCount' : 'likeCount';
+      primary = scoreResearchText(topic, b.title) - scoreResearchText(topic, a.title);
+    } else if (sort === 'Most Views' || sort === 'Least Views' ||
+      sort === 'Most Likes' || sort === 'Least Likes') {
+      const field = sort === 'Most Views' || sort === 'Least Views' ? 'viewCount' : 'likeCount';
       const first = a[field];
       const second = b[field];
       if (first == null && second != null) return 1;
       if (first != null && second == null) return -1;
-      if (first != null && second != null && first !== second) return second - first;
+      if (first != null && second != null && first !== second) {
+        const descending = sort === 'Most Views' || sort === 'Most Likes';
+        primary = descending ? second - first : first - second;
+      }
+    } else if (sort === 'A-Z' || sort === 'Z-A') {
+      primary = a.title.localeCompare(b.title, undefined, { numeric: true, sensitivity: 'base' });
+      if (sort === 'Z-A') primary *= -1;
     } else {
-      const dateDifference = timestamp(b.publishedAt) - timestamp(a.publishedAt);
-      if (dateDifference) return dateDifference;
+      const firstDate = timestamp(a.publishedAt);
+      const secondDate = timestamp(b.publishedAt);
+      primary = sort === 'Newest' ? secondDate - firstDate : firstDate - secondDate;
     }
+    if (primary) return primary;
     const dateDifference = timestamp(b.publishedAt) - timestamp(a.publishedAt);
     if (dateDifference) return dateDifference;
     const titleDifference = a.title.localeCompare(b.title);

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Linking, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 
 import { router } from 'expo-router';
@@ -8,24 +8,21 @@ import {
   SourceHeading, SourceText, BadgeText,
 } from '@/components/ScoutUI';
 import { useScout } from '@/lib/store';
-import { uid, type Idea, languages } from '@/lib/types';
+import { languages } from '@/lib/types';
 import {
   SPACE_NICHES,
-  buildDiscoveryOpportunities,
   buildNicheSuggestions,
   fetchSpaceNews,
-  type DiscoveryOpportunity,
   type SpaceNicheSuggestion,
   newsForNiche,
   type SpaceNewsItem,
 } from '@/lib/space';
-import { MediaPreview } from '@/components/MediaPreview';
 import { buildInternalResearch, type InternalResearchResult } from '@/lib/engine';
 import { buildResearchInterestProfile, normalizeResearchText } from '@/lib/intelligence';
 import { rememberTopicDossier } from '@/lib/topic-dossier';
 import { ResearchKnowledgeGraph } from '@/components/ResearchKnowledgeGraph';
 import { generateEditorialIdeas } from '@/lib/idea-generation';
-import { getFreeModels, getOpinion, internalEngineReviewPrompt, nextOpenRouterUsage, type YouTubeSampleVideo } from '@/lib/api';
+import { fingerprintText, getFreeModels, getOpinion, internalEngineReviewPrompt, nextOpenRouterUsage, type YouTubeSampleVideo } from '@/lib/api';
 import { getKey } from '@/lib/vault';
 
 
@@ -87,13 +84,41 @@ function AnalysisSignals({ result }: { result: InternalResearchResult }) {
 
 function EngineAIReview({ topic, result }: { topic: string; result: InternalResearchResult }) {
   const preferences = useScout((state) => state.data.preferences);
-  const reviewKey = 'engine:' + normalizeResearchText(topic).slice(0, 120);
-  const savedReview = useScout((state) => state.data.opinions.find((item) => item.ideaId === reviewKey));
-  const savedReviewText = savedReview?.text ?? '';
-  const [reviewState, setReviewState] = useState({ key: reviewKey, text: savedReviewText });
-  const review = reviewState.key === reviewKey ? reviewState.text : savedReviewText;
-  const op = useOperation();
+  const opinions = useScout((state) => state.data.opinions);
   const fa = preferences.uiLanguage === 'fa';
+  const quality = result.intelligence.sourceQuality;
+  const prompt = internalEngineReviewPrompt({
+    topic,
+    summary: fa
+      ? 'موتور داخلی موضوع، شواهد پردازش‌شده، خلأها و میزان اطمینان را ارزیابی کرده است. محتوای خام خبر و فراداده ویدئو در این درخواست ارسال نمی‌شود.'
+      : 'The local engine assessed the topic, processed evidence signals, research gaps and confidence. Raw news content and video metadata are not included in this request.',
+    evidence: [
+      { label: 'Evidence records processed', detail: String(result.evidence.length) },
+      { label: 'Editorial angles considered', detail: String(result.angles.length) },
+      { label: 'Verification questions', detail: String(result.verificationQuestions.length) },
+      { label: 'Feeds represented', detail: String(quality.feedsRepresented) },
+      { label: 'Independent publisher groups', detail: String(quality.independentPublishers) },
+      { label: 'Duplicate records merged', detail: String(quality.duplicateStoriesMerged) },
+      { label: 'Undated records', detail: String(quality.undatedItems) },
+      { label: 'Stale records', detail: String(quality.staleItems) },
+      { label: 'Research gaps recorded', detail: String(result.intelligence.gaps.length) },
+      { label: 'Potential discrepancies recorded', detail: String(result.intelligence.potentialContradictions.length) },
+    ],
+    confidence: {
+      level: result.intelligence.confidence.level,
+      reason: fa
+        ? 'این سطح محلی بر اساس پوشش نمونه و تنوع ناشر محاسبه شده و تأیید صحت ادعاها نیست.'
+        : 'This local level reflects sample coverage and publisher diversity; it is not factual verification.',
+    },
+    language: fa ? 'fa' : 'en',
+  });
+  const visibleCacheKey = preferences.model
+    ? 'engine:' + fingerprintText(preferences.model + '\n' + prompt)
+    : '';
+  const savedReview = opinions.find((item) => item.ideaId === visibleCacheKey && item.model === preferences.model);
+  const [reviewState, setReviewState] = useState({ key: visibleCacheKey, text: savedReview?.text ?? '' });
+  const review = reviewState.key === visibleCacheKey ? reviewState.text : savedReview?.text ?? '';
+  const op = useOperation();
 
   const runReview = () => void op.run(async () => {
     const key = await getKey('openrouter');
@@ -109,29 +134,12 @@ function EngineAIReview({ topic, result }: { topic: string; result: InternalRese
         preferences: { ...data.preferences, model },
       }));
     }
-    const quality = result.intelligence.sourceQuality;
-    const prompt = internalEngineReviewPrompt({
-      topic,
-      summary: fa
-        ? 'موتور داخلی یک مجموعه محدود از گزارش‌های ناشر را پردازش کرده و شاخص‌های پوشش، تنوع ناشر، تکرار و تازگی را محاسبه کرده است. محتوای خام منابع در این درخواست ارسال نمی‌شود.'
-        : 'The local engine processed a limited publisher sample and computed coverage, publisher diversity, duplicate and freshness indicators. Raw source content is not included in this request.',
-      evidence: [
-        { label: 'Feeds represented', detail: String(quality.feedsRepresented) },
-        { label: 'Independent publisher groups', detail: String(quality.independentPublishers) },
-        { label: 'Duplicate records merged', detail: String(quality.duplicateStoriesMerged) },
-        { label: 'Undated records', detail: String(quality.undatedItems) },
-        { label: 'Stale records', detail: String(quality.staleItems) },
-        { label: 'Research gaps recorded', detail: String(result.intelligence.gaps.length) },
-        { label: 'Potential discrepancies recorded', detail: String(result.intelligence.potentialContradictions.length) },
-      ],
-      confidence: {
-        level: result.intelligence.confidence.level,
-        reason: fa
-          ? 'این سطح محلی بر اساس پوشش نمونه و تنوع ناشر محاسبه شده و تأیید صحت ادعاها نیست.'
-          : 'This local level reflects sample coverage and publisher diversity; it is not factual verification.',
-      },
-      language: fa ? 'fa' : 'en',
-    });
+    const cacheKey = 'engine:' + fingerprintText(model + '\n' + prompt);
+    const cached = useScout.getState().data.opinions.find((item) => item.ideaId === cacheKey && item.model === model);
+    if (cached) {
+      setReviewState({ key: cacheKey, text: cached.text });
+      return;
+    }
     const response = await getOpinion(key, model, prompt, async () => {
       const currentPreferences = useScout.getState().data.preferences;
       const day = new Date().toLocaleDateString('en-CA');
@@ -147,13 +155,13 @@ function EngineAIReview({ topic, result }: { topic: string; result: InternalRese
     });
     const opinion = {
       id: uid(),
-      ideaId: reviewKey,
+      ideaId: cacheKey,
       text: response,
       model,
       createdAt: Date.now(),
     };
     await useScout.getState().commit((data) => ({ ...data, opinions: [opinion, ...data.opinions].slice(0, 100) }));
-    setReviewState({ key: reviewKey, text: response });
+    setReviewState({ key: cacheKey, text: response });
   }, fa ? 'بازبینی AI با خروجی موتور داخلی ذخیره شد.' : 'AI review of the internal engine was saved.');
 
   return (
@@ -163,8 +171,8 @@ function EngineAIReview({ topic, result }: { topic: string; result: InternalRese
         ? 'با انتخاب این گزینه فقط موضوع و شاخص‌های عددیِ پردازش محلی برای OpenRouter ارسال می‌شود؛ متن خام خبر، URL، نام ناشر، عنوان یا شناسه ویدئو، توضیحات، آمار و کلید API ارسال نمی‌شوند.'
         : 'Choosing this sends only the topic and numeric indicators computed locally to OpenRouter; raw news text, URLs, publisher names, YouTube titles or IDs, descriptions, statistics and API keys are excluded.'}</Txt>
       <Txt muted>{fa
-        ? 'این بررسی جایگزین موتور داخلی نیست؛ کیفیت پوشش و محدودیت‌های تحلیل آن را نقد می‌کند. درخواست فقط با فشردن دکمه ارسال می‌شود و سقف محلی آن ۳۰ درخواست در روز با یک درخواست هم‌زمان است.'
-        : 'This does not replace the local engine; it critiques the coverage and limits of its analysis. Nothing is sent until you press the button. The local allowance is 30 requests per day, one at a time.'}</Txt>
+        ? 'این بررسی جایگزین موتور داخلی نیست؛ کیفیت پوشش و محدودیت‌های تحلیل آن را نقد می‌کند. نتیجه بر اساس هش محتوای درخواست و مدل در حافظه محلی کش می‌شود. درخواست فقط با فشردن دکمه ارسال می‌شود و سقف آن ۳۰ درخواست در روز با یک درخواست هم‌زمان است.'
+        : 'This does not replace the local engine; it critiques the coverage and limits of its analysis. Results are cached locally by prompt-content hash and model. Nothing is sent until you press the button. The allowance is 30 requests per day, one at a time.'}</Txt>
       <Action busy={op.busy} onPress={runReview}>
         {fa ? 'بازبینی این تحلیل با AI' : 'Review this analysis with AI'}
       </Action>
@@ -192,14 +200,11 @@ function DiscoveryDashboardReady() {
   const ideas = useScout((state) => state.data.ideas);
   const reports = useScout((state) => state.data.reports);
   const memoryCount = useScout((state) => state.data.researchMemory.length);
-  const [opportunities, setOpportunities] = useState<DiscoveryOpportunity[]>([]);
   const [warnings, setWarnings] = useState<string[]>([]);
   const [lastScannedAt, setLastScannedAt] = useState<number | null>(null);
-  const [analyses, setAnalyses] = useState<Record<string, InternalResearchResult>>({});
   const [nicheSuggestions, setNicheSuggestions] = useState<SpaceNicheSuggestion[]>([]);
   const [radarBrief, setRadarBrief] = useState<InternalResearchResult>();
   const [radarNews, setRadarNews] = useState<SpaceNewsItem[]>([]);
-  const listExtraData = useMemo(() => ({ analyses, ideas }), [analyses, ideas]);
   const op = useOperation();
   const niche = SPACE_NICHES.find((item) => item.id === preferences.selectedSpaceNiche);
   const nicheTitle = preferences.selectedSpaceNiche === 'all'
@@ -216,7 +221,6 @@ function DiscoveryDashboardReady() {
     const relevantNews = preferences.selectedSpaceNiche === 'all'
       ? result.items
       : newsForNiche(result.items, preferences.selectedSpaceNiche, preferences.customSpaceNiche);
-    const nextOpportunities = buildDiscoveryOpportunities(result.items, preferences.selectedSpaceNiche, Date.now(), preferences.customSpaceNiche);
     const currentData = useScout.getState().data;
     const priorMemory = currentData.researchMemory.find((entry) => normalizeResearchText(entry.topic) === normalizeResearchText(discoveryTopic));
     const nextRadarBrief = relevantNews.length ? buildInternalResearch({
@@ -248,7 +252,6 @@ function DiscoveryDashboardReady() {
       const matchingNews = relevantNews.filter((item) => item.url === opportunity.sourceUrl || item.title === opportunity.topic);
       if (matchingNews.length) rememberTopicDossier(opportunity.topic, { news: matchingNews });
     }
-    setOpportunities(nextOpportunities);
     setRadarNews(relevantNews);
     setWarnings(result.warnings);
     setLastScannedAt(Date.now());
@@ -298,109 +301,11 @@ function DiscoveryDashboardReady() {
     if (!result.items.length && result.warnings.length) throw new Error(result.warnings.join(' '));
   }, 'Discovery scan completed from selected official feeds without spending YouTube quota.');
 
-  const saveIdea = (opportunity: DiscoveryOpportunity) => void op.run(async () => {
-    const existing = useScout.getState().data.ideas.some((idea) => idea.topic === opportunity.topic && idea.sourceUrl === opportunity.sourceUrl);
-    if (existing) return;
-    const idea: Idea = {
-      id: uid(),
-      topic: opportunity.topic,
-      concept: opportunity.summary || 'Review the official source and develop an original explanatory angle.',
-      note: '',
-      status: 'Saved Opportunities',
-      decision: '',
-      videoIds: [],
-      createdAt: Date.now(),
-      archived: false,
-      assessment: 'Worth Exploring',
-      region: preferences.region,
-      languages: preferences.languages,
-      imageUrl: opportunity.imageUrl,
-      sourceUrl: opportunity.sourceUrl,
-      sourceName: opportunity.sourceName,
-    };
-    await useScout.getState().saveIdea(idea);
-  }, 'Opportunity saved to Ideas.');
-
-  const runInternalEngine = (opportunity: DiscoveryOpportunity) => {
-    const currentData = useScout.getState().data;
-    const priorMemory = currentData.researchMemory.find((entry) => normalizeResearchText(entry.topic) === normalizeResearchText(opportunity.topic));
-    const result = buildInternalResearch({
-      topic: opportunity.topic,
-      feedback: buildResearchInterestProfile(currentData.ideas),
-      priorMemory,
-      language: currentData.preferences.uiLanguage ?? 'fa',
-      news: [{
-        title: opportunity.topic,
-        summary: opportunity.summary,
-        sourceName: opportunity.sourceName,
-        sourceUrl: opportunity.sourceUrl,
-        publishedAt: opportunity.publishedAt,
-        sourceCount: opportunity.sourceCount,
-      }],
-    });
-    rememberTopicDossier(opportunity.topic, { internalAnalysis: result });
-    setAnalyses((current) => ({ ...current, [opportunity.id]: result }));
-  };
-
-  const saveAngle = (opportunity: DiscoveryOpportunity, angle: InternalResearchResult['angles'][number]) =>
-    void op.run(async () => {
-      const topic = opportunity.topic + ' · ' + angle.title;
-      const exists = useScout.getState().data.ideas.some((idea) => idea.topic === topic && idea.sourceUrl === opportunity.sourceUrl);
-      if (exists) return;
-      const idea: Idea = {
-        id: uid(),
-        topic,
-        concept: angle.hook + '\n\n' + angle.approach,
-        note: useScout.getState().data.preferences.uiLanguage === 'fa'
-          ? 'تولیدشده توسط موتور تحقیق داخلی. این یک فرضیه محتوایی است؛ هر ادعای علمی را با منبع اصلی بررسی کن.\n\nمنبع: ' + opportunity.sourceUrl
-          : 'Generated by the local Internal Research Engine. This is an editorial hypothesis; verify every scientific claim against the original source.\n\nSource: ' + opportunity.sourceUrl,
-        status: 'Saved Opportunities',
-        decision: '',
-        videoIds: [],
-        createdAt: Date.now(),
-        archived: false,
-        assessment: 'Worth Exploring',
-        region: preferences.region,
-        languages: preferences.languages,
-        imageUrl: opportunity.imageUrl,
-        sourceUrl: opportunity.sourceUrl,
-        sourceName: opportunity.sourceName,
-      };
-      await useScout.getState().saveIdea(idea);
-    }, 'Engine angle saved to Ideas.');
-
-  const saved = (opportunity: DiscoveryOpportunity) => ideas.some((idea) => idea.topic === opportunity.topic && idea.sourceUrl === opportunity.sourceUrl);
-
-  const openOpportunityResearch = (
-    opportunity: DiscoveryOpportunity,
-    destination: '/trend-intelligence' | '/search-demand' | '/deep-research',
-  ) => void op.run(async () => {
-    const idea = await useScout.getState().ensureSourceIdea({
-      topic: opportunity.topic,
-      concept: opportunity.summary || 'Review the original publisher report, verify its claims and develop an original explanatory angle.',
-      sourceUrl: opportunity.sourceUrl,
-      sourceName: opportunity.sourceName,
-      imageUrl: opportunity.imageUrl,
-      region: preferences.region,
-      languages: preferences.languages,
-    });
-    const params = { topic: opportunity.topic, idea: idea.id };
-    if (destination === '/deep-research') {
-      router.push({ pathname: '/deep-research', params: { ...params, niche: preferences.selectedSpaceNiche } });
-    } else if (destination === '/search-demand') {
-      router.push({ pathname: '/search-demand', params });
-    } else {
-      router.push({ pathname: '/trend-intelligence', params });
-    }
-  }, 'Research linked to the same saved idea.');
-
   return (
     <Page scroll={false}>
       <FlashList
         style={{ flex: 1 }}
-        data={[] /* Raw publisher headlines are shown only in the separate News tab. */}
-        extraData={listExtraData}
-        keyExtractor={(item) => item.id}
+        data={[]}
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
         ListHeaderComponent={
@@ -474,7 +379,7 @@ function DiscoveryDashboardReady() {
               </View>
             ))}
             <AnalysisSignals result={deskAnalysis} />
-            {!showYouTubeResearch ? <EngineAIReview topic={deskTopic} result={deskAnalysis} /> : null}
+            <EngineAIReview topic={deskTopic} result={deskAnalysis} />
             {deskAnalysis.angles.slice(0, 3).map((angle) => (
               <View key={angle.id} style={{ gap: 5 }}>
                 <Heading>{angle.title}</Heading>
@@ -537,61 +442,6 @@ function DiscoveryDashboardReady() {
 
           </View>
         }
-        renderItem={({ item: opportunity }) => (
-
-        <Panel>
-          {opportunity.imageUrl ? <MediaPreview uri={opportunity.imageUrl} aspectRatio={16 / 9} viewer alt={opportunity.topic} /> : null}
-          <View style={{ gap: 7 }}>
-            <SourceText muted>{opportunity.sourceName} · {opportunity.publishedAt ? new Date(opportunity.publishedAt).toLocaleDateString() : 'Date not supplied'}</SourceText>
-            <SourceHeading>{opportunity.topic}</SourceHeading>
-            {Boolean(opportunity.summary) && <SourceText muted>{opportunity.summary}</SourceText>}
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-              {opportunity.labels.map((label) => <BadgeText key={label}>{label}</BadgeText>)}
-            </View>
-            <Txt muted>{opportunity.reason}</Txt>
-            <Txt muted>{opportunity.sourceCount} matching official feed source{opportunity.sourceCount === 1 ? '' : 's'} · No YouTube competition check yet</Txt>
-          </View>
-          <Action busy={op.busy} onPress={() => openOpportunityResearch(opportunity, '/trend-intelligence')}>Check YouTube Competition</Action>
-          <Action secondary busy={op.busy} onPress={() => openOpportunityResearch(opportunity, '/search-demand')}>Compare Public Interest</Action>
-          <Action secondary busy={op.busy} onPress={() => openOpportunityResearch(opportunity, '/deep-research')}>Deep Research</Action>
-          <Action secondary disabled={saved(opportunity)} onPress={() => saveIdea(opportunity)}>{saved(opportunity) ? 'Saved to Ideas' : 'Save Idea'}</Action>
-          <Action secondary onPress={() => runInternalEngine(opportunity)}>Run Internal Story Engine</Action>
-          <Action secondary onPress={() => void Linking.openURL(opportunity.sourceUrl).catch(() => {})}>Open original source ↗</Action>
-          {analyses[opportunity.id] ? (
-            <Panel>
-              <Heading>Internal Story Engine</Heading>
-              <Txt muted>{analyses[opportunity.id].summary}</Txt>
-              {analyses[opportunity.id].evidence.map((item) => (
-                <View key={item.id} style={{ gap: 3 }}>
-                  <BadgeText>{item.label}</BadgeText>
-                  <Txt muted>{item.detail}</Txt>
-                </View>
-              ))}
-              <AnalysisSignals result={analyses[opportunity.id]} />
-              {analyses[opportunity.id].angles.map((angle) => (
-                <View key={angle.id} style={{ gap: 5 }}>
-                  <Heading>{angle.title}</Heading>
-                  <Txt>{angle.hook}</Txt>
-                  <Txt muted>{angle.approach}</Txt>
-                  <Txt muted>Verify: {angle.verification}</Txt>
-                  <Action
-                    secondary
-                    disabled={ideas.some((idea) => idea.topic === opportunity.topic + ' · ' + angle.title && idea.sourceUrl === opportunity.sourceUrl)}
-                    onPress={() => saveAngle(opportunity, angle)}
-                  >
-                    Save this angle to Ideas
-                  </Action>
-                </View>
-              ))}
-              <Fold title="Verification questions & limitations">
-                {analyses[opportunity.id].verificationQuestions.map((question) => <Txt muted key={question}>{question}</Txt>)}
-                {analyses[opportunity.id].limitations.map((limitation) => <Txt muted key={limitation}>{limitation}</Txt>)}
-              </Fold>
-            </Panel>
-          ) : null}
-        </Panel>
-
-        )}
         ListFooterComponent={
           <View style={{ gap: 18 }}>
       <Fold title="More research tools">

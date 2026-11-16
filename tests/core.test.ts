@@ -29,6 +29,7 @@ import {
   type Fetcher,
 } from '../lib/api';
 import { buildIdeas, buildInternalResearch, createManualIdea, rankNewsForTopic, topicRelevanceScore } from '../lib/engine';
+import { sortResearchVideos } from '../lib/intelligence';
 import { translateText } from '../lib/i18n';
 import { getTopicDossier, rememberTopicDossier, TOPIC_DOSSIER_TTL_MS } from '../lib/topic-dossier';
 const input: ResearchInput = {
@@ -1171,4 +1172,21 @@ void test('AI second opinion requests a single structured multi-pass critique wi
   assert.match(prompt, /silently perform four quality passes/i);
   assert.match(prompt, /Do not reveal private reasoning/i);
   assert.match(prompt, /Do not request, infer or analyze YouTube API data/i);
+});
+
+void test('Manual YouTube result sorting changes order for date, views, likes and title in both directions', () => {
+  const sample = [
+    { id: 'a', title: 'Zebra telescope', publishedAt: '2026-10-01T00:00:00.000Z', viewCount: 100, likeCount: 10 },
+    { id: 'b', title: 'Alpha galaxy', publishedAt: '2026-11-01T00:00:00.000Z', viewCount: 50, likeCount: 40 },
+    { id: 'c', title: 'Orbit mission', publishedAt: '2026-09-01T00:00:00.000Z', viewCount: 200, likeCount: 25 },
+    { id: 'd', title: 'Missing statistics', publishedAt: '2026-08-01T00:00:00.000Z', viewCount: null, likeCount: null },
+  ];
+  assert.deepEqual(sortResearchVideos(sample, 'Newest').map((item) => item.id), ['b', 'a', 'c', 'd']);
+  assert.deepEqual(sortResearchVideos(sample, 'Oldest').map((item) => item.id), ['d', 'c', 'a', 'b']);
+  assert.deepEqual(sortResearchVideos(sample, 'Most Views').map((item) => item.id), ['c', 'a', 'b', 'd']);
+  assert.deepEqual(sortResearchVideos(sample, 'Least Views').map((item) => item.id), ['b', 'a', 'c', 'd']);
+  assert.deepEqual(sortResearchVideos(sample, 'Most Likes').map((item) => item.id), ['b', 'c', 'a', 'd']);
+  assert.deepEqual(sortResearchVideos(sample, 'Least Likes').map((item) => item.id), ['a', 'c', 'b', 'd']);
+  assert.deepEqual(sortResearchVideos(sample, 'A-Z').map((item) => item.id), ['b', 'd', 'c', 'a']);
+  assert.deepEqual(sortResearchVideos(sample, 'Z-A').map((item) => item.id), ['a', 'c', 'd', 'b']);
 });

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { internalEngineReviewPrompt, nextOpenRouterUsage } from '../lib/api';
+import { fingerprintText, internalEngineReviewPrompt, nextOpenRouterUsage } from '../lib/api';
 
 void test('AI engine review prompt is grounded in aggregate local intelligence signals', () => {
   const prompt = internalEngineReviewPrompt({
@@ -34,4 +34,12 @@ void test('OpenRouter usage counter increments and resets on a new local day', (
     () => nextOpenRouterUsage('2026-11-16', 30, '2026-11-16'),
     /30 requests for today/,
   );
+});
+
+void test('AI prompt cache fingerprint is stable and changes with content or model identity', () => {
+  const prompt = 'processed evidence summary';
+  const first = fingerprintText('free-model-a\n' + prompt);
+  assert.equal(first, fingerprintText('free-model-a\n' + prompt));
+  assert.notEqual(first, fingerprintText('free-model-b\n' + prompt));
+  assert.notEqual(first, fingerprintText('free-model-a\n' + prompt + ' changed'));
 });
