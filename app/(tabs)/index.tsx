@@ -200,10 +200,8 @@ function DiscoveryDashboardReady() {
   const ideas = useScout((state) => state.data.ideas);
   const reports = useScout((state) => state.data.reports);
   const memoryCount = useScout((state) => state.data.researchMemory.length);
-  const [quotaNow, setQuotaNow] = useState(0);
-  useEffect(() => { setQuotaNow(Date.now()); }, []);
   const youtubeBudget = useScout((state) => state.data.budget);
-  const quotaDate = quotaNow ? quotaDay(new Date(quotaNow)) : youtubeBudget.date;
+  const quotaDate = quotaDay();
   const quotaUsage = youtubeBudget.date === quotaDate
     ? youtubeBudget
     : { date: quotaDate, units: 0, requests: 0, exhausted: false };
@@ -212,8 +210,6 @@ function DiscoveryDashboardReady() {
   const otherManualMax = Math.floor(preferences.budget * 0.6);
   const otherAutomaticMax = Math.floor(preferences.budget * 0.2);
   const otherReserveMax = preferences.budget - otherManualMax - otherAutomaticMax;
-  const recentRefreshCycles = (preferences.youtubeRefreshTimestamps ?? [])
-    .filter((timestamp) => timestamp <= quotaNow && quotaNow - timestamp < 24 * 60 * 60 * 1000).length;
   const [warnings, setWarnings] = useState<string[]>([]);
   const [lastScannedAt, setLastScannedAt] = useState<number | null>(null);
   const [nicheSuggestions, setNicheSuggestions] = useState<SpaceNicheSuggestion[]>([]);
@@ -349,8 +345,8 @@ function DiscoveryDashboardReady() {
           ? 'بودجه محلی API: ' + quotaUsage.units + '/' + preferences.budget + ' واحد · Search دستی: ' + (quotaUsage.searchManualRequests ?? 0) + '/' + searchManualMax + ' · خودکار: ' + (quotaUsage.searchAutomaticRequests ?? 0) + '/' + searchAutomaticMax + ' · ذخیره: ' + (quotaUsage.searchReserveRequests ?? 0) + '/20'
           : 'Local API budget: ' + quotaUsage.units + '/' + preferences.budget + ' units · Search manual: ' + (quotaUsage.searchManualRequests ?? 0) + '/' + searchManualMax + ' · automatic: ' + (quotaUsage.searchAutomaticRequests ?? 0) + '/' + searchAutomaticMax + ' · reserve: ' + (quotaUsage.searchReserveRequests ?? 0) + '/20'}</Txt>
         <Txt muted>{preferences.uiLanguage === 'fa'
-          ? 'واحدهای غیر Search — دستی: ' + (quotaUsage.otherManualUnits ?? 0) + '/' + otherManualMax + ' · خودکار: ' + (quotaUsage.otherAutomaticUnits ?? 0) + '/' + otherAutomaticMax + ' · ذخیره: ' + (quotaUsage.otherReserveUnits ?? 0) + '/' + otherReserveMax + ' · چرخه‌های کامل ۲۴ساعته: ' + recentRefreshCycles + '/3'
-          : 'Non-search units — manual: ' + (quotaUsage.otherManualUnits ?? 0) + '/' + otherManualMax + ' · automatic: ' + (quotaUsage.otherAutomaticUnits ?? 0) + '/' + otherAutomaticMax + ' · reserve: ' + (quotaUsage.otherReserveUnits ?? 0) + '/' + otherReserveMax + ' · full 24-hour research attempts: ' + recentRefreshCycles + '/3'}</Txt>
+          ? 'واحدهای غیر Search — دستی: ' + (quotaUsage.otherManualUnits ?? 0) + '/' + otherManualMax + ' · خودکار: ' + (quotaUsage.otherAutomaticUnits ?? 0) + '/' + otherAutomaticMax + ' · ذخیره: ' + (quotaUsage.otherReserveUnits ?? 0) + '/' + otherReserveMax
+          : 'Non-search units — manual: ' + (quotaUsage.otherManualUnits ?? 0) + '/' + otherManualMax + ' · automatic: ' + (quotaUsage.otherAutomaticUnits ?? 0) + '/' + otherAutomaticMax + ' · reserve: ' + (quotaUsage.otherReserveUnits ?? 0) + '/' + otherReserveMax}</Txt>
       </Panel>
       <View style={{ gap: 7 }}>
         <Text style={[styles.title, { fontSize: 30, lineHeight: 36 }]}>Find your next story.</Text>
