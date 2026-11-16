@@ -246,7 +246,7 @@ export function selectIdeaGenerationVideos(
     if (!/^[\w-]{11}$/.test(video.id) || typeof views !== 'number' || !Number.isFinite(views) || views <= 0) continue;
     const titleTokens = new Set(tokenizeResearchText(video.title));
     const overlap = [...topicTokens].filter((token) => titleTokens.has(token)).length;
-    if (overlap < Math.min(2, topicTokens.size)) continue;
+    if (overlap / topicTokens.size < 0.30) continue;
     const previous = unique.get(video.id);
     if (!previous || views > (previous.video.viewCount ?? 0)) unique.set(video.id, { video, overlap });
   }
