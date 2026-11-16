@@ -35,7 +35,7 @@ const schema = z.object({
     budget: z.number().int().min(100).max(10000),
     model: text,
     hybridIntelligence: z.boolean().optional().default(false),
-    openRouterUsageDay: z.string().regex(/^\\d{4}-\\d{2}-\\d{2}$/).optional(),
+    openRouterUsageDay: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
     openRouterRequestsToday: z.number().int().min(0).max(30).optional(),
     youtubeRefreshTimestamps: z.array(time).max(3).optional().default([]),
     schedule: z.enum(['Manual', 'Every 12 hours', 'Daily', 'Weekly']),

@@ -16,7 +16,9 @@ import {
 import { validateLocal } from '../lib/validation';
 import {
   ApiError,
+  localDateKey,
   nextBudget,
+  nextOpenRouterUsage,
   reserveYoutubeRefreshCycle,
   quotaDay,
   relatedQueries,
@@ -89,6 +91,39 @@ void test('Migration: older saved preferences receive safe Space defaults', () =
   assert.deepEqual(validateLocal(legacyWithoutResearchMemory).researchMemory, []);
   assert.deepEqual(validateLocal(legacyWithoutResearchMemory).feedRegistry, []);
 });
+void test('OpenRouter usage: stable local ISO date keys pass persisted-data validation', () => {
+  const day = localDateKey(new Date(2026, 10, 17, 12, 34, 56));
+  assert.equal(day, '2026-11-17');
+  const usage = nextOpenRouterUsage(undefined, undefined, day);
+  const current = defaults();
+  const saved = validateLocal({
+    ...current,
+    preferences: { ...current.preferences, ...usage },
+  });
+  assert.equal(saved.preferences.openRouterUsageDay, day);
+  assert.equal(saved.preferences.openRouterRequestsToday, 1);
+  assert.throws(() => validateLocal({
+    ...current,
+    preferences: {
+      ...current.preferences,
+      openRouterUsageDay: '11/17/2026',
+      openRouterRequestsToday: 1,
+    },
+  }));
+});
+
+void test('OpenRouter usage: daily request count increments and resets on a new local day', () => {
+  assert.deepEqual(
+    nextOpenRouterUsage('2026-11-17', 3, '2026-11-17'),
+    { openRouterUsageDay: '2026-11-17', openRouterRequestsToday: 4 },
+  );
+  assert.deepEqual(
+    nextOpenRouterUsage('2026-11-17', 29, '2026-11-18'),
+    { openRouterUsageDay: '2026-11-18', openRouterRequestsToday: 1 },
+  );
+  assert.throws(() => nextOpenRouterUsage('2026-11-17', 30, '2026-11-17'));
+});
+
 void test('YouTube trend sample uses official search and video statistics endpoints with bounded quota', async () => {
   let charges = 0;
   let searchCalls = 0;
