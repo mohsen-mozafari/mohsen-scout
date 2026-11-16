@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { defaults, purgeExpired, RETENTION_MS, type Report, type ResearchInput } from '../lib/types';
-import { createManualIdea } from '../lib/engine';
+import { buildIdeaAnalysis, createManualIdea } from '../lib/engine';
+import { getIdeaDisplayTitle, isIdeaDisplayable } from '../lib/idea-research';
 import { exportBackup, importBackup } from '../lib/backup';
 import {
   attachReportToIdea,
@@ -102,4 +103,52 @@ void test('linked research notes survive backup and legacy notes remain compatib
   const legacy = defaults();
   legacy.notes = [{ ...data.notes[0], ideaId: undefined }];
   assert.equal(importBackup(exportBackup(legacy)).notes[0].ideaId, undefined);
+});
+
+void test('legacy Untitled Ideas receive a useful display title without mutation', () => {
+  const idea = {
+    ...createManualIdea('A real topic', 'Explain the evidence behind this discovery.', '', 'Germany', ['en']),
+    topic: 'Untitled Idea',
+  };
+  const before = { ...idea };
+  assert.equal(getIdeaDisplayTitle(idea, 'en'), 'Idea: Explain the evidence behind this discovery.');
+  assert.equal(isIdeaDisplayable(idea), true);
+  assert.deepEqual(idea, before);
+  assert.equal(getIdeaDisplayTitle({ ...idea, topic: 'My actual title' }, 'fa'), 'My actual title');
+});
+
+void test('empty Untitled placeholders are hidden from the list but remain stored', () => {
+  const empty = {
+    ...createManualIdea('Temporary', 'Temporary concept', '', 'Germany', ['en']),
+    topic: 'Untitled Idea',
+    concept: '',
+    note: '',
+    decision: '',
+    sourceUrl: undefined,
+    sourceName: undefined,
+    videoIds: [],
+  };
+  const data = defaults();
+  data.ideas = [empty];
+  assert.equal(isIdeaDisplayable(empty), false);
+  assert.equal(getIdeaDisplayTitle(empty, 'fa'), 'پیش‌نویس ناقص — عنوان و توضیح لازم است');
+  assert.equal(data.ideas.length, 1);
+});
+
+void test('local idea analysis explains evidence, gaps and next actions without inventing metrics', () => {
+  const idea = {
+    ...createManualIdea('James Webb exoplanet atmosphere', 'Explain how spectra can reveal an exoplanet atmosphere.', '', 'Germany', ['en']),
+    sourceUrl: 'https://www.nasa.gov/example',
+  };
+  const result = buildIdeaAnalysis(idea, [
+    { id: 'v1', title: 'James Webb detects molecules in exoplanet atmosphere', channel: 'Science One', publishedAt: '2026-11-15T00:00:00Z' },
+    { id: 'v2', title: 'Webb telescope studies an exoplanet atmosphere', channel: 'Science Two', publishedAt: '2026-11-14T00:00:00Z' },
+    { id: 'v3', title: 'James Webb Space Telescope spectroscopy explained', channel: 'Science Three', publishedAt: '2026-11-13T00:00:00Z' },
+  ], 'en');
+  assert.equal(result.length, 4);
+  assert.ok(result.some((section) => section.id === 'evidence-review' && section.items?.length));
+  assert.ok(result.some((section) => section.id === 'next-actions' && section.body.includes('primary material')));
+  assert.ok(result.every((section) => section.title.trim() && section.body.trim()));
+  const serialized = result.map((section) => section.body).join(' ');
+  assert.doesNotMatch(serialized, /opportunity score|viral prediction|guaranteed demand/i);
 });

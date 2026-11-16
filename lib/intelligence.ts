@@ -24,12 +24,18 @@ const STOP_WORDS = new Set([
 ]);
 
 const CONCEPT_ALIASES: readonly (readonly string[])[] = [
-  ['jwst', 'james webb', 'james webb space telescope', 'webb telescope'],
-  ['exoplanet', 'exoplanets', 'extrasolar planet', 'extrasolar planets', 'extra solar planet'],
-  ['moon', 'lunar'],
-  ['mars rover', 'martian rover'],
-  ['black holes', 'black hole'],
-  ['solar flare', 'solar flares'],
+  ['jwst', 'james webb', 'james webb space telescope', 'webb telescope', 'تلسکوپ جیمز وب', 'جیمز وب'],
+  ['exoplanet', 'exoplanets', 'extrasolar planet', 'extrasolar planets', 'extra solar planet', 'سیاره فراخورشیدی', 'سیارات فراخورشیدی'],
+  ['moon', 'lunar', 'lunar surface', 'سطح ماه', 'قمر زمین'],
+  ['mars', 'planet mars', 'سیاره مریخ', 'مریخ'],
+  ['mars rover', 'martian rover', 'perseverance rover', 'curiosity rover', 'مریخ نورد', 'مریخ‌نورد'],
+  ['black holes', 'black hole', 'سیاهچاله', 'سیاه چاله'],
+  ['solar flare', 'solar flares', 'solar eruption', 'شراره خورشیدی', 'فوران خورشیدی'],
+  ['supernova', 'supernovae', 'stellar explosion', 'ابرنواختر'],
+  ['neutron star', 'neutron stars', 'ستاره نوترونی', 'ستارگان نوترونی'],
+  ['gravitational wave', 'gravitational waves', 'امواج گرانشی'],
+  ['dark matter', 'ماده تاریک'],
+  ['dark energy', 'انرژی تاریک'],
 ];
 
 export function normalizeResearchText(value: string): string {

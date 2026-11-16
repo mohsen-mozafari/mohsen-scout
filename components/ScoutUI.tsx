@@ -1,5 +1,5 @@
 import { type ReactNode, useState } from 'react';
-import { resolveNodeDirection, translateNode, translateText } from '@/lib/i18n';
+import { resolveNodeDirection, resolveTextDirection, translateNode, translateText } from '@/lib/i18n';
 import { View, Text, ScrollView, KeyboardAvoidingView, Platform, StyleSheet } from 'react-native';
 import { Button, Input, Label, TextField, TextArea } from 'heroui-native';
 import { Search, CircleAlert, ChevronDown, ChevronUp, type LucideIcon } from 'lucide-react-native';
@@ -20,7 +20,7 @@ export const styles = StyleSheet.create({
   heading: { fontFamily: 'Inter_600SemiBold', fontSize: 16, lineHeight: 22, color: p.text, letterSpacing: -0.2, flexShrink: 1, minWidth: 0 },
   text: { fontFamily: 'Inter_400Regular', fontSize: 14, lineHeight: 22, color: p.text, flexShrink: 1, minWidth: 0 },
   muted: { fontFamily: 'Inter_400Regular', fontSize: 12, lineHeight: 18, color: p.muted, flexShrink: 1, minWidth: 0 },
-  panel: { paddingHorizontal: 20, paddingVertical: 18, borderRadius: 20, backgroundColor: p.surface, gap: 12 },
+  panel: { paddingHorizontal: 22, paddingVertical: 20, borderRadius: 20, backgroundColor: p.surface, gap: 12 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   // eslint-disable-next-line react-native/no-unused-styles -- Exported shared style used by screens and VideoRow; the rule only checks this file.
   rule: { borderBottomColor: p.border, borderBottomWidth: 1, paddingBottom: 18 },
@@ -41,10 +41,24 @@ export function Heading({ children }: { children: ReactNode }) {
   const direction = resolveNodeDirection(content);
   return <Text style={[styles.heading, { writingDirection: direction, textAlign: direction === 'rtl' ? 'right' : 'left' }]}>{content}</Text>;
 }
-export function SourceText({ children, muted = false }: { children: ReactNode; muted?: boolean }) {
+export function SourceText({ children, muted = false, numberOfLines }: { children: ReactNode; muted?: boolean; numberOfLines?: number }) {
   const direction = resolveNodeDirection(children);
-  return <Text style={[muted ? styles.muted : styles.text, { writingDirection: direction, textAlign: direction === 'rtl' ? 'right' : 'left' }]}>{children}</Text>;
-} 
+  return <Text numberOfLines={numberOfLines} style={[muted ? styles.muted : styles.text, { writingDirection: direction, textAlign: direction === 'rtl' ? 'right' : 'left' }]}>{children}</Text>;
+}
+export function SourceHeading({ children }: { children: ReactNode }) {
+  const direction = resolveNodeDirection(children);
+  return <Text style={[styles.heading, { writingDirection: direction, textAlign: direction === 'rtl' ? 'right' : 'left' }]}>{children}</Text>;
+}
+export function SourceTitle({ children }: { children: ReactNode }) {
+  const direction = resolveNodeDirection(children);
+  return <Text style={[styles.title, { writingDirection: direction, textAlign: direction === 'rtl' ? 'right' : 'left' }]}>{children}</Text>;
+}
+export function BadgeText({ children }: { children: string }) {
+  const language = useScout((s) => s.data.preferences.uiLanguage ?? 'fa');
+  const content = translateText(children, language);
+  const direction = resolveTextDirection(content);
+  return <Text style={[styles.badge, { writingDirection: direction, textAlign: direction === 'rtl' ? 'right' : 'left' }]}>{content}</Text>;
+}
 export function Page({
   children,
   title,
@@ -77,7 +91,19 @@ export function Page({
           {translateNode(children, language)}
         </ScrollView>
       ) : (
-        translateNode(children, language)
+        <>
+          {Boolean(error) && (
+            <ErrorBox
+              message={error}
+              onRetry={() =>
+                useScout.getState().ready
+                  ? useScout.getState().clearError()
+                  : void useScout.getState().boot()
+              }
+            />
+          )}
+          {translateNode(children, language)}
+        </>
       )}
     </KeyboardAvoidingView>
   );
@@ -102,6 +128,8 @@ export function Action({
 }) {
   const language = useScout((s) => s.data.preferences.uiLanguage ?? 'fa');
   const label = translateText(children, language);
+  const displayLabel = busy ? translateText('Working…', language) : label;
+  const labelDirection = resolveTextDirection(displayLabel);
   return (
     <Button
       onPress={onPress}
@@ -111,7 +139,7 @@ export function Action({
       accessibilityLabel={label}
     >
       {Icon && <Icon size={18} color={secondary ? p.purple : p.white} strokeWidth={1.8} />}
-      <Button.Label numberOfLines={2}>{busy ? translateText('Working…', language) : label}</Button.Label>
+      <Button.Label numberOfLines={2} style={{ writingDirection: labelDirection, textAlign: labelDirection === 'rtl' ? 'right' : 'left' }}>{displayLabel}</Button.Label>
     </Button>
   );
 }
@@ -131,6 +159,7 @@ export function Field({
   secret?: boolean;
 }) {
   const language = useScout((s) => s.data.preferences.uiLanguage ?? 'fa');
+  const direction = value.trim() ? resolveTextDirection(value) : language === 'fa' ? 'rtl' : 'ltr';
   return (
     <TextField>
       <Label>{translateText(label, language)}</Label>
@@ -139,7 +168,7 @@ export function Field({
           value={value}
           onChangeText={onChange}
           placeholder={placeholder ? translateText(placeholder, language) : undefined}
-          style={[styles.input, { writingDirection: language === 'fa' ? 'rtl' : 'ltr' }]}
+          style={[styles.input, { writingDirection: direction, textAlign: direction === 'rtl' ? 'right' : 'left' }]}
         />
       ) : (
         <Input
@@ -149,7 +178,7 @@ export function Field({
           secureTextEntry={secret}
           autoCapitalize={secret ? 'none' : 'sentences'}
           autoCorrect={!secret}
-          style={[styles.input, { writingDirection: language === 'fa' ? 'rtl' : 'ltr' }]}
+          style={[styles.input, { writingDirection: direction, textAlign: direction === 'rtl' ? 'right' : 'left' }]}
         />
       )}
     </TextField>
@@ -191,7 +220,7 @@ export function Choices<T extends string>({
             className="rounded-full px-4"
             accessibilityState={{ selected: selected.includes(option) }}
           >
-            <Button.Label numberOfLines={2}>{translateText(option, language)}</Button.Label>
+            <Button.Label numberOfLines={2} style={{ writingDirection: resolveTextDirection(translateText(option, language)), textAlign: resolveTextDirection(translateText(option, language)) === 'rtl' ? 'right' : 'left' }}>{translateText(option, language)}</Button.Label>
           </Button>
         ))}
       </View>
@@ -221,11 +250,13 @@ export function Empty({
 }
 export function ErrorBox({ message, onRetry }: { message: string; onRetry: () => void }) {
   const language = useScout((s) => s.data.preferences.uiLanguage ?? 'fa');
+  const translatedMessage = translateText(message, language);
+  const messageDirection = resolveTextDirection(translatedMessage);
   return (
     <Panel>
       <View style={styles.row}>
         <CircleAlert size={20} color={p.danger} />
-        <Text style={[styles.text, { flex: 1, color: p.danger }]}>{translateText(message, language)}</Text>
+        <Text style={[styles.text, { flex: 1, color: p.danger, writingDirection: messageDirection, textAlign: messageDirection === 'rtl' ? 'right' : 'left' }]}>{translatedMessage}</Text>
       </View>
       <Action secondary onPress={onRetry}>
         Retry / dismiss
@@ -244,6 +275,8 @@ export function Fold({
 }) {
   const [expanded, setExpanded] = useState(open);
   const language = useScout((s) => s.data.preferences.uiLanguage ?? 'fa');
+  const translatedTitle = translateText(title, language);
+  const titleDirection = resolveTextDirection(translatedTitle);
   return (
     <View style={{ gap: 16 }}>
       <Button
@@ -251,7 +284,7 @@ export function Fold({
         onPress={() => setExpanded(!expanded)}
         className="h-auto justify-start rounded-none bg-transparent px-0"
       >
-        <Button.Label className="flex-1 flex-shrink text-left">{translateText(title, language)}</Button.Label>
+        <Button.Label className="flex-1 flex-shrink" style={{ writingDirection: titleDirection, textAlign: titleDirection === 'rtl' ? 'right' : 'left' }}>{translatedTitle}</Button.Label>
         {expanded ? (
           <ChevronUp size={18} color={p.muted} />
         ) : (

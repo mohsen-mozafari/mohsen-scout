@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Linking, Text, View } from 'react-native';
-import { Button } from 'heroui-native';
+import { FlashList } from '@shopify/flash-list';
+
 import { router } from 'expo-router';
 import {
   Page, Panel, Heading, Txt, Action, Fold, styles, ErrorBox, useOperation,
+  SourceHeading, SourceText, BadgeText,
 } from '@/components/ScoutUI';
 import { useScout } from '@/lib/store';
 import { uid, type Idea, languages } from '@/lib/types';
@@ -19,6 +21,63 @@ import { MediaPreview } from '@/components/MediaPreview';
 import { buildInternalResearch, type InternalResearchResult } from '@/lib/engine';
 import { buildResearchInterestProfile, normalizeResearchText } from '@/lib/intelligence';
 import { rememberTopicDossier } from '@/lib/topic-dossier';
+
+
+function AnalysisSignals({ result }: { result: InternalResearchResult }) {
+  const language = useScout((state) => state.data.preferences.uiLanguage ?? 'fa');
+  const fa = language === 'fa';
+  const confidence = result.intelligence.confidence.level;
+  const confidenceLabel = fa
+    ? confidence === 'high' ? 'بالا' : confidence === 'moderate' ? 'متوسط' : 'پایین'
+    : confidence;
+  return (
+    <Fold title={fa ? 'کیفیت شواهد و گام‌های بعدی' : 'Evidence quality & next steps'} open>
+      <Heading>{fa ? 'حد و حدود اطمینان تحلیل' : 'Confidence and evidence scope'}</Heading>
+      <BadgeText>{(fa ? 'میزان اطمینان: ' : 'Confidence: ') + confidenceLabel}</BadgeText>
+      <Txt muted>{result.intelligence.confidence.reason}</Txt>
+      <Txt muted>{fa
+        ? 'خوراک‌های حاضر: ' + result.intelligence.sourceQuality.feedsRepresented +
+          ' · گروه‌های مستقل ناشر: ' + result.intelligence.sourceQuality.independentPublishers +
+          ' · خبرهای تکراری ادغام‌شده: ' + result.intelligence.sourceQuality.duplicateStoriesMerged
+        : 'Feeds represented: ' + result.intelligence.sourceQuality.feedsRepresented +
+          ' · Independent publisher groups: ' + result.intelligence.sourceQuality.independentPublishers +
+          ' · Duplicate stories merged: ' + result.intelligence.sourceQuality.duplicateStoriesMerged}</Txt>
+      {result.intelligence.gaps.length > 0 && (
+        <View style={{ gap: 5 }}>
+          <Heading>{fa ? 'خلأهای تحقیق' : 'Research gaps'}</Heading>
+          {result.intelligence.gaps.map((gap) => <Txt muted key={gap}>{gap}</Txt>)}
+        </View>
+      )}
+      {result.intelligence.sharedConcepts.length > 0 && (
+        <View style={{ gap: 5 }}>
+          <Heading>{fa ? 'واژه‌های مشترک میان نمونه‌ها' : 'Shared concepts in the sample'}</Heading>
+          <SourceText>{result.intelligence.sharedConcepts.join(fa ? '، ' : ', ')}</SourceText>
+          <Txt muted>{fa
+            ? 'این بخش هم‌پوشانی واژگانی نمونه دریافت‌شده را نشان می‌دهد، نه اثبات توافق معنایی یا تقاضا.'
+            : 'This is wording overlap in the returned sample, not proof of semantic agreement or audience demand.'}</Txt>
+        </View>
+      )}
+      {result.intelligence.potentialContradictions.length > 0 && (
+        <View style={{ gap: 5 }}>
+          <Heading>{fa ? 'اختلاف‌هایی که باید بررسی شوند' : 'Discrepancies to verify'}</Heading>
+          {result.intelligence.potentialContradictions.map((item) => <Txt muted key={item}>{item}</Txt>)}
+        </View>
+      )}
+      {result.intelligence.followUpQueries.length > 0 && (
+        <View style={{ gap: 5 }}>
+          <Heading>{fa ? 'جست‌وجوهای تکمیلی پیشنهادی' : 'Suggested follow-up searches'}</Heading>
+          {result.intelligence.followUpQueries.map((query) => <SourceText key={query}>{query}</SourceText>)}
+        </View>
+      )}
+      {result.intelligence.scenarios.length > 0 && (
+        <View style={{ gap: 5 }}>
+          <Heading>{fa ? 'سناریوهای مشروط' : 'Conditional scenarios'}</Heading>
+          {result.intelligence.scenarios.map((scenario) => <Txt muted key={scenario}>{scenario}</Txt>)}
+        </View>
+      )}
+    </Fold>
+  );
+}
 
 export default function DiscoveryDashboard() {
   const ready = useScout((state) => state.ready);
@@ -41,6 +100,7 @@ function DiscoveryDashboardReady() {
   const [analyses, setAnalyses] = useState<Record<string, InternalResearchResult>>({});
   const [nicheSuggestions, setNicheSuggestions] = useState<SpaceNicheSuggestion[]>([]);
   const [radarBrief, setRadarBrief] = useState<InternalResearchResult>();
+  const listExtraData = useMemo(() => ({ analyses, ideas }), [analyses, ideas]);
   const op = useOperation();
   const niche = SPACE_NICHES.find((item) => item.id === preferences.selectedSpaceNiche);
   const nicheTitle = preferences.selectedSpaceNiche === 'all'
@@ -190,7 +250,18 @@ function DiscoveryDashboardReady() {
   }, 'Research linked to the same saved idea.');
 
   return (
-    <Page title="MOHSEN SCOUT">
+    <Page scroll={false}>
+      <FlashList
+        style={{ flex: 1 }}
+        data={opportunities}
+        extraData={listExtraData}
+        keyExtractor={(item) => item.id}
+        contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
+        ListHeaderComponent={
+          <View style={{ gap: 18 }}>
+
+        <Text style={styles.title}>MOHSEN SCOUT</Text>
       <View style={{ gap: 7 }}>
         <Text style={[styles.title, { fontSize: 30, lineHeight: 36 }]}>Find your next story.</Text>
         <Txt muted>A source-led discovery desk for your next space video. Choose an opportunity, then decide what deserves deeper research.</Txt>
@@ -216,8 +287,8 @@ function DiscoveryDashboardReady() {
           {nicheSuggestions.map((suggestion) => (
             <View key={suggestion.id} style={{ gap: 5 }}>
               <Text style={styles.badge}>{suggestion.id.startsWith('story:') ? 'FRESH OFFICIAL STORY' : 'ACTIVE FEED NICHE'}</Text>
-              <Heading>{suggestion.title}</Heading>
-              <Txt muted>{suggestion.description}</Txt>
+              <SourceHeading>{suggestion.title}</SourceHeading>
+              <SourceText muted>{suggestion.description}</SourceText>
               <Txt muted>{suggestion.matchedStories} matching publisher stories{suggestion.newestAt ? ' · latest ' + new Date(suggestion.newestAt).toLocaleDateString() : ''}</Txt>
               <Action secondary onPress={() => router.push({ pathname: '/youtube', params: { topic: suggestion.topic } })}>{'Research ' + suggestion.title}</Action>
             </View>
@@ -232,10 +303,11 @@ function DiscoveryDashboardReady() {
           <Txt muted>{radarBrief.summary}</Txt>
           {radarBrief.evidence.map((item) => (
             <View key={item.id} style={{ gap: 3 }}>
-              <Text style={styles.badge}>{item.label}</Text>
+              <BadgeText>{item.label}</BadgeText>
               <Txt muted>{item.detail}</Txt>
             </View>
           ))}
+          <AnalysisSignals result={radarBrief} />
           <Fold title="Editorial angles generated from current sources">
             {radarBrief.angles.map((angle) => (
               <View key={angle.id} style={{ gap: 5 }}>
@@ -265,15 +337,19 @@ function DiscoveryDashboardReady() {
         </Panel>
       )}
 
-      {opportunities.map((opportunity) => (
-        <Panel key={opportunity.id}>
+
+          </View>
+        }
+        renderItem={({ item: opportunity }) => (
+
+        <Panel>
           {opportunity.imageUrl ? <MediaPreview uri={opportunity.imageUrl} aspectRatio={16 / 9} viewer alt={opportunity.topic} /> : null}
           <View style={{ gap: 7 }}>
-            <Text style={styles.badge}>{opportunity.sourceName} · {opportunity.publishedAt ? new Date(opportunity.publishedAt).toLocaleDateString() : 'Date not supplied'}</Text>
-            <Heading>{opportunity.topic}</Heading>
-            {Boolean(opportunity.summary) && <Txt muted>{opportunity.summary}</Txt>}
+            <SourceText muted>{opportunity.sourceName} · {opportunity.publishedAt ? new Date(opportunity.publishedAt).toLocaleDateString() : 'Date not supplied'}</SourceText>
+            <SourceHeading>{opportunity.topic}</SourceHeading>
+            {Boolean(opportunity.summary) && <SourceText muted>{opportunity.summary}</SourceText>}
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-              {opportunity.labels.map((label) => <Text key={label} style={styles.badge}>{label}</Text>)}
+              {opportunity.labels.map((label) => <BadgeText key={label}>{label}</BadgeText>)}
             </View>
             <Txt muted>{opportunity.reason}</Txt>
             <Txt muted>{opportunity.sourceCount} matching official feed source{opportunity.sourceCount === 1 ? '' : 's'} · No YouTube competition check yet</Txt>
@@ -283,19 +359,18 @@ function DiscoveryDashboardReady() {
           <Action secondary busy={op.busy} onPress={() => openOpportunityResearch(opportunity, '/deep-research')}>Deep Research</Action>
           <Action secondary disabled={saved(opportunity)} onPress={() => saveIdea(opportunity)}>{saved(opportunity) ? 'Saved to Ideas' : 'Save Idea'}</Action>
           <Action secondary onPress={() => runInternalEngine(opportunity)}>Run Internal Story Engine</Action>
-          <Button variant="tertiary" className="h-auto justify-start px-0" onPress={() => void Linking.openURL(opportunity.sourceUrl).catch(() => {})}>
-            <Button.Label>Open original source ↗</Button.Label>
-          </Button>
+          <Action secondary onPress={() => void Linking.openURL(opportunity.sourceUrl).catch(() => {})}>Open original source ↗</Action>
           {analyses[opportunity.id] ? (
             <Panel>
               <Heading>Internal Story Engine</Heading>
               <Txt muted>{analyses[opportunity.id].summary}</Txt>
               {analyses[opportunity.id].evidence.map((item) => (
                 <View key={item.id} style={{ gap: 3 }}>
-                  <Text style={styles.badge}>{item.label}</Text>
+                  <BadgeText>{item.label}</BadgeText>
                   <Txt muted>{item.detail}</Txt>
                 </View>
               ))}
+              <AnalysisSignals result={analyses[opportunity.id]} />
               {analyses[opportunity.id].angles.map((angle) => (
                 <View key={angle.id} style={{ gap: 5 }}>
                   <Heading>{angle.title}</Heading>
@@ -318,8 +393,10 @@ function DiscoveryDashboardReady() {
             </Panel>
           ) : null}
         </Panel>
-      ))}
 
+        )}
+        ListFooterComponent={
+          <View style={{ gap: 18 }}>
       <Fold title="More research tools">
         <Txt muted>Use these when you already know what you want to investigate.</Txt>
         <Action secondary onPress={() => router.push('/cosmic-news')}>Open Cosmic News</Action>
@@ -333,6 +410,10 @@ function DiscoveryDashboardReady() {
       </Fold>
       {Boolean(op.error) && <ErrorBox message={op.error} onRetry={discover} />}
       {Boolean(op.message) && <Txt muted>{op.message}</Txt>}
+
+          </View>
+        }
+      />
     </Page>
   );
 }

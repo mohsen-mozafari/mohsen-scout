@@ -106,3 +106,16 @@ void test('text direction follows the first strong character, not the selected a
   assert.equal(resolveTextDirection('1234 — Webb'), 'ltr');
   assert.equal(resolveTextDirection('گزارش 2026'), 'rtl');
 });
+void test('text direction ignores punctuation, digits and emoji before the first strong letter', () => {
+  assert.equal(resolveTextDirection('، ۱۲۳ — NASA report'), 'ltr');
+  assert.equal(resolveTextDirection('🚀 2026: Webb telescope'), 'ltr');
+  assert.equal(resolveTextDirection('، ۲۰۲۶: گزارش فارسی'), 'rtl');
+});
+
+void test('semantic aliases cover precise Persian space-science equivalents', () => {
+  assert.ok(scoreResearchText('سیاره فراخورشیدی', 'James Webb Space Telescope observes an exoplanet') > 0);
+  assert.ok(scoreResearchText('سیاهچاله', 'Black hole observations reveal a new structure') > 0);
+  assert.ok(scoreResearchText('امواج گرانشی', 'A new gravitational wave signal was recorded') > 0);
+  assert.equal(scoreResearchText('سیاهچاله', 'Artemis lunar mission update'), 0);
+});
+

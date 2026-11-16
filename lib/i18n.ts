@@ -446,9 +446,12 @@ function flattenText(node: ReactNode): string {
 }
 
 export function resolveTextDirection(value: string): 'rtl' | 'ltr' {
+  // Only strong letters set direction; punctuation, digits and emoji are ignored.
+  const rtlStrong = /[\u05D0-\u05EA\u05EF-\u05F2\u0620-\u064A\u066E-\u066F\u0671-\u06D3\u06FA-\u06FC\u06FF\u0750-\u077F\u08A0-\u08C9\uFB1D-\uFB4F\uFB50-\uFDFF\uFE70-\uFEFC]/u;
+  const ltrStrong = /[A-Za-z\u00C0-\u02AF\u0370-\u052F\u0900-\u1FFF\u2C00-\uD7FF]/u;
   for (const character of value) {
-    if (/[\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFF]/.test(character)) return 'rtl';
-    if (/[A-Za-z\u00C0-\u02AF\u0370-\u052F\u0900-\u1FFF\u2C00-\uD7FF]/.test(character)) return 'ltr';
+    if (rtlStrong.test(character)) return 'rtl';
+    if (ltrStrong.test(character)) return 'ltr';
   }
   return 'ltr';
 }
@@ -465,7 +468,7 @@ export function translateNode(node: ReactNode, language: UiLanguage): ReactNode 
   if (Array.isArray(node)) return node.map((child) => translateNode(child, language));
   if (!isValidElement(node)) return node;
   const elementType = node.type as { displayName?: string; name?: string };
-  if (/^SourceText$/.test(elementType.displayName ?? elementType.name ?? '')) return node;
+  if (/^Source(?:Text|Heading|Title)$/.test(elementType.displayName ?? elementType.name ?? '')) return node;
   const props = node.props as Record<string, unknown>;
   const children = translateNode(props.children as ReactNode, language);
   const patch: Record<string, unknown> = { children };
@@ -474,6 +477,9 @@ export function translateNode(node: ReactNode, language: UiLanguage): ReactNode 
   }
   if (props.ListEmptyComponent && typeof props.ListEmptyComponent !== 'function') {
     patch.ListEmptyComponent = translateNode(props.ListEmptyComponent as ReactNode, language);
+  }
+  if (props.ListFooterComponent && typeof props.ListFooterComponent !== 'function') {
+    patch.ListFooterComponent = translateNode(props.ListFooterComponent as ReactNode, language);
   }
   if (/^Text$/.test(elementType.displayName ?? elementType.name ?? '')) {
     const content = flattenText(children);

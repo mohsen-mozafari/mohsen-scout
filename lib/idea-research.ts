@@ -18,6 +18,41 @@ function isHttpsUrl(value: string) {
   }
 }
 
+
+/** Hides only empty legacy placeholder records from the list; persisted data is untouched. */
+export function isIdeaDisplayable(
+  idea: Pick<Idea, 'topic' | 'concept' | 'note' | 'decision' | 'sourceUrl' | 'sourceName' | 'videoIds'>,
+): boolean {
+  const placeholder = !idea.topic.trim() || idea.topic.trim().toLowerCase() === 'untitled idea';
+  if (!placeholder) return true;
+  return Boolean(
+    idea.concept.trim() || idea.note.trim() || idea.decision.trim() ||
+    idea.sourceUrl?.trim() || idea.sourceName?.trim() || idea.videoIds.length,
+  );
+}
+
+/** Provides a useful visible title for legacy placeholders without rewriting saved data. */
+export function getIdeaDisplayTitle(
+  idea: Pick<Idea, 'topic' | 'concept' | 'sourceName'>,
+  language: 'fa' | 'en' = 'en',
+): string {
+  const topic = idea.topic.trim();
+  if (topic && topic.toLowerCase() !== 'untitled idea') return topic;
+  const firstLine = idea.concept
+    .split(/\r?\n/)
+    .map((part) => part.replace(/^[-*#\s]+/, '').trim())
+    .find(Boolean);
+  if (firstLine) {
+    const compact = firstLine.length > 82 ? firstLine.slice(0, 79).trimEnd() + '…' : firstLine;
+    return language === 'fa' ? 'ایده: ' + compact : 'Idea: ' + compact;
+  }
+  if (idea.sourceName?.trim()) {
+    return language === 'fa' ? 'پیش‌نویس منبع: ' + idea.sourceName.trim() : 'Source draft: ' + idea.sourceName.trim();
+  }
+  return language === 'fa'
+    ? 'پیش‌نویس ناقص — عنوان و توضیح لازم است'
+    : 'Incomplete draft — title and concept required';
+}
 /** Reuses one local idea for a source story instead of creating a duplicate per research screen. */
 export function getOrCreateSourceIdea(
   data: LocalData,

@@ -17,11 +17,14 @@ import {
   styles,
   ErrorBox,
   useOperation,
+  SourceTitle,
+  SourceText,
 } from '@/components/ScoutUI';
 import { VideoRow } from '@/components/VideoRow';
 import { useScout } from '@/lib/store';
 import { type Idea, statuses, languages } from '@/lib/types';
-import { limitations, reasoning } from '@/lib/engine';
+import { buildIdeaAnalysis, limitations, reasoning } from '@/lib/engine';
+import { getIdeaDisplayTitle } from '@/lib/idea-research';
 import { getKey } from '@/lib/vault';
 import { getFreeModels, getOpinion, opinionPrompt } from '@/lib/api';
 import { uid } from '@/lib/types';
@@ -50,6 +53,7 @@ export default function Detail() {
     idea.concept.trim(),
   );
   const related = idea ? data.videos.filter((v) => idea.videoIds.includes(v.id)) : [];
+  const analysisSections = idea ? buildIdeaAnalysis(idea, related, data.preferences.uiLanguage ?? 'fa') : [];
   const savedReferences = idea ? data.links.filter((link) => idea.videoIds.includes(link.id)) : [];
   const researchNotes = idea ? data.notes.filter((note) => note.ideaId === idea.id) : [];
   const secondOpinion = () =>
@@ -128,21 +132,19 @@ export default function Detail() {
           Back to {idea ? 'Opportunities' : 'My Library'}
         </Link>
       )}
-      <Text style={styles.title}>
-        {idea?.topic ||
-          savedLink?.manualTitle ||
-          video?.title ||
-          savedLink?.topic ||
-          'Saved YouTube link'}
-      </Text>
+      <SourceTitle>
+        {idea
+          ? getIdeaDisplayTitle(idea, data.preferences.uiLanguage ?? 'fa')
+          : savedLink?.manualTitle || video?.title || savedLink?.topic || (data.preferences.uiLanguage === 'fa' ? 'پیوند ذخیره‌شده یوتیوب' : 'Saved YouTube link')}
+      </SourceTitle>
       {video && (
         <>
           <MediaPreview uri={video.thumbnail} aspectRatio={16 / 9} onPress={() => void Linking.openURL('https://www.youtube.com/watch?v=' + video.id).catch(() => {})} alt={video.title} />
-          <Txt>
+          <SourceText>
             {video.channel} · {new Date(video.publishedAt).toLocaleDateString('en-US')}
-          </Txt>
+          </SourceText>
           <Text style={styles.badge}>YouTube · Original title and description</Text>
-          <Txt>{video.description}</Txt>
+          <SourceText>{video.description}</SourceText>
         </>
       )}
       {!idea && (
@@ -169,9 +171,22 @@ export default function Detail() {
           <Panel>
             <Text style={styles.badge}>{idea.assessment}</Text>
             <Heading>Video concept</Heading>
-            <Txt>{idea.concept || 'Add your own concept.'}</Txt>
+            <SourceText>{idea.concept || 'Add your own concept.'}</SourceText>
             <Heading>Why investigate it?</Heading>
             <Txt>{reasoning(idea, related.length, data.preferences.uiLanguage ?? 'fa')}</Txt>
+          </Panel>
+          <Panel>
+            <Heading>{data.preferences.uiLanguage === 'fa' ? 'تحلیل تحریری موتور داخلی' : 'Internal editorial analysis'}</Heading>
+            <Txt muted>{data.preferences.uiLanguage === 'fa'
+              ? 'این بررسی محلی است و فقط از مفهوم ثبت‌شده و نمونه‌های پیوندخورده موجود روی دستگاه استفاده می‌کند؛ منبع تازه‌ای دریافت نمی‌کند و نظر AI نیست.'
+              : 'This local review uses only the saved concept and linked examples already on this device. It fetches no new sources and is not an AI opinion.'}</Txt>
+            {analysisSections.map((section) => (
+              <View key={section.id} style={{ gap: 6 }}>
+                <Heading>{section.title}</Heading>
+                <SourceText>{section.body}</SourceText>
+                {section.items?.map((item) => <SourceText muted key={item}>{'• ' + item}</SourceText>)}
+              </View>
+            ))}
           </Panel>
           <Txt muted>
             {idea.region} · {idea.languages.map((l) => languages[l] || l).join(', ')}

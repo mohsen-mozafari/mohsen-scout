@@ -13,9 +13,13 @@ import {
   ErrorBox,
   useOperation,
   Txt,
+  SourceHeading,
+  SourceText,
+  BadgeText,
 } from '@/components/ScoutUI';
 import { useScout } from '@/lib/store';
 import { statuses } from '@/lib/types';
+import { getIdeaDisplayTitle, isIdeaDisplayable } from '@/lib/idea-research';
 import { createManualIdea } from '@/lib/engine';
 import { palette as p } from '@/lib/theme';
 import { translateText } from '@/lib/i18n';
@@ -32,11 +36,12 @@ export default function Opportunities() {
   const [draftDecision, setDraftDecision] = useState('');
   const preferences = useScout((s) => s.data.preferences);
   const op = useOperation();
-  const filtered = ideas.filter(
+  const displayableIdeas = ideas.filter(isIdeaDisplayable);
+  const filtered = displayableIdeas.filter(
     (i) =>
       i.archived === archive &&
       (status === 'All' || i.status === status) &&
-      `${i.topic} ${i.concept} ${i.note} ${i.decision}`.toLowerCase().includes(search.toLowerCase()),
+      `${getIdeaDisplayTitle(i, preferences.uiLanguage ?? 'fa')} ${i.concept} ${i.note} ${i.decision}`.toLowerCase().includes(search.toLowerCase()),
   );
   const openCreate = () => {
     setDraftTopic(preferences.lastInput?.topic ?? '');
@@ -116,11 +121,11 @@ export default function Opportunities() {
               onPress={() => router.push({ pathname: '/detail', params: { idea: item.id } })}
             >
               <View style={{ flex: 1, minWidth: 0, gap: 8 }}>
-                <Text style={styles.badge}>{translateText(item.assessment, preferences.uiLanguage ?? "fa")} · {translateText(item.status, preferences.uiLanguage ?? "fa")}</Text>
-                <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 15, lineHeight: 20, color: '#F4F2FF', flexShrink: 1, minWidth: 0 }}>{item.topic}</Text>
-                {item.concept ? <Text numberOfLines={3} style={styles.muted}>{item.concept}</Text> : <Txt muted>Concept missing — open the editor to complete this draft before requesting an AI opinion.</Txt>}
-                {item.sourceName ? <Text style={styles.badge}>{translateText("Source:", preferences.uiLanguage ?? "fa")} {item.sourceName}</Text> : null}
-                {item.decision ? <Txt muted>{item.decision}</Txt> : null}
+                <BadgeText>{item.assessment + ' · ' + item.status}</BadgeText>
+                <SourceHeading>{getIdeaDisplayTitle(item, preferences.uiLanguage ?? 'fa')}</SourceHeading>
+                {item.concept ? <SourceText muted numberOfLines={3}>{item.concept}</SourceText> : <Txt muted>Concept missing — open the editor to complete this draft before requesting an AI opinion.</Txt>}
+                {item.sourceName ? <View style={styles.row}><Txt muted>Source:</Txt><SourceText>{item.sourceName}</SourceText></View> : null}
+                {item.decision ? <SourceText muted>{item.decision}</SourceText> : null}
               </View>
               <ArrowUpRight color={p.purple} size={20} />
             </Button>
@@ -129,11 +134,11 @@ export default function Opportunities() {
         ListEmptyComponent={
           <Empty
             title={
-              ideas.length ? 'No ideas match this view.' : 'Keep your ideas and decisions here.'
+              displayableIdeas.length ? 'No ideas match this view.' : 'Keep your ideas and decisions here.'
             }
-            action={ideas.length ? 'Clear filters' : 'Create an idea'}
+            action={displayableIdeas.length ? 'Clear filters' : 'Create an idea'}
             onPress={
-              ideas.length
+              displayableIdeas.length
                 ? () => {
                     setSearch('');
                     setStatus('All');

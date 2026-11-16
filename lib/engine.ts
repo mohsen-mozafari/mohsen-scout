@@ -472,3 +472,103 @@ export function reasoning(idea: Idea, observedVideoCount = idea.videoIds.length,
   return 'The internal engine linked ' + observedVideoCount +
     ' returned sample video example(s) to this idea. They are reference points only—not proof of audience demand, low competition or future growth.';
 }
+
+export type IdeaAnalysisSection = {
+  id: string;
+  title: string;
+  body: string;
+  items?: string[];
+};
+
+/**
+ * A local editorial checklist from a saved Idea and already-linked local video
+ * references. It performs no network, storage or AI calls and does not infer
+ * demand, competition, growth or performance.
+ */
+export function buildIdeaAnalysis(
+  idea: Idea,
+  relatedVideos: readonly Pick<YouTubeSampleVideo, 'id' | 'title' | 'channel' | 'publishedAt'>[],
+  language: 'fa' | 'en' = 'en',
+): IdeaAnalysisSection[] {
+  const fa = language === 'fa';
+  const topic = idea.topic.trim();
+  const concept = idea.concept.trim();
+  const matched = relatedVideos
+    .map((video, index) => ({ video, index, relevance: scoreResearchText(topic, video.title) }))
+    .filter((entry) => entry.relevance > 0)
+    .sort((a, b) => b.relevance - a.relevance || a.index - b.index)
+    .slice(0, 5);
+  const channels = new Set(matched.map((entry) => entry.video.channel).filter(Boolean));
+  const gaps: string[] = [];
+  if (!idea.sourceUrl?.trim()) gaps.push(fa
+    ? 'هنوز پیوندی به منبع اولیه برای این ایده ذخیره نشده است؛ ادعاهای واقعی را پیش از تولید با سند اصلی تطبیق بده.'
+    : 'No primary-source link is attached to this idea yet; verify factual claims against an original document before production.');
+  if (!concept) gaps.push(fa
+    ? 'مفهوم ویدئو تعریف نشده است؛ پرسش مرکزی، چیزی که مخاطب یاد می‌گیرد و زاویه متمایز را مشخص کن.'
+    : 'The video concept is not defined; specify the central question, viewer takeaway and distinctive angle.');
+  if (matched.length < 3) gaps.push(fa
+    ? 'کمتر از سه نمونه مرتبطِ ذخیره‌شده در داده‌های محلی پیدا شد؛ برای مقایسه، نمونه بیشتری با جست‌وجوی دستی جمع‌آوری کن.'
+    : 'Fewer than three relevant saved examples were found in local data; gather more through manual search before drawing comparisons.');
+  if (matched.length > 0 && channels.size < 2) gaps.push(fa
+    ? 'نمونه‌های مرتبط فعلی از کانال‌های متمایز کافی نیستند؛ مقایسه به نمونه‌هایی از سازندگان مختلف نیاز دارد.'
+    : 'The current relevant sample does not span multiple channels; a broader comparison needs examples from distinct creators.');
+  if (!idea.decision.trim()) gaps.push(fa
+    ? 'معیار تصمیم شخصی هنوز ثبت نشده است؛ مشخص کن چه نتیجه‌ای این ایده را ارزشمند یا نامناسب می‌کند.'
+    : 'No personal decision criterion is recorded; define what would make this idea worth pursuing or rejecting.');
+  const evidenceBody = fa
+    ? 'از ' + relatedVideos.length + ' ویدئوی پیوندخورده و موجود در داده محلی، ' + matched.length +
+      ' عنوان با موضوع ایده تطبیق متنی/معنایی داشتند و این نمونه‌ها به ' + channels.size +
+      ' کانال متمایز مربوط‌اند. این فقط بررسی همان نمونه ذخیره‌شده است؛ تقاضای مخاطب، سطح رقابت یا عملکرد آینده را اثبات نمی‌کند.'
+    : 'Of ' + relatedVideos.length + ' linked videos currently present in local data, ' + matched.length +
+      ' titles matched the idea topic using local relevance rules, across ' + channels.size +
+      ' distinct channels. This describes only the saved sample; it does not prove audience demand, competition or future performance.';
+  const nextSteps = fa
+    ? [
+        '۱. پرسش مرکزی و وعده آموزشی ایده را در یک جمله دقیق بنویس.',
+        idea.sourceUrl?.trim()
+          ? '۲. ادعاهای اصلی را در منبع پیوندشده و منابع اولیه ارجاعی بررسی کن.'
+          : '۲. یک مقاله، اطلاعیه یا سند اولیه معتبر پیدا و به ایده پیوند بده.',
+        matched.length
+          ? '۳. عنوان و زاویه نمونه‌های مرتبط را با ایده خود مقایسه کن و تفاوت واقعی را مشخص کن.'
+          : '۳. با جست‌وجوی دستی چند نمونه واقعاً مرتبط پیدا کن؛ نبود نمونه ذخیره‌شده به معنی نبود محتوا نیست.',
+        '۴. مخاطب هدف و دلیل مفید بودن این توضیح برای او را مشخص کن؛ سپس مفهوم را با شواهد تکمیل کن.',
+      ]
+    : [
+        '1. State the central question and viewer takeaway in one precise sentence.',
+        idea.sourceUrl?.trim()
+          ? '2. Check key claims against the linked source and its cited primary material.'
+          : '2. Find a credible original paper, mission release or primary document and attach it to the idea.',
+        matched.length
+          ? '3. Compare the angles and titles of relevant saved examples, then state the genuine difference in your approach.'
+          : '3. Gather a few genuinely relevant examples with manual search; an empty saved sample does not mean no videos exist.',
+        '4. Define the intended audience and why this explanation helps them, then refine the concept against the evidence.',
+      ];
+  const framing = concept
+    ? (fa
+        ? 'مبنای تحلیل، مفهوم ثبت‌شده کاربر است: «' + concept.slice(0, 900) + '». این متن جهت فعلی ایده را مشخص می‌کند؛ اعتبار ادعاها باید جداگانه با منابع سنجیده شود.'
+        : 'The analysis starts from the user’s saved concept: “' + concept.slice(0, 900) + '”. It defines the current direction of the idea; factual claims still need separate source verification.')
+    : (fa
+        ? 'برای این ایده هنوز توضیح محتوایی ثبت نشده است. تا زمان تکمیل مفهوم، نمی‌توان درباره زاویه یا ارزش تحریری آن داوری کرد.'
+        : 'No editorial concept is saved for this idea. Its angle cannot be assessed until the concept is completed.');
+  return [
+    { id: 'core-framing', title: fa ? 'هسته ایده و زاویه فعلی' : 'Core idea and current angle', body: framing },
+    {
+      id: 'evidence-review',
+      title: fa ? 'بررسی شواهد و نمونه‌های موجود' : 'Evidence and available examples',
+      body: evidenceBody,
+      ...(matched.length ? { items: matched.map((entry) => entry.video.title) } : {}),
+    },
+    {
+      id: 'research-gaps',
+      title: fa ? 'چه چیزهایی هنوز ثابت نشده‌اند؟' : 'What remains unproven?',
+      body: gaps.length ? gaps.map((gap) => '• ' + gap).join('\n') : (fa
+        ? 'در داده محلی فعلی، خلأ آشکار دیگری از قواعد این بررسی پیدا نشد؛ این به معنای راستی‌آزمایی کامل ایده نیست.'
+        : 'No additional gap was identified by these local checks; this does not mean the idea has been fully verified.'),
+    },
+    {
+      id: 'next-actions',
+      title: fa ? 'اقدام‌های پیشنهادی برای پیشبرد ایده' : 'Practical next steps',
+      body: nextSteps.join('\n'),
+    },
+  ];
+}
