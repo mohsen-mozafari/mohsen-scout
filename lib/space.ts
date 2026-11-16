@@ -72,6 +72,16 @@ type NewsFeedCacheEntry = {
 type NewsFeedHealth = { failures: number; retryAt: number; warning: string };
 const newsSourceCache = new Map<string, NewsFeedCacheEntry>();
 const newsSourceHealth = new Map<string, NewsFeedHealth>();
+const fetcherNamespaces = new WeakMap<Fetcher, string>();
+let nextFetcherNamespace = 1;
+function fetcherNamespace(fetcher: Fetcher): string {
+  let namespace = fetcherNamespaces.get(fetcher);
+  if (!namespace) {
+    namespace = 'feed-client-' + nextFetcherNamespace++;
+    fetcherNamespaces.set(fetcher, namespace);
+  }
+  return namespace;
+}
 const wikiCache = new Map<string, { at: number; value: WikiSignal }>();
 const CACHE_MS = 10 * 60 * 1000;
 
@@ -340,15 +350,17 @@ export async function fetchSpaceNews(
 ): Promise<{ items: SpaceNewsItem[]; warnings: string[] }> {
   const ids = SPACE_NEWS_SOURCES.filter((source) => enabledSources.includes(source.id)).map((source) => source.id);
   if (!ids.length) return { items: [], warnings: ['Enable at least one official news feed in Space Radar sources.'] };
-  const cacheKey = [...ids].sort().join(',');
+  const namespace = fetcherNamespace(fetcher);
+  const cacheKey = namespace + ':' + [...ids].sort().join(',');
   const inflight = newsInflight.get(cacheKey);
   if (inflight) return inflight;
 
   const request = (async () => {
     const selected = SPACE_NEWS_SOURCES.filter((source) => ids.includes(source.id));
     const results = await Promise.all(selected.map(async (source) => {
-      const previous = newsSourceCache.get(source.id);
-      const health = newsSourceHealth.get(source.id);
+      const sourceCacheKey = namespace + ':' + source.id;
+      const previous = newsSourceCache.get(sourceCacheKey);
+      const health = newsSourceHealth.get(sourceCacheKey);
       const now = Date.now();
       if (!force && previous && !health && now - previous.at < CACHE_MS) {
         return { items: previous.items, warning: '' };
@@ -364,20 +376,20 @@ export async function fetchSpaceNews(
       }
       const refreshed = await loadOfficialFeed(source, fetcher, previous);
       if (refreshed.items.length) {
-        newsSourceCache.set(source.id, {
+        newsSourceCache.set(sourceCacheKey, {
           at: Date.now(),
           items: refreshed.items,
           etag: refreshed.etag,
           lastModified: refreshed.lastModified,
           endpoint: refreshed.endpoint,
         });
-        newsSourceHealth.delete(source.id);
+        newsSourceHealth.delete(sourceCacheKey);
         return { items: refreshed.items, warning: '' };
       }
       const failures = (health?.failures ?? 0) + 1;
       const retryDelay = Math.min(6 * 60 * 60 * 1000, 30_000 * 2 ** Math.min(10, failures - 1));
       const retryAt = Date.now() + retryDelay;
-      newsSourceHealth.set(source.id, {
+      newsSourceHealth.set(sourceCacheKey, {
         failures,
         retryAt,
         warning: refreshed.warning,

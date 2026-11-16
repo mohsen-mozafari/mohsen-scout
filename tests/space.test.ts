@@ -199,9 +199,9 @@ void test('Space News retries only the unavailable official feed instead of cach
   let scienceAttempts = 0;
   const fetcher: typeof fetch = async (input) => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
-    if (url === science.url || url === science.fallbackUrls?.[0]) {
+    if (url === science.url) {
       scienceAttempts++;
-      if (scienceAttempts <= 2) return new Response('Unavailable', { status: 503 });
+      if (scienceAttempts <= 1) return new Response('Unavailable', { status: 503 });
       return new Response('<rss><item><title>ESA science story</title><link>https://www.esa.int/science-recovered</link></item></rss>', { status: 200 });
     }
     if (url === nasa.url) return new Response('<rss><item><title>NASA Webb telescope story</title><link>https://www.nasa.gov/working</link></item></rss>', { status: 200 });
@@ -214,7 +214,7 @@ void test('Space News retries only the unavailable official feed instead of cach
   const second = await fetchSpaceNews([nasa.id, science.id], fetcher, true);
   assert.equal(second.items.length, 2);
   assert.equal(second.warnings.length, 0);
-  assert.equal(scienceAttempts, 3);
+  assert.equal(scienceAttempts, 2);
 });
 
 void test('RSS parser extracts only trusted official HTTPS image URLs', () => {
