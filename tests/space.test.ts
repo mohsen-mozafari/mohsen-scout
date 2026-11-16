@@ -289,3 +289,33 @@ void test('Manual niche matching uses explicit semantic aliases without broad ge
   const results = newsForNiche(items, 'custom', 'JWST');
   assert.deepEqual(results.map((item) => item.url), ['https://www.nasa.gov/mock-webb']);
 });
+
+
+void test('Discovery deduplicates Persian publisher headlines and keeps the latest source record', () => {
+  const nasa = SPACE_NEWS_SOURCES.find((source) => source.id === 'nasa')!;
+  const jpl = SPACE_NEWS_SOURCES.find((source) => source.id === 'jpl')!;
+  const xmlA = '<rss><item><title>تلسکوپ جیمز وب جو یک سیاره فراخورشیدی را بررسی کرد</title><link>https://www.nasa.gov/persian-story-a</link><pubDate>Sat, 14 Nov 2026 10:00:00 GMT</pubDate></item></rss>';
+  const xmlB = '<rss><item><title>تلسکوپ جیمز وب جو یک سیاره فراخورشیدی را بررسی کرد</title><link>https://www.jpl.nasa.gov/persian-story-b</link><pubDate>Sun, 15 Nov 2026 10:00:00 GMT</pubDate></item></rss>';
+  const opportunities = buildDiscoveryOpportunities(
+    [...parseRssFeed(xmlA, nasa), ...parseRssFeed(xmlB, jpl)],
+    'custom',
+    Date.parse('2026-11-16T12:00:00Z'),
+    'جیمز وب',
+  );
+  assert.equal(opportunities.length, 1);
+  assert.equal(opportunities[0].sourceCount, 2);
+  assert.equal(opportunities[0].publishedAt, '2026-11-15T10:00:00.000Z');
+  assert.equal(opportunities[0].freshness, 'fresh');
+});
+
+void test('Discovery labels undated and historical reports instead of treating them as new', () => {
+  const source = SPACE_NEWS_SOURCES.find((item) => item.id === 'nasa')!;
+  const xml = '<rss><item><title>Exoplanet atmosphere research archived report</title><link>https://www.nasa.gov/old-report</link><pubDate>Fri, 01 May 2026 12:00:00 GMT</pubDate></item><item><title>Exoplanet atmosphere report without a date</title><link>https://www.nasa.gov/undated-report</link></item></rss>';
+  const opportunities = buildDiscoveryOpportunities(
+    parseRssFeed(xml, source),
+    'exoplanets',
+    Date.parse('2026-11-16T12:00:00Z'),
+  );
+  assert.ok(opportunities.some((item) => item.labels.includes('Older Source Story')));
+  assert.ok(opportunities.some((item) => item.labels.includes('Publication Date Unavailable')));
+});

@@ -1146,3 +1146,29 @@ void test('generated research ideas use the selected UI language', () => {
   assert.match(persianIdeas[0].topic, /نمونه‌های فعلی/);
   assert.match(persianIdeas[0].concept, /نمونه‌های دریافت‌شده/);
 });
+
+
+void test('Internal engine self-evaluation reports measured inputs, deduplication and evidence gaps', () => {
+  const result = buildInternalResearch({
+    topic: 'Exoplanet atmospheres',
+    news: [
+      { title: 'New atmosphere observation', summary: 'Source report.', sourceName: 'NASA', sourceUrl: 'https://www.nasa.gov/mock-a', sourceId: 'nasa', publishedAt: '2026-11-14T12:00:00.000Z' },
+      { title: 'New atmosphere observation', summary: 'Same syndicated report.', sourceName: 'NASA JPL', sourceUrl: 'https://www.jpl.nasa.gov/mock-a', sourceId: 'jpl', publishedAt: '2026-11-14T13:00:00.000Z' },
+    ],
+    videos: [{ id: 'dQw4w9WgXcQ', title: 'MOCK sample video', channel: 'MOCK channel', publishedAt: '2026-11-13T12:00:00.000Z', viewCount: 1000, likeCount: 50 }],
+  });
+  const audit = result.intelligence.selfEvaluation;
+  assert.equal(audit.inputNewsCount, 2);
+  assert.equal(audit.uniqueNewsCount, 1);
+  assert.equal(audit.duplicateNewsMerged, 1);
+  assert.equal(audit.youtubeSampleCount, 1);
+  assert.equal(audit.wikimediaMonthlyObservations, 0);
+  assert.ok(audit.openResearchQuestionCount > 0);
+});
+
+void test('AI second opinion requests a single structured multi-pass critique without external evidence', () => {
+  const prompt = opinionPrompt('James Webb', 'Explain a verified observation.', 'Explore a beginner-friendly angle.', 'en');
+  assert.match(prompt, /silently perform four quality passes/i);
+  assert.match(prompt, /Do not reveal private reasoning/i);
+  assert.match(prompt, /Do not request, infer or analyze YouTube API data/i);
+});

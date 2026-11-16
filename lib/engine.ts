@@ -69,6 +69,20 @@ export type InternalResearchResult = {
     sharedConcepts: string[];
     potentialContradictions: string[];
     scenarios: string[];
+    selfEvaluation: {
+      inputNewsCount: number;
+      uniqueNewsCount: number;
+      topicMatchedNewsCount: number;
+      duplicateNewsMerged: number;
+      independentPublisherFamilies: number;
+      undatedNewsCount: number;
+      staleNewsCount: number;
+      youtubeSampleCount: number;
+      wikimediaMonthlyObservations: number;
+      openResearchQuestionCount: number;
+      contradictionWarningCount: number;
+      limitations: string[];
+    };
   };
 };
 
@@ -375,6 +389,20 @@ export function buildInternalResearch(input: InternalResearchInput): InternalRes
     }
     if (potentialContradictions.length >= 4) break;
   }
+  const selfEvaluation = {
+    inputNewsCount: originalNews.length,
+    uniqueNewsCount: allNews.length,
+    topicMatchedNewsCount: matchedNews.length,
+    duplicateNewsMerged: deduplicated.duplicatesMerged,
+    independentPublisherFamilies: sourceQuality.independentPublishers,
+    undatedNewsCount: sourceQuality.undatedItems,
+    staleNewsCount: sourceQuality.staleItems,
+    youtubeSampleCount: videos.length,
+    wikimediaMonthlyObservations: trend.observations,
+    openResearchQuestionCount: gaps.length + verificationQuestions.length,
+    contradictionWarningCount: potentialContradictions.length,
+    limitations: [...gaps],
+  };
   const intelligence = {
     sourceQuality,
     trend,
@@ -383,6 +411,7 @@ export function buildInternalResearch(input: InternalResearchInput): InternalRes
     followUpQueries,
     sharedConcepts,
     potentialContradictions,
+    selfEvaluation,
     scenarios: fa ? [
       'سناریوی مشروط اول: اگر جهت اخیر ادامه پیدا کند، میزان توجه ممکن است نزدیک محدوده فعلی بماند؛ این پیش‌بینی قطعی نیست.',
       'سناریوی مشروط دوم: اگر فعالیت به میانگین قبلی برگردد، تغییر اخیر ممکن است پایدار نماند.',

@@ -13,6 +13,7 @@ import { MediaPreview } from '@/components/MediaPreview';
 import { ResearchKnowledgeGraph } from '@/components/ResearchKnowledgeGraph';
 import { getTopicDossier, rememberTopicDossier } from '@/lib/topic-dossier';
 import { generateEditorialIdeas } from '@/lib/idea-generation';
+import { createResearchMemoryEntry } from '@/lib/research-memory';
 import { searchYouTubeSample, type YouTubeSampleVideo } from '@/lib/api';
 import {
   SPACE_NICHES, fetchSpaceNews, newsForNiche, getWikipediaSignal, buildResearchOutline,
@@ -147,21 +148,36 @@ export default function DeepResearch() {
       news: selectedNews.length ? selectedNews : cachedDossier?.news ?? [],
       wiki, videos, videoCriteria, internalAnalysis,
     });
-    const memoryEntry = {
+    // Long-lived memory is deliberately built from official publisher RSS only.
+    // YouTube and Wikimedia evidence stays in its short-lived/ephemeral domains.
+    const memoryAnalysis = buildInternalResearch({
       topic: query,
-      updatedAt: Date.now(),
-      sources: selectedNews.slice(0, 12).map((item) => ({
-        sourceId: item.sourceId?.slice(0, 80),
-        sourceName: item.sourceName.slice(0, 160),
-        title: item.title.slice(0, 500),
+      news: selectedNews.map((item) => ({
+        title: item.title,
+        summary: item.summary,
+        sourceName: item.sourceName,
         sourceUrl: item.url,
         publishedAt: item.publishedAt,
+        sourceId: item.sourceId,
       })),
-      keyFindings: internalAnalysis.evidence.map((item) => item.detail.slice(0, 2000)).slice(0, 8),
-      unresolvedQuestions: [...internalAnalysis.intelligence.gaps, ...internalAnalysis.verificationQuestions].map((item) => item.slice(0, 500)).slice(0, 12),
-      contradictions: internalAnalysis.intelligence.potentialContradictions.map((item) => item.slice(0, 500)).slice(0, 8),
-      confidence: internalAnalysis.intelligence.confidence.level,
-    };
+      feedback,
+      priorMemory,
+      language: preferences.uiLanguage ?? 'fa',
+    });
+    const memoryEntry = createResearchMemoryEntry({
+      topic: query,
+      news: selectedNews,
+      analysis: memoryAnalysis,
+      previous: priorMemory,
+      now: Date.now(),
+      language: preferences.uiLanguage ?? 'fa',
+    });
+    if (memoryEntry && priorMemory) {
+      const latestSnapshot = memoryEntry.history?.[0];
+      if (latestSnapshot?.capturedAt === memoryEntry.updatedAt && latestSnapshot.changes.length) {
+        warnings.push(latestSnapshot.changes.join(' '));
+      }
+    }
     const generatedIdeas = generateEditorialIdeas({
       topic: query,
       news: selectedNews,
@@ -180,10 +196,12 @@ export default function DeepResearch() {
     await useScout.getState().commit((data) => ({
       ...data,
       ideas: [...generatedIdeas, ...data.ideas],
-      researchMemory: [
-        memoryEntry,
-        ...data.researchMemory.filter((entry) => normalizeResearchText(entry.topic) !== normalizeResearchText(query)),
-      ].slice(0, 40),
+      researchMemory: memoryEntry
+        ? [
+            memoryEntry,
+            ...data.researchMemory.filter((entry) => normalizeResearchText(entry.topic) !== normalizeResearchText(query)),
+          ].slice(0, 40)
+        : data.researchMemory,
     }));
     setBrief({
       topic: query,

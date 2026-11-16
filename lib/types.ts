@@ -150,6 +150,18 @@ export type Preferences = {
   customSpaceNiche: string;
 };
 export type Budget = { date: string; units: number; requests: number; exhausted: boolean };
+export type ResearchMemorySnapshot = {
+  capturedAt: number;
+  sourceFingerprint: string;
+  sourceCount: number;
+  newSourceCount: number;
+  updatedSourceCount: number;
+  keyFindings: string[];
+  unresolvedQuestions: string[];
+  contradictions: string[];
+  confidence: 'low' | 'moderate' | 'high';
+  changes: string[];
+};
 export type ResearchMemoryEntry = {
   topic: string;
   updatedAt: number;
@@ -158,6 +170,8 @@ export type ResearchMemoryEntry = {
   unresolvedQuestions: string[];
   contradictions: string[];
   confidence: 'low' | 'moderate' | 'high';
+  /** Bounded, versioned snapshots. Legacy entries without history remain valid. */
+  history?: ResearchMemorySnapshot[];
 };
 export type LocalData = {
   researchMemory: ResearchMemoryEntry[];
@@ -212,7 +226,12 @@ export function purgeExpired(data: LocalData, now = Date.now()): LocalData {
   const retainedIds = new Set([...videos.map((v) => v.id), ...data.links.map((l) => l.id)]);
   return {
     ...data,
-    researchMemory: [...data.researchMemory].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 40),
+    researchMemory: [...data.researchMemory]
+      .map((entry) => entry.history && entry.history.length > 8
+        ? { ...entry, history: entry.history.slice(0, 8) }
+        : entry)
+      .sort((a, b) => b.updatedAt - a.updatedAt)
+      .slice(0, 40),
     videos,
     reports,
     ideas: data.ideas.map((idea) => {

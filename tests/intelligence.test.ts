@@ -4,6 +4,7 @@ import { resolveTextDirection } from '../lib/i18n';
 import {
   analyzeMonthlyViews,
   analyzeSourceQuality,
+  classifyPublicationFreshness,
   canonicalizeResearchUrl,
   deduplicateResearchEvidence,
   matchesResearchTerms,
@@ -119,3 +120,13 @@ void test('semantic aliases cover precise Persian space-science equivalents', ()
   assert.equal(scoreResearchText('سیاهچاله', 'Artemis lunar mission update'), 0);
 });
 
+
+
+void test('publication freshness distinguishes recent, old, undated and future-dated reports', () => {
+  const now = Date.parse('2026-11-16T12:00:00Z');
+  assert.equal(classifyPublicationFreshness('2026-11-15T12:00:00Z', now).status, 'fresh');
+  assert.equal(classifyPublicationFreshness('2026-11-01T12:00:00Z', now).status, 'recent');
+  assert.equal(classifyPublicationFreshness('2026-08-01T12:00:00Z', now).status, 'stale');
+  assert.equal(classifyPublicationFreshness(null, now).status, 'undated');
+  assert.equal(classifyPublicationFreshness('2026-11-20T12:00:00Z', now).status, 'future-dated');
+});

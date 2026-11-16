@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { requestJson, type Fetcher } from './api';
-import { matchesResearchTerms } from './intelligence';
+import { classifyPublicationFreshness, deduplicateResearchEvidence, matchesResearchTerms } from './intelligence';
 
 export type SpaceNewsSourceId = 'nasa' | 'jpl' | 'esa-space' | 'esa-science';
 export type WikiLanguage = 'en' | 'fa' | 'de' | 'fr' | 'es' | 'ja';
@@ -321,6 +321,7 @@ export type DiscoveryOpportunity = {
   imageUrl?: string;
   labels: string[];
   reason: string;
+  freshness: 'fresh' | 'recent' | 'stale' | 'undated' | 'future-dated';
 };
 
 /** Build source-backed opportunities only; no YouTube API is called here. */
@@ -331,48 +332,59 @@ export function buildDiscoveryOpportunities(
   customNiche = '',
 ): DiscoveryOpportunity[] {
   const relevant = newsForNiche(items, nicheId, customNiche);
-  const groups = new Map<string, SpaceNewsItem[]>();
-  for (const item of relevant) {
-    const normalized = item.title.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
-    const key = normalized || item.id;
-    const group = groups.get(key) ?? [];
-    group.push(item);
-    groups.set(key, group);
-  }
-  return [...groups.entries()].map(([key, group]) => {
-    const ordered = [...group].sort((a, b) => {
-      if (!a.publishedAt) return 1;
-      if (!b.publishedAt) return -1;
-      return Date.parse(b.publishedAt) - Date.parse(a.publishedAt);
-    });
-    const latest = ordered[0];
-    const sources = [...new Set(group.map((item) => item.sourceId))];
-    const age = latest.publishedAt ? now - Date.parse(latest.publishedAt) : Number.POSITIVE_INFINITY;
-    const recent = age >= 0 && age <= 7 * 24 * 60 * 60 * 1000;
+  const dateValue = (value: string | null) => {
+    const parsed = value ? Date.parse(value) : Number.NaN;
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+  const newestFirst = [...relevant].sort((a, b) => dateValue(b.publishedAt) - dateValue(a.publishedAt));
+  const deduplicated = deduplicateResearchEvidence(newestFirst.map((item) => ({
+    ...item,
+    sourceUrl: item.url,
+  })));
+  const freshnessOrder = { fresh: 0, recent: 1, stale: 2, undated: 3, 'future-dated': 4 } as const;
+  return deduplicated.items.map((latest) => {
+    const sources = [...new Set(latest.sourceIds?.length ? latest.sourceIds : [latest.sourceId])];
+    const sourceCount = Math.max(1, sources.length, latest.sourceCount ?? 0);
+    const freshness = classifyPublicationFreshness(latest.publishedAt, now);
     const labels = ['New Source Story'];
-    if (recent) labels.push('Recently Reported');
-    if (sources.length > 1) labels.push('Multiple Source Coverage');
-    const sourceName = [...new Set(group.map((item) => item.sourceName))].join(' · ');
-    let reason = 'A report from ' + latest.sourceName + ' matches your selected niche. Check its date and validate audience interest before prioritizing it.';
-    if (recent) reason = 'A recent report from ' + latest.sourceName + ' matches your selected niche. Audience demand and YouTube competition have not yet been checked.';
-    if (sources.length > 1) reason = 'Matching reports appeared in ' + sources.length + ' selected official feeds. This is source coverage, not proof of audience demand.';
+    if (freshness.status === 'fresh') labels.push('Recently Reported');
+    else if (freshness.status === 'recent') labels.push('Reported Within 30 Days');
+    else if (freshness.status === 'stale') labels.push('Older Source Story');
+    else if (freshness.status === 'undated') labels.push('Publication Date Unavailable');
+    else labels.push('Date Needs Verification');
+    if (sourceCount > 1) labels.push('Multiple Source Coverage');
+    const sourceName = latest.sourceName || latest.sourceId;
+    let reason = 'A report from ' + sourceName + ' matches your selected niche. Check its date and verify the original claim before prioritizing it.';
+    if (freshness.status === 'fresh' || freshness.status === 'recent') {
+      reason = 'A recently published report from ' + sourceName + ' matches your selected niche. Audience demand and YouTube competition have not been checked.';
+    } else if (freshness.status === 'stale') {
+      reason = 'This older report from ' + sourceName + ' may provide historical context; check for newer developments before prioritizing it.';
+    } else if (freshness.status === 'undated') {
+      reason = 'A report from ' + sourceName + ' matches your selected niche, but its publication date is unavailable or invalid.';
+    } else if (freshness.status === 'future-dated') {
+      reason = 'The reported publication date is in the future; verify the publisher page before treating this item as current.';
+    }
+    if (sourceCount > 1) {
+      reason = 'Matching reports appeared in ' + sourceCount + ' selected official feeds. This is feed coverage, not proof of independent verification or audience demand.';
+    }
     return {
-      id: latest.id || key,
+      id: latest.id,
       topic: latest.title,
       summary: latest.summary,
       publishedAt: latest.publishedAt,
       sourceName,
-      sourceCount: sources.length,
+      sourceCount,
       sourceUrl: latest.url,
-      imageUrl: ordered.find((item) => item.imageUrl)?.imageUrl,
+      imageUrl: latest.imageUrl,
       labels,
       reason,
+      freshness: freshness.status,
     };
-  }).sort((a, b) => {
-    if (!a.publishedAt) return 1;
-    if (!b.publishedAt) return -1;
-    return Date.parse(b.publishedAt) - Date.parse(a.publishedAt);
-  }).slice(0, 40);
+  }).sort((a, b) =>
+    freshnessOrder[a.freshness] - freshnessOrder[b.freshness] ||
+    b.sourceCount - a.sourceCount ||
+    dateValue(b.publishedAt) - dateValue(a.publishedAt),
+  ).slice(0, 40);
 }
 
 const wikiSearchSchema = z.object({ query: z.object({ search: z.array(z.object({ title: z.string() })) }) });

@@ -400,3 +400,25 @@ export function buildResearchInterestProfile(
     .map((idea) => idea.topic);
   return { positiveTopics, negativeTopics };
 }
+
+
+export type PublicationFreshness = {
+  status: 'fresh' | 'recent' | 'stale' | 'undated' | 'future-dated';
+  ageDays: number | null;
+};
+
+/** Publication age is a transparent label, never a proxy for factual validity. */
+export function classifyPublicationFreshness(
+  publishedAt: string | null | undefined,
+  now = Date.now(),
+): PublicationFreshness {
+  if (!publishedAt) return { status: 'undated', ageDays: null };
+  const published = Date.parse(publishedAt);
+  if (!Number.isFinite(published)) return { status: 'undated', ageDays: null };
+  const delta = now - published;
+  if (delta < -24 * 60 * 60 * 1000) return { status: 'future-dated', ageDays: null };
+  const ageDays = Math.max(0, delta / (24 * 60 * 60 * 1000));
+  if (ageDays <= 7) return { status: 'fresh', ageDays };
+  if (ageDays <= 30) return { status: 'recent', ageDays };
+  return { status: 'stale', ageDays };
+}
