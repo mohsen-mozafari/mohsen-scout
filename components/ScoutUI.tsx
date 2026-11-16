@@ -1,5 +1,5 @@
 import { type ReactNode, useState } from 'react';
-import { resolveNodeDirection, resolveTextDirection, translateNode, translateText } from '@/lib/i18n';
+import { resolveNodeDirection, translateNode, translateText } from '@/lib/i18n';
 import { View, Text, ScrollView, KeyboardAvoidingView, Platform, StyleSheet } from 'react-native';
 import { Button, Input, Label, TextField, TextArea } from 'heroui-native';
 import { Search, CircleAlert, ChevronDown, ChevronUp, type LucideIcon } from 'lucide-react-native';
