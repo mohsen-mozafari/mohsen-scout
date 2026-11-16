@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Linking, View, Text } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { Page, Panel, Heading, Txt, Field, Action, Choices, styles, ErrorBox, useOperation } from '@/components/ScoutUI';
@@ -6,6 +6,7 @@ import { useScout } from '@/lib/store';
 import { searchYouTubeSample, type YouTubeSampleVideo } from '@/lib/api';
 import { getKey } from '@/lib/vault';
 import { MediaPreview } from '@/components/MediaPreview';
+import { rememberTopicDossier } from '@/lib/topic-dossier';
 
 const formatCount = (value: number | null, label: string) => value === null ? label + ' unavailable' : value.toLocaleString() + ' ' + label;
 
@@ -20,12 +21,21 @@ export default function TrendIntelligence() {
   const [sort, setSort] = useState('Most Views');
   const [nextPageToken, setNextPageToken] = useState('');
   const [activeSearch, setActiveSearch] = useState<{ topic: string; days: 0 | 7 | 30 | 90; sort: string }>();
+  const searchGeneration = useRef(0);
   const op = useOperation();
+  const resetSample = () => {
+    searchGeneration.current += 1;
+    setVideos([]);
+    setNextPageToken('');
+    setActiveSearch(undefined);
+    setWarning('');
+  };
   const executeSample = async (
     search: { topic: string; days: 0 | 7 | 30 | 90; sort: string },
     pageToken = '',
     append = false,
   ) => {
+    const generation = searchGeneration.current;
     const key = await getKey('youtube');
     if (!key) throw new Error('Save your personal YouTube Data API key in Settings before running a YouTube sample.');
     const result = await searchYouTubeSample(search.topic, {
@@ -39,9 +49,20 @@ export default function TrendIntelligence() {
       language: preferences.languages[0],
       ...(pageToken ? { pageToken } : {}),
     });
-    setVideos((current) => append
-      ? [...current, ...result.videos.filter((video) => !current.some((item) => item.id === video.id))]
-      : result.videos);
+    if (generation !== searchGeneration.current) return;
+    const combinedVideos = append
+      ? [...videos, ...result.videos.filter((video) => !videos.some((item) => item.id === video.id))]
+      : result.videos;
+    rememberTopicDossier(search.topic, {
+      videos: combinedVideos,
+      videoCriteria: {
+        days: search.days,
+        region: preferences.region,
+        language: preferences.languages[0] ?? '',
+        order: search.sort === 'Newest' ? 'date' : search.sort === 'Most Likes' ? 'relevance' : 'viewCount',
+      },
+    });
+    setVideos(combinedVideos);
     setNextPageToken(result.nextPageToken ?? '');
     setWarning(result.warning);
     setActiveSearch(search);
@@ -54,10 +75,7 @@ export default function TrendIntelligence() {
       sort,
     };
     if (!search.topic) throw new Error('Enter a topic before sampling YouTube.');
-    setVideos([]);
-    setNextPageToken('');
-    setActiveSearch(undefined);
-    setWarning('');
+    resetSample();
     await executeSample(search);
   }, 'YouTube sample refreshed.');
   const loadMore = () => {
@@ -80,7 +98,7 @@ export default function TrendIntelligence() {
       <Txt muted>Measure YouTube separately from search interest and publisher news. This view uses the official YouTube Data API, not scraping.</Txt>
       {linkedIdea ? <Txt muted>Research context: {linkedIdea.topic}. Only video links you explicitly save below become durable personal references.</Txt> : null}
       <Panel>
-        <Field label="Space topic" value={topic} onChange={(value) => { setTopic(value); setNextPageToken(''); }} placeholder="e.g. exoplanet atmosphere discoveries" />
+        <Field label="Space topic" value={topic} onChange={(value) => { setTopic(value); resetSample(); }} placeholder="e.g. exoplanet atmosphere discoveries" />
         <Choices
           label="Publication period"
           options={['Last 7 days', 'Last 30 days', 'Last 90 days', 'All time']}
@@ -88,17 +106,17 @@ export default function TrendIntelligence() {
           onChange={(values) => {
             const value = values[0];
             setDays(value === 'Last 7 days' ? '7' : value === 'Last 90 days' ? '90' : value === 'All time' ? '0' : '30');
-            setNextPageToken('');
+            resetSample();
           }}
         />
         <Choices
           label="Sort sample by"
           options={['Newest', 'Most Views', 'Most Likes']}
           selected={[sort]}
-          onChange={(values) => { setSort(values[0]); setNextPageToken(''); }}
+          onChange={(values) => { setSort(values[0]); resetSample(); }}
         />
         <Action busy={op.busy} disabled={!topic.trim()} onPress={run}>Sample YouTube videos</Action>
-        <Txt muted>Each page uses one official search request plus batched video and channel statistics (about 102 quota units). Most Likes starts with a relevance-first sample, then sorts raw like counts locally; YouTube does not provide a global like-count order.</Txt>
+        <Txt muted>{sort === 'Most Likes' ? 'Each page samples two discovery pools (relevance and view-count order), then ranks only returned videos by actual public like counts. Estimate: about 202 quota units per page. This is not a global like-count ranking.' : 'Each page uses one official search request plus batched video and channel statistics (about 102 quota units). Newest sorts the returned sample by publication timestamp; Most Views sorts by actual public view counts.'}</Txt>
         <Txt muted>Use Load next 50 to expand the same search. This remains a bounded sample, not a complete market ranking; nothing loads automatically in the background.</Txt>
       </Panel>
       {Boolean(warning) && <Txt muted>{warning}</Txt>}

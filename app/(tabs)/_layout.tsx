@@ -3,9 +3,12 @@ import { Tabs } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as Haptics from 'expo-haptics';
 import { palette as p } from '@/lib/theme';
+import { useScout } from '@/lib/store';
+import { translateText } from '@/lib/i18n';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 export default function TabLayout() {
   const insets = useSafeAreaInsets();
+  const language = useScout((state) => state.data.preferences.uiLanguage ?? 'fa');
   return (
     <>
       {/* eslint-disable-next-line react/style-prop-object -- Expo StatusBar uses a string style enum, not a React Native style object. */}
@@ -16,8 +19,9 @@ export default function TabLayout() {
           headerTintColor: p.text,
           headerTitleStyle: { fontFamily: 'Inter_600SemiBold', fontSize: 15 },
           headerShadowVisible: false,
-          sceneStyle: { backgroundColor: p.background },
+          sceneStyle: { backgroundColor: p.background, direction: language === 'fa' ? 'rtl' : 'ltr' },
           tabBarStyle: {
+            direction: language === 'fa' ? 'rtl' : 'ltr',
             backgroundColor: p.background,
             borderTopColor: p.border,
             shadowColor: p.background,
@@ -42,38 +46,38 @@ export default function TabLayout() {
         <Tabs.Screen
           name="index"
           options={{
-            title: 'MOHSEN SCOUT',
-            tabBarLabel: 'Space Radar',
+            title: translateText('MOHSEN SCOUT', language),
+            tabBarLabel: translateText('Space Radar', language),
             tabBarIcon: ({ color }) => <Compass size={22} strokeWidth={1.8} color={color} />,
           }}
         />
         <Tabs.Screen
           name="opportunities"
           options={{
-            title: 'Opportunities',
-            tabBarLabel: 'Ideas',
+            title: translateText('Opportunities', language),
+            tabBarLabel: translateText('Ideas', language),
             tabBarIcon: ({ color }) => <Telescope size={22} strokeWidth={1.8} color={color} />,
           }}
         />
         <Tabs.Screen
           name="library"
           options={{
-            title: 'My Library',
-            tabBarLabel: 'Library',
+            title: translateText('My Library', language),
+            tabBarLabel: translateText('Library', language),
             tabBarIcon: ({ color }) => <Library size={22} strokeWidth={1.8} color={color} />,
           }}
         />
         <Tabs.Screen
           name="notes"
           options={{
-            title: 'Notes',
+            title: translateText('Notes', language),
             tabBarIcon: ({ color }) => <NotebookPen size={22} strokeWidth={1.8} color={color} />,
           }}
         />
         <Tabs.Screen
           name="settings"
           options={{
-            title: 'Settings',
+            title: translateText('Settings', language),
             tabBarIcon: ({ color }) => <Settings size={22} strokeWidth={1.8} color={color} />,
           }}
         />

@@ -26,6 +26,7 @@ const video = z.object({
 });
 const schema = z.object({
   preferences: z.object({
+    uiLanguage: z.enum(['fa', 'en']).optional().default('fa'),
     name: text,
     email: text,
     region: z.enum(regions),

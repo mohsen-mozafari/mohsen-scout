@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Linking, Text, View } from 'react-native';
 import { Button } from 'heroui-native';
 import { router } from 'expo-router';
@@ -17,6 +17,7 @@ import {
 } from '@/lib/space';
 import { MediaPreview } from '@/components/MediaPreview';
 import { buildInternalResearch, type InternalResearchResult } from '@/lib/engine';
+import { rememberTopicDossier } from '@/lib/topic-dossier';
 
 export default function DiscoveryDashboard() {
   const ready = useScout((state) => state.ready);
@@ -51,40 +52,35 @@ function DiscoveryDashboardReady() {
     : preferences.selectedSpaceNiche === 'custom'
       ? preferences.customSpaceNiche
       : niche?.topic ?? 'Space science and exploration';
-  const applyScan = (result: Awaited<ReturnType<typeof fetchSpaceNews>>) => {
-    setOpportunities(buildDiscoveryOpportunities(result.items, preferences.selectedSpaceNiche, Date.now(), preferences.customSpaceNiche));
-    setWarnings(result.warnings);
-    setLastScannedAt(Date.now());
-    setNicheSuggestions(buildNicheSuggestions(result.items, 6));
-    setRadarBrief(result.items.length ? buildInternalResearch({
+  const applyScan = useCallback((result: Awaited<ReturnType<typeof fetchSpaceNews>>) => {
+    const nextOpportunities = buildDiscoveryOpportunities(result.items, preferences.selectedSpaceNiche, Date.now(), preferences.customSpaceNiche);
+    const nextRadarBrief = result.items.length ? buildInternalResearch({
       topic: discoveryTopic,
       news: result.items.slice(0, 12).map((item) => ({
         title: item.title, summary: item.summary, sourceName: item.sourceName,
         sourceUrl: item.url, publishedAt: item.publishedAt, sourceId: item.sourceId,
       })),
-    }) : undefined);
-  };
+    }) : undefined;
+    rememberTopicDossier(discoveryTopic, { news: result.items, internalAnalysis: nextRadarBrief });
+    for (const opportunity of nextOpportunities) {
+      const matchingNews = result.items.filter((item) => item.url === opportunity.sourceUrl || item.title === opportunity.topic);
+      if (matchingNews.length) rememberTopicDossier(opportunity.topic, { news: matchingNews });
+    }
+    setOpportunities(nextOpportunities);
+    setWarnings(result.warnings);
+    setLastScannedAt(Date.now());
+    setNicheSuggestions(buildNicheSuggestions(result.items, 6));
+    setRadarBrief(nextRadarBrief);
+  }, [preferences.selectedSpaceNiche, preferences.customSpaceNiche, discoveryTopic]);
   useEffect(() => {
     let active = true;
     void fetchSpaceNews(preferences.spaceNewsSources).then((result) => {
-      if (!active) return;
-      setOpportunities(buildDiscoveryOpportunities(result.items, preferences.selectedSpaceNiche, Date.now(), preferences.customSpaceNiche));
-      setWarnings(result.warnings);
-      setLastScannedAt(Date.now());
-      setNicheSuggestions(buildNicheSuggestions(result.items, 6));
-      setRadarBrief(result.items.length ? buildInternalResearch({
-        topic: discoveryTopic,
-        news: result.items.slice(0, 12).map((item) => ({
-          title: item.title, summary: item.summary, sourceName: item.sourceName,
-          sourceUrl: item.url, publishedAt: item.publishedAt, sourceId: item.sourceId,
-        })),
-      }) : undefined);
+      if (active) applyScan(result);
     }).catch(() => {
       if (active) setWarnings(['Official news feeds could not be reached. Check the network and retry.']);
-    }).finally(() => {
     });
     return () => { active = false; };
-  }, [preferences.spaceNewsSources, preferences.selectedSpaceNiche, preferences.customSpaceNiche, discoveryTopic]);
+  }, [preferences.spaceNewsSources, applyScan]);
   const discover = () => void op.run(async () => {
     const result = await fetchSpaceNews(preferences.spaceNewsSources, fetch, true);
     applyScan(result);
@@ -126,6 +122,7 @@ function DiscoveryDashboardReady() {
         sourceCount: opportunity.sourceCount,
       }],
     });
+    rememberTopicDossier(opportunity.topic, { internalAnalysis: result });
     setAnalyses((current) => ({ ...current, [opportunity.id]: result }));
   };
 

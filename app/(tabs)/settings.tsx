@@ -26,6 +26,7 @@ import { configureSchedule, enableNotifications, scheduleNotice } from '@/lib/sc
 import { commitWithSchedule } from '@/lib/schedule';
 import { router } from 'expo-router';
 import { palette as p } from '@/lib/theme';
+import { translateText } from '@/lib/i18n';
 import { SPACE_NICHES, SPACE_NEWS_SOURCES, type WikiLanguage } from '@/lib/space';
 function CredentialSection({ kind, label }: { kind: Credential; label: string }) {
   const [key, setValue] = useState('');
@@ -59,9 +60,9 @@ function CredentialSection({ kind, label }: { kind: Credential; label: string })
       <View style={{ gap: 8 }}>
         <View style={styles.row}>
           <KeyRound size={18} color={p.purple} />
-          <Text style={[styles.heading, { flex: 1 }]}>{label}</Text>
+          <Text style={[styles.heading, { flex: 1 }]}>{translateText(label, useScout.getState().data.preferences.uiLanguage ?? "fa")}</Text>
         </View>
-        <Text style={styles.badge}>{stored ? '•••• Saved' : 'Not set'}</Text>
+        <Text style={styles.badge}>{stored ? '•••• ' + translateText('Saved', useScout.getState().data.preferences.uiLanguage ?? 'fa') : translateText('Not set', useScout.getState().data.preferences.uiLanguage ?? 'fa')}</Text>
       </View>
       <Field
         label={stored ? 'Replace key' : 'API key'}
@@ -173,6 +174,12 @@ export default function Settings() {
           label="Name (optional)"
           value={prefs.name}
           onChange={(name) => setPrefs({ ...prefs, name })}
+        />
+        <Choices
+          label="App language"
+          options={["Persian", "English"]}
+          selected={[prefs.uiLanguage === "en" ? "English" : "Persian"]}
+          onChange={(values) => setPrefs({ ...prefs, uiLanguage: values[0] === "English" ? "en" : "fa" })}
         />
         <Field
           label="Email (optional, stays local)"
@@ -506,7 +513,7 @@ export default function Settings() {
       </Fold>
       <Fold title="App info">
         <Heading>MOHSEN SCOUT</Heading>
-        <Txt>Version 1.3.0 · Personal research assistant</Txt>
+        <Txt>Version 1.3.2 · Personal research assistant</Txt>
         <Txt muted>
           YouTube is a trademark of Google LLC. This app is not affiliated with YouTube. No
           comprehensive trend coverage or guaranteed results.

@@ -7,8 +7,10 @@ import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 import { Page, styles, Field, Choices, Action, Empty, Txt } from '@/components/ScoutUI';
 import { useScout } from '@/lib/store';
 import { palette as p } from '@/lib/theme';
+import { translateText } from '@/lib/i18n';
 export default function Notes() {
   const notes = useScout((s) => s.data.notes);
+  const language = useScout((s) => s.data.preferences.uiLanguage ?? 'fa');
   const [search, setSearch] = useState('');
   const [folder, setFolder] = useState('All');
   const [tag, setTag] = useState('All tags');
@@ -31,7 +33,7 @@ export default function Notes() {
         keyboardShouldPersistTaps="handled"
         ListHeaderComponent={
           <View style={{ gap: 18, marginBottom: 24 }}>
-            <Text style={styles.title}>Room to think.</Text>
+            <Text style={styles.title}>{translateText("Room to think.", language)}</Text>
             <Field label="Search pages" value={search} onChange={setSearch} />
             <Choices
               label="Folders"
@@ -59,13 +61,13 @@ export default function Notes() {
             <Button
               variant="tertiary"
               onPress={() => router.push({ pathname: '/note', params: { id: item.id } })}
-              className="h-auto justify-start px-0"
+              className="h-auto min-w-0 justify-start rounded-2xl px-4 py-3"
             >
-              <View style={{ flex: 1, gap: 8 }}>
+              <View style={{ flex: 1, minWidth: 0, gap: 8 }}>
                 <Text style={styles.heading}>{item.title}</Text>
                 <Txt muted>
-                  {item.folder || 'Unfiled'} ·{' '}
-                  {new Date(item.updatedAt).toLocaleDateString('en-US')}
+                  {translateText(item.folder || 'Unfiled', language)} ·{' '}
+                  {new Date(item.updatedAt).toLocaleDateString(language === 'fa' ? 'fa-IR' : 'en-US')}
                 </Txt>
               </View>
               <ArrowUpRight size={18} color={p.purple} />

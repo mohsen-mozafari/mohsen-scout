@@ -29,6 +29,8 @@ import {
   type Fetcher,
 } from '../lib/api';
 import { buildIdeas, buildInternalResearch, createManualIdea, rankNewsForTopic, topicRelevanceScore } from '../lib/engine';
+import { translateText } from '../lib/i18n';
+import { getTopicDossier, rememberTopicDossier, TOPIC_DOSSIER_TTL_MS } from '../lib/topic-dossier';
 const input: ResearchInput = {
   topic: 'Small-space home studios',
   region: 'Iran',
@@ -77,6 +79,7 @@ void test('Migration: older saved preferences receive safe Space defaults', () =
   assert.equal(migrated.preferences.selectedSpaceNiche, 'all');
   assert.equal(migrated.preferences.customSpaceNiche, '');
   assert.equal(migrated.preferences.defaultResearchDays, 30);
+  assert.equal(migrated.preferences.uiLanguage, 'fa');
 });
 void test('YouTube trend sample uses official search and video statistics endpoints with bounded quota', async () => {
   let charges = 0;
@@ -156,6 +159,176 @@ void test('YouTube sample forwards the supplied next-page token and returns the 
   }, 25, { pageToken: 'existing-page-token' });
   assert.equal(seenToken, 'existing-page-token');
   assert.equal(result.nextPageToken, 'next-page-token');
+});
+
+void test('YouTube likes sample merges relevance and view-count pools and uses actual public counts', async () => {
+  let charges = 0;
+  const orders: string[] = [];
+  const result = await searchYouTubeSample('Mars discoveries', {
+    key: 'MOCK_LIKES_KEY',
+    charge: async (units) => { charges += units; },
+    fetcher: async (url) => {
+      const parsed = new URL(typeof url === 'string' ? url : url instanceof URL ? url.href : url.url);
+      if (parsed.pathname.endsWith('/search')) {
+        const order = parsed.searchParams.get('order') ?? '';
+        orders.push(order);
+        assert.equal(parsed.searchParams.get('maxResults'), '25');
+        const ids = order === 'relevance'
+          ? ['dQw4w9WgXcQ', 'M7lc1UVf-VE']
+          : ['M7lc1UVf-VE', 'VYOjWnS4cMY'];
+        return response({
+          nextPageToken: order === 'relevance' ? 'rel-next' : 'views-next',
+          items: ids.map((id) => ({
+            id: { videoId: id },
+            snippet: {
+              title: 'MOCK: ' + id,
+              description: 'MOCK description',
+              channelTitle: 'MOCK channel',
+              channelId: 'UCmockchannel',
+              publishedAt: '2026-11-10T12:00:00Z',
+              thumbnails: { high: { url: 'https://example.com/' + id + '.jpg' } },
+            },
+          })),
+        });
+      }
+      if (parsed.pathname.endsWith('/videos')) {
+        const id = parsed.searchParams.get('id') ?? '';
+        assert.equal(id.split(',').length, 3);
+        return response({ items: [
+          { id: 'dQw4w9WgXcQ', statistics: { viewCount: '1000', likeCount: '25' } },
+          { id: 'M7lc1UVf-VE', statistics: { viewCount: '2000', likeCount: '90' } },
+          { id: 'VYOjWnS4cMY', statistics: { viewCount: '3000', likeCount: '60' } },
+        ] });
+      }
+      if (parsed.pathname.endsWith('/channels')) return response({ items: [{ id: 'UCmockchannel', statistics: { subscriberCount: '5000', videoCount: '80' } }] });
+      throw new Error('Unexpected endpoint: ' + parsed.pathname);
+    },
+  }, 50, { order: 'relevance', days: 0 });
+  assert.deepEqual(orders, ['relevance', 'viewCount']);
+  assert.equal(result.videos.length, 3);
+  assert.equal(result.videos.find((item) => item.id === 'M7lc1UVf-VE')?.likeCount, 90);
+  assert.equal(result.videos.find((item) => item.id === 'VYOjWnS4cMY')?.viewCount, 3000);
+  assert.equal(charges, 202);
+  assert.match(result.nextPageToken ?? '', /^mohsen-scout-likes-v1:/);
+  assert.match(result.warning, /not a global like-count ranking/i);
+});
+
+void test('YouTube likes cursor advances both discovery pools independently', async () => {
+  let searchNumber = 0;
+  const seen: { order: string; token: string }[] = [];
+  const mockVideo = (id: string) => ({
+    id: { videoId: id },
+    snippet: {
+      title: 'MOCK cursor video',
+      description: '',
+      channelTitle: 'MOCK channel',
+      channelId: 'UCmockchannel',
+      publishedAt: '2026-11-10T12:00:00Z',
+      thumbnails: {},
+    },
+  });
+  const options = {
+    key: 'MOCK_CURSOR_KEY',
+    charge: async () => {},
+    fetcher: async (url: string | URL | Request) => {
+      const parsed = new URL(typeof url === 'string' ? url : url instanceof URL ? url.href : url.url);
+      if (parsed.pathname.endsWith('/search')) {
+        searchNumber++;
+        const order = parsed.searchParams.get('order') ?? '';
+        const token = parsed.searchParams.get('pageToken') ?? '';
+        seen.push({ order, token });
+        if (searchNumber === 1) return response({ nextPageToken: 'rel-next', items: [mockVideo('dQw4w9WgXcQ')] });
+        if (searchNumber === 2) return response({ nextPageToken: 'views-next', items: [mockVideo('M7lc1UVf-VE')] });
+        if (searchNumber === 3) {
+          assert.equal(token, 'rel-next');
+          return response({ items: [mockVideo('VYOjWnS4cMY')] });
+        }
+        assert.equal(token, 'views-next');
+        return response({ nextPageToken: 'views-next-2', items: [mockVideo('3JZ_D3ELwOQ')] });
+      }
+      if (parsed.pathname.endsWith('/videos')) return response({ items: [] });
+      if (parsed.pathname.endsWith('/channels')) return response({ items: [] });
+      throw new Error('Unexpected endpoint: ' + parsed.pathname);
+    },
+  };
+  const first = await searchYouTubeSample('JWST', options, 20, { order: 'relevance', days: 0 });
+  assert.ok(first.nextPageToken);
+  const second = await searchYouTubeSample('JWST', options, 20, { order: 'relevance', days: 0, pageToken: first.nextPageToken });
+  assert.deepEqual(seen, [
+    { order: 'relevance', token: '' },
+    { order: 'viewCount', token: '' },
+    { order: 'relevance', token: 'rel-next' },
+    { order: 'viewCount', token: 'views-next' },
+  ]);
+  assert.ok(second.nextPageToken);
+});
+
+void test('YouTube likes sample rejects a malformed versioned cursor before making requests', async () => {
+  let calls = 0;
+  await assert.rejects(
+    () => searchYouTubeSample('Mars', {
+      key: 'MOCK_BAD_CURSOR',
+      charge: async () => {},
+      fetcher: async () => { calls++; return response({ items: [] }); },
+    }, 10, { order: 'relevance', pageToken: 'mohsen-scout-likes-v1:not%valid' }),
+    (error) => error instanceof ApiError && error.code === 'invalid',
+  );
+  assert.equal(calls, 0);
+});
+
+void test('Topic dossier merges local evidence, normalizes topic keys and expires stale samples', () => {
+  const now = Date.now();
+  const news = [{
+    id: 'nasa:https://example.com/mars',
+    sourceId: 'nasa' as const,
+    sourceName: 'NASA',
+    title: 'MOCK: Mars sample return',
+    summary: 'MOCK source evidence',
+    url: 'https://example.com/mars',
+    publishedAt: '2026-11-10T12:00:00.000Z',
+  }];
+  const videos = [{
+    id: 'dQw4w9WgXcQ',
+    title: 'MOCK: Mars observation',
+    description: 'MOCK',
+    channel: 'MOCK channel',
+    channelId: 'UCmockchannel',
+    publishedAt: '2026-11-10T12:00:00.000Z',
+    thumbnailUrl: 'https://example.com/mock.jpg',
+    viewCount: 120,
+    likeCount: 8,
+    channelSubscriberCount: 500,
+    channelVideoCount: 20,
+    url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+  }];
+  rememberTopicDossier('  Mars   sample return ', { news }, now);
+  rememberTopicDossier('mars sample return', {
+    videos,
+    videoCriteria: { days: 30, region: 'United States', language: 'en', order: 'viewCount' },
+  }, now + 1000);
+  const dossier = getTopicDossier('MARS SAMPLE RETURN', now + 2000);
+  assert.equal(dossier?.news.length, 1);
+  assert.equal(dossier?.videos[0].id, 'dQw4w9WgXcQ');
+  assert.equal(dossier?.videoCriteria?.order, 'viewCount');
+  assert.ok(dossier?.internalAnalysis);
+  assert.equal(getTopicDossier('mars sample return', now + TOPIC_DOSSIER_TTL_MS + 2000), undefined);
+});
+
+void test('UI language: Persian is the safe default and existing English preferences migrate', () => {
+  const current = defaults();
+  assert.equal(current.preferences.uiLanguage, 'fa');
+  const raw = JSON.parse(JSON.stringify(current));
+  delete raw.preferences.uiLanguage;
+  assert.equal(validateLocal(raw).preferences.uiLanguage, 'fa');
+  raw.preferences.uiLanguage = 'en';
+  assert.equal(validateLocal(raw).preferences.uiLanguage, 'en');
+});
+
+void test('UI language: translate known interface copy but preserve unknown source headlines', () => {
+  assert.equal(translateText('Settings', 'fa'), 'تنظیمات');
+  assert.equal(translateText('Settings', 'en'), 'Settings');
+  assert.equal(translateText('Your reference shelf.', 'fa'), 'قفسه منابع و پیوندهای شما.');
+  assert.equal(translateText('A fresh observation of a distant exoplanet', 'fa'), 'A fresh observation of a distant exoplanet');
 });
 
 void test('Backup compatibility: version-1 backups without Space preferences still import', () => {

@@ -1,4 +1,5 @@
 import { type ReactNode, useState } from 'react';
+import { containsPersianText, translateNode, translateText } from '@/lib/i18n';
 import { View, Text, ScrollView, KeyboardAvoidingView, Platform, StyleSheet } from 'react-native';
 import { Button, Input, Label, TextField, TextArea } from 'heroui-native';
 import { Search, CircleAlert, ChevronDown, ChevronUp, type LucideIcon } from 'lucide-react-native';
@@ -29,10 +30,14 @@ export const styles = StyleSheet.create({
   input: { fontFamily: 'Inter_400Regular' },
 });
 export function Txt({ children, muted = false }: { children: ReactNode; muted?: boolean }) {
-  return <Text style={muted ? styles.muted : styles.text}>{children}</Text>;
+  const language = useScout((s) => s.data.preferences.uiLanguage ?? 'fa');
+  const content = translateNode(children, language);
+  return <Text style={[muted ? styles.muted : styles.text, { writingDirection: containsPersianText(content) ? 'rtl' : 'ltr' }]}>{content}</Text>;
 }
 export function Heading({ children }: { children: ReactNode }) {
-  return <Text style={styles.heading}>{children}</Text>;
+  const language = useScout((s) => s.data.preferences.uiLanguage ?? 'fa');
+  const content = translateNode(children, language);
+  return <Text style={[styles.heading, { writingDirection: containsPersianText(content) ? 'rtl' : 'ltr' }]}>{content}</Text>;
 }
 export function Page({
   children,
@@ -44,14 +49,15 @@ export function Page({
   scroll?: boolean;
 }) {
   const error = useScout((s) => s.error);
+  const language = useScout((s) => s.data.preferences.uiLanguage ?? 'fa');
   return (
     <KeyboardAvoidingView
-      style={styles.page}
+      style={[styles.page, { direction: language === 'fa' ? 'rtl' : 'ltr' }]}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       {scroll ? (
-        <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.content}>
-          {Boolean(title) && <Text style={styles.title}>{title}</Text>}
+        <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={[styles.content, { direction: language === 'fa' ? 'rtl' : 'ltr' }]}>
+          {Boolean(title) && <Text style={[styles.title, { writingDirection: language === 'fa' ? 'rtl' : 'ltr', textAlign: language === 'fa' ? 'right' : 'left' }]}>{translateText(title, language)}</Text>}
           {Boolean(error) && (
             <ErrorBox
               message={error}
@@ -62,10 +68,10 @@ export function Page({
               }
             />
           )}
-          {children}
+          {translateNode(children, language)}
         </ScrollView>
       ) : (
-        children
+        translateNode(children, language)
       )}
     </KeyboardAvoidingView>
   );
@@ -88,16 +94,18 @@ export function Action({
   busy?: boolean;
   icon?: LucideIcon;
 }) {
+  const language = useScout((s) => s.data.preferences.uiLanguage ?? 'fa');
+  const label = translateText(children, language);
   return (
     <Button
       onPress={onPress}
       variant={secondary ? 'secondary' : 'primary'}
       isDisabled={disabled || busy}
       className="rounded-2xl px-4"
-      accessibilityLabel={children}
+      accessibilityLabel={label}
     >
       {Icon && <Icon size={18} color={secondary ? p.purple : p.white} strokeWidth={1.8} />}
-      <Button.Label numberOfLines={1}>{busy ? 'Working…' : children}</Button.Label>
+      <Button.Label numberOfLines={2}>{busy ? translateText('Working…', language) : label}</Button.Label>
     </Button>
   );
 }
@@ -116,25 +124,26 @@ export function Field({
   multiline?: boolean;
   secret?: boolean;
 }) {
+  const language = useScout((s) => s.data.preferences.uiLanguage ?? 'fa');
   return (
     <TextField>
-      <Label>{label}</Label>
+      <Label>{translateText(label, language)}</Label>
       {multiline ? (
         <TextArea
           value={value}
           onChangeText={onChange}
-          placeholder={placeholder}
-          style={styles.input}
+          placeholder={placeholder ? translateText(placeholder, language) : undefined}
+          style={[styles.input, { writingDirection: language === 'fa' ? 'rtl' : 'ltr' }]}
         />
       ) : (
         <Input
           value={value}
           onChangeText={onChange}
-          placeholder={placeholder}
+          placeholder={placeholder ? translateText(placeholder, language) : undefined}
           secureTextEntry={secret}
           autoCapitalize={secret ? 'none' : 'sentences'}
           autoCorrect={!secret}
-          style={styles.input}
+          style={[styles.input, { writingDirection: language === 'fa' ? 'rtl' : 'ltr' }]}
         />
       )}
     </TextField>
@@ -153,9 +162,10 @@ export function Choices<T extends string>({
   onChange: (values: T[]) => void;
   multiple?: boolean;
 }) {
+  const language = useScout((s) => s.data.preferences.uiLanguage ?? 'fa');
   return (
     <View style={{ gap: 10 }}>
-      {Boolean(label) && <Text style={styles.label}>{label}</Text>}
+      {Boolean(label) && <Text style={[styles.label, { writingDirection: language === 'fa' ? 'rtl' : 'ltr', textAlign: language === 'fa' ? 'right' : 'left' }]}>{translateText(label!, language)}</Text>}
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
         {options.map((option) => (
           <Button
@@ -175,7 +185,7 @@ export function Choices<T extends string>({
             className="rounded-full px-4"
             accessibilityState={{ selected: selected.includes(option) }}
           >
-            <Button.Label numberOfLines={1}>{option}</Button.Label>
+            <Button.Label numberOfLines={2}>{translateText(option, language)}</Button.Label>
           </Button>
         ))}
       </View>
@@ -208,7 +218,7 @@ export function ErrorBox({ message, onRetry }: { message: string; onRetry: () =>
     <Panel>
       <View style={styles.row}>
         <CircleAlert size={20} color={p.danger} />
-        <Text style={[styles.text, { flex: 1, color: p.danger }]}>{message}</Text>
+        <Text style={[styles.text, { flex: 1, color: p.danger }]}>{translateText(message, useScout.getState().data.preferences.uiLanguage ?? 'fa')}</Text>
       </View>
       <Action secondary onPress={onRetry}>
         Retry / dismiss
@@ -226,6 +236,7 @@ export function Fold({
   open?: boolean;
 }) {
   const [expanded, setExpanded] = useState(open);
+  const language = useScout((s) => s.data.preferences.uiLanguage ?? 'fa');
   return (
     <View style={{ gap: 16 }}>
       <Button
@@ -233,7 +244,7 @@ export function Fold({
         onPress={() => setExpanded(!expanded)}
         className="h-auto justify-start rounded-none bg-transparent px-0"
       >
-        <Button.Label className="flex-1 flex-shrink text-left">{title}</Button.Label>
+        <Button.Label className="flex-1 flex-shrink text-left">{translateText(title, language)}</Button.Label>
         {expanded ? (
           <ChevronUp size={18} color={p.muted} />
         ) : (

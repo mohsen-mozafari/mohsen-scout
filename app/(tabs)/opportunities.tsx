@@ -18,6 +18,7 @@ import { useScout } from '@/lib/store';
 import { statuses } from '@/lib/types';
 import { createManualIdea } from '@/lib/engine';
 import { palette as p } from '@/lib/theme';
+import { translateText } from '@/lib/i18n';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 import { MediaPreview } from '@/components/MediaPreview';
 export default function Opportunities() {
@@ -64,7 +65,7 @@ export default function Opportunities() {
         keyboardShouldPersistTaps="handled"
         ListHeaderComponent={
           <View style={{ gap: 18, marginBottom: 20 }}>
-            <Text style={styles.title}>Your next move.</Text>
+            <Text style={styles.title}>{translateText("Your next move.", preferences.uiLanguage ?? "fa")}</Text>
             <Field
               label="Search ideas"
               value={search}
@@ -78,7 +79,7 @@ export default function Opportunities() {
             />
             {draftOpen && (
               <View style={[styles.panel, { gap: 12 }]}>
-                <Text style={styles.heading}>Create a complete idea</Text>
+                <Text style={styles.heading}>{translateText("Create a complete idea", preferences.uiLanguage ?? "fa")}</Text>
                 <Field label="Topic / working title" value={draftTopic} onChange={setDraftTopic} placeholder="e.g. What JWST reveals about exoplanet atmospheres" />
                 <Field label="Video concept" value={draftConcept} onChange={setDraftConcept} multiline placeholder="What is the central question, what will the viewer learn, and what makes your explanation useful?" />
                 <Field label="Your initial decision (optional)" value={draftDecision} onChange={setDraftDecision} multiline placeholder="What would make this worth producing?" />
@@ -111,14 +112,14 @@ export default function Opportunities() {
             {item.imageUrl ? <MediaPreview uri={item.imageUrl} aspectRatio={16 / 9} viewer alt={item.topic} /> : null}
             <Button
               variant="tertiary"
-              className="h-auto justify-start px-0"
+              className="h-auto min-w-0 justify-start rounded-2xl px-4 py-3"
               onPress={() => router.push({ pathname: '/detail', params: { idea: item.id } })}
             >
-              <View style={{ flex: 1, gap: 8 }}>
-                <Text style={styles.badge}>{item.assessment} · {item.status}</Text>
-                <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 15, lineHeight: 20, color: '#F4F2FF' }}>{item.topic}</Text>
+              <View style={{ flex: 1, minWidth: 0, gap: 8 }}>
+                <Text style={styles.badge}>{translateText(item.assessment, preferences.uiLanguage ?? "fa")} · {translateText(item.status, preferences.uiLanguage ?? "fa")}</Text>
+                <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 15, lineHeight: 20, color: '#F4F2FF', flexShrink: 1, minWidth: 0 }}>{item.topic}</Text>
                 {item.concept ? <Text numberOfLines={3} style={styles.muted}>{item.concept}</Text> : <Txt muted>Concept missing — open the editor to complete this draft before requesting an AI opinion.</Txt>}
-                {item.sourceName ? <Text style={styles.badge}>Source: {item.sourceName}</Text> : null}
+                {item.sourceName ? <Text style={styles.badge}>{translateText("Source:", preferences.uiLanguage ?? "fa")} {item.sourceName}</Text> : null}
                 {item.decision ? <Txt muted>{item.decision}</Txt> : null}
               </View>
               <ArrowUpRight color={p.purple} size={20} />

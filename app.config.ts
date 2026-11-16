@@ -15,7 +15,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     name: 'MOHSEN SCOUT',
     slug: 'mohsen-scout',
     icon: './assets/scout-icon.png',
-    version: process.env.BILT_APP_VERSION ?? '1.3.1',
+    version: '1.3.2',
     orientation: 'portrait',
     userInterfaceStyle: 'dark',
     scheme: 'mohsen-scout',
@@ -29,13 +29,13 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         ITSAppUsesNonExemptEncryption: false,
       },
       supportsTablet: true,
-      bundleIdentifier: process.env.BILT_IOS_BUNDLE_ID ?? 'me.bilt.mohsenscout',
+      bundleIdentifier: 'me.bilt.mohsenscout',
     },
     android: {
-      versionCode: 5,
+      versionCode: 6,
       allowBackup: false,
       adaptiveIcon: { foregroundImage: './assets/scout-icon.png', backgroundColor: '#000000' },
-      package: process.env.BILT_ANDROID_PACKAGE ?? 'me.bilt.mohsenscout',
+      package: 'me.bilt.mohsenscout',
     },
     web: {
       bundler: 'metro',
@@ -44,9 +44,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       output: 'single',
       favicon: './public/icons/icon-192.png',
     },
-    extra: {
-      appStoreAppId: process.env.BILT_APP_STORE_APP_ID,
-    },
+    extra: {},
     plugins: [
       'expo-router',
       'expo-font',

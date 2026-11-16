@@ -8,6 +8,7 @@ import { uid, RETENTION_MS } from '@/lib/types';
 import { getKey } from '@/lib/vault';
 import { buildInternalResearch, rankNewsForTopic, type InternalResearchResult } from '@/lib/engine';
 import { MediaPreview } from '@/components/MediaPreview';
+import { getTopicDossier, rememberTopicDossier } from '@/lib/topic-dossier';
 import { searchYouTubeSample, type YouTubeSampleVideo } from '@/lib/api';
 import {
   SPACE_NICHES, fetchSpaceNews, newsForNiche, getWikipediaSignal, buildResearchOutline,
@@ -42,8 +43,13 @@ export default function DeepResearch() {
     const query = topic.trim();
     if (!query) throw new Error('Choose a topic before starting deep research.');
     const warnings: string[] = [];
-    const newsResult = await fetchSpaceNews(preferences.spaceNewsSources);
+    const cachedDossier = getTopicDossier(query);
+    const cachedNews = (cachedDossier?.news ?? []).filter((item) => preferences.spaceNewsSources.includes(item.sourceId));
+    const newsResult = cachedNews.length
+      ? { items: cachedNews, warnings: [] as string[] }
+      : await fetchSpaceNews(preferences.spaceNewsSources);
     warnings.push(...newsResult.warnings);
+    if (cachedNews.length) warnings.push('Reused recent publisher evidence from the local topic dossier; no additional feed request was made.');
     const nicheNews = niche
       ? newsForNiche(newsResult.items, nicheId)
       : nicheId === 'custom'
@@ -51,17 +57,24 @@ export default function DeepResearch() {
         : newsResult.items;
     const selectedNews = rankNewsForTopic(query, nicheNews, 6);
     let wiki: WikiSignal | undefined;
-    try {
-      wiki = await getWikipediaSignal(query, preferences.spaceInterestLanguage ?? 'en');
-    } catch (error) {
-      warnings.push(error instanceof Error ? error.message : 'Public-interest data was unavailable.');
+    if (cachedDossier?.wiki?.language === (preferences.spaceInterestLanguage ?? 'en')) {
+      wiki = cachedDossier.wiki;
+      warnings.push('Reused recent Wikimedia evidence from the local topic dossier; no additional pageview request was made.');
+    } else {
+      try {
+        wiki = await getWikipediaSignal(query, preferences.spaceInterestLanguage ?? 'en');
+      } catch (error) {
+        warnings.push(error instanceof Error ? error.message : 'Public-interest data was unavailable.');
+      }
     }
     let videos: YouTubeSampleVideo[] = [];
+    let videoCriteria = cachedDossier?.videoCriteria;
     const linkedReport = linkedIdea?.reportId ? reports.find((report) => report.id === linkedIdea.reportId) : undefined;
     const reusableReport = linkedReport && linkedReport.videos.length > 0 && Date.now() - linkedReport.createdAt < RETENTION_MS
       ? linkedReport
       : undefined;
     if (reusableReport) {
+      videoCriteria = undefined;
       videos = reusableReport.videos.map((video) => ({
         id: video.id, title: video.title, description: video.description,
         channel: video.channel, channelId: '', publishedAt: video.publishedAt,
@@ -70,6 +83,9 @@ export default function DeepResearch() {
         channelVideoCount: null, url: 'https://www.youtube.com/watch?v=' + video.id,
       }));
       warnings.push('Reused the YouTube report already linked to this idea; no additional YouTube quota was used.');
+    } else if (cachedDossier?.videos.length && cachedDossier.videoCriteria?.days === (preferences.defaultResearchDays ?? 30) && cachedDossier.videoCriteria.region === preferences.region && cachedDossier.videoCriteria.language === (preferences.languages[0] ?? '') && cachedDossier.videoCriteria.order === 'viewCount') {
+      videos = cachedDossier.videos;
+      warnings.push('Reused a recent matching YouTube sample from the local topic dossier; no additional YouTube quota was used.');
     } else {
       try {
         const key = await getKey('youtube');
@@ -80,6 +96,12 @@ export default function DeepResearch() {
             onQuota: () => useScout.getState().commit((data) => ({ ...data, budget: { ...data.budget, exhausted: true } })),
           }, 25, { days: preferences.defaultResearchDays ?? 30, region: preferences.region, language: preferences.languages[0] });
           videos = sample.videos;
+          videoCriteria = {
+            days: (preferences.defaultResearchDays ?? 30) as 0 | 7 | 30 | 90,
+            region: preferences.region,
+            language: preferences.languages[0] ?? '',
+            order: 'viewCount',
+          };
           if (sample.warning) warnings.push(sample.warning);
         } else {
           warnings.push('YouTube view sample skipped: add a YouTube API key in Settings to include it.');
@@ -107,6 +129,10 @@ export default function DeepResearch() {
       })),
       wiki,
       videos,
+    });
+    rememberTopicDossier(query, {
+      news: selectedNews.length ? selectedNews : cachedDossier?.news ?? [],
+      wiki, videos, videoCriteria, internalAnalysis,
     });
     setBrief({
       topic: query,

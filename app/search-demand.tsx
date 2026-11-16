@@ -7,6 +7,7 @@ import { useScout } from '@/lib/store';
 import { palette as p } from '@/lib/theme';
 import { SEARCH_DEMAND_PROVIDERS, type WikiLanguage, type WikiSignal } from '@/lib/space';
 import { uid, type Note } from '@/lib/types';
+import { getTopicDossier, rememberTopicDossier } from '@/lib/topic-dossier';
 
 export default function SearchDemand() {
   const params = useLocalSearchParams<{ topic?: string; idea?: string }>();
@@ -28,7 +29,13 @@ export default function SearchDemand() {
   const compare = () => void op.run(async () => {
     if (!active.length) throw new Error('Enter at least one topic.');
     const provider = SEARCH_DEMAND_PROVIDERS[0];
-    const settled = await Promise.allSettled(active.map((topic) => provider.run(topic, language)));
+    const settled = await Promise.allSettled(active.map(async (topic) => {
+      const cached = getTopicDossier(topic);
+      if (cached?.wiki?.language === language) return cached.wiki;
+      const signal = await provider.run(topic, language);
+      rememberTopicDossier(topic, { wiki: signal });
+      return signal;
+    }));
     const values = settled.flatMap((result) => result.status === 'fulfilled' ? [result.value] : []);
     const issues = settled.flatMap((result, index) => result.status === 'rejected'
       ? [active[index] + ': ' + (result.reason instanceof Error ? result.reason.message : 'Wikimedia data unavailable.')]

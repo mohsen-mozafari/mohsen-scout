@@ -128,7 +128,9 @@ export type Opinion = {
 };
 export type SpaceNewsSourceId = 'nasa' | 'jpl' | 'esa-space' | 'esa-science';
 export type WikiLanguage = 'en' | 'fa' | 'de' | 'fr' | 'es' | 'ja';
+export type UiLanguage = 'fa' | 'en';
 export type Preferences = {
+  uiLanguage: UiLanguage;
   name: string;
   email: string;
   region: Region;
@@ -160,6 +162,7 @@ export const RETENTION_MS = 29 * 24 * 60 * 60 * 1000;
 export function defaults(): LocalData {
   return {
     preferences: {
+      uiLanguage: 'fa',
       name: 'Mohsen',
       email: '',
       region: 'United States',

@@ -389,7 +389,37 @@ const spaceStatsSchema = z.object({
   })),
 });
 
-/** One search.list request plus batched video and channel statistics requests. */
+const LIKE_SAMPLE_CURSOR_PREFIX = 'mohsen-scout-likes-v1:';
+const likeSampleCursorSchema = z.object({
+  version: z.literal(1),
+  relevance: z.string().optional().default(''),
+  views: z.string().optional().default(''),
+});
+function decodeLikeSampleCursor(token?: string) {
+  if (!token) return { relevance: '', views: '' };
+  // Accept one legacy Google page token as the relevance stream for existing saved sessions.
+  if (!token.startsWith(LIKE_SAMPLE_CURSOR_PREFIX)) return { relevance: token, views: '' };
+  try {
+    const raw = JSON.parse(decodeURIComponent(token.slice(LIKE_SAMPLE_CURSOR_PREFIX.length)));
+    const parsed = likeSampleCursorSchema.safeParse(raw);
+    if (!parsed.success) throw new Error('Invalid cursor shape');
+    return { relevance: parsed.data.relevance, views: parsed.data.views };
+  } catch {
+    throw new ApiError('The saved YouTube sample cursor is invalid. Start a new sample.', 'invalid');
+  }
+}
+function encodeLikeSampleCursor(relevance: string, views: string) {
+  if (!relevance && !views) return undefined;
+  return LIKE_SAMPLE_CURSOR_PREFIX + encodeURIComponent(JSON.stringify({
+    version: 1,
+    relevance,
+    views,
+  }));
+}
+
+/** Search once for a normal sort, or sample two discovery pools for raw-like sorting.
+ *  The likes mode remains a bounded sample, never a global ranking.
+ */
 export async function searchYouTubeSample(
   topic: string,
   options: YouTubeOptions,
@@ -398,47 +428,111 @@ export async function searchYouTubeSample(
 ): Promise<{ videos: YouTubeSampleVideo[]; warning: string; nextPageToken?: string }> {
   const query = topic.trim().slice(0, 120);
   if (!query) throw new ApiError('Enter a space topic before measuring YouTube competition.', 'input');
+  const resultLimit = Math.min(50, Math.max(1, Math.trunc(maxResults) || 1));
   const days = filters.days ?? 30;
   const order = filters.order ?? 'viewCount';
-  const searchParams: Record<string, string> = {
-    part: 'snippet',
-    type: 'video',
-    q: query,
-    order,
-    maxResults: String(Math.min(50, Math.max(1, maxResults))),
-    fields: 'nextPageToken,items(id/videoId,snippet(title,description,channelTitle,channelId,publishedAt,thumbnails(high/url,medium/url,default/url)))',
-  };
   const regionCodes: Partial<Record<Region, string>> = {
     'United States': 'US',
     Iran: 'IR',
     'United Kingdom': 'GB',
     Germany: 'DE',
   };
-  if (filters.region && regionCodes[filters.region]) searchParams.regionCode = regionCodes[filters.region]!;
-  if (filters.language) searchParams.relevanceLanguage = filters.language;
-  if (days > 0) searchParams.publishedAfter = new Date(Date.now() - days * 86400000).toISOString();
-  if (filters.pageToken) searchParams.pageToken = filters.pageToken;
-  const raw = await youtube('search', searchParams, options, 100);
-  const parsed = spaceSearchSchema.safeParse(raw);
-  if (!parsed.success) throw new ApiError('YouTube returned an invalid topic sample.', 'invalid');
-  const selected = parsed.data.items;
-  if (!selected.length) return { videos: [], warning: 'YouTube returned no matching videos in this period.', nextPageToken: parsed.data.nextPageToken };
+  const commonParams: Record<string, string> = {
+    part: 'snippet',
+    type: 'video',
+    q: query,
+    maxResults: String(resultLimit),
+    fields: 'nextPageToken,items(id/videoId,snippet(title,description,channelTitle,channelId,publishedAt,thumbnails(high/url,medium/url,default/url)))',
+  };
+  if (filters.region && regionCodes[filters.region]) commonParams.regionCode = regionCodes[filters.region]!;
+  if (filters.language) commonParams.relevanceLanguage = filters.language;
+  if (days > 0) commonParams.publishedAfter = new Date(Date.now() - days * 86400000).toISOString();
+
+  const selectedById = new Map<string, z.infer<typeof spaceSearchSchema>['items'][number]>();
+  const warnings: string[] = [];
+  let nextPageToken: string | undefined;
+  let lastSearchError: unknown;
+
+  if (order === 'relevance') {
+    const cursor = decodeLikeSampleCursor(filters.pageToken);
+    const isFirstPage = !filters.pageToken;
+    const poolSize = Math.max(1, Math.ceil(resultLimit / 2));
+    let relevanceNext = '';
+    let viewsNext = '';
+    const pools = [
+      { name: 'relevance' as const, order: 'relevance', token: cursor.relevance },
+      { name: 'views' as const, order: 'viewCount', token: cursor.views },
+    ];
+    for (const pool of pools) {
+      if (!isFirstPage && !pool.token) continue;
+      try {
+        const params = { ...commonParams, order: pool.order, maxResults: String(poolSize) };
+        if (pool.token) params.pageToken = pool.token;
+        const raw = await youtube('search', params, options, 100);
+        const parsed = spaceSearchSchema.safeParse(raw);
+        if (!parsed.success) throw new ApiError('YouTube returned an invalid topic sample.', 'invalid');
+        if (pool.name === 'relevance') relevanceNext = parsed.data.nextPageToken ?? '';
+        else viewsNext = parsed.data.nextPageToken ?? '';
+        for (const item of parsed.data.items) {
+          if (!selectedById.has(item.id.videoId)) selectedById.set(item.id.videoId, item);
+        }
+      } catch (error) {
+        lastSearchError = error;
+        warnings.push((error instanceof Error ? error.message : 'A YouTube discovery pool failed.') + ' Results from another completed pool may still be shown.');
+        if (error instanceof ApiError && ['quota', 'budget', 'key', 'permission', 'offline', 'timeout'].includes(error.code)) break;
+      }
+    }
+    nextPageToken = encodeLikeSampleCursor(relevanceNext, viewsNext);
+  } else {
+    if (filters.pageToken?.startsWith(LIKE_SAMPLE_CURSOR_PREFIX)) {
+      throw new ApiError('This YouTube sample cursor belongs to a different sort. Start a new sample.', 'invalid');
+    }
+    try {
+      const params: Record<string, string> = { ...commonParams, order };
+      if (filters.pageToken) params.pageToken = filters.pageToken;
+      const raw = await youtube('search', params, options, 100);
+      const parsed = spaceSearchSchema.safeParse(raw);
+      if (!parsed.success) throw new ApiError('YouTube returned an invalid topic sample.', 'invalid');
+      for (const item of parsed.data.items) selectedById.set(item.id.videoId, item);
+      nextPageToken = parsed.data.nextPageToken;
+    } catch (error) {
+      lastSearchError = error;
+      throw error;
+    }
+  }
+
+  if (!selectedById.size && lastSearchError) throw lastSearchError;
+  const selected = [...selectedById.values()].slice(0, resultLimit);
+  if (!selected.length) {
+    return {
+      videos: [],
+      warning: 'YouTube returned no matching videos in this period.',
+      nextPageToken,
+    };
+  }
+
   const ids = selected.map((item) => item.id.videoId);
-  const statsRaw = await youtube('videos', {
-    part: 'statistics',
-    id: ids.join(','),
-    fields: 'items(id,statistics(viewCount,likeCount))',
-  }, options, 1);
-  const statistics = spaceStatsSchema.safeParse(statsRaw);
-  if (!statistics.success) throw new ApiError('YouTube video statistics could not be read.', 'invalid');
   const views = new Map<string, number | null>();
   const likes = new Map<string, number | null>();
-  for (const item of statistics.data.items) {
-    const viewText = item.statistics?.viewCount;
-    const likeText = item.statistics?.likeCount;
-    views.set(item.id, viewText && /^\d+$/.test(viewText) ? Number(viewText) : null);
-    likes.set(item.id, likeText && /^\d+$/.test(likeText) ? Number(likeText) : null);
+  let statisticsWarning = '';
+  try {
+    const statsRaw = await youtube('videos', {
+      part: 'statistics',
+      id: ids.join(','),
+      fields: 'items(id,statistics(viewCount,likeCount))',
+    }, options, 1);
+    const statistics = spaceStatsSchema.safeParse(statsRaw);
+    if (!statistics.success) throw new ApiError('YouTube video statistics returned an invalid response.', 'invalid');
+    for (const item of statistics.data.items) {
+      const viewText = item.statistics?.viewCount;
+      const likeText = item.statistics?.likeCount;
+      views.set(item.id, viewText && /^\d+$/.test(viewText) ? Number(viewText) : null);
+      likes.set(item.id, likeText && /^\d+$/.test(likeText) ? Number(likeText) : null);
+    }
+  } catch {
+    statisticsWarning = 'Video titles and dates were retrieved, but raw view/like counts could not be loaded. Counts remain unavailable rather than estimated.';
   }
+
   let channelMetrics = new Map<string, { subscribers: number | null; videos: number | null }>();
   let channelWarning = '';
   try {
@@ -464,6 +558,7 @@ export async function searchYouTubeSample(
   } catch {
     channelWarning = 'Public channel statistics could not be loaded; video statistics remain available.';
   }
+
   const videos = selected.map((item) => ({
     id: item.id.videoId,
     title: item.snippet.title,
@@ -478,13 +573,15 @@ export async function searchYouTubeSample(
     channelVideoCount: channelMetrics.get(item.snippet.channelId)?.videos ?? null,
     url: 'https://www.youtube.com/watch?v=' + item.id.videoId,
   }));
+  const scopeWarning = order === 'relevance'
+    ? 'Most Likes combines relevance-ordered and view-count-ordered discovery pools, then compares actual public like counts within the returned sample. It is not a global like-count ranking.'
+    : 'Sorting is applied to the returned sample using publication dates or actual public view counts. This is not a complete market census or a growth-rate/saturation score.';
   return {
     videos,
-    warning: 'Limited YouTube sample. Sorting is applied only within returned results; this is not a complete market census or a growth-rate/saturation score.' + (channelWarning ? ' ' + channelWarning : ''),
-    nextPageToken: parsed.data.nextPageToken,
+    warning: ['Limited YouTube sample. ' + scopeWarning, ...warnings, statisticsWarning, channelWarning].filter(Boolean).join(' '),
+    nextPageToken,
   };
 }
-
 
 export type NewsTranslation = { title: string; summary: string };
 const newsTranslationCache = new Map<string, NewsTranslation>();
