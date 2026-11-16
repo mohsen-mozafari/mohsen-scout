@@ -172,43 +172,116 @@ function feedHttpReason(status: number) {
     : 'the publisher returned an unsuccessful response';
 }
 
-async function loadOfficialFeed(source: SpaceNewsSource, fetcher: Fetcher) {
-  const endpoints = [source.url, ...(source.fallbackUrls ?? [])];
+function discoverOfficialFeeds(html: string, pageUrl: string, source: SpaceNewsSource): string[] {
+  let sourceHost = '';
+  try { sourceHost = new URL(source.url).hostname.toLowerCase(); } catch { return []; }
+  const rootDomain = sourceHost.split('.').slice(-2).join('.');
+  const candidates: string[] = [];
+  for (const match of html.matchAll(/<link\b([^>]*?)\/?>/gi)) {
+    const attrs = match[1];
+    const rel = attrs.match(/\brel=["']([^"']+)["']/i)?.[1]?.toLowerCase().split(/\s+/) ?? [];
+    const type = attrs.match(/\btype=["']([^"']+)["']/i)?.[1]?.toLowerCase() ?? '';
+    const href = attrs.match(/\bhref=["']([^"']+)["']/i)?.[1];
+    if (!href || !rel.includes('alternate') || !/(rss|atom|json|xml)/i.test(type)) continue;
+    try {
+      const parsed = new URL(decodeXml(href), pageUrl);
+      if (parsed.protocol !== 'https:') continue;
+      const host = parsed.hostname.toLowerCase();
+      if (host !== rootDomain && !host.endsWith('.' + rootDomain)) continue;
+      candidates.push(parsed.href);
+    } catch { /* Ignore malformed alternate links. */ }
+  }
+  return [...new Set(candidates)];
+}
+
+type FeedRefreshResult = {
+  items: SpaceNewsItem[];
+  warning: string;
+  endpoint?: string;
+  etag?: string;
+  lastModified?: string;
+  notModified?: boolean;
+};
+
+async function loadOfficialFeed(
+  source: SpaceNewsSource,
+  fetcher: Fetcher,
+  previous?: NewsFeedCacheEntry,
+): Promise<FeedRefreshResult> {
+  const endpoints = [...new Set([
+    ...(previous?.endpoint ? [previous.endpoint] : []),
+    source.url,
+    ...(source.fallbackUrls ?? []),
+  ])];
   const failures: string[] = [];
-  for (const endpoint of endpoints) {
+  const visited = new Set<string>();
+  for (let index = 0; index < endpoints.length && index < 8; index++) {
+    const endpoint = endpoints[index];
+    if (visited.has(endpoint)) continue;
+    visited.add(endpoint);
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 12000);
     try {
+      const headers: Record<string, string> = {
+        Accept: 'application/rss+xml, application/atom+xml, application/feed+json, application/json;q=0.9, application/xml, text/xml;q=0.8, text/html;q=0.5, */*;q=0.3',
+        'Cache-Control': 'no-cache',
+        'User-Agent': 'MOHSEN-SCOUT/1.3.6 (+https://github.com/mohsen-mozafari/mohsen-scout)',
+      };
+      if (previous?.endpoint === endpoint && previous.etag) headers['If-None-Match'] = previous.etag;
+      if (previous?.endpoint === endpoint && previous.lastModified) headers['If-Modified-Since'] = previous.lastModified;
       const response = await fetcher(endpoint, {
-        headers: {
-          Accept: 'application/rss+xml, application/atom+xml, application/xml, text/xml;q=0.9, */*;q=0.5',
-          'Cache-Control': 'no-cache',
-          'User-Agent': 'MOHSEN-SCOUT/1.3.1 (+https://github.com/mohsen-mozafari/mohsen-scout)',
-        },
+        headers,
+        redirect: 'follow',
         signal: controller.signal,
       });
+      if (response.status === 304 && previous?.items.length) {
+        return {
+          items: previous.items,
+          warning: '',
+          endpoint,
+          etag: response.headers.get('ETag') ?? previous.etag,
+          lastModified: response.headers.get('Last-Modified') ?? previous.lastModified,
+          notModified: true,
+        };
+      }
       if (!response.ok) {
         failures.push('HTTP ' + response.status + ': ' + feedHttpReason(response.status));
         continue;
       }
-      const xml = await response.text();
-      const items = parseRssFeed(xml, source);
-      if (!items.length) {
-        failures.push('the endpoint responded but contained no readable RSS/Atom entries');
-        continue;
+      const body = await response.text();
+      const contentType = response.headers.get('content-type')?.toLowerCase() ?? '';
+      const isJson = contentType.includes('json') || body.trimStart().startsWith('{');
+      const items = isJson ? parseJsonFeed(body, source) : parseRssFeed(body, source);
+      if (items.length) {
+        return {
+          items,
+          warning: '',
+          endpoint,
+          etag: response.headers.get('ETag') ?? undefined,
+          lastModified: response.headers.get('Last-Modified') ?? undefined,
+        };
       }
-      return { items, warning: '' };
+      const discovered = discoverOfficialFeeds(body, response.url || endpoint, source);
+      for (const candidate of discovered) if (!visited.has(candidate) && !endpoints.includes(candidate)) endpoints.push(candidate);
+      failures.push(isJson
+        ? 'the JSON response did not contain readable Feed items'
+        : 'the endpoint responded but contained no readable RSS/Atom entries');
     } catch (error) {
       const timedOut = controller.signal.aborted || (error instanceof Error && error.name === 'AbortError');
+      const message = error instanceof Error ? error.message : '';
       failures.push(timedOut
         ? 'the request timed out'
-        : 'the publisher could not be reached over the network (DNS or TLS)');
+        : /certificate|tls|ssl/i.test(message)
+          ? 'the secure TLS connection failed'
+          : /getaddrinfo|enotfound|eai_again|dns/i.test(message)
+            ? 'the publisher hostname could not be resolved (DNS)'
+            : 'the publisher could not be reached over the network');
     } finally {
       clearTimeout(timeout);
     }
   }
   const lastFailure = failures[failures.length - 1] ?? 'no feed endpoint was available';
-  return { items: [] as SpaceNewsItem[], warning: source.label + ' could not refresh: ' + lastFailure + '. Other publishers remain available.' };
+  return { items: [], warning: source.label + ' could not refresh: ' + lastFailure + '. Other publishers remain available.' };
 }
 
 export async function fetchSpaceNews(
@@ -226,15 +299,40 @@ export async function fetchSpaceNews(
     const selected = SPACE_NEWS_SOURCES.filter((source) => ids.includes(source.id));
     const results = await Promise.all(selected.map(async (source) => {
       const previous = newsSourceCache.get(source.id);
-      if (!force && previous && Date.now() - previous.at < CACHE_MS) {
+      const health = newsSourceHealth.get(source.id);
+      const now = Date.now();
+      if (!force && previous && !health && now - previous.at < CACHE_MS) {
         return { items: previous.items, warning: '' };
       }
-      const refreshed = await loadOfficialFeed(source, fetcher);
-      if (refreshed.items.length) {
-        newsSourceCache.set(source.id, { at: Date.now(), items: refreshed.items });
-        return refreshed;
+      if (!force && health && now < health.retryAt) {
+        const retryAt = new Date(health.retryAt).toLocaleTimeString();
+        return {
+          items: previous?.items ?? [],
+          warning: previous?.items.length
+            ? source.label + ' refresh is temporarily paused after a feed error. Showing the last successful copy; next retry after ' + retryAt + '.'
+            : health.warning + ' Retry after ' + retryAt + '.',
+        };
       }
-      newsSourceCache.delete(source.id);
+      const refreshed = await loadOfficialFeed(source, fetcher, previous);
+      if (refreshed.items.length) {
+        newsSourceCache.set(source.id, {
+          at: Date.now(),
+          items: refreshed.items,
+          etag: refreshed.etag,
+          lastModified: refreshed.lastModified,
+          endpoint: refreshed.endpoint,
+        });
+        newsSourceHealth.delete(source.id);
+        return { items: refreshed.items, warning: '' };
+      }
+      const failures = (health?.failures ?? 0) + 1;
+      const retryDelay = Math.min(6 * 60 * 60 * 1000, 30_000 * 2 ** Math.min(10, failures - 1));
+      const retryAt = Date.now() + retryDelay;
+      newsSourceHealth.set(source.id, {
+        failures,
+        retryAt,
+        warning: refreshed.warning,
+      });
       if (previous?.items.length) {
         return {
           items: previous.items,

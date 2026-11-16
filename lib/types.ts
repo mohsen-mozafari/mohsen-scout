@@ -129,7 +129,7 @@ export type Opinion = {
   model: string;
   createdAt: number;
 };
-export type SpaceNewsSourceId = 'nasa' | 'jpl' | 'esa-space' | 'esa-science';
+export type SpaceNewsSourceId = 'nasa' | 'jpl' | 'cneos' | 'esa-space' | 'esa-science';
 export type WikiLanguage = 'en' | 'fa' | 'de' | 'fr' | 'es' | 'ja';
 export type UiLanguage = 'fa' | 'en';
 export type Preferences = {

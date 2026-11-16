@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   parseRssFeed,
+  parseJsonFeed,
   buildDiscoveryOpportunities,
   fetchSpaceNews,
   newsForNiche,
@@ -33,36 +34,31 @@ void test('RSS parser safely handles invalid numeric entities in external feed t
 
 void test('A failed feed refresh is not cached and can recover on the next user request', async () => {
   let attempts = 0;
-  const feed = SPACE_NEWS_SOURCES.find((source) => source.id === 'jpl')!;
+  const feed = SPACE_NEWS_SOURCES.find((source) => source.id === 'cneos')!;
   const fetcher: typeof fetch = async () => {
     attempts++;
-    if (attempts <= 2) return new Response('Unavailable', { status: 503 });
+    if (attempts === 1) return new Response('Unavailable', { status: 503 });
     return new Response('<rss><item><title>JWST telescope update</title><link>https://example.com/jwst</link></item></rss>', { status: 200 });
   };
-  const first = await fetchSpaceNews([feed.id], fetcher);
+  const first = await fetchSpaceNews([feed.id], fetcher, true);
   assert.equal(first.items.length, 0);
   assert.equal(first.warnings.length, 1);
-  const second = await fetchSpaceNews([feed.id], fetcher);
+  const second = await fetchSpaceNews([feed.id], fetcher, true);
   assert.equal(second.items.length, 1);
-  assert.equal(attempts, 3);
+  assert.equal(attempts, 2);
 });
 
-void test('JPL News falls back to the official CNEOS feed when the general RSS route fails', async () => {
-  const source = SPACE_NEWS_SOURCES.find((item) => item.id === 'jpl')!;
-  const fallback = source.fallbackUrls?.[0];
-  assert.ok(fallback);
-  const requested: string[] = [];
+void test('CNEOS is registered and fetched as an independent official feed', async () => {
+  const source = SPACE_NEWS_SOURCES.find((item) => item.id === 'cneos')!;
+  assert.equal(source.url, 'https://cneos.jpl.nasa.gov/feed/news.xml');
   const result = await fetchSpaceNews([source.id], async (input) => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
-    requested.push(url);
-    if (url === source.url) return new Response('Unavailable', { status: 503 });
-    if (url === fallback) return new Response('<rss><item><title>CNEOS close approach update</title><link>https://cneos.jpl.nasa.gov/news/cneos-update</link></item></rss>', { status: 200 });
-    return new Response('Unexpected endpoint', { status: 500 });
+    assert.equal(url, source.url);
+    return new Response('<rss><item><title>CNEOS close approach update</title><link>https://cneos.jpl.nasa.gov/news/cneos-update</link></item></rss>', { status: 200 });
   }, true);
-  assert.deepEqual(requested, [source.url, fallback]);
   assert.equal(result.items.length, 1);
-  assert.equal(result.items[0].sourceId, 'jpl');
-  assert.equal(result.items[0].title, 'CNEOS close approach update');
+  assert.equal(result.items[0].sourceId, 'cneos');
+  assert.equal(result.items[0].sourceName, 'CNEOS');
   assert.equal(result.warnings.length, 0);
 });
 
@@ -91,7 +87,7 @@ void test('A failed forced refresh returns clearly labelled stale items and retr
   const fetcher: typeof fetch = async () => {
     attempts++;
     if (attempts === 1) return new Response('<rss><item><title>JPL baseline story</title><link>https://www.jpl.nasa.gov/baseline</link></item></rss>', { status: 200 });
-    if (attempts === 2 || attempts === 3) return new Response('Unavailable', { status: 503 });
+    if (attempts === 2) return new Response('Unavailable', { status: 503 });
     return new Response('<rss><item><title>JPL recovered story</title><link>https://www.jpl.nasa.gov/recovered-later</link></item></rss>', { status: 200 });
   };
   const first = await fetchSpaceNews([source.id], fetcher, true);
@@ -99,9 +95,9 @@ void test('A failed forced refresh returns clearly labelled stale items and retr
   assert.equal(first.items.length, 1);
   assert.equal(failed.items[0].title, 'JPL baseline story');
   assert.match(failed.warnings[0], /last successful copy/i);
-  const recovered = await fetchSpaceNews([source.id], fetcher);
+  const recovered = await fetchSpaceNews([source.id], fetcher, true);
   assert.equal(recovered.items[0].title, 'JPL recovered story');
-  assert.equal(attempts, 4);
+  assert.equal(attempts, 3);
 });
 
 void test('RSS parser ignores entries without a title or HTTPS source link', () => {
@@ -145,7 +141,7 @@ void test('Research outline keeps unknowns and verification questions explicit',
 });
 
 void test('Provider defaults are official source IDs and can be replaced by local settings', () => {
-  assert.deepEqual(DEFAULT_SPACE_NEWS_SOURCES, ['nasa', 'jpl', 'esa-space', 'esa-science']);
+  assert.deepEqual(DEFAULT_SPACE_NEWS_SOURCES, ['nasa', 'jpl', 'cneos', 'esa-space', 'esa-science']);
   assert.ok(DEFAULT_SPACE_NEWS_SOURCES.every((id) => SPACE_NEWS_SOURCES.some((source) => source.id === id)));
 });
 
@@ -202,7 +198,7 @@ void test('A failed forced refresh labels last-good feed data stale and retries 
   assert.equal(attempts, 1);
   const partial = await fetchSpaceNews([nasa.id], fetcher, true);
   assert.equal(partial.warnings.length, 1);
-  const recovered = await fetchSpaceNews([nasa.id], fetcher);
+  const recovered = await fetchSpaceNews([nasa.id], fetcher, true);
   assert.equal(recovered.items[0].title, 'ESA Space News recovered');
   assert.equal(attempts, 4);
 });
@@ -225,7 +221,7 @@ void test('Space News retries only the unavailable official feed instead of cach
   assert.equal(first.items.length, 1);
   assert.equal(first.warnings.length, 1);
   assert.match(first.warnings[0], /HTTP 503/);
-  const second = await fetchSpaceNews([nasa.id, science.id], fetcher);
+  const second = await fetchSpaceNews([nasa.id, science.id], fetcher, true);
   assert.equal(second.items.length, 2);
   assert.equal(second.warnings.length, 0);
   assert.equal(scienceAttempts, 3);
@@ -318,4 +314,92 @@ void test('Discovery labels undated and historical reports instead of treating t
   );
   assert.ok(opportunities.some((item) => item.labels.includes('Older Source Story')));
   assert.ok(opportunities.some((item) => item.labels.includes('Publication Date Unavailable')));
+});
+
+
+void test('JSON Feed parser accepts validated entries and rejects unsafe links', () => {
+  const source = SPACE_NEWS_SOURCES.find((item) => item.id === 'cneos')!;
+  const json = JSON.stringify({
+    version: 'https://jsonfeed.org/version/1.1',
+    title: 'CNEOS JSON feed',
+    items: [
+      { id: 'one', url: 'https://cneos.jpl.nasa.gov/one', title: 'Near-Earth object update', content_text: 'A safe summary.', date_published: '2026-11-15T10:00:00Z' },
+      { id: 'two', url: 'http://unsafe.example/two', title: 'Unsafe link' },
+      { id: 'three', url: 'https://cneos.jpl.nasa.gov/three', content_text: 'Missing a title' },
+    ],
+  });
+  const parsed = parseJsonFeed(json, source);
+  assert.equal(parsed.length, 1);
+  assert.equal(parsed[0].title, 'Near-Earth object update');
+  assert.equal(parsed[0].summary, 'A safe summary.');
+  assert.equal(parsed[0].sourceId, 'cneos');
+});
+
+void test('Feed autodiscovery follows an official JSON Feed alternate link', async () => {
+  const source = SPACE_NEWS_SOURCES.find((item) => item.id === 'nasa')!;
+  const feedUrl = new URL('/news/discovered.json', source.url).href;
+  const requested: string[] = [];
+  const result = await fetchSpaceNews([source.id], async (input) => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+    requested.push(url);
+    if (url === source.url) {
+      return new Response('<html><head><link rel="alternate" type="application/feed+json" href="/news/discovered.json"></head></html>', {
+        status: 200,
+        headers: { 'content-type': 'text/html' },
+      });
+    }
+    if (url === feedUrl) {
+      return new Response(JSON.stringify({
+        version: 'https://jsonfeed.org/version/1.1',
+        items: [{ id: 'webb-1', title: 'Webb telescope update', url: 'https://www.nasa.gov/webb-json', content_text: 'A JSON Feed item.' }],
+      }), { status: 200, headers: { 'content-type': 'application/feed+json' } });
+    }
+    return new Response('Unexpected endpoint', { status: 500 });
+  }, true);
+  assert.deepEqual(requested, [source.url, feedUrl]);
+  assert.equal(result.items[0].title, 'Webb telescope update');
+});
+
+void test('Conditional feed requests send ETag and Last-Modified and reuse the last-good cache on 304', async () => {
+  const source = SPACE_NEWS_SOURCES.find((item) => item.id === 'cneos')!;
+  let calls = 0;
+  let conditionalSeen = false;
+  const fetcher: typeof fetch = async (_input, init) => {
+    calls++;
+    const headers = new Headers(init?.headers);
+    if (calls === 1) {
+      return new Response('<rss><item><title>CNEOS baseline</title><link>https://cneos.jpl.nasa.gov/baseline</link></item></rss>', {
+        status: 200,
+        headers: { ETag: '"v1"', 'Last-Modified': 'Sun, 15 Nov 2026 10:00:00 GMT' },
+      });
+    }
+    conditionalSeen = headers.get('If-None-Match') === '"v1"' &&
+      headers.get('If-Modified-Since') === 'Sun, 15 Nov 2026 10:00:00 GMT';
+    return new Response(null, { status: 304 });
+  };
+  const initial = await fetchSpaceNews([source.id], fetcher, true);
+  const unchanged = await fetchSpaceNews([source.id], fetcher, true);
+  assert.equal(initial.items[0].title, 'CNEOS baseline');
+  assert.equal(unchanged.items[0].title, 'CNEOS baseline');
+  assert.equal(conditionalSeen, true);
+  assert.equal(calls, 2);
+});
+
+void test('A failed refresh keeps the last-good cache and respects exponential retry backoff', async () => {
+  const source = SPACE_NEWS_SOURCES.find((item) => item.id === 'cneos')!;
+  let attempts = 0;
+  const fetcher: typeof fetch = async () => {
+    attempts++;
+    if (attempts === 1) return new Response('<rss><item><title>CNEOS last good</title><link>https://cneos.jpl.nasa.gov/last-good</link></item></rss>', { status: 200 });
+    return new Response('Unavailable', { status: 503 });
+  };
+  const good = await fetchSpaceNews([source.id], fetcher, true);
+  const failed = await fetchSpaceNews([source.id], fetcher, true);
+  const deferred = await fetchSpaceNews([source.id], fetcher);
+  assert.equal(good.items[0].title, 'CNEOS last good');
+  assert.equal(failed.items[0].title, 'CNEOS last good');
+  assert.match(failed.warnings[0], /last successful copy/i);
+  assert.equal(deferred.items[0].title, 'CNEOS last good');
+  assert.match(deferred.warnings[0], /temporarily paused/i);
+  assert.equal(attempts, 2);
 });
