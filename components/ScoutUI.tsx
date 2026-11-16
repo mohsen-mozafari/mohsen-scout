@@ -42,8 +42,7 @@ export function Heading({ children }: { children: ReactNode }) {
   return <Text style={[styles.heading, { writingDirection: direction, textAlign: direction === 'rtl' ? 'right' : 'left' }]}>{content}</Text>;
 }
 export function SourceText({ children, muted = false }: { children: ReactNode; muted?: boolean }) {
-  const content = String(children ?? '');
-  const direction = resolveTextDirection(content);
+  const direction = resolveNodeDirection(children);
   return <Text style={[muted ? styles.muted : styles.text, { writingDirection: direction, textAlign: direction === 'rtl' ? 'right' : 'left' }]}>{children}</Text>;
 } 
 export function Page({

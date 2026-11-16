@@ -366,7 +366,6 @@ const fa: Record<string, string> = {
   'topic(s). This memory is used only for local research comparisons and can be cleared independently.': 'موضوع. این حافظه فقط برای مقایسه‌های تحقیق محلی استفاده می‌شود و جداگانه قابل پاک‌سازی است.',
   'Research memory cleared. Notes, ideas and saved links were kept.': 'حافظه تحقیق پاک شد. یادداشت‌ها، ایده‌ها و پیوندهای ذخیره‌شده حفظ شدند.',
   'Confirm clear research memory': 'تأیید پاک‌سازی حافظه تحقیق',
-  'Clear research memory': 'پاک‌سازی حافظه تحقیق',
   'This is a limited YouTube search sample, not a real-time trend report. Region controls availability, not audience location. Language is a relevance hint, not a strict language filter. Search ordering is supplied by YouTube. No demand, growth, competition score, or viral prediction is inferred.': 'این فقط نمونه محدودی از نتایج جست‌وجوی یوتیوب است، نه گزارش روند لحظه‌ای. منطقه بر دسترس‌پذیری اثر می‌گذارد، نه محل مخاطبان. زبان فقط راهنمای ارتباط است و فیلتر سخت‌گیرانه نیست. ترتیب جست‌وجو را یوتیوب تعیین می‌کند. تقاضا، رشد، امتیاز رقابت یا وایرال شدن از این داده‌ها استنباط نمی‌شود.',
   'Trend signal': 'سیگنال روند',
   'Evidence quality': 'کیفیت شواهد',
@@ -392,7 +391,6 @@ const fa: Record<string, string> = {
   'Undated': 'بدون تاریخ',
   'Older than 90 days': 'قدیمی‌تر از ۹۰ روز',
   'Potential anomaly': 'ناهنجاری احتمالی',
-  'Insufficient-data': 'داده ناکافی',
   'Insufficient data': 'داده ناکافی',
   'Direction': 'جهت روند',
   'Monthly observations': 'مشاهده ماهانه',
@@ -435,7 +433,7 @@ export function translateText(value: string, language: UiLanguage = 'fa'): strin
   for (const [source, target] of replacements) {
     if (translated.includes(source)) translated = translated.split(source).join(target);
   }
-  const prefixes: [string, string][] = [['Estimated units today:', 'واحد تخمینی امروز:'], ['Requests today:', 'درخواست‌های امروز:'], ['Region:', 'منطقه:'], ['Languages:', 'زبان‌ها:'], ['Source:', 'منبع:'], ['Published ', 'منتشرشده '], ['Confidence:', 'میزان اطمینان:'], ['Follow-up search:', 'جست‌وجوی تکمیلی:'], ['Feeds represented:', 'خوراک‌های خبری حاضر:'], ['Independent publisher groups:', 'گروه‌های مستقل ناشر:'], ['Duplicate stories merged:', 'خبرهای تکراری ادغام‌شده:'], ['Undated:', 'بدون تاریخ:'], ['Older than 90 days:', 'قدیمی‌تر از ۹۰ روز:'], ['Direction:', 'جهت روند:'], ['Monthly observations:', 'تعداد داده‌های ماهانه:'], ['Recent change between halves of the returned series:', 'تغییر بین نیمه اول و دوم داده‌های دریافت‌شده:'], ['Potential anomaly:', 'ناهنجاری احتمالی:'], ['Research gap:', 'کمبود تحقیق:'], ['Shared terms across publisher and video samples:', 'واژه‌های مشترک میان نمونه خبرها و ویدئوها:'], [' · Independent publisher groups:', ' · گروه‌های ناشر مستقل:'], [' · Undated:', ' · بدون تاریخ:'], [' · Older than 90 days:', ' · قدیمی‌تر از ۹۰ روز:'], ['Potential discrepancy:', 'اختلاف احتمالی:'], ['Shared terms across publisher and video samples:', 'واژه‌های مشترک میان نمونه خبرها و ویدئوها:']];
+  const prefixes: [string, string][] = [['Estimated units today:', 'واحد تخمینی امروز:'], ['Requests today:', 'درخواست‌های امروز:'], ['Region:', 'منطقه:'], ['Languages:', 'زبان‌ها:'], ['Source:', 'منبع:'], ['Published ', 'منتشرشده '], ['Confidence:', 'میزان اطمینان:'], ['Follow-up search:', 'جست‌وجوی تکمیلی:'], ['Feeds represented:', 'خوراک‌های خبری حاضر:'], ['Independent publisher groups:', 'گروه‌های مستقل ناشر:'], ['Duplicate stories merged:', 'خبرهای تکراری ادغام‌شده:'], ['Undated:', 'بدون تاریخ:'], ['Older than 90 days:', 'قدیمی‌تر از ۹۰ روز:'], ['Direction:', 'جهت روند:'], ['Monthly observations:', 'تعداد داده‌های ماهانه:'], ['Recent change between halves of the returned series:', 'تغییر بین نیمه اول و دوم داده‌های دریافت‌شده:'], ['Potential anomaly:', 'ناهنجاری احتمالی:'], ['Research gap:', 'کمبود تحقیق:'], ['Shared terms across publisher and video samples:', 'واژه‌های مشترک میان نمونه خبرها و ویدئوها:'], [' · Independent publisher groups:', ' · گروه‌های ناشر مستقل:'], [' · Undated:', ' · بدون تاریخ:'], [' · Older than 90 days:', ' · قدیمی‌تر از ۹۰ روز:'], ['Potential discrepancy:', 'اختلاف احتمالی:']];
   for (const [source, target] of prefixes) if (translated.startsWith(source)) translated = target + translated.slice(source.length);
   return translated;
 }

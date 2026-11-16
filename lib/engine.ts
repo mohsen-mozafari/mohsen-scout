@@ -258,18 +258,16 @@ export function buildInternalResearch(input: InternalResearchInput): InternalRes
     },
   ];
 
-  const verificationQuestions = [
-    ... (fa ? [
-      'آیا منبع اولیه یک اندازه‌گیری مستقیم را شرح می‌دهد، یک تفسیر یا یک فرضیه؟',
-      'آیا نام‌ها، تاریخ‌ها، اعداد و وضعیت مأموریت با ناشر اصلی قابل بررسی‌اند؟',
-      'کدام ادعای مهم هنوز به مقاله، صفحه مأموریت یا منبع مستقل نیاز دارد؟',
-      'شواهد موجود چه چیزی را ثابت نمی‌کنند؟',
-    ] : [
-      'Does the primary source describe a direct measurement, an interpretation or a hypothesis?',
-      'Can names, dates, figures and mission status be checked against the original publisher?',
-      'Which important claim still needs a paper, mission page or independent source?',
-      'What does the available evidence not establish?',
-    ]),
+  const verificationQuestions = fa ? [
+    'آیا منبع اولیه یک اندازه‌گیری مستقیم را شرح می‌دهد، یک تفسیر یا یک فرضیه؟',
+    'آیا نام‌ها، تاریخ‌ها، اعداد و وضعیت مأموریت با ناشر اصلی قابل بررسی‌اند؟',
+    'کدام ادعای مهم هنوز به مقاله، صفحه مأموریت یا منبع مستقل نیاز دارد؟',
+    'شواهد موجود چه چیزی را ثابت نمی‌کنند؟',
+  ] : [
+    'Does the primary source describe a direct measurement, an interpretation or a hypothesis?',
+    'Can names, dates, figures and mission status be checked against the original publisher?',
+    'Which important claim still needs a paper, mission page or independent source?',
+    'What does the available evidence not establish?',
   ];
   const limitationsList = [
     ...(fa ? [

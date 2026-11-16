@@ -157,9 +157,11 @@ export function canonicalizeResearchUrl(value?: string): string {
     const url = new URL(value);
     if (url.protocol !== 'https:' && url.protocol !== 'http:') return '';
     url.hash = '';
-    for (const key of [...url.searchParams.keys()]) {
-      if (/^(utm_.+|fbclid|gclid|mc_cid|mc_eid|ref_src)$/i.test(key)) url.searchParams.delete(key);
-    }
+    const trackingKeys = new Set<string>();
+    url.searchParams.forEach((_value, key) => {
+      if (/^(utm_.+|fbclid|gclid|mc_cid|mc_eid|ref_src)$/i.test(key)) trackingKeys.add(key);
+    });
+    for (const key of trackingKeys) url.searchParams.delete(key);
     url.hostname = url.hostname.toLowerCase();
     url.pathname = url.pathname.replace(/\/+$/, '') || '/';
     url.searchParams.sort();
