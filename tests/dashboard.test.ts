@@ -46,7 +46,7 @@ function video(id: string, title: string, viewCount: number | null, fetchedAt = 
   };
 }
 
-test('dashboard chooses the strongest active idea and excludes archived, rejected and completed items', () => {
+void test('dashboard chooses the strongest active idea and excludes archived, rejected and completed items', () => {
   const completed = idea('completed', 'Strong Opportunity', { status: 'Completed Research' });
   const rejected = idea('rejected', 'Strong Opportunity', { status: 'Rejected Ideas' });
   const archived = idea('archived', 'Strong Opportunity', { archived: true });
@@ -57,7 +57,7 @@ test('dashboard chooses the strongest active idea and excludes archived, rejecte
   assert.deepEqual(rankDashboardIdeas([completed, rejected, archived]).map((item) => item.id), []);
 });
 
-test('dashboard video feed filters strictly to the selected niche and sorts by raw views', () => {
+void test('dashboard video feed filters strictly to the selected niche and sorts by raw views', () => {
   const items = [
     video('relevant-low', 'JWST publishes an early galaxy image', 120),
     video('irrelevant-high', 'Mars rover explores a crater', 900000),
@@ -68,7 +68,7 @@ test('dashboard video feed filters strictly to the selected niche and sorts by r
   assert.deepEqual(result.map((item) => item.id), ['relevant-high', 'relevant-low', 'relevant-no-count']);
 });
 
-test('dashboard video feed omits expired metadata and returns empty for missing evidence', () => {
+void test('dashboard video feed omits expired metadata and returns empty for missing evidence', () => {
   const fresh = video('fresh', 'JWST observation', 100);
   const expired = video('expired', 'JWST old observation', 5000, now - RETENTION_MS - 1);
   assert.deepEqual(selectDashboardVideos([expired, fresh], 'JWST', ['JWST'], now, 5).map((item) => item.id), ['fresh']);
@@ -76,14 +76,14 @@ test('dashboard video feed omits expired metadata and returns empty for missing 
   assert.deepEqual(selectDashboardVideos([], 'JWST', ['JWST'], now, 5), []);
 });
 
-test('live free-model selection falls back from a stale saved model and preserves a live choice', () => {
+void test('live free-model selection falls back from a stale saved model and preserves a live choice', () => {
   const models = [{ id: 'provider/current-free' }, { id: 'provider/second-free' }];
   assert.equal(selectFreeModel(models, 'provider/removed-model'), 'provider/current-free');
   assert.equal(selectFreeModel(models, 'provider/second-free'), 'provider/second-free');
   assert.equal(selectFreeModel([], 'provider/removed-model'), '');
 });
 
-test('persisted second-opinion cache is reused only for the exact model and evidence fingerprint', () => {
+void test('persisted second-opinion cache is reused only for the exact model and evidence fingerprint', () => {
   const model = 'provider/current-free';
   const prompt = 'Processed editorial topic and evidence aggregates';
   const fingerprint = 'evidence-abc';
@@ -100,7 +100,7 @@ test('persisted second-opinion cache is reused only for the exact model and evid
 });
 
 
-test('OpenRouter serializes generation and releases its lock after a failed preflight', async () => {
+void test('OpenRouter serializes generation and releases its lock after a failed preflight', async () => {
   let release!: () => void;
   const gate = new Promise<void>((resolve) => { release = resolve; });
   let calls = 0;
@@ -133,7 +133,7 @@ test('OpenRouter serializes generation and releases its lock after a failed pref
 });
 
 
-test('Space Radar shares one in-flight refresh and unlocks the next attempt after failure', async () => {
+void test('Space Radar shares one in-flight refresh and unlocks the next attempt after failure', async () => {
   const slot: { current: Promise<string> | null } = { current: null };
   let release!: (value: string) => void;
   const gate = new Promise<string>((resolve) => { release = resolve; });

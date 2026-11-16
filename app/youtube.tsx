@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { Text, View, Linking } from 'react-native';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { Button, Skeleton } from 'heroui-native';
@@ -54,10 +54,6 @@ export default function Discover() {
   const [sort, setSort] = useState('Newest');
   const [reportId, setReportId] = useState(typeof params.report === 'string' ? params.report : '');
   const [hasKey, setHasKey] = useState(false);
-  useEffect(() => {
-    if (typeof params.topic === 'string') setTopic(params.topic);
-    if (typeof params.report === 'string') setReportId(params.report);
-  }, [params.topic, params.report]);
   const op = useOperation();
   const [previousDefaults, setPreviousDefaults] = useState({
     ready,

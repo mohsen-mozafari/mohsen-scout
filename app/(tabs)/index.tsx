@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { InteractionManager, Text, View } from 'react-native';
+import { View } from 'react-native';
 
 import { router } from 'expo-router';
 import {
@@ -346,9 +346,8 @@ function DiscoveryDashboardReady() {
         setRadarNews(relevantNews);
         setWarnings(result.warnings);
         setLastScannedAt(Date.now());
-        await new Promise<void>((resolve) => {
-          InteractionManager.runAfterInteractions(() => resolve());
-        });
+        // Yield one frame before local CPU work so the native UI can paint and respond.
+        await new Promise<void>((resolve) => setTimeout(resolve, 32));
 
         const currentData = useScout.getState().data;
         const priorMemory = currentData.researchMemory.find(
@@ -431,8 +430,8 @@ function DiscoveryDashboardReady() {
   const latestReportSignature = latestReport
     ? latestReport.videos.map((video) => video.id + ':' + video.fetchedAt).join('|')
     : '';
-  const latestReportVideoRecords = latestReport?.videos ?? [];
-  const latestReportVideos = useMemo<YouTubeSampleVideo[]>(() => latestReportVideoRecords.map((video) => ({
+  const latestReportVideoRecords = latestReport?.videos;
+  const latestReportVideos = useMemo<YouTubeSampleVideo[]>(() => (latestReportVideoRecords ?? []).map((video) => ({
     id: video.id,
     title: video.title,
     description: video.description,
@@ -447,18 +446,12 @@ function DiscoveryDashboardReady() {
     url: 'https://www.youtube.com/watch?v=' + video.id,
   })), [latestReportVideoRecords]);
   useEffect(() => {
-    if (!latestReportId || !latestReportSignature) {
-      setReportAnalysisState(undefined);
-      return;
-    }
+    if (!latestReportId || !latestReportSignature) return;
     let active = true;
-    const task = InteractionManager.runAfterInteractions(() => {
+    const timer = setTimeout(() => {
       if (!active) return;
       const report = useScout.getState().data.reports.find((item) => item.id === latestReportId);
-      if (!report || !report.videos.length) {
-        setReportAnalysisState(undefined);
-        return;
-      }
+      if (!report || !report.videos.length) return;
       try {
         const videos: YouTubeSampleVideo[] = report.videos.map((video) => ({
           id: video.id,
@@ -485,10 +478,10 @@ function DiscoveryDashboardReady() {
           ? 'تحلیل محلی آخرین جست‌وجو کامل نشد؛ گزارش و ویدئوهای ذخیره‌شده همچنان در دسترس‌اند.'
           : 'The latest local analysis could not be completed. The saved report and videos remain available.']);
       }
-    });
+    }, 0);
     return () => {
       active = false;
-      task.cancel();
+      clearTimeout(timer);
     };
   }, [latestReportId, latestReportSignature, preferences.uiLanguage, fa]);
 
@@ -520,9 +513,10 @@ function DiscoveryDashboardReady() {
   const feedTopic = preferences.selectedSpaceNiche === 'all'
     ? latestReport?.input.topic ?? discoveryTopic
     : discoveryTopic;
+  const [dashboardNow] = useState(() => Date.now());
   const feedVideos = useMemo(
-    () => selectDashboardVideos(latestReportVideoRecords, feedTopic, nicheTerms, Date.now(), 5),
-    [latestReportVideoRecords, feedTopic, nicheTerms],
+    () => selectDashboardVideos(latestReportVideoRecords ?? [], feedTopic, nicheTerms, dashboardNow, 5),
+    [latestReportVideoRecords, feedTopic, nicheTerms, dashboardNow],
   );
 
   return (
@@ -651,7 +645,7 @@ function DiscoveryDashboardReady() {
           {recommendations.length ? recommendations.map((idea) => (
             <View key={idea.id} style={{ gap: 6 }}>
               <SourceHeading>{idea.topic}</SourceHeading>
-              <BadgeText>{idea.assessment} · {idea.ideaCategory ?? (fa ? 'ایدهٔ ذخیره‌شده' : 'Saved idea')}</BadgeText>
+              <BadgeText>{idea.assessment + ' · ' + (idea.ideaCategory ?? (fa ? 'ایدهٔ ذخیره‌شده' : 'Saved idea'))}</BadgeText>
               <Txt muted>{idea.concept.slice(0, 250)}</Txt>
               <Action secondary onPress={() => router.push({ pathname: '/detail', params: { idea: idea.id } })}>
                 {fa ? 'بررسی این ایده' : 'Review this idea'}
