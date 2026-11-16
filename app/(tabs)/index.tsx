@@ -21,10 +21,13 @@ import { buildResearchInterestProfile, normalizeResearchText } from '@/lib/intel
 import { rememberTopicDossier } from '@/lib/topic-dossier';
 import { createResearchMemoryEntry } from '@/lib/research-memory';
 import { ResearchKnowledgeGraph } from '@/components/ResearchKnowledgeGraph';
+import { ResearchOverviewChart } from '@/components/ResearchOverviewChart';
 import { generateEditorialIdeas } from '@/lib/idea-generation';
 import { fingerprintText, getFreeModels, getOpinion, internalEngineReviewPrompt, nextOpenRouterUsage, quotaDay, type YouTubeSampleVideo } from '@/lib/api';
 import { getKey } from '@/lib/vault';
 
+const automaticYoutubeRuns = new Set<string>();
+const automaticReviewAttempts = new Set<string>();
 
 function AnalysisSignals({ result }: { result: InternalResearchResult }) {
   const language = useScout((state) => state.data.preferences.uiLanguage ?? 'fa');
@@ -107,6 +110,7 @@ function AnalysisSignals({ result }: { result: InternalResearchResult }) {
 function EngineAIReview({ topic, result }: { topic: string; result: InternalResearchResult }) {
   const preferences = useScout((state) => state.data.preferences);
   const opinions = useScout((state) => state.data.opinions);
+  const hybridEnabled = preferences.hybridIntelligenceEnabled ?? false;
   const fa = preferences.uiLanguage === 'fa';
   const quality = result.intelligence.sourceQuality;
   const prompt = internalEngineReviewPrompt({
@@ -145,13 +149,21 @@ function EngineAIReview({ topic, result }: { topic: string; result: InternalRese
   const review = reviewState.key === visibleCacheKey ? reviewState.text : savedReview?.text ?? '';
   const op = useOperation();
 
-  const runReview = () => void op.run(async () => {
-    const key = await getKey('openrouter');
-    if (!key) throw new Error(fa ? 'ابتدا کلید OpenRouter را در تنظیمات ذخیره کن.' : 'Save your OpenRouter key in Settings first.');
+  const runReview = (automatic = false) => void op.run(async () => {
     const current = useScout.getState().data;
-    const models = await getFreeModels();
     let model = current.preferences.model;
-    if (!model || !models.some((item) => item.id === model)) {
+    if (model) {
+      const existingKey = 'engine:' + fingerprintText(model + '\n' + prompt);
+      const existing = current.opinions.find((item) => item.ideaId === existingKey && item.model === model);
+      if (existing) {
+        setReviewState({ key: existingKey, text: existing.text });
+        return;
+      }
+    }
+    const key = await getKey('openrouter');
+    if (!key) throw new Error(fa ? 'برای نظر دوم خودکار، ابتدا کلید OpenRouter را در تنظیمات ذخیره کن.' : 'Save your OpenRouter key in Settings before requesting an automatic review.');
+    if (!model) {
+      const models = await getFreeModels();
       model = models[0]?.id ?? '';
       if (!model) throw new Error(fa ? 'مدل رایگان قابل استفاده‌ای پیدا نشد.' : 'No available free OpenRouter model was found.');
       await useScout.getState().commit((data) => ({
@@ -178,16 +190,23 @@ function EngineAIReview({ topic, result }: { topic: string; result: InternalRese
         preferences: { ...data.preferences, ...usage },
       }));
     });
-    const opinion = {
-      id: uid(),
-      ideaId: cacheKey,
-      text: response,
-      model,
-      createdAt: Date.now(),
-    };
+    const opinion = { id: uid(), ideaId: cacheKey, text: response, model, createdAt: Date.now() };
     await useScout.getState().commit((data) => ({ ...data, opinions: [opinion, ...data.opinions].slice(0, 100) }));
     setReviewState({ key: cacheKey, text: response });
-  }, fa ? 'بازبینی AI با خروجی موتور داخلی ذخیره شد.' : 'AI review of the internal engine was saved.');
+  }, automatic
+    ? (fa ? 'بازبینی خودکار AI ذخیره شد.' : 'Automatic AI review saved.')
+    : (fa ? 'بازبینی AI با خروجی موتور داخلی ذخیره شد.' : 'AI review of the internal engine was saved.'));
+  useEffect(() => {
+    if (!hybridEnabled || review) return;
+    const attemptKey = 'engine:auto:' + fingerprintText(prompt);
+    if (automaticReviewAttempts.has(attemptKey)) return;
+    automaticReviewAttempts.add(attemptKey);
+    if (automaticReviewAttempts.size > 50) {
+      const oldest = automaticReviewAttempts.values().next().value;
+      if (oldest) automaticReviewAttempts.delete(oldest);
+    }
+    runReview(true);
+  }, [hybridEnabled, review, prompt, runReview]);
 
   return (
     <Panel>
@@ -197,11 +216,25 @@ function EngineAIReview({ topic, result }: { topic: string; result: InternalRese
         ? 'موتور داخلی شواهد و محدودیت‌ها را استخراج می‌کند؛ AI دوم همان خروجی پردازش‌شده را نقد می‌کند. فقط موضوع و شاخص‌های تجمیعی مجاز ارسال می‌شوند، نه متن خبر یا فراداده خام YouTube.'
         : 'The local engine extracts evidence signals and limitations; the external model independently critiques that processed output. Only the topic and approved aggregate indicators are sent — never raw news or YouTube metadata.'}</Txt>
       {savedReview ? <Txt muted>{'Model: ' + savedReview.model + ' · Reviewed: ' + new Date(savedReview.createdAt).toLocaleString()}</Txt> : null}
-      {!review ? <Txt muted>{fa
-        ? 'هر بررسی با درخواست صریح شما انجام می‌شود و پاسخ دریافتی روی دستگاه ذخیره خواهد شد.'
-        : 'Each review is explicitly requested by you and the received answer is saved on this device.'}</Txt> : null}
-      <Action busy={op.busy} onPress={runReview}>
-        {fa ? 'گرفتن نظر دوم از AI خارجی' : 'Ask external AI for its second opinion'}
+      <Action secondary busy={op.busy} onPress={() => void op.run(async () => {
+        await useScout.getState().commit((data) => ({
+          ...data,
+          preferences: { ...data.preferences, hybridIntelligenceEnabled: !hybridEnabled },
+        }));
+      })}>
+        {hybridEnabled
+          ? (fa ? 'توقف نظر دوم خودکار' : 'Pause automatic AI second opinion')
+          : (fa ? 'فعال‌سازی نظر دوم خودکار' : 'Enable automatic AI second opinion')}
+      </Action>
+      <Txt muted>{hybridEnabled
+        ? (fa ? 'فعال است: پس از تحلیل محلیِ تازه، یک‌بار AI بیرونی به‌صورت خودکار نقد می‌کند. فقط موضوع و شاخص‌های تجمیعی ارسال می‌شوند؛ داده خام خبر و YouTube ارسال نمی‌شود.' : 'Enabled: after a new local analysis, external AI runs once automatically. Only the topic and processed aggregate signals are sent — never raw news or YouTube data.')
+        : (fa ? 'خاموش است. با فعال‌سازی بالا، به برنامه اجازه می‌دهی پس از تحلیل محلی برای نظر مستقل از OpenRouter استفاده کند.' : 'Paused. Enabling this gives the app permission to request an independent OpenRouter review after local analysis.')}
+      </Txt>
+      {!review && !op.busy ? <Txt muted>{fa
+        ? 'برای نظر دوم دستی نیز می‌توانی همین‌جا درخواست بدهی؛ پاسخ‌های موفق روی دستگاه ذخیره و برای همان تحلیل دوباره استفاده می‌شوند.'
+        : 'You can also request a manual review here. Successful responses are stored locally and reused for the same analysis.'}</Txt> : null}
+      <Action busy={op.busy} onPress={() => runReview(false)}>
+        {fa ? 'گرفتن / به‌روزرسانی نظر دوم از AI خارجی' : 'Request / refresh external AI second opinion'}
       </Action>
       {op.error ? <ErrorBox message={op.error} onRetry={runReview} /> : null}
       {op.message ? <Txt muted>{op.message}</Txt> : null}
@@ -227,6 +260,8 @@ function DiscoveryDashboardReady() {
   const ideas = useScout((state) => state.data.ideas);
   const reports = useScout((state) => state.data.reports);
   const memoryCount = useScout((state) => state.data.researchMemory.length);
+  const feedRegistry = useScout((state) => state.data.feedRegistry);
+  const opinions = useScout((state) => state.data.opinions);
   const youtubeBudget = useScout((state) => state.data.budget);
   const quotaDate = quotaDay();
   const quotaUsage = youtubeBudget.date === quotaDate
@@ -237,6 +272,7 @@ function DiscoveryDashboardReady() {
   const [nicheSuggestions, setNicheSuggestions] = useState<SpaceNicheSuggestion[]>([]);
   const [radarBrief, setRadarBrief] = useState<InternalResearchResult>();
   const [radarNews, setRadarNews] = useState<SpaceNewsItem[]>([]);
+  const [automaticSearchMessage, setAutomaticSearchMessage] = useState('');
   const op = useOperation();
   const niche = SPACE_NICHES.find((item) => item.id === preferences.selectedSpaceNiche);
   const nicheTitle = preferences.selectedSpaceNiche === 'all'
@@ -335,6 +371,76 @@ function DiscoveryDashboardReady() {
   const rssGenerationKey = 'rss:' + deskNews.map((item) => item.url).sort().join('|');
   const deskIdeas = ideas.filter((idea) => idea.engineGenerated && !idea.archived && (showYouTubeResearch ? idea.reportId === latestReport?.id : idea.generationKey === rssGenerationKey)).slice(0, 3);
   useEffect(() => {
+    if (!preferences.automaticYoutubeDiscoveryEnabled) {
+      setAutomaticSearchMessage('');
+      return;
+    }
+    const currentPreferences = useScout.getState().data.preferences;
+    const lastAt = currentPreferences.automaticYoutubeLastAt ?? 0;
+    const completedForTopic = currentPreferences.automaticYoutubeLastTopic === discoveryTopic;
+    if (completedForTopic && lastAt > 0 && Date.now() - lastAt < 24 * 60 * 60 * 1000) {
+      setAutomaticSearchMessage(preferences.uiLanguage === 'fa'
+        ? 'نمونه خودکار این موضوع در ۲۴ ساعت گذشته جمع‌آوری شده است.'
+        : 'An automatic sample for this topic was already collected in the last 24 hours.');
+      return;
+    }
+    const runKey = normalizeResearchText(discoveryTopic) + ':' + Math.floor(Date.now() / 86400000);
+    if (automaticYoutubeRuns.has(runKey)) return;
+    automaticYoutubeRuns.add(runKey);
+    let active = true;
+    void getKey('youtube').then(async (apiKey) => {
+      if (!active) return;
+      if (!apiKey) {
+        setAutomaticSearchMessage(preferences.uiLanguage === 'fa'
+          ? 'برای جست‌وجوی خودکار، ابتدا کلید YouTube API را در تنظیمات ذخیره کن.'
+          : 'Save a YouTube API key in Settings to enable automatic sampling.');
+        automaticYoutubeRuns.delete(runKey);
+        return;
+      }
+      setAutomaticSearchMessage(preferences.uiLanguage === 'fa'
+        ? 'جست‌وجوی خودکار YouTube در حال اجراست…'
+        : 'Automatic YouTube research is running…');
+      const report = await useScout.getState().research({
+        topic: discoveryTopic,
+        region: currentPreferences.region,
+        languages: currentPreferences.languages,
+        days: currentPreferences.defaultResearchDays ?? 30,
+        duration: 'any',
+        category: 'any',
+        maxResults: 30,
+      }, 'automatic');
+      if (!active) return;
+      if (!report) {
+        const error = useScout.getState().error;
+        if (!error) automaticYoutubeRuns.delete(runKey);
+        setAutomaticSearchMessage(error || (preferences.uiLanguage === 'fa'
+          ? 'جست‌وجوی خودکار کامل نشد؛ از جست‌وجوی دستی استفاده کن.'
+          : 'Automatic sampling did not complete; start a manual search.'));
+        return;
+      }
+      await useScout.getState().commit((data) => ({
+        ...data,
+        preferences: { ...data.preferences, automaticYoutubeLastAt: Date.now(), automaticYoutubeLastTopic: discoveryTopic },
+      }));
+      if (active) setAutomaticSearchMessage(preferences.uiLanguage === 'fa'
+        ? 'نمونه YouTube با بودجه خودکار جمع‌آوری و به ایده‌ها و داشبورد پیوند شد.'
+        : 'The YouTube sample was collected from the automatic quota budget and linked to ideas and the dashboard.');
+    }).catch(() => {
+      if (active) setAutomaticSearchMessage(preferences.uiLanguage === 'fa'
+        ? 'جست‌وجوی خودکار به خطا خورد؛ کلید و اتصال را بررسی کن.'
+        : 'Automatic research failed; check the API key and connection.');
+    });
+    return () => { active = false; };
+  }, [
+    preferences.automaticYoutubeDiscoveryEnabled,
+    preferences.uiLanguage,
+    preferences.region,
+    preferences.languages,
+    preferences.defaultResearchDays,
+    discoveryTopic,
+  ]);
+
+  useEffect(() => {
     let active = true;
     void fetchSpaceNews(preferences.spaceNewsSources).then((result) => {
       if (active) void applyScan(result).catch(() => setWarnings(['Local research output could not be saved. Check device storage and retry.']));
@@ -365,6 +471,19 @@ function DiscoveryDashboardReady() {
             </View>
           </View>
           <Txt muted>{lastScannedAt ? 'Last source update: ' + new Date(lastScannedAt).toLocaleString() : 'Checking selected official feeds…'} · {radarNews.length} matching reports</Txt>
+          <Action secondary onPress={() => void useScout.getState().commit((data) => ({
+            ...data,
+            preferences: { ...data.preferences, automaticYoutubeDiscoveryEnabled: !(data.preferences.automaticYoutubeDiscoveryEnabled ?? false) },
+          }))}>
+            {preferences.automaticYoutubeDiscoveryEnabled
+              ? (preferences.uiLanguage === 'fa' ? 'توقف جست‌وجوی خودکار YouTube' : 'Pause automatic YouTube research')
+              : (preferences.uiLanguage === 'fa' ? 'فعال‌سازی جست‌وجوی خودکار YouTube' : 'Enable automatic YouTube research')}
+          </Action>
+          <Txt muted>{preferences.automaticYoutubeDiscoveryEnabled
+            ? (preferences.uiLanguage === 'fa' ? 'با فعال‌بودن این گزینه، پس از بازشدن برنامه برای موضوع انتخاب‌شده حداکثر یک نمونه در هر ۲۴ ساعت از سهمیه automatic استفاده می‌شود؛ اسکن پس‌زمینه‌ای انجام نمی‌شود.' : 'When enabled, one sample per selected topic per 24 hours may run from the automatic quota after the app opens. No background scanning is used.')
+            : (preferences.uiLanguage === 'fa' ? 'این قابلیت به‌صورت پیش‌فرض خاموش است و فقط پس از فعال‌سازی، سهمیه YouTube مصرف می‌کند.' : 'Off by default. YouTube quota is used only after you enable it.')}
+          </Txt>
+          {automaticSearchMessage ? <Txt muted>{automaticSearchMessage}</Txt> : null}
           {warnings.slice(0, 2).map((warning) => <Txt muted key={warning}>{warning}</Txt>)}
         </Panel>
 
@@ -393,6 +512,8 @@ function DiscoveryDashboardReady() {
             <Txt muted>{'Today: ' + quotaUsage.units + ' / ' + preferences.budget + ' quota units · ' + quotaUsage.requests + ' requests. The counter follows the app’s Pacific-time quota day.'}</Txt>
           </Fold>
         </Panel>
+
+        <ResearchOverviewChart feedRegistry={feedRegistry} reports={reports} ideas={ideas} opinions={opinions} language={preferences.uiLanguage ?? 'fa'} />
 
         {deskAnalysis ? (
           <>

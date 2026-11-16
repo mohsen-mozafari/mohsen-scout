@@ -11,6 +11,7 @@ import {
   uid,
 } from './types';
 import { readData, writeData } from './storage';
+import { describeStorageError } from './storage-errors';
 import { getKey } from './vault';
 import { ApiError, nextBudget, reserveYoutubeRefreshCycle, searchYouTube, type YouTubeQuotaKind, type YouTubeQuotaOrigin } from './api';
 import { generateEditorialIdeas } from './idea-generation';
@@ -59,9 +60,10 @@ export const useScout = create<State>((set, get) => ({
       try {
         await writeData(data);
         set({ data });
-      } catch {
-        set({ error: 'Could not save on this device. Check available storage.' });
-        throw new Error('Could not save on this device. Check available storage.');
+      } catch (error) {
+        const message = describeStorageError(error);
+        set({ error: message });
+        throw new Error(message);
       }
     });
     queue = action.catch(() => {});

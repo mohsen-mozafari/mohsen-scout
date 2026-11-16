@@ -1,5 +1,6 @@
 import * as SQLite from 'expo-sqlite';
-import { defaults, purgeExpired, type LocalData } from './types';
+import { purgeExpired, type LocalData } from './types';
+import { decodeStorageRows, encodeStorageRows } from './storage-layout';
 import { validateLocal } from './validation';
 let database: Promise<SQLite.SQLiteDatabase> | undefined;
 async function db() {
@@ -22,14 +23,7 @@ export async function readData(): Promise<LocalData> {
   const rows = await connection.getAllAsync<{ key: string; value: string }>(
     'SELECT key,value FROM personal UNION ALL SELECT key,value FROM youtube',
   );
-  const data = defaults();
-  for (const row of rows) {
-    if (row.key === 'preferences') {
-      Object.assign(data, { preferences: { ...data.preferences, ...JSON.parse(row.value) } });
-    } else if (row.key in data) {
-      Object.assign(data, { [row.key]: JSON.parse(row.value) });
-    }
-  }
+  const data = decodeStorageRows(rows);
   const clean = purgeExpired(validateLocal(data));
   await writeData(clean);
   return clean;
@@ -37,13 +31,14 @@ export async function readData(): Promise<LocalData> {
 export async function writeData(data: LocalData): Promise<void> {
   const connection = await db();
   const clean = purgeExpired(validateLocal(data));
+  const rows = encodeStorageRows(clean);
   await connection.withExclusiveTransactionAsync(async (tx) => {
-    for (const [key, value] of Object.entries(clean)) {
-      const table = key === 'videos' || key === 'reports' ? 'youtube' : 'personal';
+    await tx.runAsync("DELETE FROM personal WHERE key = 'opinions' OR key LIKE 'opinion:%'");
+    for (const row of rows) {
       await tx.runAsync(
-        `INSERT OR REPLACE INTO ${table} (key,value) VALUES (?,?)`,
-        key,
-        JSON.stringify(value),
+        `INSERT OR REPLACE INTO ${row.table} (key,value) VALUES (?,?)`,
+        row.key,
+        row.value,
       );
     }
   });

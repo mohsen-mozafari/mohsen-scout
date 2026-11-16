@@ -141,6 +141,12 @@ export type Preferences = {
   defaultResearchDays: 0 | 7 | 30 | 90;
   budget: number;
   model: string;
+  /** Explicit opt-in: automated external review receives only processed aggregate signals. */
+  hybridIntelligenceEnabled?: boolean;
+  /** Explicit opt-in: one official YouTube research cycle per selected topic per 24 hours. */
+  automaticYoutubeDiscoveryEnabled?: boolean;
+  automaticYoutubeLastAt?: number;
+  automaticYoutubeLastTopic?: string;
   /** Local OpenRouter usage accounting; legacy backups may omit these fields. */
   openRouterUsageDay?: string;
   openRouterRequestsToday?: number;
@@ -232,6 +238,8 @@ export function defaults(): LocalData {
       defaultResearchDays: 30,
       budget: 1500,
       model: '',
+      hybridIntelligenceEnabled: false,
+      automaticYoutubeDiscoveryEnabled: false,
       schedule: 'Manual',
       paused: false,
       spaceNewsSources: ['nasa', 'jpl', 'cneos', 'esa-space', 'esa-science'],
