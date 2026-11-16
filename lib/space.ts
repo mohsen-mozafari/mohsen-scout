@@ -222,7 +222,7 @@ export function parseJsonFeed(json: string, source: SpaceNewsSource): SpaceNewsI
   });
 }
 
-const newsInflight = new Map<string, Promise<{ items: SpaceNewsItem[]; warnings: string[] }>>();
+const newsInflight = new Map<string, Promise<{ items: SpaceNewsItem[]; warnings: string[]; registry: FeedRegistryRecord[] }>>();
 
 function feedHttpReason(status: number) {
   return status === 403 ? 'access was refused by the publisher'
