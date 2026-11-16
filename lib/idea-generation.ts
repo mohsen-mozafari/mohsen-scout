@@ -66,6 +66,31 @@ type Candidate = {
   verification: string;
 };
 
+function semanticTokens(value: string): Set<string> {
+  return new Set(tokenizeResearchText(value).filter((token) => token.length > 2));
+}
+
+function ideaHasSameMeaning(candidate: Candidate, idea: Idea, topic: string): boolean {
+  if (!idea.engineGenerated || idea.ideaCategory !== candidate.category) return false;
+  const question = idea.concept.match(/(?:Central question:|پرسش محوری:)\s*([^\n]+)/i)?.[1] ?? '';
+  const candidateTokens = semanticTokens(candidate.title + ' ' + candidate.question);
+  const existingTokens = semanticTokens(idea.topic + ' ' + question);
+  const anchorTokens = semanticTokens(candidate.anchor);
+  const anchorOverlap = [...anchorTokens].filter((token) => existingTokens.has(token)).length;
+  if (anchorTokens.size > 0 && anchorOverlap / anchorTokens.size < 0.75) return false;
+  const topicTokens = semanticTokens(topic);
+  for (const token of topicTokens) {
+    candidateTokens.delete(token);
+    existingTokens.delete(token);
+  }
+  if (!candidateTokens.size || !existingTokens.size) return false;
+  let overlap = 0;
+  for (const token of candidateTokens) if (existingTokens.has(token)) overlap += 1;
+  const containment = overlap / Math.min(candidateTokens.size, existingTokens.size);
+  const jaccard = overlap / (candidateTokens.size + existingTokens.size - overlap);
+  return containment >= 0.76 && jaccard >= 0.5;
+}
+
 function displayTerm(value: string): string {
   if (!value) return value;
   return /^[a-z]/i.test(value) ? value.charAt(0).toUpperCase() + value.slice(1) : value;
@@ -245,7 +270,7 @@ export function generateEditorialIdeas(input: GenerateEditorialIdeasInput): Idea
   const anchors = [...termStats.entries()]
     .sort((a, b) => b[1].documents - a[1].documents || b[1].frequency - a[1].frequency || a[0].localeCompare(b[0]))
     .map(([term]) => term)
-    .slice(0, 10);
+    .slice(0, 20);
   const fallback = tokenizeResearchText(topic).filter((term) => term.length > 2).slice(0, 4);
   const usableAnchors = anchors.length ? anchors : (fallback.length ? fallback : [topic]);
   const newsTerms = new Set(news.flatMap((item) => tokenizeResearchText(item.title + ' ' + item.summary)));
@@ -275,26 +300,37 @@ export function generateEditorialIdeas(input: GenerateEditorialIdeasInput): Idea
   const evidenceKey = (input.evidenceKey ?? documents.map((document) => document.id).sort().join('|')).slice(0, 1200);
   if (input.skipExistingEvidence && existing.some((idea) => idea.generationKey === evidenceKey)) return [];
   const usedTitles = new Set(existing.map((idea) => normalizeResearchText(idea.topic)));
-  const existingEngineCount = existing.filter((idea) => idea.engineGenerated).length;
+  const sameEvidenceIdeas = existing.filter((idea) => idea.engineGenerated && idea.generationKey === evidenceKey);
+  const existingEngineCount = sameEvidenceIdeas.length;
   const candidates: Candidate[] = [];
   const categoryOrder = input.category
     ? [input.category]
     : eligible.slice(existingEngineCount % Math.max(1, eligible.length)).concat(eligible.slice(0, existingEngineCount % Math.max(1, eligible.length)));
   for (const category of categoryOrder) {
     if (!eligible.includes(category)) continue;
-    const categoryCount = existing.filter((idea) => idea.engineGenerated && idea.ideaCategory === category).length;
+    const categoryCount = sameEvidenceIdeas.filter((idea) => idea.ideaCategory === category).length;
     const categoryAnchors = category === 'Cross-source' ? sharedAnchors : usableAnchors;
-    const maxAnchors = Math.min(categoryAnchors.length, 6);
+    const maxAnchors = Math.min(categoryAnchors.length, 20);
     for (let index = 0; index < maxAnchors; index++) {
       const anchor = categoryAnchors[(index + categoryCount) % maxAnchors];
       const candidate = buildCandidate(category, topic, anchor, input.language === 'fa', mode);
-      if (!usedTitles.has(normalizeResearchText(candidate.title))) candidates.push(candidate);
+      if (!usedTitles.has(normalizeResearchText(candidate.title)) &&
+        !existing.some((idea) => ideaHasSameMeaning(candidate, idea, topic)) &&
+        !candidates.some((prior) => prior.category === candidate.category &&
+          ideaHasSameMeaning(candidate, {
+            engineGenerated: true,
+            ideaCategory: prior.category,
+            topic: prior.title,
+            concept: prior.question,
+          } as Idea, topic))) {
+        candidates.push(candidate);
+      }
     }
   }
 
   const output: Idea[] = [];
   const now = input.now ?? Date.now();
-  const limit = Math.max(1, Math.min(8, input.limit ?? 5));
+  const limit = Math.max(1, Math.min(25, input.limit ?? 25));
   const sourceUrl = news.find((item) => item.url.startsWith('https://'))?.url ??
     context.find((item) => item.sourceUrl?.startsWith('https://'))?.sourceUrl;
   const sourceName = news.find((item) => item.url === sourceUrl)?.sourceName ??
@@ -309,7 +345,9 @@ export function generateEditorialIdeas(input: GenerateEditorialIdeasInput): Idea
   for (const candidate of candidates) {
     if (output.length >= limit) break;
     const normalizedTitle = normalizeResearchText(candidate.title);
-    if (usedTitles.has(normalizedTitle)) continue;
+    if (usedTitles.has(normalizedTitle) ||
+      existing.some((idea) => ideaHasSameMeaning(candidate, idea, topic)) ||
+      output.some((idea) => ideaHasSameMeaning(candidate, idea, topic))) continue;
     usedTitles.add(normalizedTitle);
     const relatedVideoIds = videos
       .filter((video) => matchesResearchTerms(video.title + ' ' + (video.description ?? ''), [candidate.anchor]) ||

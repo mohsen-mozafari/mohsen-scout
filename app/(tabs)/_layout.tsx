@@ -1,4 +1,4 @@
-import { Compass, Telescope, Library, NotebookPen, Settings } from 'lucide-react-native';
+import { Compass, Telescope, Library, NotebookPen, Settings, Newspaper } from 'lucide-react-native';
 import { Tabs } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as Haptics from 'expo-haptics';
@@ -49,6 +49,14 @@ export default function TabLayout() {
             title: translateText('MOHSEN SCOUT', language),
             tabBarLabel: translateText('Space Radar', language),
             tabBarIcon: ({ color }) => <Compass size={22} strokeWidth={1.8} color={color} />,
+          }}
+        />
+        <Tabs.Screen
+          name="news"
+          options={{
+            title: translateText('Cosmic News', language),
+            tabBarLabel: translateText('News', language),
+            tabBarIcon: ({ color }) => <Newspaper size={22} strokeWidth={1.8} color={color} />,
           }}
         />
         <Tabs.Screen

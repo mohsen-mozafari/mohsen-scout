@@ -35,6 +35,7 @@ export default function Opportunities() {
   const [search, setSearch] = useState('');
   const [archive, setArchive] = useState(false);
   const [category, setCategory] = useState('All angles');
+  const [sort, setSort] = useState<'Newest' | 'Oldest' | 'A-Z' | 'Z-A'>('Newest');
   const [generationMessage, setGenerationMessage] = useState('');
   const [draftOpen, setDraftOpen] = useState(false);
   const [draftTopic, setDraftTopic] = useState('');
@@ -60,13 +61,28 @@ export default function Opportunities() {
   };
   const categoryOptions = [allCategoryLabel, ...IDEA_GENERATION_CATEGORIES.map((value) => categoryLabel(value))];
   const displayableIdeas = ideas.filter(isIdeaDisplayable);
-  const filtered = displayableIdeas.filter(
-    (i) =>
-      i.archived === archive &&
+  const normalizedSearch = normalizeResearchText(search);
+  const filtered = displayableIdeas.filter((i) => {
+    const searchable = normalizeResearchText([
+      getIdeaDisplayTitle(i, preferences.uiLanguage ?? 'fa'),
+      i.concept, i.note, i.decision, i.sourceName ?? '', i.sourceUrl ?? '', i.ideaCategory ?? '',
+    ].join(' '));
+    return i.archived === archive &&
       (status === 'All' || i.status === status) &&
-      (category === 'All angles' || !i.engineGenerated || i.ideaCategory === category) &&
-      `${getIdeaDisplayTitle(i, preferences.uiLanguage ?? 'fa')} ${i.concept} ${i.note} ${i.decision}`.toLowerCase().includes(search.toLowerCase()),
-  );
+      (category === 'All angles' || (i.engineGenerated && i.ideaCategory === category)) &&
+      (!normalizedSearch || searchable.includes(normalizedSearch));
+  });
+  const sortedFiltered = [...filtered].sort((a, b) => {
+    if (sort === 'Newest') return b.createdAt - a.createdAt;
+    if (sort === 'Oldest') return a.createdAt - b.createdAt;
+    const comparison = getIdeaDisplayTitle(a, preferences.uiLanguage ?? 'fa')
+      .localeCompare(getIdeaDisplayTitle(b, preferences.uiLanguage ?? 'fa'), undefined, { numeric: true, sensitivity: 'base' });
+    return sort === 'A-Z' ? comparison : -comparison;
+  });
+  const sortOptions = fa
+    ? ['جدیدترین', 'قدیمی‌ترین', 'عنوان صعودی', 'عنوان نزولی']
+    : ['Newest', 'Oldest', 'Title A–Z', 'Title Z–A'];
+  const selectedSort = sort === 'Newest' ? sortOptions[0] : sort === 'Oldest' ? sortOptions[1] : sort === 'A-Z' ? sortOptions[2] : sortOptions[3];
   const selectedGenerationCategory = (): IdeaGenerationCategory | undefined =>
     category === 'All angles'
       ? undefined
@@ -110,7 +126,7 @@ export default function Opportunities() {
       languages: current.preferences.languages,
       language: current.preferences.uiLanguage ?? 'fa',
       ...(requestedCategory ? { category: requestedCategory } : {}),
-      limit: 5,
+      limit: 25,
     });
     if (!generated.length) {
       setGenerationMessage(current.preferences.uiLanguage === 'fa'
@@ -145,7 +161,7 @@ export default function Opportunities() {
   return (
     <Page scroll={false}>
       <FlatList
-        data={filtered}
+        data={sortedFiltered}
         keyExtractor={(i) => i.id}
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
@@ -159,23 +175,31 @@ export default function Opportunities() {
               placeholder="Topic or personal decision"
             />
             <Choices
+              label={fa ? 'مرتب‌سازی' : 'Sort by'}
+              options={sortOptions}
+              selected={[selectedSort]}
+              onChange={(values) => {
+                const index = sortOptions.indexOf(values[0]);
+                setSort((['Newest', 'Oldest', 'A-Z', 'Z-A'] as const)[Math.max(0, index)] ?? 'Newest');
+              }}
+            />
+            <Choices
               options={['All', ...statuses]}
               selected={[status]}
               onChange={(v) => setStatus(v[0])}
             />
             <Choices
-              label={fa ? 'تولید بر اساس زاویه' : 'Generate by angle'}
+              label={fa ? 'فیلتر بر اساس زاویه' : 'Filter by angle'}
               options={categoryOptions}
               selected={[category === 'All angles' ? allCategoryLabel : categoryLabel(category)]}
               onChange={(values) => {
                 const selectedIndex = categoryOptions.indexOf(values[0]);
                 const selected = selectedIndex <= 0 ? 'All angles' : IDEA_GENERATION_CATEGORIES[selectedIndex - 1];
                 setCategory(selected);
-                generate(selected === 'All angles' ? undefined : selected);
               }}
             />
             <Action busy={op.busy} onPress={() => generate(selectedGenerationCategory())}>
-              {fa ? 'تولید ایده‌های تازه / بازتولید ایده‌ها' : 'Generate New Ideas / Refresh Ideas'}
+              {fa ? 'تولید Batch جدید (تا ۲۵ ایده مستقل)' : 'Generate a new batch (up to 25 distinct ideas)'}
             </Action>
             {generationMessage ? <Txt muted>{generationMessage}</Txt> : null}
             {draftOpen && (

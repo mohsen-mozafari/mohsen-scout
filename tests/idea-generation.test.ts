@@ -123,24 +123,24 @@ void test('automatic ingestion does not create duplicate ideas for unchanged evi
 });
 
 
-const batchNews: SpaceNewsItem[] = Array.from({ length: 12 }, (_, index) => {
-  const anchor = 'MOCK: spectrometer' + String.fromCharCode(65 + index) +
-    ' exoplanetAtmosphere' + index + ' methaneCloud' + index + ' orbitalDynamics' + index + ' observation' + index;
-  return {
-    id: 'batch-news-' + index,
-    sourceId: index % 2 ? 'esa-science' : 'nasa',
-    sourceName: index % 2 ? 'ESA' : 'NASA',
-    title: anchor,
-    summary: 'MOCK: ' + anchor + ' measurement calibration uncertainty instrument response analysis',
-    url: 'https://' + (index % 2 ? 'esa.int' : 'nasa.gov') + '/mock-batch-' + index,
-    publishedAt: new Date(Date.UTC(2026, 10, 15 - index)).toISOString(),
-  };
-});
+const batchAnchors = Array.from({ length: 30 }, (_, index) =>
+  'astroterm' + String.fromCharCode(97 + Math.floor(index / 26)) + String.fromCharCode(97 + (index % 26)),
+);
+const batchAnchorText = batchAnchors.join(' ');
+const batchNews: SpaceNewsItem[] = Array.from({ length: 12 }, (_, index) => ({
+  id: 'batch-news-' + index,
+  sourceId: index % 2 ? 'esa-science' : 'nasa',
+  sourceName: index % 2 ? 'ESA' : 'NASA',
+  title: 'MOCK: ' + batchAnchorText + ' mission observation record' + index,
+  summary: 'MOCK: ' + batchAnchorText + ' measurement calibration uncertainty instrument response analysis',
+  url: 'https://' + (index % 2 ? 'esa.int' : 'nasa.gov') + '/mock-batch-' + index,
+  publishedAt: new Date(Date.UTC(2026, 10, 15 - index)).toISOString(),
+}));
 
 const batchVideos = Array.from({ length: 6 }, (_, index) => ({
   id: ['dQw4w9WgXcQ', '9bZkp7q19f0', '3JZ_D3ELwOQ', 'L_jWHffIx5E', 'kJQP7kiw5Fk', 'fJ9rUzIMcZQ'][index],
-  title: 'MOCK: exoplanet spectroscopy and methaneCloud' + index,
-  description: 'MOCK: ' + batchNews.map((item) => item.title).join(' ') + ' uncertainty measurement',
+  title: 'MOCK: exoplanet spectroscopy sample ' + index,
+  description: 'MOCK: ' + batchAnchorText + ' uncertainty measurement',
   channel: 'MOCK channel ' + index,
   publishedAt: new Date(Date.UTC(2026, 10, 10 - index)).toISOString(),
 }));

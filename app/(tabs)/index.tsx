@@ -25,7 +25,8 @@ import { buildResearchInterestProfile, normalizeResearchText } from '@/lib/intel
 import { rememberTopicDossier } from '@/lib/topic-dossier';
 import { ResearchKnowledgeGraph } from '@/components/ResearchKnowledgeGraph';
 import { generateEditorialIdeas } from '@/lib/idea-generation';
-import type { YouTubeSampleVideo } from '@/lib/api';
+import { getFreeModels, getOpinion, internalEngineReviewPrompt, nextOpenRouterUsage, type YouTubeSampleVideo } from '@/lib/api';
+import { getKey } from '@/lib/vault';
 
 
 function AnalysisSignals({ result }: { result: InternalResearchResult }) {
@@ -84,6 +85,100 @@ function AnalysisSignals({ result }: { result: InternalResearchResult }) {
   );
 }
 
+function EngineAIReview({ topic, result }: { topic: string; result: InternalResearchResult }) {
+  const preferences = useScout((state) => state.data.preferences);
+  const reviewKey = 'engine:' + normalizeResearchText(topic).slice(0, 120);
+  const savedReview = useScout((state) => state.data.opinions.find((item) => item.ideaId === reviewKey));
+  const savedReviewText = savedReview?.text ?? '';
+  const savedReviewId = savedReview?.id;
+  const [review, setReview] = useState(savedReviewText);
+  const op = useOperation();
+  const fa = preferences.uiLanguage === 'fa';
+
+  useEffect(() => {
+    setReview(savedReviewText);
+  }, [reviewKey, savedReviewId, savedReviewText]);
+
+  const runReview = () => void op.run(async () => {
+    const key = await getKey('openrouter');
+    if (!key) throw new Error(fa ? 'ابتدا کلید OpenRouter را در تنظیمات ذخیره کن.' : 'Save your OpenRouter key in Settings first.');
+    const current = useScout.getState().data;
+    const models = await getFreeModels();
+    let model = current.preferences.model;
+    if (!model || !models.some((item) => item.id === model)) {
+      model = models[0]?.id ?? '';
+      if (!model) throw new Error(fa ? 'مدل رایگان قابل استفاده‌ای پیدا نشد.' : 'No available free OpenRouter model was found.');
+      await useScout.getState().commit((data) => ({
+        ...data,
+        preferences: { ...data.preferences, model },
+      }));
+    }
+    const quality = result.intelligence.sourceQuality;
+    const prompt = internalEngineReviewPrompt({
+      topic,
+      summary: fa
+        ? 'موتور داخلی یک مجموعه محدود از گزارش‌های ناشر را پردازش کرده و شاخص‌های پوشش، تنوع ناشر، تکرار و تازگی را محاسبه کرده است. محتوای خام منابع در این درخواست ارسال نمی‌شود.'
+        : 'The local engine processed a limited publisher sample and computed coverage, publisher diversity, duplicate and freshness indicators. Raw source content is not included in this request.',
+      evidence: [
+        { label: 'Feeds represented', detail: String(quality.feedsRepresented) },
+        { label: 'Independent publisher groups', detail: String(quality.independentPublishers) },
+        { label: 'Duplicate records merged', detail: String(quality.duplicateStoriesMerged) },
+        { label: 'Undated records', detail: String(quality.undatedItems) },
+        { label: 'Stale records', detail: String(quality.staleItems) },
+        { label: 'Research gaps recorded', detail: String(result.intelligence.gaps.length) },
+        { label: 'Potential discrepancies recorded', detail: String(result.intelligence.potentialContradictions.length) },
+      ],
+      confidence: {
+        level: result.intelligence.confidence.level,
+        reason: fa
+          ? 'این سطح محلی بر اساس پوشش نمونه و تنوع ناشر محاسبه شده و تأیید صحت ادعاها نیست.'
+          : 'This local level reflects sample coverage and publisher diversity; it is not factual verification.',
+      },
+      language: fa ? 'fa' : 'en',
+    });
+    const response = await getOpinion(key, model, prompt, async () => {
+      const currentPreferences = useScout.getState().data.preferences;
+      const day = new Date().toLocaleDateString('en-CA');
+      const usage = nextOpenRouterUsage(
+        currentPreferences.openRouterUsageDay,
+        currentPreferences.openRouterRequestsToday,
+        day,
+      );
+      await useScout.getState().commit((data) => ({
+        ...data,
+        preferences: { ...data.preferences, ...usage },
+      }));
+    });
+    const opinion = {
+      id: uid(),
+      ideaId: reviewKey,
+      text: response,
+      model,
+      createdAt: Date.now(),
+    };
+    await useScout.getState().commit((data) => ({ ...data, opinions: [opinion, ...data.opinions].slice(0, 100) }));
+    setReview(response);
+  }, fa ? 'بازبینی AI با خروجی موتور داخلی ذخیره شد.' : 'AI review of the internal engine was saved.');
+
+  return (
+    <Panel>
+      <Heading>{fa ? 'بازبینی هوش مصنوعی روی خروجی موتور داخلی' : 'AI review of the internal engine'}</Heading>
+      <Txt muted>{fa
+        ? 'با انتخاب این گزینه فقط موضوع و شاخص‌های عددیِ پردازش محلی برای OpenRouter ارسال می‌شود؛ متن خام خبر، URL، نام ناشر، عنوان یا شناسه ویدئو، توضیحات، آمار و کلید API ارسال نمی‌شوند.'
+        : 'Choosing this sends only the topic and numeric indicators computed locally to OpenRouter; raw news text, URLs, publisher names, YouTube titles or IDs, descriptions, statistics and API keys are excluded.'}</Txt>
+      <Txt muted>{fa
+        ? 'این بررسی جایگزین موتور داخلی نیست؛ کیفیت پوشش و محدودیت‌های تحلیل آن را نقد می‌کند. درخواست فقط با فشردن دکمه ارسال می‌شود و سقف محلی آن ۳۰ درخواست در روز با یک درخواست هم‌زمان است.'
+        : 'This does not replace the local engine; it critiques the coverage and limits of its analysis. Nothing is sent until you press the button. The local allowance is 30 requests per day, one at a time.'}</Txt>
+      <Action busy={op.busy} onPress={runReview}>
+        {fa ? 'بازبینی این تحلیل با AI' : 'Review this analysis with AI'}
+      </Action>
+      {Boolean(op.error) && <ErrorBox message={op.error} onRetry={runReview} />}
+      {Boolean(op.message) && <Txt muted>{op.message}</Txt>}
+      {review ? <Txt>{review}</Txt> : null}
+    </Panel>
+  );
+}
+
 export default function DiscoveryDashboard() {
   const ready = useScout((state) => state.ready);
   if (!ready) {
@@ -100,6 +195,7 @@ function DiscoveryDashboardReady() {
   const preferences = useScout((state) => state.data.preferences);
   const ideas = useScout((state) => state.data.ideas);
   const reports = useScout((state) => state.data.reports);
+  const memoryCount = useScout((state) => state.data.researchMemory.length);
   const [opportunities, setOpportunities] = useState<DiscoveryOpportunity[]>([]);
   const [warnings, setWarnings] = useState<string[]>([]);
   const [lastScannedAt, setLastScannedAt] = useState<number | null>(null);
@@ -315,6 +411,29 @@ function DiscoveryDashboardReady() {
           <View style={{ gap: 18 }}>
 
         <Text style={styles.title}>MOHSEN SCOUT</Text>
+      <Panel>
+        <Text style={styles.badge}>{preferences.uiLanguage === 'fa' ? 'نمای کلی هوشمندی' : 'INTELLIGENCE OVERVIEW'}</Text>
+        <Heading>{preferences.uiLanguage === 'fa' ? 'از داده تا تصمیم' : 'From evidence to decisions'}</Heading>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 18 }}>
+          <View style={{ minWidth: 88, flex: 1 }}>
+            <Heading>{ideas.filter((idea) => !idea.archived).length}</Heading>
+            <Txt muted>{preferences.uiLanguage === 'fa' ? 'ایده فعال' : 'Active ideas'}</Txt>
+          </View>
+          <View style={{ minWidth: 88, flex: 1 }}>
+            <Heading>{reports.length}</Heading>
+            <Txt muted>{preferences.uiLanguage === 'fa' ? 'گزارش تحقیق' : 'Research reports'}</Txt>
+          </View>
+          <View style={{ minWidth: 88, flex: 1 }}>
+            <Heading>{memoryCount}</Heading>
+            <Txt muted>{preferences.uiLanguage === 'fa' ? 'موضوع در حافظه' : 'Topics in memory'}</Txt>
+          </View>
+        </View>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+          <Action secondary onPress={() => router.push('/news')}>{preferences.uiLanguage === 'fa' ? 'اخبار رسمی' : 'Cosmic News'}</Action>
+          <Action secondary onPress={() => router.push({ pathname: '/youtube', params: { topic: discoveryTopic } })}>{preferences.uiLanguage === 'fa' ? 'جست‌وجوی دستی' : 'Manual Search'}</Action>
+          <Action secondary onPress={() => router.push('/opportunities')}>{preferences.uiLanguage === 'fa' ? 'فضای ایده‌ها' : 'Ideas Workspace'}</Action>
+        </View>
+      </Panel>
       <View style={{ gap: 7 }}>
         <Text style={[styles.title, { fontSize: 30, lineHeight: 36 }]}>Find your next story.</Text>
         <Txt muted>A source-led discovery desk for your next space video. Choose an opportunity, then decide what deserves deeper research.</Txt>
@@ -359,6 +478,7 @@ function DiscoveryDashboardReady() {
               </View>
             ))}
             <AnalysisSignals result={deskAnalysis} />
+            {!showYouTubeResearch ? <EngineAIReview topic={deskTopic} result={deskAnalysis} /> : null}
             {deskAnalysis.angles.slice(0, 3).map((angle) => (
               <View key={angle.id} style={{ gap: 5 }}>
                 <Heading>{angle.title}</Heading>
@@ -391,8 +511,8 @@ function DiscoveryDashboardReady() {
 
       {nicheSuggestions.length > 0 && (
         <Panel>
-          <Heading>Active topics in official feeds</Heading>
-          <Txt muted>These are topics with the most matching stories in the selected publisher feeds—not audience-demand or YouTube trend rankings.</Txt>
+          <Heading>{preferences.uiLanguage === 'fa' ? 'سرنخ‌های کشف‌شده از منابع' : 'Research leads discovered from sources'}</Heading>
+          <Txt muted>These are evidence-backed research leads from the selected publisher feeds, not audience-demand or YouTube trend rankings.</Txt>
           {nicheSuggestions.map((suggestion) => (
             <View key={suggestion.id} style={{ gap: 5 }}>
               <Text style={styles.badge}>{suggestion.id.startsWith('story:') ? 'FRESH OFFICIAL STORY' : 'ACTIVE FEED NICHE'}</Text>
@@ -416,7 +536,7 @@ function DiscoveryDashboardReady() {
           }, 'Discovery scope changed to all space topics.')}>Show all space topics</Action>
           <Action secondary onPress={() => router.push({ pathname: '/youtube', params: { topic: discoveryTopic } })}>Search this niche on YouTube</Action>
           <Action secondary onPress={() => router.push({ pathname: '/deep-research', params: { topic: discoveryTopic, niche: preferences.selectedSpaceNiche } })}>Start Deep Research without news</Action>
-          <Action secondary onPress={() => router.push('/cosmic-news')}>Open Cosmic News and source status</Action>
+          <Action secondary onPress={() => router.push('/news')}>Open Cosmic News and source status</Action>
         </Panel>
       )}
 

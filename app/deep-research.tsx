@@ -191,7 +191,7 @@ export default function DeepResearch() {
       region: preferences.region,
       languages: preferences.languages,
       language: preferences.uiLanguage ?? 'fa',
-      limit: 5,
+      limit: 25,
     });
     await useScout.getState().commit((data) => ({
       ...data,

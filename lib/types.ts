@@ -141,6 +141,9 @@ export type Preferences = {
   defaultResearchDays: 0 | 7 | 30 | 90;
   budget: number;
   model: string;
+  /** Local OpenRouter usage accounting; legacy backups may omit these fields. */
+  openRouterUsageDay?: string;
+  openRouterRequestsToday?: number;
   schedule: 'Manual' | 'Every 12 hours' | 'Daily' | 'Weekly';
   paused: boolean;
   lastInput?: ResearchInput;

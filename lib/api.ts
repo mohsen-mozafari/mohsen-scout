@@ -634,15 +634,70 @@ export async function translateNewsToPersian(
   }
   return translated;
 }
-export async function getOpinion(key: string, model: string, prompt: string) {
-  const raw = await requestJson('https://openrouter.ai/api/v1/chat/completions', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model, max_tokens: 700, messages: [{ role: 'user', content: prompt }] }),
-  });
-  const parsed = z
-    .object({ choices: z.array(z.object({ message: z.object({ content: z.string() }) })).min(1) })
-    .safeParse(raw);
-  if (!parsed.success) throw new ApiError('The AI reply could not be read.', 'invalid');
-  return parsed.data.choices[0].message.content;
+export type InternalEngineReviewInput = {
+  topic: string;
+  summary: string;
+  evidence: readonly { label: string; detail: string }[];
+  confidence: { level: string; reason: string };
+  gaps?: readonly string[];
+  discrepancies?: readonly string[];
+  language?: 'fa' | 'en';
+};
+
+/** Privacy-bounded critique of processed local-engine output only. */
+export function internalEngineReviewPrompt(input: InternalEngineReviewInput): string {
+  const fa = input.language === 'fa';
+  const evidence = input.evidence.slice(0, 6).map((item, index) =>
+    `${index + 1}. ${item.label.slice(0, 100)}: ${item.detail.slice(0, 360)}`,
+  );
+  const gaps = (input.gaps ?? []).slice(0, 6).map((item) => item.slice(0, 220));
+  const discrepancies = (input.discrepancies ?? []).slice(0, 6).map((item) => item.slice(0, 220));
+  const payload = [
+    'Topic: ' + input.topic.trim().slice(0, 180),
+    'Local engine summary: ' + input.summary.trim().slice(0, 1200),
+    'Processed evidence signals:\n' + (evidence.join('\n') || 'No evidence signals supplied.'),
+    'Local confidence: ' + input.confidence.level + ' — ' + input.confidence.reason.slice(0, 400),
+    'Research gaps:\n' + (gaps.join('\n') || 'Not reported.'),
+    'Potential discrepancies:\n' + (discrepancies.join('\n') || 'Not reported.'),
+  ].join('\n\n');
+  const instruction = fa
+    ? 'تو نقش بازبین مستقل خروجی موتور تحقیق محلی را داری. سازگاری جمع‌بندی با شواهد پردازش‌شده را بررسی کن، نقد مخالف و فرض‌های پنهان را بیاب و نتیجه را با حفظ عدم‌قطعیت اصلاح کن. هیچ داده بیرونی، منبع، آمار، تقاضا یا رابطه علّی جعل نکن. اگر شواهد کافی نیست صریح بگو. خروجی را در بخش‌های «ارزیابی موتور داخلی»، «نکات پشتیبانی‌شده»، «ضعف‌ها و تناقض‌ها»، «اطلاعات نامعلوم» و «گام بعدی» بنویس. این خلاصه حقیقت قطعی نیست.'
+    : 'Act as an independent reviewer of the local research engine output. Check whether the summary follows from the processed evidence, challenge hidden assumptions, then revise the assessment while preserving uncertainty. Do not invent external facts, sources, statistics, audience demand or causal links. Explicitly state when evidence is insufficient. Return sections: Engine Assessment, Supported Points, Weaknesses and Discrepancies, Unknowns, and Next Step. This is a processed summary, not established fact.';
+  return (instruction + '\n\n' + payload).slice(0, 6200);
+}
+
+export function nextOpenRouterUsage(
+  storedDay: string | undefined,
+  storedCount: number | undefined,
+  today: string,
+): { openRouterUsageDay: string; openRouterRequestsToday: number } {
+  const count = storedDay === today ? Math.max(0, Math.trunc(storedCount ?? 0)) : 0;
+  if (count >= 30) throw new ApiError('The local OpenRouter limit of 30 requests for today has been reached.', 'budget');
+  return { openRouterUsageDay: today, openRouterRequestsToday: count + 1 };
+}
+
+let opinionRequestInFlight = false;
+export async function getOpinion(
+  key: string,
+  model: string,
+  prompt: string,
+  beforeRequest?: () => Promise<void>,
+) {
+  if (opinionRequestInFlight) throw new ApiError('Another OpenRouter analysis is already running. Wait for it to finish.', 'busy');
+  opinionRequestInFlight = true;
+  try {
+    await beforeRequest?.();
+    const raw = await requestJson('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model, max_tokens: 900, messages: [{ role: 'user', content: prompt }] }),
+    });
+    const parsed = z
+      .object({ choices: z.array(z.object({ message: z.object({ content: z.string() }) })).min(1) })
+      .safeParse(raw);
+    if (!parsed.success) throw new ApiError('The AI reply could not be read.', 'invalid');
+    return parsed.data.choices[0].message.content;
+  } finally {
+    opinionRequestInFlight = false;
+  }
 }

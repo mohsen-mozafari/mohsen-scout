@@ -26,7 +26,7 @@ import { type Idea, statuses, languages } from '@/lib/types';
 import { buildIdeaAnalysis, limitations, reasoning } from '@/lib/engine';
 import { getIdeaDisplayTitle } from '@/lib/idea-research';
 import { getKey } from '@/lib/vault';
-import { getFreeModels, getOpinion, opinionPrompt } from '@/lib/api';
+import { getFreeModels, getOpinion, nextOpenRouterUsage, opinionPrompt } from '@/lib/api';
 import { uid } from '@/lib/types';
 import { MediaPreview } from '@/components/MediaPreview';
 export default function Detail() {
@@ -81,7 +81,16 @@ export default function Detail() {
       const text = await getOpinion(
         key,
         model,
-        opinionPrompt(ideaOpinionTopic, idea.concept, idea.decision),
+        opinionPrompt(ideaOpinionTopic, idea.concept, idea.decision, uiLanguage),
+        async () => {
+          const current = useScout.getState().data.preferences;
+          const day = new Date().toLocaleDateString('en-CA');
+          const usage = nextOpenRouterUsage(current.openRouterUsageDay, current.openRouterRequestsToday, day);
+          await useScout.getState().commit((d) => ({
+            ...d,
+            preferences: { ...d.preferences, ...usage },
+          }));
+        },
       );
       await useScout.getState().commit((d) => ({
         ...d,
