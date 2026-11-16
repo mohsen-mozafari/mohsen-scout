@@ -98,7 +98,7 @@ void test('Wikimedia search chooses the best title match instead of trusting the
   const result = await getWikipediaSignal('JWST exoplanets', 'en', fetcher, new Date('2026-11-16T12:00:00Z'));
   assert.equal(result.articleTitle, 'James Webb Space Telescope exoplanet atmosphere');
   assert.equal(result.monthlyViews[0].views, 125);
-  assert.ok(requested.some((url) => url.includes('James%20Webb%20Space%20Telescope')));
+  assert.ok(requested.some((url) => url.includes('James_Webb_Space_Telescope')));
 });
 
 void test('Wikimedia refuses to attach pageviews when no returned article title matches the topic', async () => {
