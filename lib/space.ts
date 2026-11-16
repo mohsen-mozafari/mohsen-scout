@@ -312,7 +312,8 @@ async function loadOfficialFeed(
         };
       }
       const discovered = discoverOfficialFeeds(body, response.url || endpoint, source);
-      for (const candidate of discovered) if (!visited.has(candidate) && !endpoints.includes(candidate)) endpoints.push(candidate);
+      const preferredDiscovered = discovered.filter((candidate) => !visited.has(candidate) && !endpoints.includes(candidate));
+      if (preferredDiscovered.length) endpoints.splice(index + 1, 0, ...preferredDiscovered);
       failures.push(isJson
         ? 'the JSON response did not contain readable Feed items'
         : 'the endpoint responded but contained no readable RSS/Atom entries');

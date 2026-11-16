@@ -76,7 +76,7 @@ const preferences = z.object({
   budget: z.number().int().min(100).max(10000),
   model: text,
   defaultResearchDays: z.union([z.literal(0), z.literal(7), z.literal(30), z.literal(90)]).optional().default(30),
-  spaceNewsSources: z.array(z.enum(['nasa', 'jpl', 'esa-space', 'esa-science'])).max(4).optional().default(['nasa', 'jpl', 'esa-space', 'esa-science']),
+  spaceNewsSources: z.array(z.enum(['nasa', 'jpl', 'cneos', 'esa-space', 'esa-science'])).max(5).optional().default(['nasa', 'jpl', 'cneos', 'esa-space', 'esa-science']),
   spaceInterestLanguage: z.enum(['en', 'fa', 'de', 'fr', 'es', 'ja']).optional().default('en'),
   selectedSpaceNiche: z.string().max(100).optional().default('all'),
   customSpaceNiche: z.string().max(160).optional().default(''),

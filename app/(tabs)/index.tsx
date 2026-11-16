@@ -252,7 +252,7 @@ function DiscoveryDashboardReady() {
     setRadarNews(relevantNews);
     setWarnings(result.warnings);
     setLastScannedAt(Date.now());
-    setNicheSuggestions(buildNicheSuggestions(result.items, 6));
+    setNicheSuggestions(buildNicheSuggestions(result.items, 6).filter((suggestion) => !suggestion.id.startsWith('story:')));
     setRadarBrief(nextRadarBrief);
   }, [preferences.selectedSpaceNiche, preferences.customSpaceNiche, discoveryTopic]);
 
@@ -398,7 +398,7 @@ function DiscoveryDashboardReady() {
     <Page scroll={false}>
       <FlashList
         style={{ flex: 1 }}
-        data={opportunities}
+        data={[] /* Raw publisher headlines are shown only in the separate News tab. */}
         extraData={listExtraData}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.content}
@@ -432,7 +432,7 @@ function DiscoveryDashboardReady() {
       </Panel>
       <View style={{ gap: 7 }}>
         <Text style={[styles.title, { fontSize: 30, lineHeight: 36 }]}>Find your next story.</Text>
-        <Txt muted>A source-led discovery desk for your next space video. Choose an opportunity, then decide what deserves deeper research.</Txt>
+        <Txt muted>A source-led discovery desk for your next space video. Review the latest evidence, engine findings and ideas. The full publisher news stream is available in the separate News tab.</Txt>
       </View>
       <Panel>
         <Text style={styles.badge}>ACTIVE NICHE</Text>
@@ -443,7 +443,7 @@ function DiscoveryDashboardReady() {
         <Action secondary onPress={() => router.push({ pathname: '/youtube', params: { topic: niche?.topic ?? discoveryTopic } })}>Search Manually</Action>
         <Action secondary onPress={() => router.push('/settings')}>Change discovery settings</Action>
         {lastScannedAt ? <Txt muted>Last scanned {new Date(lastScannedAt).toLocaleString()}</Txt> : <Txt muted>Checking official feeds when Space Radar opens…</Txt>}
-        <Txt muted>News and niche suggestions refresh on entry using a short in-memory cache. No background polling or YouTube quota is used. The local Story Engine analyzes loaded reports without sending them to AI.</Txt>
+        <Txt muted>Publisher evidence refreshes on entry using a short in-memory cache. Raw headlines stay in the separate News tab; this page shows processed findings and ideas. No background polling or YouTube quota is used.</Txt>
       </Panel>
 
       {warnings.map((warning) => <Txt muted key={warning}>{warning}</Txt>)}
@@ -521,12 +521,10 @@ function DiscoveryDashboardReady() {
         </Panel>
       )}
 
-      {lastScannedAt !== null && opportunities.length === 0 && (
+      {warnings.length > 0 && (
         <Panel>
-          <Heading>{warnings.length && !nicheSuggestions.length ? 'Live publisher data is unavailable' : 'No matching opportunities found'}</Heading>
-          <Txt muted>{warnings.length && !nicheSuggestions.length
-            ? 'The selected feeds could not provide current articles. This does not mean there are no opportunities. Review the source warnings, retry later, or continue with YouTube and Deep Research.'
-            : 'Current source items did not match ' + nicheTitle + '. Other space topics remain available above.'}</Txt>
+          <Heading>Some publisher feeds are unavailable</Heading>
+          <Txt muted>The News tab shows the health of each feed. Other sources and the local research engine remain available.</Txt>
           <Action secondary onPress={() => void op.run(async () => {
             await useScout.getState().commit((data) => ({ ...data, preferences: { ...data.preferences, selectedSpaceNiche: 'all' } }));
           }, 'Discovery scope changed to all space topics.')}>Show all space topics</Action>
@@ -598,13 +596,13 @@ function DiscoveryDashboardReady() {
           <View style={{ gap: 18 }}>
       <Fold title="More research tools">
         <Txt muted>Use these when you already know what you want to investigate.</Txt>
-        <Action secondary onPress={() => router.push('/cosmic-news')}>Open Cosmic News</Action>
+        <Action secondary onPress={() => router.push('/news')}>Open Cosmic News</Action>
         <Action secondary onPress={() => router.push('/trend-intelligence')}>Trend Intelligence</Action>
         <Action secondary onPress={() => router.push('/search-demand')}>Compare public interest</Action>
         <Action secondary onPress={() => router.push('/deep-research')}>Start Deep Research manually</Action>
         <Action secondary onPress={() => router.push('/opportunities')}>Open saved Ideas</Action>
       </Fold>
-      <Fold title="How opportunities are selected">
+      <Fold title="How research leads are selected">
         <Txt muted>Recommendations come from title and summary matches in the selected official NASA, JPL and ESA feeds. Multiple Source Coverage means matching headlines appeared in more than one selected feed; it is not a formal independent fact-check. News coverage is not proof of audience demand. Check YouTube and public-interest evidence separately before prioritizing a topic.</Txt>
       </Fold>
       {Boolean(op.error) && <ErrorBox message={op.error} onRetry={discover} />}
