@@ -3,7 +3,7 @@ import type { InternalResearchResult } from './engine';
 import type { SpaceNewsItem, WikiSignal } from './space';
 import { matchesResearchTerms } from './intelligence';
 
-export type ResearchGraphGroupId = 'sources' | 'youtube' | 'context' | 'evidence' | 'findings' | 'angles' | 'ideas';
+export type ResearchGraphGroupId = 'sources' | 'youtube' | 'context' | 'evidence' | 'entities' | 'findings' | 'angles' | 'ideas';
 
 export type ResearchGraphItem = {
   id: string;
@@ -143,6 +143,31 @@ export function buildResearchGraphModel(input: BuildResearchGraphInput): Researc
         meta: text('Evidence supplied to the local engine', 'شواهد ارائه‌شده به موتور محلی'),
         detail: item.detail,
         ...(item.sourceUrl ? { url: item.sourceUrl } : {}),
+      })),
+    });
+  }
+  if (input.analysis.entityCandidates.length) {
+    groups.push({
+      id: 'entities',
+      title: text('Recognized entities & co-mentions', 'موجودیت‌های شناخته‌شده و هم‌ذکری‌ها'),
+      items: input.analysis.entityCandidates.map((entity) => ({
+        id: 'entity-' + entity.id,
+        title: entity.name,
+        meta: entity.kind + ' · ' + number(entity.mentionCount) + ' ' + text('mentions', 'ذکر'),
+        detail: [
+          text('Known aliases: ', 'نام‌های جایگزین شناخته‌شده: ') + entity.aliases.join(', '),
+          text('Evidence records: ', 'رکوردهای شاهد: ') + entity.evidenceIds.join(', '),
+          text('Publisher/source IDs: ', 'شناسه منابع: ') + (entity.sourceIds.join(', ') || text('not available', 'ناموجود')),
+          ...input.analysis.entityRelations
+            .filter((relation) => relation.fromEntityId === entity.id || relation.toEntityId === entity.id)
+            .map((relation) => {
+              const otherId = relation.fromEntityId === entity.id ? relation.toEntityId : relation.fromEntityId;
+              const other = input.analysis.entityCandidates.find((candidate) => candidate.id === otherId);
+              return text('Co-mentioned with: ', 'هم‌ذکر با: ') + (other?.name ?? otherId) +
+                ' · ' + relation.evidenceCount + ' ' + text('evidence record(s)', 'رکورد شاهد');
+            }),
+          text('A co-mention indicates that names occur in the same evidence record; it does not establish causation or a verified relationship.', 'هم‌ذکری فقط یعنی نام‌ها در یک رکورد شاهد کنار هم آمده‌اند و رابطه علّی یا ارتباط قطعی را ثابت نمی‌کند.'),
+        ].join('\n'),
       })),
     });
   }

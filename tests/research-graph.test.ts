@@ -9,7 +9,7 @@ const news: SpaceNewsItem[] = [{
   id: 'news-1',
   sourceId: 'nasa',
   sourceName: 'NASA',
-  title: 'MOCK: Webb observes an exoplanet atmosphere',
+  title: 'MOCK: NASA James Webb Space Telescope observes an exoplanet atmosphere',
   summary: 'MOCK: A publisher summary about a measured atmospheric observation.',
   url: 'https://science.nasa.gov/mock-story',
   publishedAt: '2026-11-15T12:00:00Z',
@@ -69,6 +69,7 @@ void test('research graph preserves original source, video and monthly pageview 
   const sourceGroup = model.groups.find((group) => group.id === 'sources');
   const videoGroup = model.groups.find((group) => group.id === 'youtube');
   const contextGroup = model.groups.find((group) => group.id === 'context');
+  const entityGroup = model.groups.find((group) => group.id === 'entities');
 
   assert.equal(sourceGroup?.items[0].title, news[0].title);
   assert.equal(sourceGroup?.items[0].url, news[0].url);
@@ -77,6 +78,9 @@ void test('research graph preserves original source, video and monthly pageview 
   assert.match(videoGroup?.items[0].detail ?? '', /5,000/);
   assert.match(contextGroup?.items.find((item) => item.id === 'trend-observations')?.detail ?? '', /2026-11 — 160/);
   assert.ok(model.groups.find((group) => group.id === 'evidence')?.items.length);
+  assert.ok(entityGroup?.items.some((item) => item.title === 'NASA'));
+  assert.ok(entityGroup?.items.some((item) => item.title === 'JWST'));
+  assert.ok(entityGroup?.items.every((item) => item.detail.includes('does not establish causation')));
   assert.ok(model.groups.find((group) => group.id === 'findings')?.items.length);
   assert.ok(model.groups.find((group) => group.id === 'ideas')?.items.some((item) => item.id === 'idea-idea-1'));
   assert.ok(model.edges.some((edge) => edge.source === 'source-news-1' && edge.target === 'publisher:nasa:NASA' && edge.relation === 'published by'));
@@ -94,6 +98,7 @@ void test('research graph does not invent empty source, video or public-interest
   assert.equal(model.groups.some((group) => group.id === 'sources'), false);
   assert.equal(model.groups.some((group) => group.id === 'youtube'), false);
   assert.equal(model.groups.some((group) => group.id === 'context'), false);
+  assert.equal(model.groups.some((group) => group.id === 'entities'), false);
   assert.equal(model.groups.some((group) => group.id === 'ideas'), false);
   assert.ok(model.groups.some((group) => group.id === 'evidence'));
   assert.ok(model.groups.some((group) => group.id === 'findings'));
