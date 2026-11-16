@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Text, Linking } from 'react-native';
+import { Text, Linking, View } from 'react-native';
 import { Skeleton } from 'heroui-native';
 import { Link, router, useLocalSearchParams } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
@@ -47,19 +47,24 @@ export default function Detail() {
     setEdit(original);
   }
   const idea = edit ?? original;
-  const ideaReadyForOpinion = Boolean(
-    idea?.topic.trim() &&
-    idea.topic.trim().toLowerCase() !== 'untitled idea' &&
-    idea.concept.trim(),
+  const uiLanguage = data.preferences.uiLanguage ?? 'fa';
+  const ideaDisplayTopic = idea ? getIdeaDisplayTitle(idea, uiLanguage) : '';
+  const hasMeaningfulIdeaTopic = Boolean(
+    idea &&
+    ((idea.topic.trim() && idea.topic.trim().toLowerCase() !== 'untitled idea') || idea.concept.trim()),
   );
+  const ideaOpinionTopic = hasMeaningfulIdeaTopic ? ideaDisplayTopic : '';
+  const ideaReadyForOpinion = Boolean(ideaOpinionTopic.trim() && idea?.concept.trim());
   const related = idea ? data.videos.filter((v) => idea.videoIds.includes(v.id)) : [];
-  const analysisSections = idea ? buildIdeaAnalysis(idea, related, data.preferences.uiLanguage ?? 'fa') : [];
+  const analysisSections = idea
+    ? buildIdeaAnalysis({ ...idea, topic: ideaDisplayTopic }, related, uiLanguage)
+    : [];
   const savedReferences = idea ? data.links.filter((link) => idea.videoIds.includes(link.id)) : [];
   const researchNotes = idea ? data.notes.filter((note) => note.ideaId === idea.id) : [];
   const secondOpinion = () =>
     void op.run(async () => {
       if (!idea) return;
-      if (!ideaReadyForOpinion) throw new Error('Complete the idea title and video concept before requesting an AI opinion.');
+      if (!ideaReadyForOpinion) throw new Error('Add a meaningful topic and non-empty video concept before requesting an AI opinion.');
       const key = await getKey('openrouter');
       if (!key) throw new Error('Add your OpenRouter key in Settings first.');
       const models = await getFreeModels();
@@ -76,7 +81,7 @@ export default function Detail() {
       const text = await getOpinion(
         key,
         model,
-        opinionPrompt(idea.topic, idea.concept, idea.decision),
+        opinionPrompt(ideaOpinionTopic, idea.concept, idea.decision),
       );
       await useScout.getState().commit((d) => ({
         ...d,
@@ -319,7 +324,7 @@ export default function Detail() {
           </Txt>
           {!consent ? (
             <>
-              {!ideaReadyForOpinion && <Txt muted>AI Second Opinion is enabled after this idea has a real title and a non-empty video concept. Open Edit idea to complete both fields.</Txt>}
+              {!ideaReadyForOpinion && <Txt muted>AI Second Opinion is enabled when a meaningful title and non-empty concept are available. Older drafts with a saved concept can use a derived title; edit the idea to choose your own.</Txt>}
               <Action icon={Sparkles} secondary disabled={!ideaReadyForOpinion} onPress={() => setConsent(true)}>
                 Request AI Second Opinion
               </Action>
@@ -331,7 +336,7 @@ export default function Detail() {
                 You choose when to send. Replies are subjective and may disagree with the internal
                 assessment. Free models have provider rate limits.
               </Txt>
-              <Txt>Topic: {idea.topic}</Txt>
+              <Txt>Topic: {ideaOpinionTopic}</Txt>
               <Txt>Concept: {idea.concept}</Txt>
               <Txt>Decision: {idea.decision || 'Not set'}</Txt>
               <Action busy={op.busy} disabled={!ideaReadyForOpinion} onPress={secondOpinion}>

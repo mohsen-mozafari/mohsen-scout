@@ -70,6 +70,8 @@ export function Page({
 }) {
   const error = useScout((s) => s.error);
   const language = useScout((s) => s.data.preferences.uiLanguage ?? 'fa');
+  const pageTitle = title ? translateText(title, language) : '';
+  const pageTitleDirection = resolveTextDirection(pageTitle);
   return (
     <KeyboardAvoidingView
       style={[styles.page, { direction: language === 'fa' ? 'rtl' : 'ltr' }]}
@@ -77,7 +79,7 @@ export function Page({
     >
       {scroll ? (
         <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={[styles.content, { direction: language === 'fa' ? 'rtl' : 'ltr' }]}>
-          {title ? <Text style={[styles.title, { writingDirection: language === 'fa' ? 'rtl' : 'ltr', textAlign: language === 'fa' ? 'right' : 'left' }]}>{translateText(title, language)}</Text> : null}
+          {title ? <Text style={[styles.title, { writingDirection: pageTitleDirection, textAlign: pageTitleDirection === 'rtl' ? 'right' : 'left' }]}>{pageTitle}</Text> : null}
           {Boolean(error) && (
             <ErrorBox
               message={error}
@@ -159,22 +161,27 @@ export function Field({
   secret?: boolean;
 }) {
   const language = useScout((s) => s.data.preferences.uiLanguage ?? 'fa');
-  const direction = value.trim() ? resolveTextDirection(value) : language === 'fa' ? 'rtl' : 'ltr';
+  const translatedLabel = translateText(label, language);
+  const translatedPlaceholder = placeholder ? translateText(placeholder, language) : undefined;
+  const directionSeed = value.trim() || translatedPlaceholder?.trim() || translatedLabel;
+  const direction = directionSeed.trim()
+    ? resolveTextDirection(directionSeed)
+    : language === 'fa' ? 'rtl' : 'ltr';
   return (
     <TextField>
-      <Label>{translateText(label, language)}</Label>
+      <Label style={{ writingDirection: resolveTextDirection(translatedLabel), textAlign: resolveTextDirection(translatedLabel) === 'rtl' ? 'right' : 'left' }}>{translatedLabel}</Label>
       {multiline ? (
         <TextArea
           value={value}
           onChangeText={onChange}
-          placeholder={placeholder ? translateText(placeholder, language) : undefined}
+          placeholder={translatedPlaceholder}
           style={[styles.input, { writingDirection: direction, textAlign: direction === 'rtl' ? 'right' : 'left' }]}
         />
       ) : (
         <Input
           value={value}
           onChangeText={onChange}
-          placeholder={placeholder ? translateText(placeholder, language) : undefined}
+          placeholder={translatedPlaceholder}
           secureTextEntry={secret}
           autoCapitalize={secret ? 'none' : 'sentences'}
           autoCorrect={!secret}
@@ -198,9 +205,11 @@ export function Choices<T extends string>({
   multiple?: boolean;
 }) {
   const language = useScout((s) => s.data.preferences.uiLanguage ?? 'fa');
+  const translatedLabel = label ? translateText(label, language) : '';
+  const labelDirection = resolveTextDirection(translatedLabel);
   return (
     <View style={{ gap: 10 }}>
-      {Boolean(label) && <Text style={[styles.label, { writingDirection: language === 'fa' ? 'rtl' : 'ltr', textAlign: language === 'fa' ? 'right' : 'left' }]}>{translateText(label!, language)}</Text>}
+      {Boolean(label) && <Text style={[styles.label, { writingDirection: labelDirection, textAlign: labelDirection === 'rtl' ? 'right' : 'left' }]}>{translatedLabel}</Text>}
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
         {options.map((option) => (
           <Button
