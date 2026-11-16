@@ -90,14 +90,10 @@ function EngineAIReview({ topic, result }: { topic: string; result: InternalRese
   const reviewKey = 'engine:' + normalizeResearchText(topic).slice(0, 120);
   const savedReview = useScout((state) => state.data.opinions.find((item) => item.ideaId === reviewKey));
   const savedReviewText = savedReview?.text ?? '';
-  const savedReviewId = savedReview?.id;
-  const [review, setReview] = useState(savedReviewText);
+  const [reviewState, setReviewState] = useState({ key: reviewKey, text: savedReviewText });
+  const review = reviewState.key === reviewKey ? reviewState.text : savedReviewText;
   const op = useOperation();
   const fa = preferences.uiLanguage === 'fa';
-
-  useEffect(() => {
-    setReview(savedReviewText);
-  }, [reviewKey, savedReviewId, savedReviewText]);
 
   const runReview = () => void op.run(async () => {
     const key = await getKey('openrouter');
@@ -157,7 +153,7 @@ function EngineAIReview({ topic, result }: { topic: string; result: InternalRese
       createdAt: Date.now(),
     };
     await useScout.getState().commit((data) => ({ ...data, opinions: [opinion, ...data.opinions].slice(0, 100) }));
-    setReview(response);
+    setReviewState({ key: reviewKey, text: response });
   }, fa ? 'بازبینی AI با خروجی موتور داخلی ذخیره شد.' : 'AI review of the internal engine was saved.');
 
   return (

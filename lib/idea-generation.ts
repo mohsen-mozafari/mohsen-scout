@@ -70,7 +70,7 @@ function semanticTokens(value: string): Set<string> {
   return new Set(tokenizeResearchText(value).filter((token) => token.length > 2));
 }
 
-function ideaHasSameMeaning(candidate: Candidate, idea: Idea, topic: string): boolean {
+function ideaHasSameMeaning(candidate: Candidate, idea: Pick<Idea, 'engineGenerated' | 'ideaCategory' | 'topic' | 'concept'>, topic: string): boolean {
   if (!idea.engineGenerated || idea.ideaCategory !== candidate.category) return false;
   const question = idea.concept.match(/(?:Central question:|پرسش محوری:)\s*([^\n]+)/i)?.[1] ?? '';
   const candidateTokens = semanticTokens(candidate.title + ' ' + candidate.question);
@@ -322,7 +322,7 @@ export function generateEditorialIdeas(input: GenerateEditorialIdeasInput): Idea
             ideaCategory: prior.category,
             topic: prior.title,
             concept: prior.question,
-          } as Idea, topic))) {
+          }, topic))) {
         candidates.push(candidate);
       }
     }
