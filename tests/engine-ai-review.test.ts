@@ -17,6 +17,10 @@ void test('AI engine review prompt is grounded in aggregate local intelligence s
   assert.match(prompt, /local engine processed/i);
   assert.match(prompt, /12 records processed/);
   assert.match(prompt, /3 groups represented/);
+  assert.match(prompt, /Evidence Audit/);
+  assert.match(prompt, /Independent Analysis/);
+  assert.match(prompt, /Adversarial Critique/);
+  assert.match(prompt, /Revised Conclusion/);
   assert.doesNotMatch(prompt, /https?:\/\//i);
   assert.doesNotMatch(prompt, /youtube\.com|nasa\.gov|esa\.int/i);
 });

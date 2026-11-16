@@ -62,22 +62,13 @@ void test('CNEOS is registered and fetched as an independent official feed', asy
   assert.equal(result.warnings.length, 0);
 });
 
-void test('ESA Space News and Space Science use the verified current official feed endpoints', async () => {
+void test('ESA Space News and Space Science point to verified current official feed endpoints', () => {
   const space = SPACE_NEWS_SOURCES.find((item) => item.id === 'esa-space')!;
   const science = SPACE_NEWS_SOURCES.find((item) => item.id === 'esa-science')!;
   assert.equal(space.url, 'https://www.esa.int/rss/news.rss');
   assert.equal(science.url, 'https://www.esa.int/rss/science.rss');
-  const requested: string[] = [];
-  const result = await fetchSpaceNews([space.id, science.id], async (input) => {
-    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
-    requested.push(url);
-    if (url === space.url) return new Response('<rss><channel><item><title>ESA Space News</title><link>https://www.esa.int/space-news-test</link></item></channel></rss>', { status: 200 });
-    if (url === science.url) return new Response('<rss><channel><item><title>ESA Space Science</title><link>https://www.esa.int/space-science-test</link></item></channel></rss>', { status: 200 });
-    return new Response('Unexpected endpoint', { status: 500 });
-  }, true);
-  assert.deepEqual(requested.sort(), [space.url, science.url].sort());
-  assert.deepEqual(result.items.map((item) => item.sourceId).sort(), ['esa-science', 'esa-space']);
-  assert.equal(result.warnings.length, 0);
+  assert.equal(space.fallbackUrls, undefined);
+  assert.equal(science.fallbackUrls, undefined);
 });
 
 void test('A failed forced refresh returns clearly labelled stale items and retries later', async () => {

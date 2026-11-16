@@ -20,6 +20,7 @@ import {
 import { buildInternalResearch, type InternalResearchResult } from '@/lib/engine';
 import { buildResearchInterestProfile, normalizeResearchText } from '@/lib/intelligence';
 import { rememberTopicDossier } from '@/lib/topic-dossier';
+import { createResearchMemoryEntry } from '@/lib/research-memory';
 import { ResearchKnowledgeGraph } from '@/components/ResearchKnowledgeGraph';
 import { generateEditorialIdeas } from '@/lib/idea-generation';
 import { fingerprintText, getFreeModels, getOpinion, internalEngineReviewPrompt, nextOpenRouterUsage, quotaDay, type YouTubeSampleVideo } from '@/lib/api';
@@ -256,6 +257,25 @@ function DiscoveryDashboardReady() {
     });
     if (automaticIdeas.length) {
       await useScout.getState().commit((data) => ({ ...data, ideas: [...automaticIdeas, ...data.ideas] }));
+    }
+    if (nextRadarBrief) {
+      const nextMemory = createResearchMemoryEntry({
+        topic: discoveryTopic,
+        news: relevantNews,
+        analysis: nextRadarBrief,
+        previous: priorMemory,
+        now: Date.now(),
+        language: currentData.preferences.uiLanguage ?? 'fa',
+      });
+      if (nextMemory) {
+        await useScout.getState().commit((data) => ({
+          ...data,
+          researchMemory: [
+            nextMemory,
+            ...data.researchMemory.filter((entry) => normalizeResearchText(entry.topic) !== normalizeResearchText(discoveryTopic)),
+          ].slice(0, 40),
+        }));
+      }
     }
     rememberTopicDossier(discoveryTopic, { news: relevantNews, internalAnalysis: nextRadarBrief });
     setRadarNews(relevantNews);
