@@ -203,7 +203,7 @@ export function defaults(): LocalData {
       model: '',
       schedule: 'Manual',
       paused: false,
-      spaceNewsSources: ['nasa', 'jpl', 'esa-space', 'esa-science'],
+      spaceNewsSources: ['nasa', 'jpl', 'cneos', 'esa-space', 'esa-science'],
       spaceInterestLanguage: 'en',
       selectedSpaceNiche: 'all',
       customSpaceNiche: '',
