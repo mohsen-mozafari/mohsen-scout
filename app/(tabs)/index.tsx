@@ -254,6 +254,7 @@ function DiscoveryDashboardReady() {
       ? preferences.customSpaceNiche
       : niche?.topic ?? 'Space science and exploration';
   const applyScan = useCallback(async (result: Awaited<ReturnType<typeof fetchSpaceNews>>) => {
+    await useScout.getState().commit((data) => ({ ...data, feedRegistry: result.registry }));
     const relevantNews = preferences.selectedSpaceNiche === 'all'
       ? result.items
       : newsForNiche(result.items, preferences.selectedSpaceNiche, preferences.customSpaceNiche);
