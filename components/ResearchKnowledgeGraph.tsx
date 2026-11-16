@@ -1,5 +1,5 @@
-import { useMemo, useState, type StyleProp, type TextStyle } from 'react';
-import { Linking, Pressable, Text, View, useWindowDimensions } from 'react-native';
+import { useMemo, useState } from 'react';
+import { Linking, Pressable, Text, View, useWindowDimensions, type StyleProp, type TextStyle } from 'react-native';
 import Svg, { Circle, Line, Text as SvgText } from 'react-native-svg';
 import { resolveTextDirection } from '@/lib/i18n';
 import { palette as p } from '@/lib/theme';
