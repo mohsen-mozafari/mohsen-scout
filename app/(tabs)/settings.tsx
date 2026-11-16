@@ -63,7 +63,7 @@ function CredentialSection({ kind, label }: { kind: Credential; label: string })
           <KeyRound size={18} color={p.purple} />
           <Text style={[styles.heading, { flex: 1 }]}>{translateText(label, language)}</Text>
         </View>
-        <Text style={styles.badge}>{stored ? '•••• ' + translateText('Saved', useScout.getState().data.preferences.uiLanguage ?? 'fa') : translateText('Not set', useScout.getState().data.preferences.uiLanguage ?? 'fa')}</Text>
+        <Text style={styles.badge}>{stored ? '•••• ' + translateText('Saved', language) : translateText('Not set', language)}</Text>
       </View>
       <Field
         label={stored ? 'Replace key' : 'API key'}
