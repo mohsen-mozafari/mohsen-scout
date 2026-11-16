@@ -200,8 +200,10 @@ function DiscoveryDashboardReady() {
   const ideas = useScout((state) => state.data.ideas);
   const reports = useScout((state) => state.data.reports);
   const memoryCount = useScout((state) => state.data.researchMemory.length);
+  const [quotaNow, setQuotaNow] = useState(0);
+  useEffect(() => { setQuotaNow(Date.now()); }, []);
   const youtubeBudget = useScout((state) => state.data.budget);
-  const quotaDate = quotaDay();
+  const quotaDate = quotaNow ? quotaDay(new Date(quotaNow)) : youtubeBudget.date;
   const quotaUsage = youtubeBudget.date === quotaDate
     ? youtubeBudget
     : { date: quotaDate, units: 0, requests: 0, exhausted: false };
@@ -211,7 +213,7 @@ function DiscoveryDashboardReady() {
   const otherAutomaticMax = Math.floor(preferences.budget * 0.2);
   const otherReserveMax = preferences.budget - otherManualMax - otherAutomaticMax;
   const recentRefreshCycles = (preferences.youtubeRefreshTimestamps ?? [])
-    .filter((timestamp) => timestamp <= Date.now() && Date.now() - timestamp < 24 * 60 * 60 * 1000).length;
+    .filter((timestamp) => timestamp <= quotaNow && quotaNow - timestamp < 24 * 60 * 60 * 1000).length;
   const [warnings, setWarnings] = useState<string[]>([]);
   const [lastScannedAt, setLastScannedAt] = useState<number | null>(null);
   const [nicheSuggestions, setNicheSuggestions] = useState<SpaceNicheSuggestion[]>([]);
