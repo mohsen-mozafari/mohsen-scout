@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { requestJson, type Fetcher } from './api';
-import { classifyPublicationFreshness, deduplicateResearchEvidence, matchesResearchTerms } from './intelligence';
+import { classifyPublicationFreshness, deduplicateResearchEvidence, matchesResearchTerms, normalizeResearchText, scoreResearchText } from './intelligence';
 import type { FeedRegistryRecord } from './types';
 
 export type SpaceNewsSourceId = 'nasa' | 'jpl' | 'cneos' | 'esa-space' | 'esa-science';
@@ -286,7 +286,7 @@ async function loadOfficialFeed(
       const headers: Record<string, string> = {
         Accept: 'application/rss+xml, application/atom+xml, application/feed+json, application/json;q=0.9, application/xml, text/xml;q=0.8, text/html;q=0.5, */*;q=0.3',
         'Cache-Control': 'no-cache',
-        'User-Agent': 'MOHSEN-SCOUT/1.3.8 (+https://github.com/mohsen-mozafari/mohsen-scout)',
+        'User-Agent': 'MOHSEN-SCOUT/1.3.9 (+https://github.com/mohsen-mozafari/mohsen-scout)',
       };
       if (previous?.endpoint === endpoint && previous.etag) headers['If-None-Match'] = previous.etag;
       if (previous?.endpoint === endpoint && previous.lastModified) headers['If-Modified-Since'] = previous.lastModified;
@@ -504,7 +504,15 @@ export function newsForNiche(items: SpaceNewsItem[], nicheId: string, customNich
       ? customNiche.split(/[,;\n]+/).map((term) => term.trim()).filter(Boolean)
       : [];
   if (!rawTerms.length) return [];
-  return items.filter((item) => matchesResearchTerms(item.title + ' ' + item.summary, rawTerms));
+  return items.map((item, index) => {
+    const titleScore = Math.max(0, ...rawTerms.map((term) => scoreResearchText(term, item.title)));
+    const relevanceScore = Math.max(0, ...rawTerms.map((term) => scoreResearchText(term, item.title, item.summary)));
+    const matches = rawTerms.some((term) => matchesResearchTerms(item.title + ' ' + item.summary, [term]));
+    return { item, index, titleScore, relevanceScore, matches };
+  }).filter((entry) => entry.matches && entry.relevanceScore > 0)
+    .sort((a, b) => b.titleScore - a.titleScore || b.relevanceScore - a.relevanceScore ||
+      (Date.parse(b.item.publishedAt ?? '') || 0) - (Date.parse(a.item.publishedAt ?? '') || 0) || a.index - b.index)
+    .map((entry) => entry.item);
 }
 export type SpaceNicheSuggestion = {
   id: string; title: string; topic: string; description: string;
@@ -649,10 +657,10 @@ export async function getWikipediaSignal(
 ): Promise<WikiSignal> {
   const query = topic.trim().slice(0, 120);
   if (!query) throw new Error('Enter a topic to compare.');
-  const cacheKey = language + ':' + query.toLowerCase();
+  const cacheKey = language + ':' + normalizeResearchText(query);
   const cached = wikiCache.get(cacheKey);
   if (cached && Date.now() - cached.at < CACHE_MS) return cached.value;
-  const searchParams = new URLSearchParams({ action: 'query', list: 'search', srsearch: query, srlimit: '1', format: 'json', origin: '*' });
+  const searchParams = new URLSearchParams({ action: 'query', list: 'search', srsearch: query, srlimit: '10', format: 'json', origin: '*' });
   const searchUrl = 'https://' + language + '.wikipedia.org/w/api.php?' + searchParams.toString();
   const wikiHeaders = {
     'User-Agent': 'MOHSEN-SCOUT/1.3 (+https://github.com/mohsen-mozafari/mohsen-scout)',
@@ -660,7 +668,13 @@ export async function getWikipediaSignal(
   };
   const search = wikiSearchSchema.safeParse(await requestJson(searchUrl, { headers: wikiHeaders }, fetcher));
   if (!search.success || !search.data.query.search.length) throw new Error('No Wikipedia article matched "' + query + '". Try a more specific phrase.');
-  const articleTitle = search.data.query.search[0].title;
+  const rankedArticles = search.data.query.search.map((item, index) => ({
+    item, index, score: scoreResearchText(query, item.title),
+  })).sort((a, b) => b.score - a.score || a.index - b.index);
+  const bestArticle = rankedArticles[0];
+  if (!bestArticle || bestArticle.score <= 0)
+    throw new Error('Wikipedia returned results, but none had a clear title match for "' + query + '". Try a more specific phrase or another language.');
+  const articleTitle = bestArticle.item.title;
   const articlePath = encodeURIComponent(articleTitle.replace(/ /g, '_'));
   const summaryUrl = 'https://' + language + '.wikipedia.org/api/rest_v1/page/summary/' + articlePath;
   let summary = '';

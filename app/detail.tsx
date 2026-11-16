@@ -26,7 +26,7 @@ import { type Idea, statuses, languages } from '@/lib/types';
 import { buildIdeaAnalysis, limitations, reasoning } from '@/lib/engine';
 import { getIdeaDisplayTitle } from '@/lib/idea-research';
 import { getKey } from '@/lib/vault';
-import { getFreeModels, getOpinion, nextOpenRouterUsage, opinionPrompt } from '@/lib/api';
+import { getFreeModels, getOpinion, nextOpenRouterUsage, opinionPrompt, selectFreeModel } from '@/lib/api';
 import { uid } from '@/lib/types';
 import { MediaPreview } from '@/components/MediaPreview';
 export default function Detail() {
@@ -68,16 +68,13 @@ export default function Detail() {
       const key = await getKey('openrouter');
       if (!key) throw new Error('Add your OpenRouter key in Settings first.');
       const models = await getFreeModels();
-      let model = data.preferences.model;
-      if (!model) {
-        model = models[0]?.id ?? '';
-        if (!model) throw new Error('No free models are available. Try refreshing later.');
+      const model = selectFreeModel(models, data.preferences.model);
+      if (!model) throw new Error('No free models are currently available. Try refreshing later.');
+      if (model !== data.preferences.model) {
         await useScout
           .getState()
           .commit((d) => ({ ...d, preferences: { ...d.preferences, model } }));
       }
-      if (!models.some((m) => m.id === model))
-        throw new Error('The selected free model is unavailable. Refresh models in Settings.');
       const text = await getOpinion(
         key,
         model,

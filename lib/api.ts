@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { type Budget, type ResearchInput, type Video, type Region } from './types';
+import { scoreResearchText } from './intelligence';
 export type Fetcher = typeof fetch;
 export class ApiError extends Error {
   constructor(
@@ -56,6 +57,10 @@ export async function requestJson(
       const isGoogleApi = hostname === 'www.googleapis.com';
       const isOpenRouter = hostname === 'openrouter.ai' || hostname.endsWith('.openrouter.ai');
       const isWikimedia = hostname.endsWith('wikipedia.org') || hostname === 'wikimedia.org' || hostname.endsWith('.wikimedia.org');
+      if (isOpenRouter && response.status === 402)
+        throw new ApiError('OpenRouter reports insufficient provider credits or account balance. Check the OpenRouter account and selected provider.', 'credits');
+      if (isOpenRouter && response.status === 408)
+        throw new ApiError('The OpenRouter provider timed out. Try again later.', 'timeout');
       if (isGoogleApi && /quotaExceeded|dailyLimitExceeded/.test(serialized))
         throw new ApiError('YouTube quota is exhausted. Check Google Cloud before trying again.', 'quota');
       if (/keyInvalid|API_KEY_INVALID/.test(serialized) ||
@@ -75,7 +80,7 @@ export async function requestJson(
         throw new ApiError(isOpenRouter
           ? 'That model or endpoint is unavailable. Refresh the model list.'
           : 'The requested data endpoint was not found.', 'model');
-      if (response.status === 429 || response.status >= 500) {
+      if (response.status === 408 || response.status === 429 || response.status >= 500) {
         if (attempt < attempts - 1) {
           const delay = retryDelayMs(
             response.headers.get('Retry-After'),
@@ -86,11 +91,15 @@ export async function requestJson(
             continue;
           }
         }
+        const timedOut = response.status === 408;
+        const rateLimited = response.status === 429;
         throw new ApiError(
-          response.status === 429
-            ? 'The service is rate limited. Try again later.'
-            : 'The service is unavailable. Try again later.',
-          'service',
+          timedOut
+            ? 'The request timed out. Try again.'
+            : rateLimited
+              ? (isOpenRouter ? 'OpenRouter rate limit reached. Wait before requesting another AI response.' : 'The service is rate limited. Try again later.')
+              : (isOpenRouter ? 'The OpenRouter provider is temporarily unavailable. Try again later.' : 'The service is unavailable. Try again later.'),
+          timedOut ? 'timeout' : rateLimited && isOpenRouter ? 'rate' : 'service',
         );
       }
       throw new ApiError('The request was rejected. Check your API configuration.', 'request');
@@ -223,26 +232,58 @@ export async function testYouTube(options: YouTubeOptions) {
 }
 type SearchBucket = 'relevance' | 'popularity' | 'recent' | 'explainer';
 const SEARCH_BUCKET_ORDER: SearchBucket[] = ['relevance', 'popularity', 'recent', 'explainer'];
+const YOUTUBE_SEARCH_REQUEST_LIMIT = 12;
 const SEARCH_BUCKET_LABELS: Record<SearchBucket, (topic: string) => string> = {
   relevance: (topic) => topic,
   popularity: () => 'YouTube popularity order',
   recent: () => 'YouTube recent results',
   explainer: (topic) => topic + ' explained',
 };
+const SEARCH_BUCKET_ORDERS: Record<SearchBucket, 'relevance' | 'viewCount' | 'date'> = {
+  relevance: 'relevance', popularity: 'viewCount', recent: 'date', explainer: 'relevance',
+};
+export type YouTubeSearchTask = {
+  language: string;
+  query: string;
+  order: 'relevance' | 'viewCount' | 'date';
+  bucket: SearchBucket;
+};
+
+/** Distributes the capped search budget across languages before adding extra query angles. */
+export function buildYouTubeSearchPlan(topic: string, languages: readonly string[], maxRequests = YOUTUBE_SEARCH_REQUEST_LIMIT): YouTubeSearchTask[] {
+  const cleanTopic = topic.trim();
+  const uniqueLanguages = [...new Set(languages.map((language) => language.trim().toLowerCase()).filter(Boolean))];
+  const limit = Number.isFinite(maxRequests)
+    ? Math.max(0, Math.min(YOUTUBE_SEARCH_REQUEST_LIMIT, Math.floor(maxRequests)))
+    : YOUTUBE_SEARCH_REQUEST_LIMIT;
+  if (!cleanTopic || !uniqueLanguages.length || !limit) return [];
+  const tasks: YouTubeSearchTask[] = [];
+  for (const bucket of SEARCH_BUCKET_ORDER) {
+    for (const language of uniqueLanguages) {
+      tasks.push({ language, query: SEARCH_BUCKET_LABELS[bucket](cleanTopic), order: SEARCH_BUCKET_ORDERS[bucket], bucket });
+      if (tasks.length >= limit) return tasks;
+    }
+  }
+  return tasks;
+}
+
+/** Ranks a bounded YouTube sample by transparent title-first textual relevance. */
+export function rankYouTubeSearchResults<T extends { title: string; description?: string }>(topic: string, videos: readonly T[]): T[] {
+  return videos.map((video, index) => ({
+    video, index, score: scoreResearchText(topic, video.title, video.description ?? ''),
+  })).sort((a, b) => b.score - a.score || a.index - b.index).map((entry) => entry.video);
+}
 
 export async function searchYouTube(input: ResearchInput, options: YouTubeOptions, onProgress?: (text: string) => void) {
   const topic = input.topic.trim();
   if (!topic) throw new ApiError('Enter a topic before starting research.', 'input');
   const resultLimit = Math.max(1, Math.min(50, Math.floor(input.maxResults) || 25));
-  const searches = input.languages.flatMap((language) => [
-    { language, query: topic, order: 'relevance', bucket: 'relevance' as const },
-    { language, query: topic, order: 'viewCount', bucket: 'popularity' as const },
-    { language, query: topic, order: 'date', bucket: 'recent' as const },
-    { language, query: topic + ' explained', order: 'relevance', bucket: 'explainer' as const },
-  ]).slice(0, 12);
+  const searches = buildYouTubeSearchPlan(topic, input.languages);
+  if (!searches.length) throw new ApiError('Select at least one research language before starting YouTube search.', 'input');
   const warnings: string[] = [];
-  if (searches.length < input.languages.length * 4) {
-    warnings.push('The 12-search safety cap limited language coverage. Not every selected language was sampled.');
+  const languageCount = new Set(input.languages.map((language) => language.trim().toLowerCase()).filter(Boolean)).size;
+  if (searches.length < languageCount * SEARCH_BUCKET_ORDER.length) {
+    warnings.push('The 12-search safety cap covers selected languages first; some secondary query angles are omitted.');
   }
   const candidates = new Map<string, Video>();
   const bucketIds: Record<SearchBucket, string[]> = { relevance: [], popularity: [], recent: [], explainer: [] };
@@ -284,6 +325,18 @@ export async function searchYouTube(input: ResearchInput, options: YouTubeOption
   }
   if (!candidates.size && lastError) throw lastError;
 
+  const rankedBucketIds: Record<SearchBucket, string[]> = { relevance: [], popularity: [], recent: [], explainer: [] };
+  for (const bucket of SEARCH_BUCKET_ORDER) {
+    const bucketVideos = [...new Set(bucketIds[bucket])]
+      .map((id) => candidates.get(id))
+      .filter((video): video is Video => Boolean(video));
+    rankedBucketIds[bucket] = rankYouTubeSearchResults(topic, bucketVideos).map((video) => video.id);
+  }
+  const bestMatchScore = Math.max(0, ...[...candidates.values()].map((video) => scoreResearchText(topic, video.title, video.description)));
+  if (bestMatchScore === 0) {
+    warnings.push('YouTube returned no clear title or description match for this topic. Results remain in provider order and should be checked manually.');
+  }
+
   const targets: Record<SearchBucket, number> = {
     relevance: Math.ceil(resultLimit * 0.4),
     popularity: Math.ceil(resultLimit * 0.3),
@@ -295,7 +348,7 @@ export async function searchYouTube(input: ResearchInput, options: YouTubeOption
   for (const bucket of SEARCH_BUCKET_ORDER) {
     if (selected.size >= resultLimit) break;
     let added = 0;
-    for (const id of bucketIds[bucket]) {
+    for (const id of rankedBucketIds[bucket]) {
       if (selected.size >= resultLimit) break;
       if (selected.has(id) || !candidates.has(id)) continue;
       selected.set(id, { ...candidates.get(id)!, query: SEARCH_BUCKET_LABELS[bucket](topic) });
@@ -304,7 +357,7 @@ export async function searchYouTube(input: ResearchInput, options: YouTubeOption
     }
   }
   for (const bucket of SEARCH_BUCKET_ORDER) {
-    for (const id of bucketIds[bucket]) {
+    for (const id of rankedBucketIds[bucket]) {
       if (selected.size >= resultLimit) break;
       if (!selected.has(id) && candidates.has(id)) {
         selected.set(id, { ...candidates.get(id)!, query: SEARCH_BUCKET_LABELS[bucket](topic) });
@@ -355,8 +408,15 @@ export async function getFreeModels(fetcher: Fetcher = fetch) {
   );
   if (!parsed.success) throw new ApiError('The model list could not be read.', 'invalid');
   return parsed.data.data.filter(
-    (m) => Number(m.pricing.prompt) === 0 && Number(m.pricing.completion) === 0,
+    (m) => Boolean(m.id.trim()) && Number(m.pricing.prompt) === 0 && Number(m.pricing.completion) === 0,
   );
+}
+
+/** Keeps a saved model when it is still free; otherwise chooses the first live free model. */
+export function selectFreeModel(models: readonly { id: string }[], preferred = ''): string {
+  const available = models.map((model) => model.id.trim()).filter(Boolean);
+  const selected = preferred.trim();
+  return selected && available.includes(selected) ? selected : available[0] ?? '';
 }
 export async function testOpenRouter(key: string) {
   const raw = await requestJson('https://openrouter.ai/api/v1/key', {
@@ -727,14 +787,43 @@ export function nextOpenRouterUsage(
   return { openRouterUsageDay: today, openRouterRequestsToday: count + 1 };
 }
 
+function openRouterProviderError(raw: unknown): ApiError | undefined {
+  const parsed = z.object({
+    error: z.object({
+      code: z.union([z.number(), z.string()]).optional(),
+      type: z.string().optional(),
+    }).passthrough(),
+  }).passthrough().safeParse(raw);
+  if (!parsed.success) return undefined;
+  const rawCode = parsed.data.error.code;
+  const descriptor = [rawCode, parsed.data.error.type].filter(Boolean).join(' ').toLowerCase();
+  const numericCode = typeof rawCode === 'number' ? rawCode : /^\d+$/.test(String(rawCode ?? '')) ? Number(rawCode) : 0;
+  if (numericCode === 401 || /invalid.*key|unauthor/i.test(descriptor))
+    return new ApiError('The OpenRouter key was rejected. Check or replace it in Settings.', 'key');
+  if (numericCode === 402 || /credit|fund|billing|payment/i.test(descriptor))
+    return new ApiError('OpenRouter reports insufficient provider credits or account balance. Check the OpenRouter account and selected provider.', 'credits');
+  if (numericCode === 403)
+    return new ApiError('OpenRouter refused this request. Check model access and provider restrictions.', 'permission');
+  if (numericCode === 404 || /model.*(missing|unavailable|not found)/i.test(descriptor))
+    return new ApiError('The selected OpenRouter model is unavailable. Refresh the free model list and select another model.', 'model');
+  if (numericCode === 408 || /timeout|timed out/i.test(descriptor))
+    return new ApiError('The OpenRouter provider timed out. Try again later.', 'timeout');
+  if (numericCode === 429 || /rate.?limit|too many requests/i.test(descriptor))
+    return new ApiError('OpenRouter rate limit reached. Wait before requesting another AI response.', 'rate');
+  return new ApiError('OpenRouter returned a provider error. Refresh free models or choose another available model.', 'provider');
+}
+
 let opinionRequestInFlight = false;
 export async function getOpinion(
   key: string,
   model: string,
   prompt: string,
   beforeRequest?: () => Promise<void>,
+  fetcher: Fetcher = fetch,
 ) {
   if (opinionRequestInFlight) throw new ApiError('Another OpenRouter analysis is already running. Wait for it to finish.', 'busy');
+  if (!key.trim() || !model.trim() || !prompt.trim())
+    throw new ApiError('The OpenRouter key, selected model and idea prompt are required.', 'input');
   opinionRequestInFlight = true;
   try {
     await beforeRequest?.();
@@ -742,12 +831,15 @@ export async function getOpinion(
       method: 'POST',
       headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ model, max_tokens: 900, messages: [{ role: 'user', content: prompt }] }),
-    });
+    }, fetcher);
+    const providerError = openRouterProviderError(raw);
+    if (providerError) throw providerError;
     const parsed = z
       .object({ choices: z.array(z.object({ message: z.object({ content: z.string() }) })).min(1) })
       .safeParse(raw);
-    if (!parsed.success) throw new ApiError('The AI reply could not be read.', 'invalid');
-    return parsed.data.choices[0].message.content;
+    if (!parsed.success || !parsed.data.choices[0].message.content.trim())
+      throw new ApiError('The AI reply was empty or could not be read. Try another free model.', 'invalid');
+    return parsed.data.choices[0].message.content.trim();
   } finally {
     opinionRequestInFlight = false;
   }
