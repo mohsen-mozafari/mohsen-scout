@@ -3,7 +3,7 @@ import type { InternalResearchResult } from './engine';
 import type { SpaceNewsItem, WikiSignal } from './space';
 import { matchesResearchTerms } from './intelligence';
 
-export type ResearchGraphGroupId = 'sources' | 'youtube' | 'context' | 'evidence' | 'entities' | 'findings' | 'angles' | 'ideas';
+export type ResearchGraphGroupId = 'sources' | 'youtube' | 'context' | 'evidence' | 'findings' | 'angles' | 'ideas';
 
 export type ResearchGraphItem = {
   id: string;
@@ -19,7 +19,7 @@ export type ResearchGraphGroup = {
   items: ResearchGraphItem[];
 };
 
-export type ResearchGraphNodeType = 'topic' | 'publisher' | 'news' | 'youtube' | 'context' | 'evidence' | 'entity' | 'finding' | 'idea';
+export type ResearchGraphNodeType = 'topic' | 'publisher' | 'news' | 'youtube' | 'context' | 'evidence' | 'finding' | 'idea';
 export type ResearchGraphNode = ResearchGraphItem & { type: ResearchGraphNodeType; groupId?: ResearchGraphGroupId };
 export type ResearchGraphEdge = { id: string; source: string; target: string; relation: string };
 export type ResearchGraphModel = { topic: string; summary: string; groups: ResearchGraphGroup[]; nodes: ResearchGraphNode[]; edges: ResearchGraphEdge[] };
@@ -146,31 +146,6 @@ export function buildResearchGraphModel(input: BuildResearchGraphInput): Researc
       })),
     });
   }
-  if (input.analysis.entityCandidates.length) {
-    groups.push({
-      id: 'entities',
-      title: text('Recognized entities & co-mentions', 'موجودیت‌های شناخته‌شده و هم‌ذکری‌ها'),
-      items: input.analysis.entityCandidates.map((entity) => ({
-        id: 'entity-' + entity.id,
-        title: entity.name,
-        meta: entity.kind + ' · ' + number(entity.mentionCount) + ' ' + text('mentions', 'ذکر'),
-        detail: [
-          text('Known aliases: ', 'نام‌های جایگزین شناخته‌شده: ') + entity.aliases.join(', '),
-          text('Evidence records: ', 'رکوردهای شاهد: ') + entity.evidenceIds.join(', '),
-          text('Publisher/source IDs: ', 'شناسه منابع: ') + (entity.sourceIds.join(', ') || text('not available', 'ناموجود')),
-          ...input.analysis.entityRelations
-            .filter((relation) => relation.fromEntityId === entity.id || relation.toEntityId === entity.id)
-            .map((relation) => {
-              const otherId = relation.fromEntityId === entity.id ? relation.toEntityId : relation.fromEntityId;
-              const other = input.analysis.entityCandidates.find((candidate) => candidate.id === otherId);
-              return text('Co-mentioned with: ', 'هم‌ذکر با: ') + (other?.name ?? otherId) +
-                ' · ' + relation.evidenceCount + ' ' + text('evidence record(s)', 'رکورد شاهد');
-            }),
-          text('A co-mention indicates that names occur in the same evidence record; it does not establish causation or a verified relationship.', 'هم‌ذکری فقط یعنی نام‌ها در یک رکورد شاهد کنار هم آمده‌اند و رابطه علّی یا ارتباط قطعی را ثابت نمی‌کند.'),
-        ].join('\n'),
-      })),
-    });
-  }
 
   const quality = input.analysis.intelligence.sourceQuality;
   const confidence = input.analysis.intelligence.confidence;
@@ -280,8 +255,7 @@ export function buildResearchGraphModel(input: BuildResearchGraphInput): Researc
         : group.id === 'youtube' ? 'youtube'
           : group.id === 'context' ? 'context'
             : group.id === 'evidence' ? 'evidence'
-              : group.id === 'entities' ? 'entity'
-                : group.id === 'angles' || group.id === 'ideas' ? 'idea' : 'finding',
+              : group.id === 'angles' || group.id === 'ideas' ? 'idea' : 'finding',
       groupId: group.id,
     }))),
   ];
@@ -312,25 +286,6 @@ export function buildResearchGraphModel(input: BuildResearchGraphInput): Researc
     }
     addEdge('source-' + item.id, publisherId, text('published by', 'منتشرشده توسط'));
   }
-  for (const entity of input.analysis.entityCandidates) {
-    const entityNodeId = 'entity-' + entity.id;
-    for (const story of input.news) {
-      if (entity.evidenceIds.includes(story.url) || entity.evidenceIds.includes(story.id))
-        addEdge('source-' + story.id, entityNodeId, text('mentions entity', 'به این موجودیت اشاره می‌کند'));
-    }
-    for (const video of input.videos) {
-      if (entity.evidenceIds.includes('youtube:' + video.id))
-        addEdge('video-' + video.id, entityNodeId, text('mentions entity in temporary sample', 'ذکر موجودیت در نمونه موقت'));
-    }
-  }
-  for (const relation of input.analysis.entityRelations) {
-    addEdge(
-      'entity-' + relation.fromEntityId,
-      'entity-' + relation.toEntityId,
-      text('co-mentioned in ' + relation.evidenceCount + ' evidence record(s)', 'هم‌ذکر در ' + relation.evidenceCount + ' رکورد شاهد'),
-    );
-  }
-
   if (nodeIds.has('evidence-publisher-news')) {
     for (const item of input.news) addEdge('source-' + item.id, 'evidence-publisher-news', text('represented in news evidence', 'بازتاب‌یافته در شواهد خبری'));
   }

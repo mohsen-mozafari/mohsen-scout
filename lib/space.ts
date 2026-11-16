@@ -1,7 +1,6 @@
 import { z } from 'zod';
 import { requestJson, type Fetcher } from './api';
 import { classifyPublicationFreshness, deduplicateResearchEvidence, matchesResearchTerms } from './intelligence';
-import type { FeedRegistryRecord } from './types';
 
 export type SpaceNewsSourceId = 'nasa' | 'jpl' | 'cneos' | 'esa-space' | 'esa-science';
 export type WikiLanguage = 'en' | 'fa' | 'de' | 'fr' | 'es' | 'ja';
@@ -66,12 +65,11 @@ const newsItemLimitPerFeed = 80;
 type NewsFeedCacheEntry = {
   at: number;
   items: SpaceNewsItem[];
-  format?: 'rss' | 'atom' | 'json' | 'unknown';
   etag?: string;
   lastModified?: string;
   endpoint?: string;
 };
-type NewsFeedHealth = { failures: number; retryAt: number; warning: string; checkedAt: number };
+type NewsFeedHealth = { failures: number; retryAt: number; warning: string };
 const newsSourceCache = new Map<string, NewsFeedCacheEntry>();
 const newsSourceHealth = new Map<string, NewsFeedHealth>();
 const fetcherNamespaces = new WeakMap<Fetcher, string>();
@@ -222,7 +220,7 @@ export function parseJsonFeed(json: string, source: SpaceNewsSource): SpaceNewsI
   });
 }
 
-const newsInflight = new Map<string, Promise<{ items: SpaceNewsItem[]; warnings: string[]; registry: FeedRegistryRecord[] }>>();
+const newsInflight = new Map<string, Promise<{ items: SpaceNewsItem[]; warnings: string[] }>>();
 
 function feedHttpReason(status: number) {
   return status === 403 ? 'access was refused by the publisher'
@@ -260,7 +258,6 @@ type FeedRefreshResult = {
   endpoint?: string;
   etag?: string;
   lastModified?: string;
-  format?: 'rss' | 'atom' | 'json' | 'unknown';
   notModified?: boolean;
 };
 
@@ -302,7 +299,6 @@ async function loadOfficialFeed(
           endpoint,
           etag: response.headers.get('ETag') ?? previous.etag,
           lastModified: response.headers.get('Last-Modified') ?? previous.lastModified,
-          format: previous.format ?? 'unknown',
           notModified: true,
         };
       }
@@ -313,7 +309,6 @@ async function loadOfficialFeed(
       const body = await response.text();
       const contentType = response.headers.get('content-type')?.toLowerCase() ?? '';
       const isJson = contentType.includes('json') || body.trimStart().startsWith('{');
-      const format: 'rss' | 'atom' | 'json' = isJson ? 'json' : contentType.includes('atom') || /<feed\b/i.test(body) ? 'atom' : 'rss';
       const items = isJson ? parseJsonFeed(body, source) : parseRssFeed(body, source);
       if (items.length) {
         return {
@@ -322,7 +317,6 @@ async function loadOfficialFeed(
           endpoint,
           etag: response.headers.get('ETag') ?? undefined,
           lastModified: response.headers.get('Last-Modified') ?? undefined,
-          format,
         };
       }
       const discovered = discoverOfficialFeeds(body, response.url || endpoint, source);
@@ -353,9 +347,9 @@ export async function fetchSpaceNews(
   enabledSources: readonly string[] = DEFAULT_SPACE_NEWS_SOURCES,
   fetcher: Fetcher = fetch,
   force = false,
-): Promise<{ items: SpaceNewsItem[]; warnings: string[]; registry: FeedRegistryRecord[] }> {
+): Promise<{ items: SpaceNewsItem[]; warnings: string[] }> {
   const ids = SPACE_NEWS_SOURCES.filter((source) => enabledSources.includes(source.id)).map((source) => source.id);
-  if (!ids.length) return { items: [], warnings: ['Enable at least one official news feed in Space Radar sources.'], registry: [] };
+  if (!ids.length) return { items: [], warnings: ['Enable at least one official news feed in Space Radar sources.'] };
   const namespace = fetcherNamespace(fetcher);
   const cacheKey = namespace + ':' + [...ids].sort().join(',');
   const inflight = newsInflight.get(cacheKey);
@@ -388,7 +382,6 @@ export async function fetchSpaceNews(
           etag: refreshed.etag,
           lastModified: refreshed.lastModified,
           endpoint: refreshed.endpoint,
-          format: refreshed.format ?? 'unknown',
         });
         newsSourceHealth.delete(sourceCacheKey);
         return { items: refreshed.items, warning: '' };
@@ -400,7 +393,6 @@ export async function fetchSpaceNews(
         failures,
         retryAt,
         warning: refreshed.warning,
-        checkedAt: Date.now(),
       });
       if (previous?.items.length) {
         return {
@@ -418,60 +410,11 @@ export async function fetchSpaceNews(
       if (!b.publishedAt) return -1;
       return Date.parse(b.publishedAt) - Date.parse(a.publishedAt);
     });
-    return { items, warnings, registry: getSpaceNewsRegistry(ids, fetcher) };
+    return { items, warnings };
   })();
   newsInflight.set(cacheKey, request);
   try { return await request; }
   finally { newsInflight.delete(cacheKey); }
-}
-
-export function getSpaceNewsRegistry(enabledSources: readonly string[] = DEFAULT_SPACE_NEWS_SOURCES, fetcher: Fetcher = fetch): FeedRegistryRecord[] {
-  const namespace = fetcherNamespace(fetcher);
-  return SPACE_NEWS_SOURCES.filter((source) => enabledSources.includes(source.id)).map((source) => {
-    const key = namespace + ':' + source.id;
-    const cached = newsSourceCache.get(key);
-    const health = newsSourceHealth.get(key);
-    return {
-      sourceId: source.id,
-      configuredUrl: source.url,
-      endpoint: cached?.endpoint ?? source.url,
-      format: cached?.format ?? 'unknown',
-      status: health ? cached?.items.length ? 'stale' : 'unavailable' : cached ? 'healthy' : 'unknown',
-      lastCheckedAt: health?.checkedAt ?? cached?.at ?? 0,
-      lastSuccessAt: cached?.at ?? 0,
-      failureCount: health?.failures ?? 0,
-      retryAt: health?.retryAt ?? 0,
-      lastError: health?.warning ?? '',
-      ...(cached?.etag ? { etag: cached.etag } : {}),
-      ...(cached?.lastModified ? { lastModified: cached.lastModified } : {}),
-      cachedItems: cached?.items ?? [],
-    };
-  });
-}
-
-export function hydrateSpaceNewsRegistry(records: readonly FeedRegistryRecord[], fetcher: Fetcher = fetch): void {
-  const namespace = fetcherNamespace(fetcher);
-  for (const record of records) {
-    const key = namespace + ':' + record.sourceId;
-    if (record.cachedItems.length && record.lastSuccessAt > 0) {
-      newsSourceCache.set(key, {
-        at: record.lastSuccessAt,
-        items: record.cachedItems,
-        endpoint: record.endpoint,
-        format: record.format,
-        etag: record.etag,
-        lastModified: record.lastModified,
-      });
-    }
-    if (record.failureCount > 0 && record.retryAt > 0) {
-      newsSourceHealth.set(key, {
-        failures: record.failureCount,
-        retryAt: record.retryAt,
-        warning: record.lastError,
-        checkedAt: record.lastCheckedAt,
-      });
-    }
-  }
 }
 
 export function newsForNiche(items: SpaceNewsItem[], nicheId: string, customNiche = ''): SpaceNewsItem[] {

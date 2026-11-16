@@ -12,8 +12,6 @@ import {
   rankResearchEvidence,
   scoreResearchText,
   sortResearchVideos,
-  extractResearchEntityCandidates,
-  buildResearchEntityRelations,
 } from '../lib/intelligence';
 
 void test('text normalization handles Persian Arabic character variants and zero-width marks', () => {
@@ -132,39 +130,3 @@ void test('publication freshness distinguishes recent, old, undated and future-d
   assert.equal(classifyPublicationFreshness(null, now).status, 'undated');
   assert.equal(classifyPublicationFreshness('2026-11-20T12:00:00Z', now).status, 'future-dated');
 });
-
-void test('known entity aliases are normalized across Persian and English and retain evidence provenance', () => {
-  const entities = extractResearchEntityCandidates([
-    { id: 'nasa-story', sourceId: 'nasa', text: 'NASA reports a Mars observation by the James Webb Space Telescope (JWST).' },
-    { id: 'esa-story', sourceId: 'esa-space', text: 'ESA publishes a new Mars mission update.' },
-    { id: 'unrelated', sourceId: 'jpl', text: 'تلسکوپ جیمز وب داده تازه‌ای درباره سیاره فراخورشیدی ثبت کرد.' },
-  ]);
-  const nasa = entities.find((entity) => entity.name === 'NASA');
-  const mars = entities.find((entity) => entity.name === 'Mars');
-  const jwst = entities.find((entity) => entity.name === 'JWST');
-  assert.ok(nasa);
-  assert.ok(mars);
-  assert.ok(jwst);
-  assert.deepEqual(nasa.evidenceIds, ['nasa-story']);
-  assert.deepEqual(mars.evidenceIds.sort(), ['esa-story', 'nasa-story']);
-  assert.deepEqual(jwst.evidenceIds.sort(), ['nasa-story', 'unrelated']);
-  assert.ok(jwst.mentionCount >= 2);
-});
-
-void test('entity relationships are evidence-backed co-mentions and never labelled causal', () => {
-  const entities = extractResearchEntityCandidates([
-    { id: 'nasa-story', sourceId: 'nasa', text: 'NASA reports a Mars observation.' },
-    { id: 'esa-story', sourceId: 'esa-space', text: 'ESA publishes a Mars mission update.' },
-  ]);
-  const relations = buildResearchEntityRelations(entities);
-  assert.ok(relations.length > 0);
-  assert.ok(relations.every((relation) => relation.type === 'co-mentioned'));
-  assert.ok(relations.every((relation) => relation.evidenceCount === relation.evidenceIds.length));
-  const nasa = entities.find((entity) => entity.name === 'NASA')!;
-  const esa = entities.find((entity) => entity.name === 'ESA')!;
-  assert.equal(relations.some((relation) =>
-    (relation.fromEntityId === nasa.id && relation.toEntityId === esa.id) ||
-    (relation.fromEntityId === esa.id && relation.toEntityId === nasa.id)
-  ), false);
-});
-

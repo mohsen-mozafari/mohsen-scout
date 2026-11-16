@@ -181,32 +181,7 @@ export type ResearchMemoryEntry = {
   /** Bounded, versioned snapshots. Legacy entries without history remain valid. */
   history?: ResearchMemorySnapshot[];
 };
-export type FeedRegistryRecord = {
-  sourceId: 'nasa' | 'jpl' | 'cneos' | 'esa-space' | 'esa-science';
-  configuredUrl: string;
-  endpoint: string;
-  format: 'rss' | 'atom' | 'json' | 'unknown';
-  status: 'healthy' | 'stale' | 'unavailable' | 'unknown';
-  lastCheckedAt: number;
-  lastSuccessAt: number;
-  failureCount: number;
-  retryAt: number;
-  lastError: string;
-  etag?: string;
-  lastModified?: string;
-  cachedItems: {
-    id: string;
-    sourceId: 'nasa' | 'jpl' | 'cneos' | 'esa-space' | 'esa-science';
-    sourceName: string;
-    title: string;
-    summary: string;
-    url: string;
-    publishedAt: string | null;
-    imageUrl?: string;
-  }[];
-};
 export type LocalData = {
-  feedRegistry: FeedRegistryRecord[];
   researchMemory: ResearchMemoryEntry[];
   preferences: Preferences;
   ideas: Idea[];
@@ -221,7 +196,6 @@ export const uid = () => `${Date.now().toString(36)}-${Math.random().toString(36
 export const RETENTION_MS = 29 * 24 * 60 * 60 * 1000;
 export function defaults(): LocalData {
   return {
-    feedRegistry: [],
     researchMemory: [],
     preferences: {
       uiLanguage: 'fa',

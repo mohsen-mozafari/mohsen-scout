@@ -12,7 +12,6 @@ import {
   SPACE_NEWS_SOURCES,
   DEFAULT_SPACE_NEWS_SOURCES,
   buildNicheSuggestions,
-  hydrateSpaceNewsRegistry,
 } from '../lib/space';
 
 void test('RSS parser reads RSS items, CDATA, entities and safe HTTPS links', () => {
@@ -372,31 +371,3 @@ void test('A failed refresh preserves last-good data, labels it stale, and recov
   assert.match(deferred.warnings[0], /temporarily paused/i);
   assert.equal(attempts, 2);
 });
-
-void test('Feed Registry persists last-good cache and HTTP validators across an app restart', async () => {
-  const source = SPACE_NEWS_SOURCES.find((item) => item.id === 'cneos')!;
-  const firstFetcher: typeof fetch = async () => new Response(
-    '<rss><channel><item><title>CNEOS persisted registry story</title><link>https://cneos.jpl.nasa.gov/persisted-registry-story</link></item></channel></rss>',
-    { status: 200, headers: { 'content-type': 'application/rss+xml', etag: '"cneos-registry-v1"', 'last-modified': 'Sun, 15 Nov 2026 10:00:00 GMT' } },
-  );
-  const first = await fetchSpaceNews([source.id], firstFetcher, true);
-  assert.equal(first.registry[0].status, 'healthy');
-  assert.equal(first.registry[0].format, 'rss');
-  assert.equal(first.registry[0].etag, '"cneos-registry-v1"');
-  assert.equal(first.registry[0].cachedItems[0].title, 'CNEOS persisted registry story');
-
-  let validatorsRestored = false;
-  const restartedFetcher: typeof fetch = async (_input, init) => {
-    const headers = new Headers(init?.headers);
-    validatorsRestored = headers.get('If-None-Match') === '"cneos-registry-v1"' &&
-      headers.get('If-Modified-Since') === 'Sun, 15 Nov 2026 10:00:00 GMT';
-    return new Response(null, { status: 304 });
-  };
-  hydrateSpaceNewsRegistry(first.registry, restartedFetcher);
-  const restored = await fetchSpaceNews([source.id], restartedFetcher, true);
-  assert.equal(validatorsRestored, true);
-  assert.equal(restored.items[0].title, 'CNEOS persisted registry story');
-  assert.equal(restored.registry[0].status, 'healthy');
-  assert.equal(restored.warnings.length, 0);
-});
-

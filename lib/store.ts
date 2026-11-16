@@ -15,7 +15,6 @@ import { getKey } from './vault';
 import { ApiError, nextBudget, reserveYoutubeRefreshCycle, searchYouTube, type YouTubeQuotaKind, type YouTubeQuotaOrigin } from './api';
 import { generateEditorialIdeas } from './idea-generation';
 import { attachReportToIdea as attachReport, attachVideoReferenceToIdea as attachVideoReference, getOrCreateSourceIdea, type SourceIdeaInput } from './idea-research';
-import { hydrateSpaceNewsRegistry } from './space';
 type State = {
   data: LocalData;
   ready: boolean;
@@ -44,9 +43,7 @@ export const useScout = create<State>((set, get) => ({
   clearError: () => set({ error: '' }),
   boot: async () => {
     try {
-      const data = await readData();
-      hydrateSpaceNewsRegistry(data.feedRegistry);
-      set({ data, ready: true, error: '' });
+      set({ data: await readData(), ready: true, error: '' });
     } catch {
       set({ error: 'Could not open local data. Retry before making changes.', ready: false });
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
