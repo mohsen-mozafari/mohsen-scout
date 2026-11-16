@@ -348,7 +348,7 @@ void test('Backup compatibility: version-1 backups without Space preferences sti
   Reflect.deleteProperty(preferences, 'customSpaceNiche');
   Reflect.deleteProperty(preferences, 'defaultResearchDays');
   const restored = importBackup(JSON.stringify(backup));
-  assert.deepEqual(restored.preferences.spaceNewsSources, ['nasa', 'jpl', 'esa-space', 'esa-science']);
+  assert.deepEqual(restored.preferences.spaceNewsSources, ['nasa', 'jpl', 'cneos', 'esa-space', 'esa-science']);
   assert.equal(restored.preferences.spaceInterestLanguage, 'en');
   assert.equal(restored.preferences.selectedSpaceNiche, 'all');
   assert.equal(restored.preferences.customSpaceNiche, '');
