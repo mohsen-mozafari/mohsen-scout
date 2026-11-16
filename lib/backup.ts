@@ -75,6 +75,7 @@ const preferences = z.object({
   languages: z.array(z.string().max(10)).min(1).max(50),
   budget: z.number().int().min(100).max(10000),
   model: text,
+  hybridIntelligence: z.boolean().optional().default(true),
   defaultResearchDays: z.union([z.literal(0), z.literal(7), z.literal(30), z.literal(90)]).optional().default(30),
   spaceNewsSources: z.array(z.enum(['nasa', 'jpl', 'cneos', 'esa-space', 'esa-science'])).max(5).optional().default(['nasa', 'jpl', 'cneos', 'esa-space', 'esa-science']),
   spaceInterestLanguage: z.enum(['en', 'fa', 'de', 'fr', 'es', 'ja']).optional().default('en'),
@@ -151,6 +152,7 @@ export function exportBackup(data: LocalData) {
           languages: data.preferences.languages,
           budget: data.preferences.budget,
           model: data.preferences.model,
+          hybridIntelligence: data.preferences.hybridIntelligence,
           defaultResearchDays: data.preferences.defaultResearchDays,
           spaceNewsSources: data.preferences.spaceNewsSources,
           spaceInterestLanguage: data.preferences.spaceInterestLanguage,
@@ -184,7 +186,13 @@ export function importBackup(raw: string): LocalData {
         result.data.personal.links.some((savedLink) => savedLink.id === id),
       ),
     })),
-    preferences: { ...fresh.preferences, ...result.data.personal.preferences },
+    preferences: {
+      ...fresh.preferences,
+      ...result.data.personal.preferences,
+      schedule: 'Manual',
+      paused: false,
+      lastInput: undefined,
+    },
   };
 }
 export function restorePersonalData(current: LocalData, restored: LocalData): LocalData {

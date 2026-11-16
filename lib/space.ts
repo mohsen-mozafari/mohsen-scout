@@ -286,7 +286,7 @@ async function loadOfficialFeed(
       const headers: Record<string, string> = {
         Accept: 'application/rss+xml, application/atom+xml, application/feed+json, application/json;q=0.9, application/xml, text/xml;q=0.8, text/html;q=0.5, */*;q=0.3',
         'Cache-Control': 'no-cache',
-        'User-Agent': 'MOHSEN-SCOUT/1.3.7 (+https://github.com/mohsen-mozafari/mohsen-scout)',
+        'User-Agent': 'MOHSEN-SCOUT/1.3.8 (+https://github.com/mohsen-mozafari/mohsen-scout)',
       };
       if (previous?.endpoint === endpoint && previous.etag) headers['If-None-Match'] = previous.etag;
       if (previous?.endpoint === endpoint && previous.lastModified) headers['If-Modified-Since'] = previous.lastModified;

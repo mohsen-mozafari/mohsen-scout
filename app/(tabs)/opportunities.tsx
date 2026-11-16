@@ -126,7 +126,7 @@ export default function Opportunities() {
       languages: current.preferences.languages,
       language: current.preferences.uiLanguage ?? 'fa',
       ...(requestedCategory ? { category: requestedCategory } : {}),
-      limit: 25,
+      limit: 8,
     });
     if (!generated.length) {
       setGenerationMessage(current.preferences.uiLanguage === 'fa'
@@ -199,7 +199,7 @@ export default function Opportunities() {
               }}
             />
             <Action busy={op.busy} onPress={() => generate(selectedGenerationCategory())}>
-              {fa ? 'تولید Batch جدید (تا ۲۵ ایده مستقل)' : 'Generate a new batch (up to 25 distinct ideas)'}
+              {fa ? 'تولید ایده‌های تازه (حداکثر ۸ مورد مستقل)' : 'Generate fresh ideas (up to 8 distinct concepts)'}
             </Action>
             {generationMessage ? <Txt muted>{generationMessage}</Txt> : null}
             {draftOpen && (

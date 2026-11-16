@@ -25,9 +25,8 @@ import {
 import { patchExpoGoAssetUrls } from '@/lib/expoGoAssets';
 import { registerColorTokens } from '@/lib/registerColorTokens';
 import { useScout } from '@/lib/store';
-// Registers the native background task at module load; required before scheduling.
-// oxlint-disable-next-line import/no-unassigned-import
-import '@/lib/scheduler';
+// Importing the scheduler registers its native task at module load.
+import { configureSchedule } from '@/lib/scheduler';
 import { palette } from '@/lib/theme';
 import { purgeExpired } from '@/lib/types';
 import { registerServiceWorker } from '@/lib/registerServiceWorker';
@@ -103,7 +102,18 @@ export default function RootLayout() {
   }, []);
 
   useEffect(() => {
-    void useScout.getState().boot();
+    const syncSchedule = () => {
+      const state = useScout.getState();
+      if (state.ready) void configureSchedule(state.data.preferences).catch(() => {});
+    };
+    const unsubscribe = useScout.subscribe((state, previous) => {
+      if (state.ready && previous.ready &&
+        state.data.preferences.lastInput !== previous.data.preferences.lastInput &&
+        state.data.preferences.schedule !== 'Manual' && !state.data.preferences.paused) {
+        syncSchedule();
+      }
+    });
+    void useScout.getState().boot().then(syncSchedule);
     const sweep = () => {
       const state = useScout.getState();
       if (state.ready) void state.commit(purgeExpired).catch(() => {});
@@ -113,6 +123,7 @@ export default function RootLayout() {
     });
     const timer = setInterval(sweep, 60 * 60000);
     return () => {
+      unsubscribe();
       listener.remove();
       clearInterval(timer);
     };

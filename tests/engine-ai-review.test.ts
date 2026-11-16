@@ -47,3 +47,12 @@ void test('AI prompt cache fingerprint is stable and changes with content or mod
   assert.notEqual(first, fingerprintText('free-model-b\n' + prompt));
   assert.notEqual(first, fingerprintText('free-model-a\n' + prompt + ' changed'));
 });
+
+void test('external review prompt explicitly separates agreement and disagreement with the local engine', () => {
+  const prompt = internalEngineReviewPrompt({
+    topic: 'Test topic', summary: 'Processed local assessment.', evidence: [],
+    confidence: { level: 'low', reason: 'Small sample.' }, language: 'en',
+  });
+  assert.match(prompt, /Agreement with Local Engine/);
+  assert.match(prompt, /Disagreement with Local Engine/);
+});

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Text, View } from 'react-native';
 
 import { router } from 'expo-router';
@@ -24,6 +24,9 @@ import { ResearchKnowledgeGraph } from '@/components/ResearchKnowledgeGraph';
 import { generateEditorialIdeas } from '@/lib/idea-generation';
 import { fingerprintText, getFreeModels, getOpinion, internalEngineReviewPrompt, nextOpenRouterUsage, quotaDay, type YouTubeSampleVideo } from '@/lib/api';
 import { getKey } from '@/lib/vault';
+import { ResearchOverviewChart } from '@/components/ResearchOverviewChart';
+
+const automaticReviewStarted = new Set<string>();
 
 
 function AnalysisSignals({ result }: { result: InternalResearchResult }) {
@@ -116,19 +119,18 @@ function EngineAIReview({ topic, result }: { topic: string; result: InternalRese
       : 'The local engine assessed the topic, processed evidence signals, research gaps and confidence. Raw news content and video metadata are not included in this request.',
     evidence: [
       { label: 'Evidence records processed', detail: String(result.evidence.length) },
-      { label: 'Editorial angles considered', detail: String(result.angles.length) },
+      { label: 'Independent publisher groups', detail: String(quality.independentPublishers) },
+      { label: 'Official feeds represented', detail: String(quality.feedsRepresented) },
+      { label: 'Duplicate records merged', detail: String(quality.duplicateStoriesMerged) },
+      { label: 'Stale / undated records', detail: String(quality.staleItems + quality.undatedItems) },
+      { label: 'Research gaps / possible discrepancies', detail: String(result.intelligence.gaps.length + result.intelligence.potentialContradictions.length) },
+      { label: 'Evidence relationships', detail: String(result.entityRelations.length) },
+      { label: 'Editorial angles generated', detail: String(result.angles.length) },
       { label: 'Verification questions', detail: String(result.verificationQuestions.length) },
       { label: 'Known entity candidates', detail: String(result.entityCandidates.length) },
-      { label: 'Evidence co-mention links', detail: String(result.entityRelations.length) },
-      { label: 'Local engine processing time (ms)', detail: String(result.intelligence.selfEvaluation.processingMs) },
-      { label: 'Feeds represented', detail: String(quality.feedsRepresented) },
-      { label: 'Independent publisher groups', detail: String(quality.independentPublishers) },
-      { label: 'Duplicate records merged', detail: String(quality.duplicateStoriesMerged) },
-      { label: 'Undated records', detail: String(quality.undatedItems) },
-      { label: 'Stale records', detail: String(quality.staleItems) },
-      { label: 'Research gaps recorded', detail: String(result.intelligence.gaps.length) },
-      { label: 'Potential discrepancies recorded', detail: String(result.intelligence.potentialContradictions.length) },
     ],
+    gaps: ['Recorded research gaps: ' + result.intelligence.gaps.length],
+    discrepancies: ['Potential discrepancies recorded: ' + result.intelligence.potentialContradictions.length],
     confidence: {
       level: result.intelligence.confidence.level,
       reason: fa
@@ -137,32 +139,40 @@ function EngineAIReview({ topic, result }: { topic: string; result: InternalRese
     },
     language: fa ? 'fa' : 'en',
   });
+  const researchFingerprint = fingerprintText(
+    result.evidence.map((item) => item.id).join('|') + '|' +
+    result.intelligence.gaps.length + '|' + result.intelligence.potentialContradictions.length,
+  );
   const visibleCacheKey = preferences.model
-    ? 'engine:' + fingerprintText(preferences.model + '\n' + prompt)
+    ? 'engine:' + fingerprintText(preferences.model + '\n' + prompt + '\n' + researchFingerprint)
     : '';
   const savedReview = opinions.find((item) => item.ideaId === visibleCacheKey && item.model === preferences.model);
   const [reviewState, setReviewState] = useState({ key: visibleCacheKey, text: savedReview?.text ?? '' });
+  const [externalKeyAvailable, setExternalKeyAvailable] = useState<boolean | null>(null);
   const review = reviewState.key === visibleCacheKey ? reviewState.text : savedReview?.text ?? '';
   const op = useOperation();
 
   const runReview = () => void op.run(async () => {
     const key = await getKey('openrouter');
+    setExternalKeyAvailable(Boolean(key));
     if (!key) throw new Error(fa ? 'ابتدا کلید OpenRouter را در تنظیمات ذخیره کن.' : 'Save your OpenRouter key in Settings first.');
     const current = useScout.getState().data;
-    const models = await getFreeModels();
     let model = current.preferences.model;
-    if (!model || !models.some((item) => item.id === model)) {
+    if (!model) {
+      const models = await getFreeModels();
       model = models[0]?.id ?? '';
       if (!model) throw new Error(fa ? 'مدل رایگان قابل استفاده‌ای پیدا نشد.' : 'No available free OpenRouter model was found.');
-      await useScout.getState().commit((data) => ({
-        ...data,
-        preferences: { ...data.preferences, model },
-      }));
     }
-    const cacheKey = 'engine:' + fingerprintText(model + '\n' + prompt);
+    const cacheKey = 'engine:' + fingerprintText(model + '\n' + prompt + '\n' + researchFingerprint);
     const cached = useScout.getState().data.opinions.find((item) => item.ideaId === cacheKey && item.model === model);
     if (cached) {
       setReviewState({ key: cacheKey, text: cached.text });
+      if (current.preferences.model !== model) {
+        await useScout.getState().commit((data) => ({
+          ...data,
+          preferences: { ...data.preferences, model },
+        }));
+      }
       return;
     }
     const response = await getOpinion(key, model, prompt, async () => {
@@ -175,7 +185,7 @@ function EngineAIReview({ topic, result }: { topic: string; result: InternalRese
       );
       await useScout.getState().commit((data) => ({
         ...data,
-        preferences: { ...data.preferences, ...usage },
+        preferences: { ...data.preferences, model, ...usage },
       }));
     });
     const opinion = {
@@ -185,9 +195,31 @@ function EngineAIReview({ topic, result }: { topic: string; result: InternalRese
       model,
       createdAt: Date.now(),
     };
-    await useScout.getState().commit((data) => ({ ...data, opinions: [opinion, ...data.opinions].slice(0, 100) }));
+    // Keep the returned answer visible even if local persistence fails; the error below
+    // still makes clear that it was not saved and can be retried after storage recovery.
     setReviewState({ key: cacheKey, text: response });
+    await useScout.getState().commit((data) => ({ ...data, opinions: [opinion, ...data.opinions].slice(0, 100) }));
   }, fa ? 'بازبینی AI با خروجی موتور داخلی ذخیره شد.' : 'AI review of the internal engine was saved.');
+
+  const runReviewRef = useRef(runReview);
+  useEffect(() => {
+    runReviewRef.current = runReview;
+  });
+
+  useEffect(() => {
+    if (!preferences.hybridIntelligence || savedReview || externalKeyAvailable === false || !prompt.trim()) return;
+    const triggerKey = fingerprintText(prompt + '\n' + researchFingerprint);
+    if (automaticReviewStarted.has(triggerKey)) return;
+    automaticReviewStarted.add(triggerKey);
+    void getKey('openrouter').then((key) => {
+      setExternalKeyAvailable(Boolean(key));
+      if (!key) {
+        automaticReviewStarted.delete(triggerKey);
+        return;
+      }
+      runReviewRef.current();
+    }).catch(() => automaticReviewStarted.delete(triggerKey));
+  }, [preferences.hybridIntelligence, savedReview, prompt, researchFingerprint, externalKeyAvailable]);
 
   return (
     <Panel>
@@ -197,9 +229,13 @@ function EngineAIReview({ topic, result }: { topic: string; result: InternalRese
         ? 'موتور داخلی شواهد و محدودیت‌ها را استخراج می‌کند؛ AI دوم همان خروجی پردازش‌شده را نقد می‌کند. فقط موضوع و شاخص‌های تجمیعی مجاز ارسال می‌شوند، نه متن خبر یا فراداده خام YouTube.'
         : 'The local engine extracts evidence signals and limitations; the external model independently critiques that processed output. Only the topic and approved aggregate indicators are sent — never raw news or YouTube metadata.'}</Txt>
       {savedReview ? <Txt muted>{'Model: ' + savedReview.model + ' · Reviewed: ' + new Date(savedReview.createdAt).toLocaleString()}</Txt> : null}
-      {!review ? <Txt muted>{fa
-        ? 'هر بررسی با درخواست صریح شما انجام می‌شود و پاسخ دریافتی روی دستگاه ذخیره خواهد شد.'
-        : 'Each review is explicitly requested by you and the received answer is saved on this device.'}</Txt> : null}
+      <Txt muted>{op.busy
+        ? (fa ? 'تحلیل دوم در حال اجراست…' : 'External second opinion is running…')
+        : preferences.hybridIntelligence
+          ? externalKeyAvailable === false
+            ? (fa ? 'هوش ترکیبی روشن است؛ برای فعال‌شدن نظر دوم خودکار، کلید OpenRouter را در تنظیمات ذخیره کن.' : 'Hybrid intelligence is enabled. Save an OpenRouter key in Settings to activate automatic reviews.')
+            : (fa ? 'هوش ترکیبی روشن است؛ پس از تکمیل تحلیل محلی، نظر دوم به‌صورت خودکار درخواست می‌شود. فقط خلاصه و شاخص‌های پردازش‌شده ارسال می‌شوند.' : 'Hybrid intelligence is on. A second opinion runs automatically after local analysis; only processed summaries and aggregate signals are sent.')
+          : (fa ? 'اجرای خودکار خاموش است؛ می‌توانی نظر دوم را دستی بگیری.' : 'Automatic review is off. You can still request a manual second opinion.')}</Txt>
       <Action busy={op.busy} onPress={runReview}>
         {fa ? 'گرفتن نظر دوم از AI خارجی' : 'Ask external AI for its second opinion'}
       </Action>
@@ -223,6 +259,7 @@ export default function DiscoveryDashboard() {
 }
 
 function DiscoveryDashboardReady() {
+  const localData = useScout((state) => state.data);
   const preferences = useScout((state) => state.data.preferences);
   const ideas = useScout((state) => state.data.ideas);
   const reports = useScout((state) => state.data.reports);
@@ -392,6 +429,21 @@ function DiscoveryDashboardReady() {
           <Fold title="YouTube API usage and technical details">
             <Txt muted>{'Today: ' + quotaUsage.units + ' / ' + preferences.budget + ' quota units · ' + quotaUsage.requests + ' requests. The counter follows the app’s Pacific-time quota day.'}</Txt>
           </Fold>
+        </Panel>
+
+        <Panel>
+          <Heading>{preferences.uiLanguage === 'fa' ? 'وضعیت خودکارسازی' : 'Automation status'}</Heading>
+          <Txt muted>{preferences.uiLanguage === 'fa'
+            ? 'جست‌وجوی خودکار YouTube: ' + (preferences.schedule === 'Manual' ? 'خاموش' : preferences.paused ? 'متوقف' : preferences.schedule)
+            : 'Automatic YouTube research: ' + (preferences.schedule === 'Manual' ? 'Off' : preferences.paused ? 'Paused' : preferences.schedule)}</Txt>
+          <Txt muted>{preferences.uiLanguage === 'fa'
+            ? 'نظر دوم AI خارجی: ' + (preferences.hybridIntelligence ? 'خودکار و روشن' : 'فقط با درخواست دستی')
+            : 'External AI second opinion: ' + (preferences.hybridIntelligence ? 'Automatic and enabled' : 'Manual only')}</Txt>
+          <Action secondary onPress={() => router.push('/settings')}>{preferences.uiLanguage === 'fa' ? 'تنظیم جست‌وجو و هوش ترکیبی' : 'Configure research and hybrid AI'}</Action>
+        </Panel>
+
+        <Panel>
+          <ResearchOverviewChart data={localData} language={preferences.uiLanguage ?? 'fa'} />
         </Panel>
 
         {deskAnalysis ? (

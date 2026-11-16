@@ -698,7 +698,7 @@ export type InternalEngineReviewInput = {
 /** Privacy-bounded critique of processed local-engine output only. */
 export function internalEngineReviewPrompt(input: InternalEngineReviewInput): string {
   const fa = input.language === 'fa';
-  const evidence = input.evidence.slice(0, 6).map((item, index) =>
+  const evidence = input.evidence.slice(0, 10).map((item, index) =>
     `${index + 1}. ${item.label.slice(0, 100)}: ${item.detail.slice(0, 360)}`,
   );
   const gaps = (input.gaps ?? []).slice(0, 6).map((item) => item.slice(0, 220));
@@ -712,8 +712,8 @@ export function internalEngineReviewPrompt(input: InternalEngineReviewInput): st
     'Potential discrepancies:\n' + (discrepancies.join('\n') || 'Not reported.'),
   ].join('\n\n');
   const instruction = fa
-    ? 'در یک پاسخ ساختاریافته، چهار مرحله را به همین ترتیب انجام بده: (۱) ممیزی کیفیت و کفایت داده و شواهد؛ (۲) تحلیل مستقل موضوع و ارتباطات قابل دفاع؛ (۳) نقد مخالف برای یافتن فرض پنهان، تناقض، سوگیری و نتیجه بدون شاهد؛ (۴) بازبینی نهایی با تفکیک واقعیت، استنباط و مجهول. این چهار مرحله را در همین یک پاسخ اجرا کن و درخواست جداگانه برای هر مرحله نساز. هیچ داده بیرونی، منبع، آمار، تقاضا یا رابطه علّی جعل نکن. اگر شواهد کافی نیست صریح بگو. خروجی را در بخش‌های «ممیزی شواهد»، «تحلیل مستقل»، «نقد مخالف»، «نتیجه بازبینی‌شده»، «عدم قطعیت» و «گام بعدی» بنویس. این خلاصه حقیقت قطعی نیست.'
-    : 'Perform four ordered stages in one structured response: (1) audit data quality and evidence sufficiency; (2) independently analyze the topic and only defensible relationships; (3) adversarially critique hidden assumptions, contradictions, bias and unsupported conclusions; (4) revise the final assessment while separating facts, inferences and unknowns. Complete all four stages in this single response; do not create four separate requests. Do not invent external facts, sources, statistics, audience demand or causal links. Explicitly state when evidence is insufficient. Return sections: Evidence Audit, Independent Analysis, Adversarial Critique, Revised Conclusion, Uncertainty, and Next Step. This is a processed summary, not established fact.';
+    ? 'در یک پاسخ ساختاریافته، چهار مرحله را به همین ترتیب انجام بده: (۱) ممیزی کیفیت و کفایت داده و شواهد؛ (۲) تحلیل مستقل موضوع؛ (۳) نقد مخالف برای یافتن فرض پنهان، تناقض و سوگیری؛ (۴) مقایسه صریح نتیجه خودت با موتور داخلی و بازبینی نهایی. دقیقاً مشخص کن کجا توافق داری، کجا اختلاف داری و هر اختلاف به کدام داده نیاز دارد. واقعیت، استنباط و مجهول را جدا نگه دار. هیچ داده بیرونی، منبع، آمار، تقاضا یا رابطه علّی جعل نکن. اگر شواهد کافی نیست صریح بگو. خروجی را در بخش‌های «ممیزی شواهد»، «تحلیل مستقل»، «نقد مخالف»، «توافق با موتور داخلی»، «اختلاف با موتور داخلی»، «نتیجه بازبینی‌شده»، «عدم قطعیت» و «گام بعدی» بنویس. این خلاصه حقیقت قطعی نیست.'
+    : 'Perform four ordered stages in one structured response: (1) audit evidence quality; (2) independently analyze only defensible relationships; (3) adversarially challenge hidden assumptions and contradictions; (4) compare your assessment explicitly with the local engine. State where you agree, where you disagree, and what evidence would resolve each disagreement. Separate facts, inferences and unknowns. Do not invent external facts, sources, statistics, demand or causal links. State when evidence is insufficient. Return sections: Evidence Audit, Independent Analysis, Adversarial Critique, Agreement with Local Engine, Disagreement with Local Engine, Revised Conclusion, Uncertainty, and Next Step. This is a processed summary, not established fact.';
   return (instruction + '\n\n' + payload).slice(0, 6200);
 }
 

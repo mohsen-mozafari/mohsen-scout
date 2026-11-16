@@ -224,3 +224,15 @@ void test('distinct evidence anchors in the same category are not incorrectly co
   assert.ok(generated.every((idea) => idea.ideaCategory === 'Explainer'));
   assert.equal(new Set(generated.map((idea) => idea.topic)).size, generated.length);
 });
+
+void test('video-only idea generation derives angles from the highest-ranked relevant video concepts', () => {
+  const generated = generateEditorialIdeas({
+    ...base, news: [],
+    videos: [{ id: 'dQw4w9WgXcQ', title: 'JWST exoplanet atmosphere methane spectroscopy', description: 'Detailed methane signatures and spectroscopic measurement limits.', viewCount: 2400000, publishedAt: '2026-11-15T12:00:00Z' }],
+    limit: 8,
+  });
+  assert.ok(generated.length > 0);
+  assert.ok(generated.some((idea) => /methane|spectroscopy/i.test(idea.topic)));
+  assert.ok(generated.every((idea) => idea.videoIds.includes('dQw4w9WgXcQ')));
+  assert.doesNotMatch(JSON.stringify(generated), /JWST exoplanet atmosphere methane spectroscopy/);
+});

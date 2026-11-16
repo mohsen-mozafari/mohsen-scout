@@ -361,7 +361,7 @@ void test('Backup compatibility: version-1 backups without Space preferences sti
 void test('Foundation: defaults belong to Mohsen and have no secrets', () => {
   const d = defaults();
   assert.equal(d.preferences.name, 'Mohsen');
-  assert.equal(d.preferences.schedule, 'Manual');
+  assert.equal(d.preferences.schedule, 'Daily');
   assert.equal(validateLocal(d).links.length, 0);
   assert.equal(JSON.stringify(d).includes('API_KEY'), false);
 });
@@ -391,6 +391,7 @@ void test('Backup: round trip preserves personal data and strips all API metadat
   const d = defaults();
   d.videos = [video];
   d.preferences.customSpaceNiche = 'JWST, NIRSpec';
+  d.preferences.hybridIntelligence = false;
   d.researchMemory = [{
     topic: 'Exoplanet atmospheres',
     updatedAt: now,
@@ -428,6 +429,7 @@ void test('Backup: round trip preserves personal data and strips all API metadat
   assert.equal(imported.videos.length, 0);
   assert.equal(imported.preferences.schedule, 'Manual');
   assert.equal(imported.preferences.customSpaceNiche, 'JWST, NIRSpec');
+  assert.equal(imported.preferences.hybridIntelligence, false);
   assert.equal(imported.researchMemory.length, 1);
   assert.equal(imported.researchMemory[0].sources[0].title, 'Exoplanet atmosphere observed at 40 km');
 });

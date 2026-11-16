@@ -55,13 +55,21 @@ export const useScout = create<State>((set, get) => ({
   commit: async (change) => {
     const action = queue.then(async () => {
       if (!get().ready) throw new Error('Local data is not ready. Retry opening it.');
-      const data = purgeExpired(change(get().data));
+      const previousData = get().data;
+      const data = purgeExpired(change(previousData));
       try {
-        await writeData(data);
+        // Persist only the data domains that changed. In particular, saving an AI
+        // opinion must not rewrite large news/video/report rows in the same database.
+        await writeData(data, previousData);
         set({ data });
-      } catch {
-        set({ error: 'Could not save on this device. Check available storage.' });
-        throw new Error('Could not save on this device. Check available storage.');
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        const full = /SQLITE_FULL|database or disk is full|no space left/i.test(detail);
+        const message = full
+          ? 'SQLite reports that device storage is full. Free some space, reopen MOHSEN SCOUT, and retry.'
+          : `Local database save failed: ${detail.slice(0, 220)}`;
+        set({ error: message });
+        throw new Error(message, { cause: error });
       }
     });
     queue = action.catch(() => {});
@@ -126,6 +134,7 @@ export const useScout = create<State>((set, get) => ({
         region: report.input.region,
         languages: report.input.languages,
         language: get().data.preferences.uiLanguage ?? 'fa',
+        limit: 8,
       });
       await get().commit((data) => ({
         ...data,
@@ -163,6 +172,7 @@ export const useScout = create<State>((set, get) => ({
       region: report.input.region,
       languages: report.input.languages,
       language: get().data.preferences.uiLanguage ?? 'fa',
+      limit: 8,
     });
     await get().commit((data) => ({
       ...data,

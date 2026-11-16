@@ -290,10 +290,19 @@ export default function Settings() {
         </Action>
       </Fold>
       <Fold title="OpenRouter · optional">
+        <Choices
+          label="Automatic external AI second opinion"
+          options={['Automatic after research', 'Manual only']}
+          selected={[prefs.hybridIntelligence ? 'Automatic after research' : 'Manual only']}
+          onChange={(values) => setPrefs({ ...prefs, hybridIntelligence: values[0] === 'Automatic after research' })}
+        />
+        <Txt muted>
+          Automatic mode sends only the research topic, processed local findings and aggregate quality signals after analysis. It never sends raw news text, YouTube titles/descriptions, private notes or API keys. OpenRouter usage is limited by the existing daily cap and cached by content.
+        </Txt>
+        <Action busy={op.busy} disabled={!ready} onPress={save}>Save AI automation</Action>
         <CredentialSection kind="openrouter" label="OpenRouter" />
         <Txt muted>
-          Free models are discovered live. Providers can change availability and limits. Nothing is
-          sent until you explicitly request an opinion.
+          Free models are discovered live. Providers can change availability and limits. In automatic mode, approved processed research signals are sent after a completed analysis; in manual mode, a request is sent only when you ask.
         </Txt>
         <Txt muted>Selected model: {prefs.model || 'Auto-select an available free model'}</Txt>
         <Action busy={modelBusy || op.busy} secondary onPress={loadModels}>
@@ -352,7 +361,7 @@ export default function Settings() {
           Open Google quota
         </Action>
       </Fold>
-      <Fold title="Scheduled research">
+      <Fold title="Automatic YouTube research">
         <Choices
           label="Frequency"
           options={['Manual', 'Every 12 hours', 'Daily', 'Weekly'] as const}
@@ -454,8 +463,7 @@ export default function Settings() {
       </Fold>
       <Fold title="Privacy & data management">
         <Txt muted>
-          YouTube receives your searches and API key. OpenRouter receives only your explicitly
-          approved editorial prompt. Nothing is sent to an app-owned server. No video, audio,
+          YouTube receives your searches and API key. OpenRouter receives the topic and processed aggregate research signals only when automatic hybrid review is enabled, or the prompt you manually request. Raw news/video metadata, private notes and API keys are not sent. Nothing is sent to an app-owned server. No video, audio,
           subtitle or caption downloads. API titles, descriptions and thumbnails expire within 29
           days; saved personal links and notes remain.
         </Txt>
@@ -531,7 +539,7 @@ export default function Settings() {
       </Fold>
       <Fold title="App info">
         <Heading>MOHSEN SCOUT</Heading>
-        <Txt>Version 1.3.2 · Personal research assistant</Txt>
+        <Txt>Version 1.3.8 · Personal research assistant</Txt>
         <Txt muted>
           YouTube is a trademark of Google LLC. This app is not affiliated with YouTube. No
           comprehensive trend coverage or guaranteed results.

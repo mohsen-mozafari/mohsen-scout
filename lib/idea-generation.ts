@@ -240,7 +240,8 @@ export function selectIdeaGenerationVideos(
     if (!/^[\w-]{11}$/.test(video.id) || typeof views !== 'number' || !Number.isFinite(views) || views <= 0) continue;
     const videoTokens = new Set(tokenizeResearchText(video.title + ' ' + (video.description ?? '')));
     const overlap = [...topicTokens].filter((token) => videoTokens.has(token)).length;
-    if (overlap / Math.min(topicTokens.size, 3) < 0.25) continue;
+    const relevance = overlap / topicTokens.size;
+    if (relevance < 0.30) continue;
     const previous = unique.get(video.id);
     if (!previous || views > (previous.video.viewCount ?? 0)) unique.set(video.id, { video, overlap });
   }
@@ -258,6 +259,7 @@ export function selectIdeaGenerationVideos(
 export function deduplicateDisplayIdeas(ideas: readonly Idea[]): Idea[] {
   const seenIds = new Set<string>();
   const seenGeneratedTitles = new Set<string>();
+  const seenGeneratedConcepts: Set<string>[] = [];
   return ideas.filter((idea) => {
     if (seenIds.has(idea.id)) return false;
     seenIds.add(idea.id);
@@ -265,7 +267,16 @@ export function deduplicateDisplayIdeas(ideas: readonly Idea[]): Idea[] {
     const title = normalizeResearchText(idea.topic);
     if (!title) return true;
     if (seenGeneratedTitles.has(title)) return false;
+    const centralQuestion = idea.concept.match(/(?:Central question:|پرسش محوری:)\s*([^\n]+)/i)?.[1] ?? '';
+    const tokens = semanticTokens(idea.topic + ' ' + centralQuestion);
+    for (const previous of seenGeneratedConcepts) {
+      const overlap = [...tokens].filter((token) => previous.has(token)).length;
+      const containment = overlap / Math.max(1, Math.min(tokens.size, previous.size));
+      const jaccard = overlap / Math.max(1, tokens.size + previous.size - overlap);
+      if (containment >= 0.88 && jaccard >= 0.72) return false;
+    }
     seenGeneratedTitles.add(title);
+    seenGeneratedConcepts.push(tokens);
     return true;
   });
 }
@@ -302,20 +313,22 @@ export function generateEditorialIdeas(input: GenerateEditorialIdeasInput): Idea
   if (!documents.length) return [];
 
   const topicTokens = new Set(tokenizeResearchText(topic));
-  const termStats = new Map<string, { documents: number; frequency: number }>();
-  // Durable wording anchors come only from publisher/context material. YouTube metadata is used transiently for matching and ID links, never copied into Idea text.
-  for (const document of documents.filter((entry) => entry.kind !== 'youtube')) {
+  const termStats = new Map<string, { documents: number; frequency: number; videoDocuments: number }>();
+  // Anchors may come from the strongest topic-relevant videos and publisher evidence.
+  // Raw video metadata is not copied into the saved Idea record.
+  for (const document of documents) {
     const uniqueTerms = new Set(tokenizeResearchText(document.text));
     for (const term of uniqueTerms) {
       if (term.length < 3 || topicTokens.has(term)) continue;
-      const current = termStats.get(term) ?? { documents: 0, frequency: 0 };
+      const current = termStats.get(term) ?? { documents: 0, frequency: 0, videoDocuments: 0 };
       current.documents += 1;
+      if (document.kind === 'youtube') current.videoDocuments += 1;
       current.frequency += tokenizeResearchText(document.text).filter((value) => value === term).length;
       termStats.set(term, current);
     }
   }
   const anchors = [...termStats.entries()]
-    .sort((a, b) => b[1].documents - a[1].documents || b[1].frequency - a[1].frequency || a[0].localeCompare(b[0]))
+    .sort((a, b) => (videos.length ? b[1].videoDocuments - a[1].videoDocuments : 0) || b[1].documents - a[1].documents || b[1].frequency - a[1].frequency || a[0].localeCompare(b[0]))
     .map(([term]) => term)
     .slice(0, 20);
   const fallback = tokenizeResearchText(topic).filter((term) => term.length > 2).slice(0, 4);

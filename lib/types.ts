@@ -141,6 +141,8 @@ export type Preferences = {
   defaultResearchDays: 0 | 7 | 30 | 90;
   budget: number;
   model: string;
+  /** Automatic privacy-bounded external review after local research completes. */
+  hybridIntelligence: boolean;
   /** Local OpenRouter usage accounting; legacy backups may omit these fields. */
   openRouterUsageDay?: string;
   openRouterRequestsToday?: number;
@@ -232,7 +234,8 @@ export function defaults(): LocalData {
       defaultResearchDays: 30,
       budget: 1500,
       model: '',
-      schedule: 'Manual',
+      hybridIntelligence: true,
+      schedule: 'Daily',
       paused: false,
       spaceNewsSources: ['nasa', 'jpl', 'cneos', 'esa-space', 'esa-science'],
       spaceInterestLanguage: 'en',
