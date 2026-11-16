@@ -9,6 +9,9 @@ const series = [
   { key: 'videos' as const, color: p.purple, fa: 'ویدئو', en: 'Videos' },
   { key: 'reports' as const, color: p.success, fa: 'تحقیق', en: 'Research' },
   { key: 'ideas' as const, color: p.violet, fa: 'ایده', en: 'Ideas' },
+  { key: 'links' as const, color: p.indigo, fa: 'پیوندها', en: 'Links' },
+  { key: 'notes' as const, color: p.muted, fa: 'یادداشت', en: 'Notes' },
+  { key: 'memory' as const, color: p.white, fa: 'حافظه', en: 'Memory' },
   { key: 'ai' as const, color: p.danger, fa: 'AI دوم', en: 'AI reviews' },
 ];
 export function ResearchOverviewChart({ data, language }: Props) {

@@ -1,10 +1,7 @@
 import * as SQLite from 'expo-sqlite';
 import { defaults, purgeExpired, type LocalData } from './types';
 import { validateLocal } from './validation';
-
-const LOCAL_DATA_KEYS: (keyof LocalData)[] = [
-  'feedRegistry', 'researchMemory', 'preferences', 'ideas', 'links', 'notes', 'opinions', 'reports', 'videos', 'budget',
-];
+import { changedLocalDataEntries } from './storage-diff';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -58,14 +55,7 @@ export async function readData(): Promise<LocalData> {
 export async function writeData(data: LocalData, previousData?: Partial<Record<keyof LocalData, unknown>>): Promise<void> {
   const connection = await db();
   const clean = purgeExpired(validateLocal(data));
-  const changedEntries = LOCAL_DATA_KEYS
-    .filter((key) => {
-      if (!previousData) return true;
-      const value = clean[key];
-      const previousValue = previousData[key];
-      return value !== previousValue && JSON.stringify(value) !== JSON.stringify(previousValue);
-    })
-    .map((key) => ({ key, value: clean[key] }));
+  const changedEntries = changedLocalDataEntries(clean, previousData);
   if (!changedEntries.length) return;
   await connection.withExclusiveTransactionAsync(async (tx) => {
     for (const { key, value } of changedEntries) {
