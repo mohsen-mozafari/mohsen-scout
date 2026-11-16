@@ -101,7 +101,8 @@ export default function Opportunities() {
     const reportMatches = latestReport !== undefined && normalizeResearchText(latestReport.input.topic) === normalizeResearchText(topic);
     const reportVideos = reportMatches && latestReport ? latestReport.videos : [];
     const dossierVideos = dossier?.videos ?? [];
-    const videos = (dossierVideos.length ? dossierVideos : reportVideos).map((video) => ({
+    const mergedVideos = new Map([...dossierVideos, ...reportVideos].map((video) => [video.id, video]));
+    const videos = [...mergedVideos.values()].map((video) => ({
       id: video.id,
       title: video.title,
       description: video.description,

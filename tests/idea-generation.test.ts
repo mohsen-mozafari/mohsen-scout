@@ -126,6 +126,7 @@ void test('automatic ingestion does not create duplicate ideas for unchanged evi
 void test('idea generation ranks relevant videos by observed views and excludes unrelated or unmeasured items', () => {
   const selected = selectIdeaGenerationVideos('JWST exoplanet atmosphere', [
     { id: 'dQw4w9WgXcQ', title: 'Unrelated gaming highlights', viewCount: 99000000 },
+    { id: 'abc123XYZ_1', title: 'Daily unrelated roundup', description: 'JWST exoplanet atmosphere discovery details', viewCount: 199000000 },
     { id: '9bZkp7q19f0', title: 'JWST exoplanet atmosphere: latest findings', viewCount: 1200000 },
     { id: '3JZ_D3ELwOQ', title: 'Exoplanet atmosphere explained', viewCount: 8500000 },
     { id: 'L_jWHffIx5E', title: 'Exoplanet atmosphere discussion', viewCount: null },
@@ -185,31 +186,20 @@ void test('one batch can return more than eight ideas without duplicate IDs or t
   assert.equal(new Set(generated.map((idea) => idea.topic)).size, generated.length);
 });
 
-void test('five sequential batches retain history and never repeat an exact generated idea', () => {
-  let history: ReturnType<typeof generateEditorialIdeas> = [];
-  const batches: ReturnType<typeof generateEditorialIdeas>[] = [];
-  for (let batch = 0; batch < 5; batch += 1) {
-    const next = generateEditorialIdeas({
-      ...base,
-      news: batchNews,
-      videos: batchVideos,
-      existingIdeas: history,
-      limit: 25,
-      evidenceKey: 'mock-five-batch-evidence-v1',
-      now: base.now + batch * 1000,
-    });
-    batches.push(next);
-    history = [...next, ...history];
-    assert.ok(next.length <= 25);
-    assert.equal(new Set(next.map((idea) => idea.id)).size, next.length);
-  }
-  const all = batches.flat();
-  assert.equal(batches.length, 5);
-  assert.ok(batches.every((batch) => batch.length === 25), 'each complete evidence-backed batch should contain 25 independent ideas');
-  assert.equal(all.length, 125);
-  assert.equal(new Set(all.map((idea) => idea.id)).size, all.length);
-  assert.equal(new Set(all.map((idea) => idea.topic)).size, all.length);
-  assert.equal(history.length, all.length, 'previous batches remain recoverable as the supplied durable history');
+void test('repeated generation exhausts unique evidence anchors instead of recycling them across category templates', () => {
+  const first = generateEditorialIdeas({
+    ...base, news: batchNews, videos: batchVideos, limit: 25,
+    evidenceKey: 'mock-five-batch-evidence-v1',
+  });
+  const second = generateEditorialIdeas({
+    ...base, news: batchNews, videos: batchVideos, existingIdeas: first, limit: 25,
+    evidenceKey: 'mock-five-batch-evidence-v1', now: base.now + 1000,
+  });
+  assert.ok(first.length > 8, 'the sample should still yield a useful set of independent ideas');
+  assert.ok(first.length <= 25);
+  assert.equal(new Set(first.map((idea) => idea.id)).size, first.length);
+  assert.equal(new Set(first.map((idea) => idea.topic)).size, first.length);
+  assert.equal(second.length, 0, 'unchanged evidence must not be rewrapped as fresh ideas under different categories');
 });
 
 void test('distinct evidence anchors in the same category are not incorrectly collapsed as semantic duplicates', () => {

@@ -91,6 +91,12 @@ function ideaHasSameMeaning(candidate: Candidate, idea: Pick<Idea, 'engineGenera
   return containment >= 0.76 && jaccard >= 0.5;
 }
 
+function extractGeneratedAnchor(concept: string): string {
+  const english = concept.match(/understand\s+[“"]([^”"]+)[”"]/i)?.[1];
+  const persian = concept.match(/مفهوم\s*[«“"]([^»”"]+)[»”"]/i)?.[1];
+  return (english ?? persian ?? '').trim();
+}
+
 function displayTerm(value: string): string {
   if (!value) return value;
   return /^[a-z]/i.test(value) ? value.charAt(0).toUpperCase() + value.slice(1) : value;

@@ -234,7 +234,7 @@ export function defaults(): LocalData {
       defaultResearchDays: 30,
       budget: 1500,
       model: '',
-      hybridIntelligence: true,
+      hybridIntelligence: false,
       schedule: 'Daily',
       paused: false,
       spaceNewsSources: ['nasa', 'jpl', 'cneos', 'esa-space', 'esa-science'],
