@@ -53,7 +53,11 @@ export default function Opportunities() {
     Storytelling: 'روایت مستند',
   };
   const allCategoryLabel = fa ? 'همه زاویه‌ها' : 'All angles';
-  const categoryLabel = (value?: string) => value && value in faCategoryLabels && fa ? faCategoryLabels[value as IdeaGenerationCategory] : value ?? (fa ? 'ایده تحریری' : 'Editorial angle');
+  const categoryLabel = (value?: string) => {
+    if (!value) return fa ? 'ایده تحریری' : 'Editorial angle';
+    const matchingCategory = IDEA_GENERATION_CATEGORIES.find((option) => option === value);
+    return fa && matchingCategory ? faCategoryLabels[matchingCategory] : value;
+  };
   const categoryOptions = [allCategoryLabel, ...IDEA_GENERATION_CATEGORIES.map((value) => categoryLabel(value))];
   const displayableIdeas = ideas.filter(isIdeaDisplayable);
   const filtered = displayableIdeas.filter(
@@ -63,6 +67,11 @@ export default function Opportunities() {
       (category === 'All angles' || !i.engineGenerated || i.ideaCategory === category) &&
       `${getIdeaDisplayTitle(i, preferences.uiLanguage ?? 'fa')} ${i.concept} ${i.note} ${i.decision}`.toLowerCase().includes(search.toLowerCase()),
   );
+  const selectedGenerationCategory = (): IdeaGenerationCategory | undefined =>
+    category === 'All angles'
+      ? undefined
+      : IDEA_GENERATION_CATEGORIES.find((candidate) => candidate === category);
+
   const generate = (requestedCategory?: IdeaGenerationCategory) => void op.run(async () => {
     const current = useScout.getState().data;
     const latestReport = current.reports[0];
@@ -73,7 +82,7 @@ export default function Opportunities() {
         : niche?.topic ?? 'Space science and exploration'
     );
     const dossier = getTopicDossier(topic);
-    const reportMatches = Boolean(latestReport && normalizeResearchText(latestReport.input.topic) === normalizeResearchText(topic));
+    const reportMatches = latestReport !== undefined && normalizeResearchText(latestReport.input.topic) === normalizeResearchText(topic);
     const reportVideos = reportMatches && latestReport ? latestReport.videos : [];
     const dossierVideos = dossier?.videos ?? [];
     const videos = (dossierVideos.length ? dossierVideos : reportVideos).map((video) => ({
@@ -165,7 +174,7 @@ export default function Opportunities() {
                 generate(selected === 'All angles' ? undefined : selected);
               }}
             />
-            <Action busy={op.busy} onPress={() => generate(category === 'All angles' ? undefined : category as IdeaGenerationCategory)}>
+            <Action busy={op.busy} onPress={() => generate(selectedGenerationCategory())}>
               {fa ? 'تولید ایده‌های تازه / بازتولید ایده‌ها' : 'Generate New Ideas / Refresh Ideas'}
             </Action>
             {generationMessage ? <Txt muted>{generationMessage}</Txt> : null}
@@ -208,7 +217,7 @@ export default function Opportunities() {
               onPress={() => router.push({ pathname: '/detail', params: { idea: item.id } })}
             >
               <View style={{ flex: 1, minWidth: 0, gap: 8 }}>
-                <BadgeText>{item.engineGenerated ? (fa ? 'تولید موتور · ' : 'ENGINE GENERATED · ') + categoryLabel(item.ideaCategory) : (fa ? 'ایده شخصی' : 'PERSONAL IDEA')} · {item.assessment} · {item.status}</BadgeText>
+                <BadgeText>{(item.engineGenerated ? (fa ? 'تولید موتور · ' : 'ENGINE GENERATED · ') + categoryLabel(item.ideaCategory) : (fa ? 'ایده شخصی' : 'PERSONAL IDEA')) + ' · ' + item.assessment + ' · ' + item.status}</BadgeText>
                 <SourceHeading>{getIdeaDisplayTitle(item, preferences.uiLanguage ?? 'fa')}</SourceHeading>
                 {item.concept ? <SourceText muted numberOfLines={3}>{item.concept}</SourceText> : <Txt muted>Concept missing — open the editor to complete this draft before requesting an AI opinion.</Txt>}
                 {item.sourceName ? <View style={styles.row}><Txt muted>Source:</Txt><SourceText>{item.sourceName}</SourceText></View> : null}

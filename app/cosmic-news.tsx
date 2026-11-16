@@ -123,7 +123,7 @@ export default function CosmicNews() {
       })}
       {visibleCount < displayedItems.length ? (
         <Action secondary onPress={() => setVisibleCount((current) => Math.min(current + 15, displayedItems.length))}>
-          Show More · {displayedItems.length - visibleCount} remaining
+          {'Show More · ' + String(displayedItems.length - visibleCount) + ' remaining'}
         </Action>
       ) : null}
       {Boolean(op.error) && <ErrorBox message={op.error} onRetry={refresh} />}
