@@ -1,7 +1,7 @@
 import { type ReactNode, useState } from 'react';
 import { resolveNodeDirection, resolveTextDirection, translateNode, translateText } from '@/lib/i18n';
 import { View, Text, ScrollView, KeyboardAvoidingView, Platform, StyleSheet } from 'react-native';
-import { Button, Input, Label, TextField, TextArea } from 'heroui-native';
+import { Button, Input, TextField, TextArea } from 'heroui-native';
 import { Search, CircleAlert, ChevronDown, ChevronUp, type LucideIcon } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { palette as p } from '@/lib/theme';
@@ -169,7 +169,7 @@ export function Field({
     : language === 'fa' ? 'rtl' : 'ltr';
   return (
     <TextField>
-      <Label style={{ writingDirection: resolveTextDirection(translatedLabel), textAlign: resolveTextDirection(translatedLabel) === 'rtl' ? 'right' : 'left' }}>{translatedLabel}</Label>
+      <Text style={[styles.label, { writingDirection: resolveTextDirection(translatedLabel), textAlign: resolveTextDirection(translatedLabel) === 'rtl' ? 'right' : 'left' }]}>{translatedLabel}</Text>
       {multiline ? (
         <TextArea
           value={value}
