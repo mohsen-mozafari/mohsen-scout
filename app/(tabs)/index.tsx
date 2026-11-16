@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Text, View } from 'react-native';
-import { FlashList } from '@shopify/flash-list';
 
 import { router } from 'expo-router';
 import {
@@ -8,7 +7,7 @@ import {
   SourceHeading, SourceText, BadgeText,
 } from '@/components/ScoutUI';
 import { useScout } from '@/lib/store';
-import { languages, uid } from '@/lib/types';
+import { uid } from '@/lib/types';
 import {
   SPACE_NICHES,
   buildNicheSuggestions,
@@ -192,18 +191,20 @@ function EngineAIReview({ topic, result }: { topic: string; result: InternalRese
 
   return (
     <Panel>
-      <Heading>{fa ? 'بازبینی هوش مصنوعی روی خروجی موتور داخلی' : 'AI review of the internal engine'}</Heading>
+      <BadgeText>{review ? 'EXTERNAL AI · REVIEW SAVED' : 'EXTERNAL AI · SECOND OPINION'}</BadgeText>
+      <Heading>{fa ? 'نقد مستقل هوش مصنوعی' : 'Independent AI second opinion'}</Heading>
       <Txt muted>{fa
-        ? 'با انتخاب این گزینه فقط موضوع و شاخص‌های عددیِ پردازش محلی برای OpenRouter ارسال می‌شود؛ متن خام خبر، URL، نام ناشر، عنوان یا شناسه ویدئو، توضیحات، آمار و کلید API ارسال نمی‌شوند.'
-        : 'Choosing this sends only the topic and numeric indicators computed locally to OpenRouter; raw news text, URLs, publisher names, YouTube titles or IDs, descriptions, statistics and API keys are excluded.'}</Txt>
-      <Txt muted>{fa
-        ? 'این بررسی جایگزین موتور داخلی نیست؛ کیفیت پوشش و محدودیت‌های تحلیل آن را نقد می‌کند. نتیجه بر اساس هش محتوای درخواست و مدل در حافظه محلی کش می‌شود. درخواست فقط با فشردن دکمه ارسال می‌شود و سقف آن ۳۰ درخواست در روز با یک درخواست هم‌زمان است.'
-        : 'This does not replace the local engine; it critiques the coverage and limits of its analysis. Results are cached locally by prompt-content hash and model. Nothing is sent until you press the button. The allowance is 30 requests per day, one at a time.'}</Txt>
+        ? 'موتور داخلی شواهد و محدودیت‌ها را استخراج می‌کند؛ AI دوم همان خروجی پردازش‌شده را نقد می‌کند. فقط موضوع و شاخص‌های تجمیعی مجاز ارسال می‌شوند، نه متن خبر یا فراداده خام YouTube.'
+        : 'The local engine extracts evidence signals and limitations; the external model independently critiques that processed output. Only the topic and approved aggregate indicators are sent — never raw news or YouTube metadata.'}</Txt>
+      {savedReview ? <Txt muted>{'Model: ' + savedReview.model + ' · Reviewed: ' + new Date(savedReview.createdAt).toLocaleString()}</Txt> : null}
+      {!review ? <Txt muted>{fa
+        ? 'هر بررسی با درخواست صریح شما انجام می‌شود و پاسخ دریافتی روی دستگاه ذخیره خواهد شد.'
+        : 'Each review is explicitly requested by you and the received answer is saved on this device.'}</Txt> : null}
       <Action busy={op.busy} onPress={runReview}>
-        {fa ? 'بازبینی این تحلیل با AI' : 'Review this analysis with AI'}
+        {fa ? 'گرفتن نظر دوم از AI خارجی' : 'Ask external AI for its second opinion'}
       </Action>
-      {Boolean(op.error) && <ErrorBox message={op.error} onRetry={runReview} />}
-      {Boolean(op.message) && <Txt muted>{op.message}</Txt>}
+      {op.error ? <ErrorBox message={op.error} onRetry={runReview} /> : null}
+      {op.message ? <Txt muted>{op.message}</Txt> : null}
       {review ? <Txt>{review}</Txt> : null}
     </Panel>
   );
@@ -231,11 +232,6 @@ function DiscoveryDashboardReady() {
   const quotaUsage = youtubeBudget.date === quotaDate
     ? youtubeBudget
     : { date: quotaDate, units: 0, requests: 0, exhausted: false };
-  const searchManualMax = 60;
-  const searchAutomaticMax = 20;
-  const otherManualMax = Math.floor(preferences.budget * 0.6);
-  const otherAutomaticMax = Math.floor(preferences.budget * 0.2);
-  const otherReserveMax = preferences.budget - otherManualMax - otherAutomaticMax;
   const [warnings, setWarnings] = useState<string[]>([]);
   const [lastScannedAt, setLastScannedAt] = useState<number | null>(null);
   const [nicheSuggestions, setNicheSuggestions] = useState<SpaceNicheSuggestion[]>([]);
@@ -354,172 +350,141 @@ function DiscoveryDashboardReady() {
   }, 'Discovery scan completed from selected official feeds without spending YouTube quota.');
 
   return (
-    <Page scroll={false}>
-      <FlashList
-        style={{ flex: 1 }}
-        data={[]}
-        renderItem={() => null}
-        contentContainerStyle={styles.content}
-        keyboardShouldPersistTaps="handled"
-        ListHeaderComponent={
-          <View style={{ gap: 18 }}>
-
-        <Text style={styles.title}>MOHSEN SCOUT</Text>
-      <Panel>
-        <Text style={styles.badge}>{preferences.uiLanguage === 'fa' ? 'نمای کلی هوشمندی' : 'INTELLIGENCE OVERVIEW'}</Text>
-        <Heading>{preferences.uiLanguage === 'fa' ? 'از داده تا تصمیم' : 'From evidence to decisions'}</Heading>
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 18 }}>
-          <View style={{ minWidth: 88, flex: 1 }}>
-            <Heading>{ideas.filter((idea) => !idea.archived).length}</Heading>
-            <Txt muted>{preferences.uiLanguage === 'fa' ? 'ایده فعال' : 'Active ideas'}</Txt>
+    <Page title="MOHSEN SCOUT">
+      <View style={{ gap: 16 }}>
+        <Panel>
+          <Text style={styles.badge}>SPACE RADAR · ACTIVE TOPIC</Text>
+          <Heading>{nicheTitle}</Heading>
+          <Txt muted>{niche?.description ?? 'Official publisher feeds are grouped into a focused research topic.'}</Txt>
+          <View style={[styles.row, { flexWrap: 'wrap' }]}>
+            <View style={{ flex: 1, minWidth: 140 }}>
+              <Action busy={op.busy} onPress={discover}>Refresh Space Radar</Action>
+            </View>
+            <View style={{ flex: 1, minWidth: 140 }}>
+              <Action secondary onPress={() => router.push({ pathname: '/youtube', params: { topic: discoveryTopic } })}>Search YouTube</Action>
+            </View>
           </View>
-          <View style={{ minWidth: 88, flex: 1 }}>
-            <Heading>{reports.length}</Heading>
-            <Txt muted>{preferences.uiLanguage === 'fa' ? 'گزارش تحقیق' : 'Research reports'}</Txt>
-          </View>
-          <View style={{ minWidth: 88, flex: 1 }}>
-            <Heading>{memoryCount}</Heading>
-            <Txt muted>{preferences.uiLanguage === 'fa' ? 'موضوع در حافظه' : 'Topics in memory'}</Txt>
-          </View>
-        </View>
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-          <Action secondary onPress={() => router.push('/news')}>{preferences.uiLanguage === 'fa' ? 'اخبار رسمی' : 'Cosmic News'}</Action>
-          <Action secondary onPress={() => router.push({ pathname: '/youtube', params: { topic: discoveryTopic } })}>{preferences.uiLanguage === 'fa' ? 'جست‌وجوی دستی' : 'Manual Search'}</Action>
-          <Action secondary onPress={() => router.push('/opportunities')}>{preferences.uiLanguage === 'fa' ? 'فضای ایده‌ها' : 'Ideas Workspace'}</Action>
-        </View>
-        <Txt muted>{preferences.uiLanguage === 'fa'
-          ? 'بودجه محلی API: ' + quotaUsage.units + '/' + preferences.budget + ' واحد · Search دستی: ' + (quotaUsage.searchManualRequests ?? 0) + '/' + searchManualMax + ' · خودکار: ' + (quotaUsage.searchAutomaticRequests ?? 0) + '/' + searchAutomaticMax + ' · ذخیره: ' + (quotaUsage.searchReserveRequests ?? 0) + '/20'
-          : 'Local API budget: ' + quotaUsage.units + '/' + preferences.budget + ' units · Search manual: ' + (quotaUsage.searchManualRequests ?? 0) + '/' + searchManualMax + ' · automatic: ' + (quotaUsage.searchAutomaticRequests ?? 0) + '/' + searchAutomaticMax + ' · reserve: ' + (quotaUsage.searchReserveRequests ?? 0) + '/20'}</Txt>
-        <Txt muted>{preferences.uiLanguage === 'fa'
-          ? 'واحدهای غیر Search — دستی: ' + (quotaUsage.otherManualUnits ?? 0) + '/' + otherManualMax + ' · خودکار: ' + (quotaUsage.otherAutomaticUnits ?? 0) + '/' + otherAutomaticMax + ' · ذخیره: ' + (quotaUsage.otherReserveUnits ?? 0) + '/' + otherReserveMax
-          : 'Non-search units — manual: ' + (quotaUsage.otherManualUnits ?? 0) + '/' + otherManualMax + ' · automatic: ' + (quotaUsage.otherAutomaticUnits ?? 0) + '/' + otherAutomaticMax + ' · reserve: ' + (quotaUsage.otherReserveUnits ?? 0) + '/' + otherReserveMax}</Txt>
-      </Panel>
-      <View style={{ gap: 7 }}>
-        <Text style={[styles.title, { fontSize: 30, lineHeight: 36 }]}>Find your next story.</Text>
-        <Txt muted>A source-led discovery desk for your next space video. Review the latest evidence, engine findings and ideas. The full publisher news stream is available in the separate News tab.</Txt>
-      </View>
-      <Panel>
-        <Text style={styles.badge}>ACTIVE NICHE</Text>
-        <Heading>{nicheTitle}</Heading>
-        <Txt muted>{niche?.description ?? 'The app checks all selected NASA, JPL and ESA feeds, then groups their current reports into research topics.'}</Txt>
-        <Txt muted>Research defaults are managed in Settings. Current region: {preferences.region} · Languages: {preferences.languages.map((code) => languages[code] ?? code).join(', ')}</Txt>
-        <Action busy={op.busy} onPress={discover}>Refresh Space Radar</Action>
-        <Action secondary onPress={() => router.push({ pathname: '/youtube', params: { topic: niche?.topic ?? discoveryTopic } })}>Search Manually</Action>
-        <Action secondary onPress={() => router.push('/settings')}>Change discovery settings</Action>
-        {lastScannedAt ? <Txt muted>Last scanned {new Date(lastScannedAt).toLocaleString()}</Txt> : <Txt muted>Checking official feeds when Space Radar opens…</Txt>}
-        <Txt muted>Publisher evidence refreshes on entry using a short in-memory cache. Raw headlines stay in the separate News tab; this page shows processed findings and ideas. No background polling or YouTube quota is used.</Txt>
-      </Panel>
+          <Txt muted>{lastScannedAt ? 'Last source update: ' + new Date(lastScannedAt).toLocaleString() : 'Checking selected official feeds…'} · {radarNews.length} matching reports</Txt>
+          {warnings.slice(0, 2).map((warning) => <Txt muted key={warning}>{warning}</Txt>)}
+        </Panel>
 
-      {warnings.map((warning) => <Txt muted key={warning}>{warning}</Txt>)}
+        <Panel>
+          <Heading>Your workspace</Heading>
+          <View style={{ flexDirection: 'row', gap: 12 }}>
+            <View style={{ flex: 1 }}>
+              <Heading>{ideas.filter((idea) => !idea.archived).length}</Heading>
+              <Txt muted>Active ideas</Txt>
+            </View>
+            <View style={{ flex: 1 }}>
+              <Heading>{reports.length}</Heading>
+              <Txt muted>Research reports</Txt>
+            </View>
+            <View style={{ flex: 1 }}>
+              <Heading>{memoryCount}</Heading>
+              <Txt muted>Topics remembered</Txt>
+            </View>
+          </View>
+          <View style={[styles.row, { flexWrap: 'wrap' }]}>
+            <Action secondary onPress={() => router.push('/news')}>News</Action>
+            <Action secondary onPress={() => router.push('/opportunities')}>Ideas</Action>
+            <Action secondary onPress={() => router.push('/library')}>Library</Action>
+          </View>
+          <Fold title="YouTube API usage and technical details">
+            <Txt muted>{'Today: ' + quotaUsage.units + ' / ' + preferences.budget + ' quota units · ' + quotaUsage.requests + ' requests. The counter follows the app’s Pacific-time quota day.'}</Txt>
+          </Fold>
+        </Panel>
 
-      <Panel>
-        <Text style={styles.badge}>LOCAL INTELLIGENCE DESK</Text>
-        <Heading>Research output</Heading>
         {deskAnalysis ? (
           <>
-            <Heading>{deskTopic}</Heading>
-            <Txt muted>{showYouTubeResearch && latestReport
-              ? 'Latest YouTube research · ' + new Date(latestReport.createdAt).toLocaleString()
-              : lastScannedAt ? 'Latest selected-feed analysis · ' + new Date(lastScannedAt).toLocaleString() : 'Latest local evidence'}</Txt>
-            <Txt muted>{deskAnalysis.summary}</Txt>
-            <ResearchKnowledgeGraph
-              topic={deskTopic}
-              news={deskNews}
-              videos={deskVideos}
-              analysis={deskAnalysis}
-              language={preferences.uiLanguage ?? 'fa'}
-              generatedIdeas={deskIdeas}
-            />
-            <Heading>Key engine evidence</Heading>
-            {deskAnalysis.evidence.filter((item) => (item.id !== 'publisher-news' || deskNews.length > 0) && (item.id !== 'youtube-sample' || deskVideos.length > 0)).slice(0, 5).map((item) => (
-              <View key={item.id} style={{ gap: 3 }}>
-                <BadgeText>{item.label}</BadgeText>
-                <Txt muted>{item.detail}</Txt>
-              </View>
-            ))}
-            <AnalysisSignals result={deskAnalysis} />
+            <Panel>
+              <BadgeText>LOCAL ENGINE · PROCESSED FINDINGS</BadgeText>
+              <Heading>{deskTopic}</Heading>
+              <Txt>{deskAnalysis.summary}</Txt>
+              <Txt muted>{showYouTubeResearch && latestReport
+                ? 'Based on the latest saved YouTube research sample · ' + new Date(latestReport.createdAt).toLocaleString()
+                : 'Based on selected official publisher feeds and local research memory.'}</Txt>
+            </Panel>
+
             <EngineAIReview topic={deskTopic} result={deskAnalysis} />
-            {deskAnalysis.angles.slice(0, 3).map((angle) => (
-              <View key={angle.id} style={{ gap: 5 }}>
-                <Heading>{angle.title}</Heading>
-                <Txt>{angle.hook}</Txt>
-                <Txt muted>{angle.approach}</Txt>
-                <Txt muted>Verify: {angle.verification}</Txt>
-              </View>
-            ))}
-            <Action secondary onPress={() => router.push({ pathname: '/deep-research', params: { topic: deskTopic } })}>Continue this research</Action>
+
+            <Panel>
+              <Fold title="Local engine findings, confidence and gaps">
+                <AnalysisSignals result={deskAnalysis} />
+                <Heading>Key evidence</Heading>
+                {deskAnalysis.evidence
+                  .filter((item) => (item.id !== 'publisher-news' || deskNews.length > 0) && (item.id !== 'youtube-sample' || deskVideos.length > 0))
+                  .slice(0, 5)
+                  .map((item) => (
+                    <View key={item.id} style={{ gap: 3 }}>
+                      <BadgeText>{item.label}</BadgeText>
+                      <Txt muted>{item.detail}</Txt>
+                    </View>
+                  ))}
+              </Fold>
+              <Fold title="Evidence map and relationships">
+                <ResearchKnowledgeGraph
+                  topic={deskTopic}
+                  news={deskNews}
+                  videos={deskVideos}
+                  analysis={deskAnalysis}
+                  language={preferences.uiLanguage ?? 'fa'}
+                  generatedIdeas={deskIdeas}
+                />
+              </Fold>
+              <Fold title="Editorial angles and verification">
+                {deskAnalysis.angles.slice(0, 3).map((angle) => (
+                  <View key={angle.id} style={{ gap: 5 }}>
+                    <Heading>{angle.title}</Heading>
+                    <Txt>{angle.hook}</Txt>
+                    <Txt muted>{angle.approach}</Txt>
+                    <Txt muted>{'Verify: ' + angle.verification}</Txt>
+                  </View>
+                ))}
+              </Fold>
+              <Action secondary onPress={() => router.push({ pathname: '/deep-research', params: { topic: deskTopic } })}>Continue in Deep Research</Action>
+            </Panel>
           </>
         ) : (
-          <>
-            <Txt muted>No completed research analysis is available yet. Start a YouTube search or refresh the official Space Radar feeds. The desk will show real evidence and findings here.</Txt>
-            <Action onPress={() => router.push('/youtube')}>Start a research search</Action>
-            <Action secondary onPress={discover}>Refresh official feeds</Action>
-          </>
+          <Panel>
+            <BadgeText>DUAL-ENGINE WORKSPACE</BadgeText>
+            <Heading>Start with evidence, then request an independent AI review</Heading>
+            <Txt muted>No completed local analysis is available yet. Refresh Space Radar or run a YouTube search; the external AI review appears beside the resulting engine analysis.</Txt>
+            <Action onPress={() => router.push('/youtube')}>Start research</Action>
+          </Panel>
         )}
-        <View style={{ gap: 7, borderTopWidth: 1, borderTopColor: '#343047', paddingTop: 12 }}>
-          <Heading>Newly generated ideas</Heading>
+
+        <Panel>
+          <Heading>Next ideas</Heading>
           {deskIdeas.length ? deskIdeas.map((idea) => (
-            <View key={idea.id} style={{ gap: 4 }}>
+            <View key={idea.id} style={{ gap: 5 }}>
               <SourceHeading>{idea.topic}</SourceHeading>
-              <Txt muted>{idea.ideaCategory ?? 'Generated'} · {idea.concept.slice(0, 260)}</Txt>
-              <Action secondary onPress={() => router.push({ pathname: '/detail', params: { idea: idea.id } })}>Open generated idea</Action>
+              <Txt muted>{idea.ideaCategory ?? 'Generated'} · {idea.concept.slice(0, 220)}</Txt>
+              <Action secondary onPress={() => router.push({ pathname: '/detail', params: { idea: idea.id } })}>Open idea</Action>
             </View>
-          )) : <Txt muted>No generated ideas yet. Run a research search or refresh the official feed to generate ideas from available evidence.</Txt>}
+          )) : <Txt muted>No new idea has been generated from this evidence set yet.</Txt>}
           <Action secondary onPress={() => router.push('/opportunities')}>Open Ideas workspace</Action>
+        </Panel>
+
+        {nicheSuggestions.length ? (
+          <Panel>
+            <Heading>Other research leads</Heading>
+            {nicheSuggestions.slice(0, 3).map((suggestion) => (
+              <View key={suggestion.id} style={{ gap: 5 }}>
+                <SourceHeading>{suggestion.title}</SourceHeading>
+                <Txt muted>{suggestion.description}</Txt>
+                <Txt muted>{suggestion.matchedStories + ' matching publisher stories' + (suggestion.newestAt ? ' · latest ' + new Date(suggestion.newestAt).toLocaleDateString() : '')}</Txt>
+                <Action secondary onPress={() => router.push({ pathname: '/youtube', params: { topic: suggestion.topic } })}>Research this lead</Action>
+              </View>
+            ))}
+          </Panel>
+        ) : null}
+
+        <View style={{ gap: 8 }}>
+          <Action secondary onPress={() => router.push('/settings')}>Research settings and API keys</Action>
+          {op.error ? <ErrorBox message={op.error} onRetry={op.clear} /> : null}
+          {op.message ? <Txt muted>{op.message}</Txt> : null}
         </View>
-      </Panel>
-
-      {nicheSuggestions.length > 0 && (
-        <Panel>
-          <Heading>{preferences.uiLanguage === 'fa' ? 'سرنخ‌های کشف‌شده از منابع' : 'Research leads discovered from sources'}</Heading>
-          <Txt muted>These are evidence-backed research leads from the selected publisher feeds, not audience-demand or YouTube trend rankings.</Txt>
-          {nicheSuggestions.map((suggestion) => (
-            <View key={suggestion.id} style={{ gap: 5 }}>
-              <Text style={styles.badge}>{suggestion.id.startsWith('story:') ? 'FRESH OFFICIAL STORY' : 'ACTIVE FEED NICHE'}</Text>
-              <SourceHeading>{suggestion.title}</SourceHeading>
-              <SourceText muted>{suggestion.description}</SourceText>
-              <Txt muted>{suggestion.matchedStories} matching publisher stories{suggestion.newestAt ? ' · latest ' + new Date(suggestion.newestAt).toLocaleDateString() : ''}</Txt>
-              <Action secondary onPress={() => router.push({ pathname: '/youtube', params: { topic: suggestion.topic } })}>{'Research ' + suggestion.title}</Action>
-            </View>
-          ))}
-        </Panel>
-      )}
-
-      {warnings.length > 0 && (
-        <Panel>
-          <Heading>Some publisher feeds are unavailable</Heading>
-          <Txt muted>The News tab shows the health of each feed. Other sources and the local research engine remain available.</Txt>
-          <Action secondary onPress={() => void op.run(async () => {
-            await useScout.getState().commit((data) => ({ ...data, preferences: { ...data.preferences, selectedSpaceNiche: 'all' } }));
-          }, 'Discovery scope changed to all space topics.')}>Show all space topics</Action>
-          <Action secondary onPress={() => router.push({ pathname: '/youtube', params: { topic: discoveryTopic } })}>Search this niche on YouTube</Action>
-          <Action secondary onPress={() => router.push({ pathname: '/deep-research', params: { topic: discoveryTopic, niche: preferences.selectedSpaceNiche } })}>Start Deep Research without news</Action>
-          <Action secondary onPress={() => router.push('/news')}>Open Cosmic News and source status</Action>
-        </Panel>
-      )}
-
-
-          </View>
-        }
-        ListFooterComponent={
-          <View style={{ gap: 18 }}>
-      <Fold title="More research tools">
-        <Txt muted>Use these when you already know what you want to investigate.</Txt>
-        <Action secondary onPress={() => router.push('/news')}>Open Cosmic News</Action>
-        <Action secondary onPress={() => router.push('/trend-intelligence')}>Trend Intelligence</Action>
-        <Action secondary onPress={() => router.push('/search-demand')}>Compare public interest</Action>
-        <Action secondary onPress={() => router.push('/deep-research')}>Start Deep Research manually</Action>
-        <Action secondary onPress={() => router.push('/opportunities')}>Open saved Ideas</Action>
-      </Fold>
-      <Fold title="How research leads are selected">
-        <Txt muted>Recommendations come from title and summary matches in the selected official NASA, JPL and ESA feeds. Multiple Source Coverage means matching headlines appeared in more than one selected feed; it is not a formal independent fact-check. News coverage is not proof of audience demand. Check YouTube and public-interest evidence separately before prioritizing a topic.</Txt>
-      </Fold>
-      {Boolean(op.error) && <ErrorBox message={op.error} onRetry={discover} />}
-      {Boolean(op.message) && <Txt muted>{op.message}</Txt>}
-
-          </View>
-        }
-      />
+      </View>
     </Page>
   );
 }

@@ -223,12 +223,59 @@ function buildCandidate(
  * It performs no network calls and never copies YouTube titles, descriptions,
  * thumbnails or statistics into the durable Idea record.
  */
+/**
+ * Selects the most-viewed topic-relevant records from an existing YouTube sample.
+ * It does not claim global trend status or infer growth from a single view count.
+ */
+export function selectIdeaGenerationVideos(
+  topic: string,
+  videos: readonly IdeaGenerationVideo[],
+  limit = 12,
+): IdeaGenerationVideo[] {
+  const topicTokens = new Set(tokenizeResearchText(topic).filter((token) => token.length > 2));
+  if (!topicTokens.size) return [];
+  const unique = new Map<string, { video: IdeaGenerationVideo; overlap: number }>();
+  for (const video of videos) {
+    const views = video.viewCount;
+    if (!/^[\w-]{11}$/.test(video.id) || typeof views !== 'number' || !Number.isFinite(views) || views <= 0) continue;
+    const videoTokens = new Set(tokenizeResearchText(video.title + ' ' + (video.description ?? '')));
+    const overlap = [...topicTokens].filter((token) => videoTokens.has(token)).length;
+    if (overlap / Math.min(topicTokens.size, 3) < 0.25) continue;
+    const previous = unique.get(video.id);
+    if (!previous || views > (previous.video.viewCount ?? 0)) unique.set(video.id, { video, overlap });
+  }
+  return [...unique.values()]
+    .sort((a, b) =>
+      (b.video.viewCount ?? 0) - (a.video.viewCount ?? 0) ||
+      b.overlap - a.overlap ||
+      (Date.parse(b.video.publishedAt ?? '') || 0) - (Date.parse(a.video.publishedAt ?? '') || 0),
+    )
+    .slice(0, Math.max(1, Math.min(25, Math.trunc(limit) || 1)))
+    .map((entry) => entry.video);
+}
+
+/** Removes repeated generated cards from list views without changing saved data. */
+export function deduplicateDisplayIdeas(ideas: readonly Idea[]): Idea[] {
+  const seenIds = new Set<string>();
+  const seenGeneratedTitles = new Set<string>();
+  return ideas.filter((idea) => {
+    if (seenIds.has(idea.id)) return false;
+    seenIds.add(idea.id);
+    if (!idea.engineGenerated) return true;
+    const title = normalizeResearchText(idea.topic);
+    if (!title) return true;
+    if (seenGeneratedTitles.has(title)) return false;
+    seenGeneratedTitles.add(title);
+    return true;
+  });
+}
+
 export function generateEditorialIdeas(input: GenerateEditorialIdeasInput): Idea[] {
   const topic = input.topic.trim().replace(/\s+/g, ' ').slice(0, 180);
   if (!topic) return [];
 
   const news = [...(input.news ?? [])];
-  const videos = [...(input.videos ?? [])];
+  const videos = selectIdeaGenerationVideos(topic, input.videos ?? [], 12);
   const context = [...(input.context ?? [])];
   const documents: Document[] = [
     ...news.map((item) => ({
@@ -296,7 +343,16 @@ export function generateEditorialIdeas(input: GenerateEditorialIdeasInput): Idea
     if (category === 'Cross-source') return news.length > 0 && videos.length > 0 && sharedAnchors.length > 0;
     return true;
   });
-  const existing = [...(input.existingIdeas ?? [])];
+  const existing: Idea[] = [];
+  const seenGeneratedTitles = new Set<string>();
+  for (const idea of input.existingIdeas ?? []) {
+    if (idea.engineGenerated) {
+      const titleKey = normalizeResearchText(idea.topic);
+      if (titleKey && seenGeneratedTitles.has(titleKey)) continue;
+      if (titleKey) seenGeneratedTitles.add(titleKey);
+    }
+    existing.push(idea);
+  }
   const evidenceKey = (input.evidenceKey ?? documents.map((document) => document.id).sort().join('|')).slice(0, 1200);
   if (input.skipExistingEvidence && existing.some((idea) => idea.generationKey === evidenceKey)) return [];
   const usedTitles = new Set(existing.map((idea) => normalizeResearchText(idea.topic)));

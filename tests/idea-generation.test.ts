@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { generateEditorialIdeas } from '../lib/idea-generation';
+import { deduplicateDisplayIdeas, generateEditorialIdeas, selectIdeaGenerationVideos } from '../lib/idea-generation';
 import { createManualIdea } from '../lib/engine';
 import type { SpaceNewsItem } from '../lib/space';
 
@@ -123,6 +123,37 @@ void test('automatic ingestion does not create duplicate ideas for unchanged evi
 });
 
 
+void test('idea generation ranks relevant videos by observed views and excludes unrelated or unmeasured items', () => {
+  const selected = selectIdeaGenerationVideos('JWST exoplanet atmosphere', [
+    { id: 'dQw4w9WgXcQ', title: 'Unrelated gaming highlights', viewCount: 99000000 },
+    { id: '9bZkp7q19f0', title: 'JWST exoplanet atmosphere: latest findings', viewCount: 1200000 },
+    { id: '3JZ_D3ELwOQ', title: 'Exoplanet atmosphere explained', viewCount: 8500000 },
+    { id: 'L_jWHffIx5E', title: 'Exoplanet atmosphere discussion', viewCount: null },
+  ]);
+  assert.deepEqual(selected.map((video) => video.id), ['3JZ_D3ELwOQ', '9bZkp7q19f0']);
+});
+
+void test('repeated engine-generated cards collapse in the Ideas list without merging personal ideas or stored data', () => {
+  const first = generateEditorialIdeas({ ...base, news, videos, limit: 1 })[0];
+  assert.ok(first);
+  const duplicate = { ...first, id: 'duplicate-generated-id', createdAt: first.createdAt + 1 };
+  const personal = createManualIdea(first.topic, 'A separate personal concept.', '', 'Germany', ['en']);
+  const stored = [duplicate, first, personal];
+  const visible = deduplicateDisplayIdeas(stored);
+  assert.equal(visible.length, 2);
+  assert.equal(visible[0].id, duplicate.id);
+  assert.equal(visible[1].id, personal.id);
+  assert.equal(stored.length, 3);
+});
+
+void test('video-only ideas are not generated when view statistics are unavailable', () => {
+  const generated = generateEditorialIdeas({
+    ...base, news: [],
+    videos: [{ id: 'dQw4w9WgXcQ', title: 'Exoplanet atmosphere', viewCount: null }],
+  });
+  assert.equal(generated.length, 0);
+});
+
 const batchAnchors = Array.from({ length: 30 }, (_, index) =>
   'astroterm' + String.fromCharCode(97 + Math.floor(index / 26)) + String.fromCharCode(97 + (index % 26)),
 );
@@ -143,6 +174,7 @@ const batchVideos = Array.from({ length: 6 }, (_, index) => ({
   description: 'MOCK: ' + batchAnchorText + ' uncertainty measurement',
   channel: 'MOCK channel ' + index,
   publishedAt: new Date(Date.UTC(2026, 10, 10 - index)).toISOString(),
+  viewCount: 1800000 - index * 25000,
 }));
 
 void test('one batch can return more than eight ideas without duplicate IDs or titles', () => {

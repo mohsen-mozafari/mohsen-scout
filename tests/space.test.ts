@@ -13,7 +13,27 @@ import {
   DEFAULT_SPACE_NEWS_SOURCES,
   buildNicheSuggestions,
   hydrateSpaceNewsRegistry,
+  getCachedSpaceNews,
 } from '../lib/space';
+
+void test('saved news is immediately available, sorted and restricted to enabled publisher feeds', () => {
+  const nasaItem = {
+    id: 'nasa-new', sourceId: 'nasa' as const, sourceName: 'NASA',
+    title: 'Newer NASA story', summary: 'Cached summary',
+    url: 'https://www.nasa.gov/newer', publishedAt: '2026-11-16T12:00:00Z',
+  };
+  const esaItem = {
+    id: 'esa-old', sourceId: 'esa-science' as const, sourceName: 'ESA',
+    title: 'Older ESA story', summary: 'Cached summary',
+    url: 'https://www.esa.int/older', publishedAt: '2026-11-15T12:00:00Z',
+  };
+  const records = [
+    { sourceId: 'nasa' as const, configuredUrl: 'https://www.nasa.gov/feed/', endpoint: 'https://www.nasa.gov/feed/', format: 'rss' as const, status: 'healthy' as const, lastCheckedAt: 1, lastSuccessAt: 1, failureCount: 0, retryAt: 0, lastError: '', cachedItems: [nasaItem] },
+    { sourceId: 'esa-science' as const, configuredUrl: 'https://www.esa.int/rss/science.rss', endpoint: 'https://www.esa.int/rss/science.rss', format: 'rss' as const, status: 'healthy' as const, lastCheckedAt: 1, lastSuccessAt: 1, failureCount: 0, retryAt: 0, lastError: '', cachedItems: [esaItem] },
+  ];
+  assert.deepEqual(getCachedSpaceNews(records, ['nasa']).map((item) => item.id), ['nasa-new']);
+  assert.deepEqual(getCachedSpaceNews(records, ['nasa', 'esa-science']).map((item) => item.id), ['nasa-new', 'esa-old']);
+});
 
 void test('RSS parser reads RSS items, CDATA, entities and safe HTTPS links', () => {
   const feed = SPACE_NEWS_SOURCES.find((source) => source.id === 'nasa')!;

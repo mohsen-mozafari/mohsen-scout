@@ -1,4 +1,4 @@
-import { Compass, Telescope, Library, NotebookPen, Settings, Newspaper } from 'lucide-react-native';
+import { Compass, Telescope, Library, Settings, Newspaper } from 'lucide-react-native';
 import { Tabs } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as Haptics from 'expo-haptics';
@@ -75,13 +75,7 @@ export default function TabLayout() {
             tabBarIcon: ({ color }) => <Library size={22} strokeWidth={1.8} color={color} />,
           }}
         />
-        <Tabs.Screen
-          name="notes"
-          options={{
-            title: translateText('Notes', language),
-            tabBarIcon: ({ color }) => <NotebookPen size={22} strokeWidth={1.8} color={color} />,
-          }}
-        />
+        <Tabs.Screen name="notes" options={{ href: null, title: translateText('Notes', language) }} />
         <Tabs.Screen
           name="settings"
           options={{

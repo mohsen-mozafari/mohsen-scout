@@ -21,7 +21,7 @@ import { useScout } from '@/lib/store';
 import { statuses } from '@/lib/types';
 import { getIdeaDisplayTitle, isIdeaDisplayable } from '@/lib/idea-research';
 import { createManualIdea } from '@/lib/engine';
-import { generateEditorialIdeas, IDEA_GENERATION_CATEGORIES, type IdeaGenerationCategory } from '@/lib/idea-generation';
+import { deduplicateDisplayIdeas, generateEditorialIdeas, IDEA_GENERATION_CATEGORIES, type IdeaGenerationCategory } from '@/lib/idea-generation';
 import { getTopicDossier } from '@/lib/topic-dossier';
 import { SPACE_NICHES } from '@/lib/space';
 import { normalizeResearchText } from '@/lib/intelligence';
@@ -60,7 +60,7 @@ export default function Opportunities() {
     return fa && matchingCategory ? faCategoryLabels[matchingCategory] : value;
   };
   const categoryOptions = [allCategoryLabel, ...IDEA_GENERATION_CATEGORIES.map((value) => categoryLabel(value))];
-  const displayableIdeas = ideas.filter(isIdeaDisplayable);
+  const displayableIdeas = deduplicateDisplayIdeas(ideas.filter(isIdeaDisplayable));
   const normalizedSearch = normalizeResearchText(search);
   const filtered = displayableIdeas.filter((i) => {
     const searchable = normalizeResearchText([

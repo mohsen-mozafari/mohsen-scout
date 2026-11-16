@@ -135,6 +135,9 @@ export default function Library() {
                 </Action>
               </View>
             )}
+            <Action secondary onPress={() => router.push('/notes')}>
+              Open research notes
+            </Action>
             <Action secondary icon={Plus} onPress={() => setAddOpen(true)}>
               Add a personal link
             </Action>

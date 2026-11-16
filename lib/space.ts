@@ -286,7 +286,7 @@ async function loadOfficialFeed(
       const headers: Record<string, string> = {
         Accept: 'application/rss+xml, application/atom+xml, application/feed+json, application/json;q=0.9, application/xml, text/xml;q=0.8, text/html;q=0.5, */*;q=0.3',
         'Cache-Control': 'no-cache',
-        'User-Agent': 'MOHSEN-SCOUT/1.3.6 (+https://github.com/mohsen-mozafari/mohsen-scout)',
+        'User-Agent': 'MOHSEN-SCOUT/1.3.7 (+https://github.com/mohsen-mozafari/mohsen-scout)',
       };
       if (previous?.endpoint === endpoint && previous.etag) headers['If-None-Match'] = previous.etag;
       if (previous?.endpoint === endpoint && previous.lastModified) headers['If-Modified-Since'] = previous.lastModified;
@@ -472,6 +472,27 @@ export function hydrateSpaceNewsRegistry(records: readonly FeedRegistryRecord[],
       });
     }
   }
+}
+
+/** Returns saved publisher items immediately, before any network refresh. */
+export function getCachedSpaceNews(
+  records: readonly FeedRegistryRecord[],
+  enabledSources: readonly string[],
+): SpaceNewsItem[] {
+  const enabled = new Set(enabledSources);
+  const byUrl = new Map<string, SpaceNewsItem>();
+  for (const record of records) {
+    if (!enabled.has(record.sourceId)) continue;
+    for (const item of record.cachedItems) {
+      const previous = byUrl.get(item.url);
+      const currentDate = item.publishedAt ? Date.parse(item.publishedAt) || 0 : 0;
+      const previousDate = previous?.publishedAt ? Date.parse(previous.publishedAt) || 0 : 0;
+      if (!previous || currentDate > previousDate) byUrl.set(item.url, item);
+    }
+  }
+  return [...byUrl.values()].sort((a, b) =>
+    (Date.parse(b.publishedAt ?? '') || 0) - (Date.parse(a.publishedAt ?? '') || 0),
+  );
 }
 
 export function newsForNiche(items: SpaceNewsItem[], nicheId: string, customNiche = ''): SpaceNewsItem[] {
