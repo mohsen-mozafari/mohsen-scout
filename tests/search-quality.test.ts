@@ -15,6 +15,7 @@ void test('YouTube search plan distributes the 12-request cap across languages b
   assert.deepEqual(plan.slice(0, 4).map((item) => item.language), languages);
   assert.deepEqual(plan.slice(0, 4).map((item) => item.bucket), ['relevance', 'relevance', 'relevance', 'relevance']);
   assert.ok(languages.every((language) => plan.some((item) => item.language === language && item.bucket === 'relevance')));
+  assert.ok(plan.filter((item) => item.bucket !== 'explainer').every((item) => item.query === 'Mars exploration'));
 });
 
 void test('YouTube search plan removes duplicate language codes and preserves all four query angles when possible', () => {
@@ -22,6 +23,8 @@ void test('YouTube search plan removes duplicate language codes and preserves al
   assert.equal(plan.length, 8);
   assert.deepEqual([...new Set(plan.map((item) => item.language))], ['en', 'fa']);
   assert.deepEqual([...new Set(plan.map((item) => item.bucket))], ['relevance', 'popularity', 'recent', 'explainer']);
+  assert.ok(plan.filter((item) => item.bucket !== 'explainer').every((item) => item.query === 'JWST'));
+  assert.ok(plan.filter((item) => item.bucket === 'explainer').every((item) => item.query === 'JWST explained'));
 });
 
 void test('YouTube results rank clear title matches ahead of unrelated descriptions', () => {

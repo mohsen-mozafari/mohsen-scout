@@ -260,7 +260,7 @@ export function buildYouTubeSearchPlan(topic: string, languages: readonly string
   const tasks: YouTubeSearchTask[] = [];
   for (const bucket of SEARCH_BUCKET_ORDER) {
     for (const language of uniqueLanguages) {
-      tasks.push({ language, query: SEARCH_BUCKET_LABELS[bucket](cleanTopic), order: SEARCH_BUCKET_ORDERS[bucket], bucket });
+      tasks.push({ language, query: bucket === 'explainer' ? cleanTopic + ' explained' : cleanTopic, order: SEARCH_BUCKET_ORDERS[bucket], bucket });
       if (tasks.length >= limit) return tasks;
     }
   }
