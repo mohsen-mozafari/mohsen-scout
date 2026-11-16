@@ -97,7 +97,7 @@ export default function DeepResearch() {
           }, 25, { days: preferences.defaultResearchDays ?? 30, region: preferences.region, language: preferences.languages[0] });
           videos = sample.videos;
           videoCriteria = {
-            days: (preferences.defaultResearchDays ?? 30) as 0 | 7 | 30 | 90,
+            days: preferences.defaultResearchDays ?? 30,
             region: preferences.region,
             language: preferences.languages[0] ?? '',
             order: 'viewCount',

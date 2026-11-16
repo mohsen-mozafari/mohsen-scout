@@ -466,7 +466,7 @@ export async function searchYouTubeSample(
     for (const pool of pools) {
       if (!isFirstPage && !pool.token) continue;
       try {
-        const params = { ...commonParams, order: pool.order, maxResults: String(poolSize) };
+        const params: Record<string, string> = { ...commonParams, order: pool.order, maxResults: String(poolSize) };
         if (pool.token) params.pageToken = pool.token;
         const raw = await youtube('search', params, options, 100);
         const parsed = spaceSearchSchema.safeParse(raw);

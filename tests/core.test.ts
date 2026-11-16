@@ -277,7 +277,7 @@ void test('YouTube likes sample rejects a malformed versioned cursor before maki
 });
 
 void test('Topic dossier merges local evidence, normalizes topic keys and expires stale samples', () => {
-  const now = Date.now();
+  const dossierNow = Date.now();
   const news = [{
     id: 'nasa:https://example.com/mars',
     sourceId: 'nasa' as const,
@@ -301,17 +301,17 @@ void test('Topic dossier merges local evidence, normalizes topic keys and expire
     channelVideoCount: 20,
     url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
   }];
-  rememberTopicDossier('  Mars   sample return ', { news }, now);
+  rememberTopicDossier('  Mars   sample return ', { news }, dossierNow);
   rememberTopicDossier('mars sample return', {
     videos,
     videoCriteria: { days: 30, region: 'United States', language: 'en', order: 'viewCount' },
-  }, now + 1000);
-  const dossier = getTopicDossier('MARS SAMPLE RETURN', now + 2000);
+  }, dossierNow + 1000);
+  const dossier = getTopicDossier('MARS SAMPLE RETURN', dossierNow + 2000);
   assert.equal(dossier?.news.length, 1);
   assert.equal(dossier?.videos[0].id, 'dQw4w9WgXcQ');
   assert.equal(dossier?.videoCriteria?.order, 'viewCount');
   assert.ok(dossier?.internalAnalysis);
-  assert.equal(getTopicDossier('mars sample return', now + TOPIC_DOSSIER_TTL_MS + 2000), undefined);
+  assert.equal(getTopicDossier('mars sample return', dossierNow + TOPIC_DOSSIER_TTL_MS + 2000), undefined);
 });
 
 void test('UI language: Persian is the safe default and existing English preferences migrate', () => {

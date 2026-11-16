@@ -57,7 +57,7 @@ export function Page({
     >
       {scroll ? (
         <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={[styles.content, { direction: language === 'fa' ? 'rtl' : 'ltr' }]}>
-          {Boolean(title) && <Text style={[styles.title, { writingDirection: language === 'fa' ? 'rtl' : 'ltr', textAlign: language === 'fa' ? 'right' : 'left' }]}>{translateText(title, language)}</Text>}
+          {title ? <Text style={[styles.title, { writingDirection: language === 'fa' ? 'rtl' : 'ltr', textAlign: language === 'fa' ? 'right' : 'left' }]}>{translateText(title, language)}</Text> : null}
           {Boolean(error) && (
             <ErrorBox
               message={error}
@@ -214,11 +214,12 @@ export function Empty({
   );
 }
 export function ErrorBox({ message, onRetry }: { message: string; onRetry: () => void }) {
+  const language = useScout((s) => s.data.preferences.uiLanguage ?? 'fa');
   return (
     <Panel>
       <View style={styles.row}>
         <CircleAlert size={20} color={p.danger} />
-        <Text style={[styles.text, { flex: 1, color: p.danger }]}>{translateText(message, useScout.getState().data.preferences.uiLanguage ?? 'fa')}</Text>
+        <Text style={[styles.text, { flex: 1, color: p.danger }]}>{translateText(message, language)}</Text>
       </View>
       <Action secondary onPress={onRetry}>
         Retry / dismiss

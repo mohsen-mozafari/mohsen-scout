@@ -29,6 +29,7 @@ import { palette as p } from '@/lib/theme';
 import { translateText } from '@/lib/i18n';
 import { SPACE_NICHES, SPACE_NEWS_SOURCES, type WikiLanguage } from '@/lib/space';
 function CredentialSection({ kind, label }: { kind: Credential; label: string }) {
+  const language = useScout((state) => state.data.preferences.uiLanguage ?? 'fa');
   const [key, setValue] = useState('');
   const [stored, setStored] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
@@ -60,7 +61,7 @@ function CredentialSection({ kind, label }: { kind: Credential; label: string })
       <View style={{ gap: 8 }}>
         <View style={styles.row}>
           <KeyRound size={18} color={p.purple} />
-          <Text style={[styles.heading, { flex: 1 }]}>{translateText(label, useScout.getState().data.preferences.uiLanguage ?? "fa")}</Text>
+          <Text style={[styles.heading, { flex: 1 }]}>{translateText(label, language)}</Text>
         </View>
         <Text style={styles.badge}>{stored ? '•••• ' + translateText('Saved', useScout.getState().data.preferences.uiLanguage ?? 'fa') : translateText('Not set', useScout.getState().data.preferences.uiLanguage ?? 'fa')}</Text>
       </View>
