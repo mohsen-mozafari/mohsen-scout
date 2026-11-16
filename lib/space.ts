@@ -38,12 +38,10 @@ export const SPACE_NEWS_SOURCES: SpaceNewsSource[] = [
     id: 'cneos', name: 'CNEOS', label: 'CNEOS Recent News', url: 'https://cneos.jpl.nasa.gov/feed/news.xml',
   },
   {
-    id: 'esa-space', name: 'ESA', label: 'ESA Top News / Space News', url: 'https://www.esa.int/rssfeed/TopNews',
-    fallbackUrls: ['https://www.esa.int/rssfeed/Our_Activities/Space_News'],
+    id: 'esa-space', name: 'ESA', label: 'ESA Top News / Space News', url: 'https://www.esa.int/rss/news.rss',
   },
   {
-    id: 'esa-science', name: 'ESA', label: 'ESA Space Science', url: 'https://www.esa.int/rssfeed/Our_Activities/Space_Science',
-    fallbackUrls: ['https://www.esa.int/rssfeed/Science_Exploration/Space_Science'],
+    id: 'esa-science', name: 'ESA', label: 'ESA Space Science', url: 'https://www.esa.int/rss/science.rss',
   },
 ];
 export const DEFAULT_SPACE_NEWS_SOURCES: SpaceNewsSourceId[] = [
