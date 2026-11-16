@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { requestJson, type Fetcher } from './api';
 import { classifyPublicationFreshness, deduplicateResearchEvidence, matchesResearchTerms } from './intelligence';
 
-export type SpaceNewsSourceId = 'nasa' | 'jpl' | 'esa-space' | 'esa-science';
+export type SpaceNewsSourceId = 'nasa' | 'jpl' | 'cneos' | 'esa-space' | 'esa-science';
 export type WikiLanguage = 'en' | 'fa' | 'de' | 'fr' | 'es' | 'ja';
 export type SearchDemandProviderId = 'wikimedia-pageviews';
 export type SearchDemandSignal = WikiSignal;
@@ -32,8 +32,10 @@ export const SPACE_NEWS_SOURCES: SpaceNewsSource[] = [
     fallbackUrls: ['https://science.nasa.gov/feed/', 'https://www.nasa.gov/news-release/feed/'],
   },
   {
-    id: 'jpl', name: 'NASA JPL', label: 'JPL News / CNEOS', url: 'https://www.jpl.nasa.gov/feeds/news/',
-    fallbackUrls: ['https://cneos.jpl.nasa.gov/feed/news.xml'],
+    id: 'jpl', name: 'NASA JPL', label: 'JPL News', url: 'https://www.jpl.nasa.gov/feeds/news/',
+  },
+  {
+    id: 'cneos', name: 'CNEOS', label: 'CNEOS Recent News', url: 'https://cneos.jpl.nasa.gov/feed/news.xml',
   },
   {
     id: 'esa-space', name: 'ESA', label: 'ESA Top News / Space News', url: 'https://www.esa.int/rssfeed/TopNews',
@@ -45,7 +47,7 @@ export const SPACE_NEWS_SOURCES: SpaceNewsSource[] = [
   },
 ];
 export const DEFAULT_SPACE_NEWS_SOURCES: SpaceNewsSourceId[] = [
-  'nasa', 'jpl', 'esa-space', 'esa-science',
+  'nasa', 'jpl', 'cneos', 'esa-space', 'esa-science',
 ];
 
 export const SPACE_NICHES = [
@@ -62,7 +64,16 @@ export const SPACE_NICHES = [
 ] as const;
 
 const newsItemLimitPerFeed = 80;
-const newsSourceCache = new Map<string, { at: number; items: SpaceNewsItem[] }>();
+type NewsFeedCacheEntry = {
+  at: number;
+  items: SpaceNewsItem[];
+  etag?: string;
+  lastModified?: string;
+  endpoint?: string;
+};
+type NewsFeedHealth = { failures: number; retryAt: number; warning: string };
+const newsSourceCache = new Map<string, NewsFeedCacheEntry>();
+const newsSourceHealth = new Map<string, NewsFeedHealth>();
 const wikiCache = new Map<string, { at: number; value: WikiSignal }>();
 const CACHE_MS = 10 * 60 * 1000;
 
@@ -158,6 +169,45 @@ export function parseRssFeed(xml: string, source: SpaceNewsSource): SpaceNewsIte
       url,
       publishedAt,
       imageUrl: rssImageUrl(block),
+    }];
+  });
+}
+
+export function parseJsonFeed(json: string, source: SpaceNewsSource): SpaceNewsItem[] {
+  let payload: unknown;
+  try { payload = JSON.parse(json); } catch { return []; }
+  if (!payload || typeof payload !== 'object' || !Array.isArray((payload as { items?: unknown }).items)) return [];
+  return (payload as { items: unknown[] }).items.slice(0, newsItemLimitPerFeed).flatMap((raw) => {
+    if (!raw || typeof raw !== 'object') return [];
+    const item = raw as Record<string, unknown>;
+    const title = typeof item.title === 'string' ? item.title.trim() : '';
+    const rawUrl = typeof item.url === 'string' ? item.url
+      : typeof item.external_url === 'string' ? item.external_url : '';
+    let url = '';
+    try {
+      const parsed = new URL(rawUrl);
+      if (parsed.protocol === 'https:') url = parsed.href;
+    } catch { url = ''; }
+    if (!title || !url) return [];
+    const summary = typeof item.content_text === 'string' ? item.content_text
+      : typeof item.summary === 'string' ? item.summary
+        : typeof item.content_html === 'string' ? item.content_html : '';
+    const rawDate = typeof item.date_published === 'string' ? item.date_published
+      : typeof item.date_modified === 'string' ? item.date_modified : '';
+    const parsedDate = rawDate ? Date.parse(rawDate) : Number.NaN;
+    const publishedAt = Number.isFinite(parsedDate) ? new Date(parsedDate).toISOString() : null;
+    const rawImage = typeof item.image === 'string' ? item.image
+      : typeof item.banner_image === 'string' ? item.banner_image : '';
+    const imageUrl = rawImage ? safeOfficialImageUrl(rawImage) : undefined;
+    return [{
+      id: source.id + ':' + url,
+      sourceId: source.id,
+      sourceName: source.name,
+      title: title.slice(0, 300),
+      summary: decodeXml(summary).slice(0, 1200),
+      url,
+      publishedAt,
+      ...(imageUrl ? { imageUrl } : {}),
     }];
   });
 }

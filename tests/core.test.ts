@@ -74,7 +74,7 @@ void test('Migration: older saved preferences receive safe Space defaults', () =
     budget: 1500, model: '', schedule: 'Manual' as const, paused: false,
   } };
   const migrated = validateLocal(legacy);
-  assert.deepEqual(migrated.preferences.spaceNewsSources, ['nasa', 'jpl', 'esa-space', 'esa-science']);
+  assert.deepEqual(migrated.preferences.spaceNewsSources, ['nasa', 'jpl', 'cneos', 'esa-space', 'esa-science']);
   assert.equal(migrated.preferences.spaceInterestLanguage, 'en');
   assert.equal(migrated.preferences.selectedSpaceNiche, 'all');
   assert.equal(migrated.preferences.customSpaceNiche, '');
