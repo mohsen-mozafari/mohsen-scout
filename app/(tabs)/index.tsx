@@ -8,7 +8,7 @@ import {
   SourceHeading, SourceText, BadgeText,
 } from '@/components/ScoutUI';
 import { useScout } from '@/lib/store';
-import { languages } from '@/lib/types';
+import { languages, uid } from '@/lib/types';
 import {
   SPACE_NICHES,
   buildNicheSuggestions,
@@ -248,10 +248,6 @@ function DiscoveryDashboardReady() {
       await useScout.getState().commit((data) => ({ ...data, ideas: [...automaticIdeas, ...data.ideas] }));
     }
     rememberTopicDossier(discoveryTopic, { news: relevantNews, internalAnalysis: nextRadarBrief });
-    for (const opportunity of nextOpportunities) {
-      const matchingNews = relevantNews.filter((item) => item.url === opportunity.sourceUrl || item.title === opportunity.topic);
-      if (matchingNews.length) rememberTopicDossier(opportunity.topic, { news: matchingNews });
-    }
     setRadarNews(relevantNews);
     setWarnings(result.warnings);
     setLastScannedAt(Date.now());
