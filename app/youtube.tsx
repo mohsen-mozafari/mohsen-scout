@@ -25,6 +25,7 @@ import { useScout } from '@/lib/store';
 import { languages, type ResearchInput, type Report } from '@/lib/types';
 import { relatedQueries } from '@/lib/api';
 import { limitations } from '@/lib/engine';
+import { sortResearchVideos, type ResearchVideoSort } from '@/lib/intelligence';
 import { getKey } from '@/lib/vault';
 export default function Discover() {
   const params = useLocalSearchParams<{ topic?: string; idea?: string }>();
@@ -78,14 +79,9 @@ export default function Discover() {
     }, []),
   );
   const report: Report | undefined = reports.find((r) => r.id === reportId);
-  const sortedReportVideos = report ? [...report.videos].sort((a, b) => {
-    if (sort === 'Newest') return Date.parse(b.publishedAt) - Date.parse(a.publishedAt);
-    const first = sort === 'Most Likes' ? a.likeCount : a.viewCount;
-    const second = sort === 'Most Likes' ? b.likeCount : b.viewCount;
-    if (first == null) return second == null ? 0 : 1;
-    if (second == null) return -1;
-    return second - first;
-  }) : [];
+  const sortedReportVideos = report
+    ? sortResearchVideos(report.videos, sort as ResearchVideoSort, topic)
+    : [];
   const run = async () => {
     const input: ResearchInput = {
       topic,
@@ -135,7 +131,7 @@ export default function Discover() {
         <Field
           label="What are you exploring?"
           value={topic}
-          onChange={setTopic}
+          onChange={(value) => { setTopic(value); setReportId(''); }}
           placeholder="e.g. Small-space home studios"
         />
         <Txt muted>Using Settings defaults: {region} · {selectedLanguages.map((code) => languages[code] || code).join(', ')}</Txt>
@@ -144,13 +140,13 @@ export default function Discover() {
             label="Publication period"
             options={['Last 7 days', 'Last 30 days', 'Last 90 days', 'Any time']}
             selected={[period]}
-            onChange={(v) => setPeriod(v[0])}
+            onChange={(v) => { setPeriod(v[0]); setReportId(''); }}
           />
           <Choices
             label="Duration"
             options={['Any duration', 'Short (<4 min)', 'Medium (4–20 min)', 'Long (>20 min)']}
             selected={[duration]}
-            onChange={(v) => setDuration(v[0])}
+            onChange={(v) => { setDuration(v[0]); setReportId(''); }}
           />
           <Choices
             label="Category"
@@ -162,13 +158,13 @@ export default function Discover() {
               'How-to & style',
             ]}
             selected={[category]}
-            onChange={(v) => setCategory(v[0])}
+            onChange={(v) => { setCategory(v[0]); setReportId(''); }}
           />
           <Choices
             label="Maximum unique videos"
             options={['10', '25', '50', '100']}
             selected={[maximum]}
-            onChange={(v) => setMaximum(v[0])}
+            onChange={(v) => { setMaximum(v[0]); setReportId(''); }}
           />
         </Fold>
         <View style={{ borderRadius: 16, overflow: 'hidden' }}>
@@ -340,7 +336,7 @@ export default function Discover() {
           )}
           <Fold title="Relevant Videos" open>
             {report.videos.length > 1 && (
-              <Choices label="Sort this sample" options={['Newest', 'Most Views', 'Most Likes']} selected={[sort]} onChange={(values) => setSort(values[0])} />
+              <Choices label="Sort this sample" options={['Newest', 'Most Views', 'Most Likes', 'Most Relevant']} selected={[sort]} onChange={(values) => setSort(values[0])} />
             )}
             <Txt muted>Sort order applies to the returned sample only. View and like counts are fetched from YouTube when available; unavailable counts are not estimated.</Txt>
             {!report.videos.length ? (

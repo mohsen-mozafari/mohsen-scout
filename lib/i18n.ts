@@ -354,6 +354,73 @@ const fa: Record<string, string> = {
   'Edit idea': 'ویرایش ایده',
   'Clear filters': 'پاک‌کردن فیلترها',
   'API connection verified.': 'اتصال API تأیید شد.',
+
+  'Most Relevant': 'مرتبط‌ترین',
+  'Evidence quality & confidence': 'کیفیت شواهد و میزان اطمینان',
+  'YouTube sample': 'نمونه یوتیوب',
+  'Shared vocabulary across retrieved sources': 'واژگان مشترک در منابع دریافت‌شده',
+  'Shared terms across publisher and video samples': 'واژه‌های مشترک میان نمونه خبرها و ویدئوها',
+  'This is wording overlap only.': 'این فقط هم‌پوشانی واژگانی است.',
+  'Clear research memory': 'پاک‌سازی حافظه تحقیق',
+  'Saved research memory:': 'حافظه تحقیق ذخیره‌شده:',
+  'topic(s). This memory is used only for local research comparisons and can be cleared independently.': 'موضوع. این حافظه فقط برای مقایسه‌های تحقیق محلی استفاده می‌شود و جداگانه قابل پاک‌سازی است.',
+  'Research memory cleared. Notes, ideas and saved links were kept.': 'حافظه تحقیق پاک شد. یادداشت‌ها، ایده‌ها و پیوندهای ذخیره‌شده حفظ شدند.',
+  'Confirm clear research memory': 'تأیید پاک‌سازی حافظه تحقیق',
+  'Clear research memory': 'پاک‌سازی حافظه تحقیق',
+  'This is a limited YouTube search sample, not a real-time trend report. Region controls availability, not audience location. Language is a relevance hint, not a strict language filter. Search ordering is supplied by YouTube. No demand, growth, competition score, or viral prediction is inferred.': 'این فقط نمونه محدودی از نتایج جست‌وجوی یوتیوب است، نه گزارش روند لحظه‌ای. منطقه بر دسترس‌پذیری اثر می‌گذارد، نه محل مخاطبان. زبان فقط راهنمای ارتباط است و فیلتر سخت‌گیرانه نیست. ترتیب جست‌وجو را یوتیوب تعیین می‌کند. تقاضا، رشد، امتیاز رقابت یا وایرال شدن از این داده‌ها استنباط نمی‌شود.',
+  'Trend signal': 'سیگنال روند',
+  'Evidence quality': 'کیفیت شواهد',
+  'Confidence': 'میزان اطمینان',
+  'Low': 'کم',
+  'Moderate': 'متوسط',
+  'High': 'زیاد',
+  'Rising': 'صعودی',
+  'Falling': 'نزولی',
+  'Stable': 'باثبات',
+  'Insufficient-data': 'داده ناکافی',
+  'spike': 'جهش غیرعادی',
+  'drop': 'افت غیرعادی',
+  'Spike': 'جهش غیرعادی',
+  'Drop': 'افت غیرعادی',
+  'Research gaps': 'کمبودهای تحقیق',
+  'Follow-up search': 'جست‌وجوی تکمیلی',
+  'Shared concepts': 'مفاهیم مشترک',
+  'Conditional scenarios': 'سناریوهای مشروط',
+  'Potential source discrepancies': 'اختلاف‌های احتمالی منابع',
+  'Independent publisher groups': 'گروه‌های مستقل ناشر',
+  'Duplicate stories merged': 'خبرهای تکراری ادغام‌شده',
+  'Undated': 'بدون تاریخ',
+  'Older than 90 days': 'قدیمی‌تر از ۹۰ روز',
+  'Potential anomaly': 'ناهنجاری احتمالی',
+  'Insufficient-data': 'داده ناکافی',
+  'Insufficient data': 'داده ناکافی',
+  'Direction': 'جهت روند',
+  'Monthly observations': 'مشاهده ماهانه',
+  'Confidence:': 'میزان اطمینان:',
+  'Feeds represented:': 'خوراک‌های خبری حاضر:',
+  'Independent publisher groups:': 'گروه‌های مستقل ناشر:',
+  'Duplicate stories merged:': 'خبرهای تکراری ادغام‌شده:',
+  'Undated:': 'بدون تاریخ:',
+  'Older than 90 days:': 'قدیمی‌تر از ۹۰ روز:',
+  'Direction:': 'جهت روند:',
+  'Monthly observations:': 'تعداد داده‌های ماهانه:',
+  'Recent change between halves of the returned series:': 'تغییر بین نیمه اول و دوم داده‌های دریافت‌شده:',
+  'Potential anomaly:': 'ناهنجاری احتمالی:',
+  'Research gap:': 'کمبود تحقیق:',
+  'Shared terms across publisher and video samples:': 'واژه‌های مشترک میان نمونه خبرها و ویدئوها:',
+  'Potential discrepancy:': 'اختلاف احتمالی:',
+  'Several different evidence types are available, with multiple publisher families and a usable monthly series. This is still sample-scoped.': 'چند نوع شواهد، چند گروه ناشر و یک سری زمانی ماهانه قابل استفاده وجود دارد؛ بااین‌حال نتیجه همچنان محدود به نمونه‌های دریافت‌شده است.',
+  'More than one evidence type is available, but source independence, sample size or historical depth is incomplete.': 'بیش از یک نوع شاهد موجود است، اما استقلال منابع، اندازه نمونه یا عمق داده تاریخی کافی نیست.',
+  'The current evidence is limited in source diversity, sample size or historical depth.': 'شواهد فعلی از نظر تنوع منابع، اندازه نمونه یا عمق تاریخی محدود است.',
+  'No direct publisher headline matched the requested topic.': 'هیچ تیتر مستقیمی از ناشران با موضوع درخواستی تطبیق نداشت.',
+  'Independent publisher confirmation is limited.': 'تأیید از سوی ناشران مستقل محدود است.',
+  'There is not enough monthly public-interest history to infer a reliable direction.': 'سابقه ماهانه توجه عمومی برای تشخیص جهت قابل اعتماد کافی نیست.',
+  'The YouTube sample is too small for a robust comparison.': 'نمونه یوتیوب برای مقایسه قابل اتکا بیش از حد کوچک است.',
+  'Some source items have no publication date.': 'تاریخ انتشار بعضی منابع مشخص نیست.',
+  'Some source items are older than 90 days.': 'بعضی منابع بیش از ۹۰ روز قدمت دارند.',
+  'If the recent direction continues, attention may remain near the current range; this is conditional, not a forecast.': 'اگر جهت اخیر ادامه پیدا کند، میزان توجه ممکن است نزدیک محدوده فعلی بماند؛ این یک سناریوی مشروط است، نه پیش‌بینی قطعی.',
+  'If activity returns toward its earlier average, the recent change may fade.': 'اگر فعالیت به میانگین قبلی برگردد، تغییر اخیر ممکن است پایدار نماند.',
+  'If the series changes direction, the current pattern should not be extrapolated.': 'اگر جهت سری زمانی تغییر کند، نباید الگوی فعلی را به آینده تعمیم داد.',
 };
 
 const replacements: [string, string][] = Object.entries(fa)
@@ -368,7 +435,7 @@ export function translateText(value: string, language: UiLanguage = 'fa'): strin
   for (const [source, target] of replacements) {
     if (translated.includes(source)) translated = translated.split(source).join(target);
   }
-  const prefixes: [string, string][] = [['Estimated units today:', 'واحد تخمینی امروز:'], ['Requests today:', 'درخواست‌های امروز:'], ['Region:', 'منطقه:'], ['Languages:', 'زبان‌ها:'], ['Source:', 'منبع:'], ['Published ', 'منتشرشده ']];
+  const prefixes: [string, string][] = [['Estimated units today:', 'واحد تخمینی امروز:'], ['Requests today:', 'درخواست‌های امروز:'], ['Region:', 'منطقه:'], ['Languages:', 'زبان‌ها:'], ['Source:', 'منبع:'], ['Published ', 'منتشرشده '], ['Confidence:', 'میزان اطمینان:'], ['Follow-up search:', 'جست‌وجوی تکمیلی:'], ['Feeds represented:', 'خوراک‌های خبری حاضر:'], ['Independent publisher groups:', 'گروه‌های مستقل ناشر:'], ['Duplicate stories merged:', 'خبرهای تکراری ادغام‌شده:'], ['Undated:', 'بدون تاریخ:'], ['Older than 90 days:', 'قدیمی‌تر از ۹۰ روز:'], ['Direction:', 'جهت روند:'], ['Monthly observations:', 'تعداد داده‌های ماهانه:'], ['Recent change between halves of the returned series:', 'تغییر بین نیمه اول و دوم داده‌های دریافت‌شده:'], ['Potential anomaly:', 'ناهنجاری احتمالی:'], ['Research gap:', 'کمبود تحقیق:'], ['Shared terms across publisher and video samples:', 'واژه‌های مشترک میان نمونه خبرها و ویدئوها:'], [' · Independent publisher groups:', ' · گروه‌های ناشر مستقل:'], [' · Undated:', ' · بدون تاریخ:'], [' · Older than 90 days:', ' · قدیمی‌تر از ۹۰ روز:'], ['Potential discrepancy:', 'اختلاف احتمالی:'], ['Shared terms across publisher and video samples:', 'واژه‌های مشترک میان نمونه خبرها و ویدئوها:']];
   for (const [source, target] of prefixes) if (translated.startsWith(source)) translated = target + translated.slice(source.length);
   return translated;
 }
@@ -380,14 +447,27 @@ function flattenText(node: ReactNode): string {
   return '';
 }
 
+export function resolveTextDirection(value: string): 'rtl' | 'ltr' {
+  for (const character of value) {
+    if (/[\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFF]/.test(character)) return 'rtl';
+    if (/[A-Za-z\u00C0-\u02AF\u0370-\u052F\u0900-\u1FFF\u2C00-\uD7FF]/.test(character)) return 'ltr';
+  }
+  return 'ltr';
+}
+
 export function containsPersianText(node: ReactNode): boolean {
-  return /[\u0600-\u06FF\u0750-\u077F]/.test(flattenText(node));
+  return resolveTextDirection(flattenText(node)) === 'rtl';
+}
+export function resolveNodeDirection(node: ReactNode): 'rtl' | 'ltr' {
+  return resolveTextDirection(flattenText(node));
 }
 
 export function translateNode(node: ReactNode, language: UiLanguage): ReactNode {
   if (typeof node === 'string') return translateText(node, language);
   if (Array.isArray(node)) return node.map((child) => translateNode(child, language));
   if (!isValidElement(node)) return node;
+  const elementType = node.type as { displayName?: string; name?: string };
+  if (/^SourceText$/.test(elementType.displayName ?? elementType.name ?? '')) return node;
   const props = node.props as Record<string, unknown>;
   const children = translateNode(props.children as ReactNode, language);
   const patch: Record<string, unknown> = { children };
@@ -397,13 +477,10 @@ export function translateNode(node: ReactNode, language: UiLanguage): ReactNode 
   if (props.ListEmptyComponent && typeof props.ListEmptyComponent !== 'function') {
     patch.ListEmptyComponent = translateNode(props.ListEmptyComponent as ReactNode, language);
   }
-  const elementType = node.type as { displayName?: string; name?: string };
   if (/^Text$/.test(elementType.displayName ?? elementType.name ?? '')) {
     const content = flattenText(children);
-    patch.style = [props.style, {
-      writingDirection: /[\u0600-\u06FF\u0750-\u077F]/.test(content) ? 'rtl' : 'ltr',
-      textAlign: /[\u0600-\u06FF\u0750-\u077F]/.test(content) ? 'right' : 'left',
-    }];
+    const direction = resolveTextDirection(content);
+    patch.style = [props.style, { writingDirection: direction, textAlign: direction === 'rtl' ? 'right' : 'left' }];
   }
   return cloneElement(node, patch);
 }

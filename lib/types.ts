@@ -147,7 +147,17 @@ export type Preferences = {
   customSpaceNiche: string;
 };
 export type Budget = { date: string; units: number; requests: number; exhausted: boolean };
+export type ResearchMemoryEntry = {
+  topic: string;
+  updatedAt: number;
+  sources: { sourceId?: string; sourceName: string; title: string; sourceUrl: string; publishedAt: string | null }[];
+  keyFindings: string[];
+  unresolvedQuestions: string[];
+  contradictions: string[];
+  confidence: 'low' | 'moderate' | 'high';
+};
 export type LocalData = {
+  researchMemory: ResearchMemoryEntry[];
   preferences: Preferences;
   ideas: Idea[];
   links: SavedLink[];
@@ -161,6 +171,7 @@ export const uid = () => `${Date.now().toString(36)}-${Math.random().toString(36
 export const RETENTION_MS = 29 * 24 * 60 * 60 * 1000;
 export function defaults(): LocalData {
   return {
+    researchMemory: [],
     preferences: {
       uiLanguage: 'fa',
       name: 'Mohsen',
@@ -198,6 +209,7 @@ export function purgeExpired(data: LocalData, now = Date.now()): LocalData {
   const retainedIds = new Set([...videos.map((v) => v.id), ...data.links.map((l) => l.id)]);
   return {
     ...data,
+    researchMemory: [...data.researchMemory].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 40),
     videos,
     reports,
     ideas: data.ideas.map((idea) => {

@@ -119,6 +119,21 @@ const schema = z.object({
     }),
   ),
   videos: z.array(video),
+  researchMemory: z.array(z.object({
+    topic: text.max(180),
+    updatedAt: time,
+    sources: z.array(z.object({
+      sourceId: text.optional(),
+      sourceName: text.max(160),
+      title: text.max(500),
+      sourceUrl: text.url().or(z.literal('')),
+      publishedAt: z.string().datetime().nullable(),
+    })).max(12),
+    keyFindings: z.array(text.max(2000)).max(12),
+    unresolvedQuestions: z.array(text.max(500)).max(12),
+    contradictions: z.array(text.max(500)).max(8),
+    confidence: z.enum(['low', 'moderate', 'high']),
+  })).max(40).optional().default([]),
   budget: z.object({
     date: text,
     units: z.number().nonnegative(),

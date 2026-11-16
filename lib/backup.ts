@@ -89,6 +89,21 @@ const backupSchema = z.object({
     links: z.array(link).max(20000),
     notes: z.array(noteSchema).max(20000),
     ideas: z.array(ideaSchema).max(20000),
+    researchMemory: z.array(z.object({
+      topic: text,
+      updatedAt: timestamp,
+      sources: z.array(z.object({
+        sourceId: text.optional(),
+        sourceName: text,
+        title: text,
+        sourceUrl: text,
+        publishedAt: z.string().datetime().nullable(),
+      })).max(12),
+      keyFindings: z.array(text).max(12),
+      unresolvedQuestions: z.array(text).max(12),
+      contradictions: z.array(text).max(8),
+      confidence: z.enum(['low', 'moderate', 'high']),
+    })).max(40).optional().default([]),
     preferences,
   }),
 });
@@ -110,6 +125,7 @@ export function exportBackup(data: LocalData) {
           savedAt,
         })),
         notes: data.notes,
+        researchMemory: data.researchMemory,
         ideas: data.ideas.map(({ reportId: _reportId, ...value }) => ({
           ...value,
           videoIds: value.videoIds.filter((id) =>
@@ -171,6 +187,7 @@ export function restorePersonalData(current: LocalData, restored: LocalData): Lo
     ideas: restored.ideas,
     links: restored.links,
     notes: restored.notes,
+    researchMemory: restored.researchMemory,
     opinions: current.opinions.filter((opinion) => {
       const before = current.ideas.find((idea) => idea.id === opinion.ideaId);
       const after = restored.ideas.find((idea) => idea.id === opinion.ideaId);

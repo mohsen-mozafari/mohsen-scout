@@ -80,6 +80,10 @@ void test('Migration: older saved preferences receive safe Space defaults', () =
   assert.equal(migrated.preferences.customSpaceNiche, '');
   assert.equal(migrated.preferences.defaultResearchDays, 30);
   assert.equal(migrated.preferences.uiLanguage, 'fa');
+  const legacyWithoutResearchMemory = Object.fromEntries(
+    Object.entries(current).filter(([key]) => key !== 'researchMemory'),
+  );
+  assert.deepEqual(validateLocal(legacyWithoutResearchMemory).researchMemory, []);
 });
 void test('YouTube trend sample uses official search and video statistics endpoints with bounded quota', async () => {
   let charges = 0;
@@ -383,6 +387,21 @@ void test('Backup: round trip preserves personal data and strips all API metadat
   const d = defaults();
   d.videos = [video];
   d.preferences.customSpaceNiche = 'JWST, NIRSpec';
+  d.researchMemory = [{
+    topic: 'Exoplanet atmospheres',
+    updatedAt: now,
+    sources: [{
+      sourceId: 'nasa',
+      sourceName: 'NASA',
+      title: 'Exoplanet atmosphere observed at 40 km',
+      sourceUrl: 'https://www.nasa.gov/mock-memory',
+      publishedAt: '2026-11-15T10:00:00.000Z',
+    }],
+    keyFindings: ['A saved source finding.'],
+    unresolvedQuestions: ['Which method was used?'],
+    contradictions: [],
+    confidence: 'moderate',
+  }];
   d.opinions = [
     { id: 'x', ideaId: 'x', text: 'private AI response', model: 'mock', createdAt: now },
   ];
@@ -405,6 +424,8 @@ void test('Backup: round trip preserves personal data and strips all API metadat
   assert.equal(imported.videos.length, 0);
   assert.equal(imported.preferences.schedule, 'Manual');
   assert.equal(imported.preferences.customSpaceNiche, 'JWST, NIRSpec');
+  assert.equal(imported.researchMemory.length, 1);
+  assert.equal(imported.researchMemory[0].sources[0].title, 'Exoplanet atmosphere observed at 40 km');
 });
 void test('Backup: malformed/oversized/wrong version files rejected before mutation', () => {
   assert.throws(() => importBackup('{'));
@@ -1042,6 +1063,9 @@ void test('Internal research engine joins publisher, Wikimedia and YouTube evide
   assert.ok(result.evidence.some((item) => item.id === 'youtube-sample' && item.detail.includes('1 returned video example')));
   assert.ok(result.evidence.some((item) => item.id === 'youtube-sample' && item.detail.includes('median 1,000')));
   assert.ok(result.evidence.some((item) => item.id === 'youtube-sample' && item.detail.includes('median 50')));
+  assert.equal(result.intelligence.sourceQuality.feedsRepresented, 2);
+  assert.equal(result.intelligence.sourceQuality.independentPublishers, 1);
+  assert.equal(result.intelligence.sourceQuality.duplicateStoriesMerged, 1);
   assert.equal(result.verificationQuestions.length, 4);
   assert(!JSON.stringify(result).toLowerCase().includes('viral score'));
 });
@@ -1060,4 +1084,65 @@ void test('Internal research engine without source evidence marks output as expl
   assert.match(result.summary, /no source evidence/i);
   assert.ok(result.limitations.some((item) => item.includes('starting questions only')));
   assert.ok(result.evidence.every((item) => !item.sourceUrl));
+});
+
+
+void test('Internal research compares new numeric source claims with saved topic memory', () => {
+  const result = buildInternalResearch({
+    topic: 'Exoplanet atmosphere',
+    priorMemory: {
+      topic: 'Exoplanet atmosphere',
+      updatedAt: now,
+      sources: [{
+        sourceId: 'nasa',
+        sourceName: 'NASA',
+        title: 'Exoplanet atmosphere observed at 40 km',
+        sourceUrl: 'https://www.nasa.gov/old-report',
+        publishedAt: '2026-11-10T10:00:00.000Z',
+      }],
+      keyFindings: [],
+      unresolvedQuestions: [],
+      contradictions: [],
+      confidence: 'moderate',
+    },
+    news: [{
+      title: 'Exoplanet atmosphere measured at 35 km',
+      summary: 'A source reports a measurement for testing.',
+      sourceName: 'NASA JPL',
+      sourceId: 'jpl',
+      sourceUrl: 'https://www.jpl.nasa.gov/new-report',
+      publishedAt: '2026-11-15T10:00:00.000Z',
+    }],
+  });
+  assert.ok(result.intelligence.potentialContradictions.some((item) => /saved research memory/i.test(item)));
+});
+
+void test('Internal research creates Persian analysis when the selected UI language is Persian', () => {
+  const result = buildInternalResearch({ topic: 'سیاره‌های فراخورشیدی', language: 'fa' });
+  assert.match(result.summary, /هیچ شاهد منبعی/);
+  assert.match(result.angles[0].hook, /برای تبدیل/);
+  assert.match(result.verificationQuestions[0], /منبع اولیه/);
+});
+
+
+void test('Second Opinion prompt follows the selected UI language', () => {
+  const persianPrompt = opinionPrompt('James Webb', 'Explain a verified observation.', '', 'fa');
+  const englishPrompt = opinionPrompt('James Webb', 'Explain a verified observation.', '', 'en');
+  assert.match(persianPrompt, /به زبان فارسی/);
+  assert.match(englishPrompt, /concise English second opinion/);
+});
+
+void test('generated research ideas use the selected UI language', () => {
+  const report: Report = {
+    id: 'language-idea-test',
+    input: { ...input, topic: 'James Webb discoveries' },
+    videos: [video],
+    queries: [input.topic],
+    warnings: [],
+    createdAt: now,
+    analyzed: false,
+  };
+  const persianIdeas = buildIdeas(report, 'fa');
+  assert.match(persianIdeas[0].topic, /نمونه‌های فعلی/);
+  assert.match(persianIdeas[0].concept, /نمونه‌های دریافت‌شده/);
 });

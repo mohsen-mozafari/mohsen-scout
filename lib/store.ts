@@ -130,7 +130,7 @@ export const useScout = create<State>((set, get) => ({
     await get().commit((data) => ({
       ...data,
       reports: data.reports.map((r) => (r.id === id ? { ...r, analyzed: true } : r)),
-      ideas: [...buildIdeas(report), ...data.ideas],
+      ideas: [...buildIdeas(report, data.preferences.uiLanguage ?? 'fa'), ...data.ideas],
     }));
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   },

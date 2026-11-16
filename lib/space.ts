@@ -457,9 +457,37 @@ export async function getWikipediaSignal(
   return value;
 }
 
-export function buildResearchOutline(topic: string, sourceHeadlines: string[]): { titleIdeas: string[]; outline: string[]; verificationQuestions: string[] } {
+export function buildResearchOutline(
+  topic: string,
+  sourceHeadlines: string[],
+  language: 'fa' | 'en' = 'en',
+): { titleIdeas: string[]; outline: string[]; verificationQuestions: string[] } {
   const safeTopic = topic.trim().slice(0, 140);
   const lead = sourceHeadlines.slice(0, 3);
+  if (language === 'fa') {
+    return {
+      titleIdeas: [
+        'دانشمندان واقعاً درباره ' + safeTopic + ' چه کشف کرده‌اند؟',
+        safeTopic + ': شواهد، رازها و آنچه در ادامه می‌آید',
+        'چرا ' + safeTopic + ' مهم‌تر از چیزی است که ابتدا به نظر می‌رسد؟',
+      ],
+      outline: [
+        'شروع: پرسش اصلی درباره ' + safeTopic + ' را بدون بزرگ‌نمایی مطرح کن.',
+        'زمینه: مأموریت، ابزار یا روش علمی پشت شواهد را توضیح بده.',
+        ...(lead.length ? ['شواهد: گزارش‌های منبع اخیر را بررسی کن — ' + lead.join('؛ ') + '؛ عنوان‌ها را از نتیجه‌گیری علمی جدا نگه دار.'] : ['شواهد: قوی‌ترین مدارک اولیه موجود را ارائه کن و توضیح بده چه چیزی را ثابت می‌کنند و چه چیزی را نه.']),
+        'جزئیات جالب: یک نتیجه تأییدشده را انتخاب کن و اهمیت آن را توضیح بده.',
+        'موارد ناشناخته: پرسش‌های علمی باز را از مشاهدات تأییدشده جدا کن.',
+        'اهمیت: یافته را به داستان گسترده‌تر نجوم و اکتشافات فضایی وصل کن.',
+        'پایان: یک پرسش مشخص برای دنبال کردن مأموریت یا مشاهده بعدی مطرح کن.',
+      ],
+      verificationQuestions: [
+        'آیا منبع اولیه یک اندازه‌گیری مستقیم را شرح می‌دهد، یک تفسیر یا یک فرضیه؟',
+        'آیا نتیجه گزارش‌شده مستقل تأیید شده یا هنوز مقدماتی است؟',
+        'آیا تاریخ‌ها، وضعیت مأموریت و نام ابزارها به‌روز هستند؟',
+        'چه مدرکی می‌تواند توضیح پیشنهادی را تغییر دهد یا تضعیف کند؟',
+      ],
+    };
+  }
   return {
     titleIdeas: [
       'What Scientists Have Actually Discovered About ' + safeTopic,

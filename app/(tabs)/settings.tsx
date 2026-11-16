@@ -459,6 +459,23 @@ export default function Settings() {
           subtitle or caption downloads. API titles, descriptions and thumbnails expire within 29
           days; saved personal links and notes remain.
         </Txt>
+        <Txt muted>{'Saved research memory: ' + data.researchMemory.length + ' topic(s). This memory is used only for local research comparisons and can be cleared independently.'}</Txt>
+        <Action
+          secondary
+          disabled={!data.researchMemory.length || op.busy}
+          onPress={() => {
+            if (confirm !== 'memory') {
+              setConfirm('memory');
+              return;
+            }
+            void op.run(async () => {
+              await useScout.getState().commit((d) => ({ ...d, researchMemory: [] }));
+              setConfirm('');
+            }, 'Research memory cleared. Notes, ideas and saved links were kept.');
+          }}
+        >
+          {confirm === 'memory' ? 'Confirm clear research memory' : 'Clear research memory'}
+        </Action>
         <Action
           secondary
           busy={op.busy}

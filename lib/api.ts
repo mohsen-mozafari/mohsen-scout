@@ -324,12 +324,15 @@ export async function testOpenRouter(key: string) {
   if (!z.object({ data: z.object({}).passthrough() }).safeParse(raw).success)
     throw new ApiError('OpenRouter returned an invalid response.', 'invalid');
 }
-export function opinionPrompt(topic: string, concept: string, decision: string) {
+export function opinionPrompt(topic: string, concept: string, decision: string, language: 'fa' | 'en' = 'en') {
   const cleanTopic = topic.trim();
   const cleanConcept = concept.trim();
   if (!cleanTopic || cleanTopic.toLowerCase() === 'untitled idea' || !cleanConcept)
     throw new ApiError('Complete the idea title and video concept before requesting an AI second opinion.', 'input');
-  return `Give a concise English second opinion on this user-created editorial idea. No YouTube API data or performance statistics are provided. Topic: ${cleanTopic.slice(0, 300)}. Proposed concept: ${cleanConcept.slice(0, 1200)}. Personal decision: ${decision.trim().slice(0, 600) || 'No personal decision supplied yet.'}. Assess the clarity and originality of the concept, useful angles, competition uncertainty, validation steps and practical prioritization. Say insufficient evidence for demand/competition claims. Do not invent trends, scores, probabilities, or percentages. Distinguish subjective judgment from evidence; you may disagree. Do not request or analyze YouTube API data.`;
+  const instruction = language === 'fa'
+    ? 'به زبان فارسی روان و طبیعی پاسخ بده. نظر دوم باید کوتاه، کاربردی و دقیق باشد. داده یا آمار یوتیوب در اختیار تو نیست. تقاضا، رقابت، روند، امتیاز، احتمال یا درصد ساختگی ارائه نکن. قضاوت شخصی را از شواهد جدا کن و در صورت ناکافی بودن اطلاعات صریحاً بگو. درباره وضوح و اصالت ایده، زاویه‌های مفید، عدم‌قطعیت رقابت، روش‌های اعتبارسنجی و اولویت‌بندی عملی نظر بده.'
+    : 'Give a concise English second opinion. No YouTube API data or performance statistics are provided. Do not invent demand, competition, trends, scores, probabilities, or percentages. Distinguish subjective judgment from evidence and say when evidence is insufficient. Assess clarity, originality, useful angles, competition uncertainty, validation steps and practical prioritization.';
+  return `${instruction} Topic: ${cleanTopic.slice(0, 300)}. Proposed concept: ${cleanConcept.slice(0, 1200)}. Personal decision: ${decision.trim().slice(0, 600) || 'No personal decision supplied yet.'}. Do not request or analyze YouTube API data.`;
 }
 export type YouTubeSampleVideo = {
   id: string;

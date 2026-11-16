@@ -261,3 +261,31 @@ void test('Discovery does not invent an opportunity when the selected niche has 
   const news = parseRssFeed('<rss><item><title>Artemis lunar mission update</title><link>https://www.nasa.gov/artemis</link></item></rss>', feed);
   assert.equal(buildDiscoveryOpportunities(news, 'exoplanets').length, 0);
 });
+
+
+void test('Manual niche matching uses explicit semantic aliases without broad generic matches', () => {
+  const items = [
+    {
+      id: 'mock-webb',
+      title: 'James Webb Space Telescope reveals an exoplanet atmosphere',
+      summary: 'A NIRSpec observation.',
+      sourceName: 'NASA',
+      sourceId: 'nasa' as const,
+      url: 'https://www.nasa.gov/mock-webb',
+      publishedAt: '2026-11-14T10:00:00.000Z',
+      imageUrl: '',
+    },
+    {
+      id: 'mock-generic',
+      title: 'A generic space telescope launch',
+      summary: 'An unrelated observatory announcement.',
+      sourceName: 'ESA',
+      sourceId: 'esa-space' as const,
+      url: 'https://www.esa.int/mock-launch',
+      publishedAt: '2026-11-14T10:00:00.000Z',
+      imageUrl: '',
+    },
+  ];
+  const results = newsForNiche(items, 'custom', 'JWST');
+  assert.deepEqual(results.map((item) => item.url), ['https://www.nasa.gov/mock-webb']);
+});

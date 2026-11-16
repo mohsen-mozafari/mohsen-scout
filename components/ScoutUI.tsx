@@ -1,5 +1,5 @@
 import { type ReactNode, useState } from 'react';
-import { containsPersianText, translateNode, translateText } from '@/lib/i18n';
+import { resolveNodeDirection, resolveTextDirection, translateNode, translateText } from '@/lib/i18n';
 import { View, Text, ScrollView, KeyboardAvoidingView, Platform, StyleSheet } from 'react-native';
 import { Button, Input, Label, TextField, TextArea } from 'heroui-native';
 import { Search, CircleAlert, ChevronDown, ChevronUp, type LucideIcon } from 'lucide-react-native';
@@ -32,13 +32,20 @@ export const styles = StyleSheet.create({
 export function Txt({ children, muted = false }: { children: ReactNode; muted?: boolean }) {
   const language = useScout((s) => s.data.preferences.uiLanguage ?? 'fa');
   const content = translateNode(children, language);
-  return <Text style={[muted ? styles.muted : styles.text, { writingDirection: containsPersianText(content) ? 'rtl' : 'ltr' }]}>{content}</Text>;
+  const direction = resolveNodeDirection(content);
+  return <Text style={[muted ? styles.muted : styles.text, { writingDirection: direction, textAlign: direction === 'rtl' ? 'right' : 'left' }]}>{content}</Text>;
 }
 export function Heading({ children }: { children: ReactNode }) {
   const language = useScout((s) => s.data.preferences.uiLanguage ?? 'fa');
   const content = translateNode(children, language);
-  return <Text style={[styles.heading, { writingDirection: containsPersianText(content) ? 'rtl' : 'ltr' }]}>{content}</Text>;
+  const direction = resolveNodeDirection(content);
+  return <Text style={[styles.heading, { writingDirection: direction, textAlign: direction === 'rtl' ? 'right' : 'left' }]}>{content}</Text>;
 }
+export function SourceText({ children, muted = false }: { children: ReactNode; muted?: boolean }) {
+  const content = String(children ?? '');
+  const direction = resolveTextDirection(content);
+  return <Text style={[muted ? styles.muted : styles.text, { writingDirection: direction, textAlign: direction === 'rtl' ? 'right' : 'left' }]}>{children}</Text>;
+} 
 export function Page({
   children,
   title,

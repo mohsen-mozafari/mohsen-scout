@@ -2,7 +2,7 @@ import { View, Text, Linking } from 'react-native';
 import { router } from 'expo-router';
 import { Button } from 'heroui-native';
 import { ArrowUpRight, Bookmark } from 'lucide-react-native';
-import { styles, Txt, Action, useOperation } from './ScoutUI';
+import { styles, Txt, Action, useOperation, SourceText } from './ScoutUI';
 import { type Video } from '@/lib/types';
 import { useScout } from '@/lib/store';
 import { palette as p } from '@/lib/theme';
@@ -21,7 +21,7 @@ export function VideoRow({ video, topic }: { video: Video; topic: string }) {
           {Boolean(video.thumbnail) && (
             <MediaPreview uri={video.thumbnail} aspectRatio={16 / 9} alt={video.title} />
           )}
-          <Text style={styles.heading}>{video.title}</Text>
+          <SourceText>{video.title}</SourceText>
           <Txt muted>
             {video.channel} · {new Date(video.publishedAt).toLocaleDateString('en-US')}
           </Txt>
