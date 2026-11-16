@@ -10,6 +10,7 @@ import { getKey } from '@/lib/vault';
 import { buildInternalResearch, rankNewsForTopic, type InternalResearchResult } from '@/lib/engine';
 import { buildResearchInterestProfile, normalizeResearchText } from '@/lib/intelligence';
 import { MediaPreview } from '@/components/MediaPreview';
+import { ResearchKnowledgeGraph } from '@/components/ResearchKnowledgeGraph';
 import { getTopicDossier, rememberTopicDossier } from '@/lib/topic-dossier';
 import { searchYouTubeSample, type YouTubeSampleVideo } from '@/lib/api';
 import {
@@ -243,6 +244,14 @@ export default function DeepResearch() {
           </Panel>
           <Panel>
             <Heading>Internal Research Engine</Heading>
+            <ResearchKnowledgeGraph
+              topic={brief.topic}
+              news={brief.news}
+              wiki={brief.wiki}
+              videos={brief.videos}
+              analysis={brief.internalAnalysis}
+              language={preferences.uiLanguage ?? 'fa'}
+            />
             <Txt muted>{brief.internalAnalysis.summary}</Txt>
             {brief.internalAnalysis.evidence.map((item) => (
               <View key={item.id} style={{ gap: 3 }}>
