@@ -1,0 +1,41 @@
+name: Validate MOHSEN SCOUT intelligence changes
+
+on:
+  push:
+    branches: [fix/intelligence-overhaul-validation]
+    paths:
+      - 'app/**'
+      - 'lib/**'
+      - 'tests/**'
+      - 'components/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'app.config.ts'
+      - '.github/workflows/intelligence-validation.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Resolve aligned lockfile
+        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+      - name: Install dependencies
+        run: npm ci
+      - name: Run regression suite
+        run: npm test
+      - name: Run source lint and type checks
+        run: npm run lint
+      - name: Run CSS lint
+        run: npm run lint:css
+      - name: Verify Expo dependency alignment
+        run: npx expo-doctor

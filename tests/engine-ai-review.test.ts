@@ -1,0 +1,37 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { internalEngineReviewPrompt, nextOpenRouterUsage } from '../lib/api';
+
+void test('AI engine review prompt is grounded in aggregate local intelligence signals', () => {
+  const prompt = internalEngineReviewPrompt({
+    topic: 'Space science and exploration',
+    summary: 'The local engine processed a limited set of publisher records.',
+    evidence: [
+      { label: 'Feed records', detail: '12 records processed' },
+      { label: 'Independent publisher groups', detail: '3 groups represented' },
+      { label: 'Duplicate records merged', detail: '4 duplicates merged' },
+    ],
+    confidence: { level: 'moderate', reason: 'Computed from sample coverage and freshness only.' },
+    language: 'en',
+  });
+  assert.match(prompt, /local engine processed/i);
+  assert.match(prompt, /12 records processed/);
+  assert.match(prompt, /3 groups represented/);
+  assert.doesNotMatch(prompt, /https?:\/\//i);
+  assert.doesNotMatch(prompt, /youtube\.com|nasa\.gov|esa\.int/i);
+});
+
+void test('OpenRouter usage counter increments and resets on a new local day', () => {
+  assert.deepEqual(nextOpenRouterUsage('2026-11-16', 6, '2026-11-16'), {
+    openRouterUsageDay: '2026-11-16',
+    openRouterRequestsToday: 7,
+  });
+  assert.deepEqual(nextOpenRouterUsage('2026-11-15', 29, '2026-11-16'), {
+    openRouterUsageDay: '2026-11-16',
+    openRouterRequestsToday: 1,
+  });
+  assert.throws(
+    () => nextOpenRouterUsage('2026-11-16', 30, '2026-11-16'),
+    /30 requests for today/,
+  );
+});
