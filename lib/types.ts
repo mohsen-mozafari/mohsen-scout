@@ -144,6 +144,7 @@ export type Preferences = {
   /** Local OpenRouter usage accounting; legacy backups may omit these fields. */
   openRouterUsageDay?: string;
   openRouterRequestsToday?: number;
+  youtubeRefreshTimestamps?: number[];
   schedule: 'Manual' | 'Every 12 hours' | 'Daily' | 'Weekly';
   paused: boolean;
   lastInput?: ResearchInput;
@@ -152,7 +153,11 @@ export type Preferences = {
   selectedSpaceNiche: string;
   customSpaceNiche: string;
 };
-export type Budget = { date: string; units: number; requests: number; exhausted: boolean };
+export type Budget = {
+  date: string; units: number; requests: number; exhausted: boolean;
+  searchManualRequests?: number; searchAutomaticRequests?: number; searchReserveRequests?: number;
+  otherManualUnits?: number; otherAutomaticUnits?: number; otherReserveUnits?: number;
+};
 export type ResearchMemorySnapshot = {
   capturedAt: number;
   sourceFingerprint: string;
@@ -214,7 +219,7 @@ export function defaults(): LocalData {
     opinions: [],
     reports: [],
     videos: [],
-    budget: { date: '', units: 0, requests: 0, exhausted: false },
+    budget: { date: '', units: 0, requests: 0, exhausted: false, searchManualRequests: 0, searchAutomaticRequests: 0, searchReserveRequests: 0, otherManualUnits: 0, otherAutomaticUnits: 0, otherReserveUnits: 0 },
   };
 }
 export function purgeExpired(data: LocalData, now = Date.now()): LocalData {

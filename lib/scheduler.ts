@@ -14,7 +14,7 @@ if (!TaskManager.isTaskDefined(TASK))
       const prefs = useScout.getState().data.preferences;
       if (prefs.paused || prefs.schedule === 'Manual' || !prefs.lastInput)
         return BackgroundTask.BackgroundTaskResult.Success;
-      const result = await useScout.getState().research(prefs.lastInput);
+      const result = await useScout.getState().research(prefs.lastInput, 'automatic');
       if (!result) return BackgroundTask.BackgroundTaskResult.Failed;
       const permissions = await Notifications.getPermissionsAsync();
       if (permissions.granted) await Notifications.scheduleNotificationAsync(researchNotification);

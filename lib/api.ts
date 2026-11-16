@@ -118,15 +118,54 @@ export function quotaDay(now = new Date()) {
     day: '2-digit',
   }).format(now);
 }
-export function nextBudget(old: Budget, limit: number, units: number, now = new Date()): Budget {
+export type YouTubeQuotaKind = 'search' | 'other';
+export type YouTubeQuotaOrigin = 'manual' | 'automatic' | 'reserve';
+
+export function nextBudget(
+  old: Budget,
+  limit: number,
+  units: number,
+  now = new Date(),
+  kind: YouTubeQuotaKind = 'other',
+  origin: YouTubeQuotaOrigin = 'manual',
+): Budget {
   const date = quotaDay(now);
-  const current = old.date === date ? old : { date, units: 0, requests: 0, exhausted: false };
+  const current: Budget = old.date === date ? old : {
+    date, units: 0, requests: 0, exhausted: false,
+    searchManualRequests: 0, searchAutomaticRequests: 0, searchReserveRequests: 0,
+    otherManualUnits: 0, otherAutomaticUnits: 0, otherReserveUnits: 0,
+  };
+  if (!Number.isFinite(units) || units <= 0 || !Number.isFinite(limit) || limit <= 0)
+    throw new ApiError('The local YouTube quota request is invalid.', 'budget');
   if (current.exhausted || current.units + units > limit)
-    throw new ApiError(
-      'Your local request budget is reached. Change it in Settings or wait for the next Pacific-time day.',
-      'budget',
-    );
-  return { ...current, units: current.units + units, requests: current.requests + 1 };
+    throw new ApiError('Your local request budget is reached. Change it in Settings or wait for the next Pacific-time day.', 'budget');
+  const next = { ...current };
+  if (kind === 'search') {
+    const field = origin === 'manual' ? 'searchManualRequests' : origin === 'automatic' ? 'searchAutomaticRequests' : 'searchReserveRequests';
+    const used = current[field] ?? 0;
+    const ceiling = origin === 'manual' ? 60 : 20;
+    if (used + 1 > ceiling) throw new ApiError('The local ' + origin + ' YouTube search-call allowance is exhausted for this Pacific-time day.', 'budget');
+    next[field] = used + 1;
+  } else {
+    const field = origin === 'manual' ? 'otherManualUnits' : origin === 'automatic' ? 'otherAutomaticUnits' : 'otherReserveUnits';
+    const used = current[field] ?? 0;
+    const manualLimit = Math.floor(limit * 0.6);
+    const automaticLimit = Math.floor(limit * 0.2);
+    const reserveLimit = limit - manualLimit - automaticLimit;
+    const ceiling = origin === 'manual' ? manualLimit : origin === 'automatic' ? automaticLimit : reserveLimit;
+    if (used + units > ceiling) throw new ApiError('The local ' + origin + ' YouTube non-search unit allowance is exhausted.', 'budget');
+    next[field] = used + units;
+  }
+  return { ...next, units: current.units + units, requests: current.requests + 1 };
+}
+
+export const YOUTUBE_REFRESH_CYCLE_LIMIT = 3;
+export const YOUTUBE_REFRESH_WINDOW_MS = 24 * 60 * 60 * 1000;
+export function reserveYoutubeRefreshCycle(previous: readonly number[] | undefined, now = Date.now()): number[] {
+  const recent = (previous ?? []).filter((timestamp) => Number.isFinite(timestamp) && timestamp <= now && now - timestamp < YOUTUBE_REFRESH_WINDOW_MS).sort((a, b) => a - b).slice(-YOUTUBE_REFRESH_CYCLE_LIMIT);
+  if (recent.length >= YOUTUBE_REFRESH_CYCLE_LIMIT)
+    throw new ApiError('The local limit of three full YouTube research cycles in a rolling 24-hour period has been reached.', 'budget');
+  return [...recent, now];
 }
 const searchSchema = z.object({
   nextPageToken: z.string().optional(),
@@ -155,7 +194,8 @@ export const relatedQueries = (topic: string) => [
 const inflight = new Map<string, Promise<unknown>>();
 export type YouTubeOptions = {
   key: string;
-  charge: (units: number) => Promise<void>;
+  charge: (units: number, kind?: YouTubeQuotaKind, origin?: YouTubeQuotaOrigin) => Promise<void>;
+  origin?: YouTubeQuotaOrigin;
   fetcher?: Fetcher;
   onQuota?: () => Promise<void>;
 };
@@ -164,7 +204,8 @@ async function youtube(endpoint: string, params: Record<string, string>, options
   const url = `https://www.googleapis.com/youtube/v3/${endpoint}?${query}`;
   const existing = inflight.get(url);
   if (existing) return existing;
-  const promise = requestJson(url, {}, options.fetcher, () => options.charge(units));
+  const kind: YouTubeQuotaKind = endpoint === 'search' ? 'search' : 'other';
+  const promise = requestJson(url, {}, options.fetcher, () => options.charge(units, kind, options.origin ?? 'manual'));
   inflight.set(url, promise);
   try {
     return await promise;

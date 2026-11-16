@@ -12,7 +12,7 @@ import {
 } from './types';
 import { readData, writeData } from './storage';
 import { getKey } from './vault';
-import { ApiError, nextBudget, searchYouTube } from './api';
+import { ApiError, nextBudget, reserveYoutubeRefreshCycle, searchYouTube, type YouTubeQuotaKind, type YouTubeQuotaOrigin } from './api';
 import { generateEditorialIdeas } from './idea-generation';
 import { attachReportToIdea as attachReport, attachVideoReferenceToIdea as attachVideoReference, getOrCreateSourceIdea, type SourceIdeaInput } from './idea-research';
 type State = {
@@ -23,14 +23,14 @@ type State = {
   error: string;
   boot: () => Promise<void>;
   commit: (change: (data: LocalData) => LocalData) => Promise<void>;
-  research: (input: ResearchInput) => Promise<Report | undefined>;
+  research: (input: ResearchInput, origin?: YouTubeQuotaOrigin) => Promise<Report | undefined>;
   analyze: (id: string) => Promise<void>;
   saveVideo: (video: Video, topic: string) => Promise<void>;
   saveIdea: (idea: Idea) => Promise<void>;
   ensureSourceIdea: (input: SourceIdeaInput) => Promise<Idea>;
   linkReportToIdea: (ideaId: string, reportId: string) => Promise<void>;
   bookmarkVideoForIdea: (ideaId: string, videoId: string) => Promise<void>;
-  charge: (units: number) => Promise<void>;
+  charge: (units: number, kind?: YouTubeQuotaKind, origin?: YouTubeQuotaOrigin) => Promise<void>;
   clearError: () => void;
 };
 let queue = Promise.resolve();
@@ -64,13 +64,13 @@ export const useScout = create<State>((set, get) => ({
     queue = action.catch(() => {});
     await action;
   },
-  charge: async (units) => {
+  charge: async (units, kind = 'other', origin = 'manual') => {
     await get().commit((data) => ({
       ...data,
-      budget: nextBudget(data.budget, data.preferences.budget, units),
+      budget: nextBudget(data.budget, data.preferences.budget, units, new Date(), kind, origin),
     }));
   },
-  research: async (input) => {
+  research: async (input, origin = 'manual') => {
     if (get().busy) return undefined;
     set({ busy: true, error: '', progress: 'Preparing related queries…' });
     try {
@@ -88,11 +88,17 @@ export const useScout = create<State>((set, get) => ({
         if (!cached.analyzed) await get().analyze(cached.id);
         return get().data.reports.find((item) => item.id === cached.id) ?? cached;
       }
+      const reservedCycles = reserveYoutubeRefreshCycle(get().data.preferences.youtubeRefreshTimestamps, Date.now());
+      await get().commit((data) => ({
+        ...data,
+        preferences: { ...data.preferences, youtubeRefreshTimestamps: reservedCycles },
+      }));
       const result = await searchYouTube(
         input,
         {
           key,
-          charge: get().charge,
+          origin,
+          charge: (units, kind = 'other') => get().charge(units, kind, origin),
           onQuota: () =>
             get().commit((data) => ({ ...data, budget: { ...data.budget, exhausted: true } })),
         },

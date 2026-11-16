@@ -36,6 +36,7 @@ const schema = z.object({
     model: text,
     openRouterUsageDay: z.string().regex(/^\\d{4}-\\d{2}-\\d{2}$/).optional(),
     openRouterRequestsToday: z.number().int().min(0).max(30).optional(),
+    youtubeRefreshTimestamps: z.array(time).max(3).optional().default([]),
     schedule: z.enum(['Manual', 'Every 12 hours', 'Daily', 'Weekly']),
     paused: z.boolean(),
     lastInput: inputSchema.optional(),
@@ -152,10 +153,13 @@ const schema = z.object({
     })).max(8).optional().default([]),
   })).max(40).optional().default([]),
   budget: z.object({
-    date: text,
-    units: z.number().nonnegative(),
-    requests: z.number().int().nonnegative(),
-    exhausted: z.boolean(),
+    date: text, units: z.number().nonnegative(), requests: z.number().int().nonnegative(), exhausted: z.boolean(),
+    searchManualRequests: z.number().int().min(0).optional().default(0),
+    searchAutomaticRequests: z.number().int().min(0).optional().default(0),
+    searchReserveRequests: z.number().int().min(0).optional().default(0),
+    otherManualUnits: z.number().nonnegative().optional().default(0),
+    otherAutomaticUnits: z.number().nonnegative().optional().default(0),
+    otherReserveUnits: z.number().nonnegative().optional().default(0),
   }),
 });
 export function validateLocal(raw: unknown): LocalData {

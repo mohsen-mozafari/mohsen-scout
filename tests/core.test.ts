@@ -11,11 +11,13 @@ import {
   type Video,
   type Report,
   type ResearchInput,
+  type Budget,
 } from '../lib/types';
 import { validateLocal } from '../lib/validation';
 import {
   ApiError,
   nextBudget,
+  reserveYoutubeRefreshCycle,
   quotaDay,
   relatedQueries,
   searchYouTube,
@@ -1190,3 +1192,42 @@ void test('Manual YouTube result sorting changes order for date, views, likes an
   assert.deepEqual(sortResearchVideos(sample, 'A-Z').map((item) => item.id), ['b', 'd', 'c', 'a']);
   assert.deepEqual(sortResearchVideos(sample, 'Z-A').map((item) => item.id), ['a', 'c', 'd', 'b']);
 });
+
+void test('YouTube quota manager enforces manual, automatic and reserve Search and non-search buckets', () => {
+  const now = new Date('2026-11-16T12:00:00.000Z');
+  const date = quotaDay(now);
+  let manualSearch: Budget = { date, units: 0, requests: 0, exhausted: false };
+  for (let index = 0; index < 60; index += 1) manualSearch = nextBudget(manualSearch, 10000, 100, now, 'search', 'manual');
+  assert.equal(manualSearch.searchManualRequests, 60);
+  assert.throws(() => nextBudget(manualSearch, 10000, 100, now, 'search', 'manual'), /manual YouTube search-call allowance/);
+
+  let automaticSearch: Budget = { date, units: 0, requests: 0, exhausted: false };
+  for (let index = 0; index < 20; index += 1) automaticSearch = nextBudget(automaticSearch, 10000, 100, now, 'search', 'automatic');
+  assert.equal(automaticSearch.searchAutomaticRequests, 20);
+  assert.throws(() => nextBudget(automaticSearch, 10000, 100, now, 'search', 'automatic'), /automatic YouTube search-call allowance/);
+
+  let manualOther: Budget = { date, units: 0, requests: 0, exhausted: false };
+  for (let index = 0; index < 60; index += 1) manualOther = nextBudget(manualOther, 10000, 100, now, 'other', 'manual');
+  assert.equal(manualOther.otherManualUnits, 6000);
+  assert.throws(() => nextBudget(manualOther, 10000, 1, now, 'other', 'manual'), /manual YouTube non-search unit allowance/);
+
+  let automaticOther: Budget = { date, units: 0, requests: 0, exhausted: false };
+  for (let index = 0; index < 20; index += 1) automaticOther = nextBudget(automaticOther, 10000, 100, now, 'other', 'automatic');
+  assert.equal(automaticOther.otherAutomaticUnits, 2000);
+  assert.throws(() => nextBudget(automaticOther, 10000, 1, now, 'other', 'automatic'), /automatic YouTube non-search unit allowance/);
+
+  let reserve: Budget = { date, units: 0, requests: 0, exhausted: false };
+  for (let index = 0; index < 20; index += 1) reserve = nextBudget(reserve, 10000, 100, now, 'search', 'reserve');
+  assert.equal(reserve.searchReserveRequests, 20);
+  reserve = nextBudget(reserve, 10000, 100, now, 'other', 'reserve');
+  assert.equal(reserve.otherReserveUnits, 100);
+});
+
+void test('YouTube full-refresh limit is rolling 24 hours and expires old attempts', () => {
+  const now = Date.UTC(2026, 10, 16, 12, 0, 0);
+  const threeRecent = [now - 23 * 60 * 60 * 1000, now - 12 * 60 * 60 * 1000, now - 60_000];
+  assert.throws(() => reserveYoutubeRefreshCycle(threeRecent, now), /three full YouTube research cycles/);
+  const next = reserveYoutubeRefreshCycle([now - 25 * 60 * 60 * 1000, now - 23 * 60 * 60 * 1000], now);
+  assert.deepEqual(next, [now - 23 * 60 * 60 * 1000, now]);
+});
+
