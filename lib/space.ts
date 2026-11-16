@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { requestJson, type Fetcher } from './api';
+import { matchesResearchTerms } from './intelligence';
 
 export type SpaceNewsSourceId = 'nasa' | 'jpl' | 'esa-space' | 'esa-science';
 export type WikiLanguage = 'en' | 'fa' | 'de' | 'fr' | 'es' | 'ja';
@@ -257,9 +258,6 @@ export async function fetchSpaceNews(
   finally { newsInflight.delete(cacheKey); }
 }
 
-function normalizeMatchText(value: string) {
-  return value.toLocaleLowerCase().replace(/&amp;/g, 'and').replace(/[^\p{L}\p{N}]+/gu, ' ').replace(/\s+/g, ' ').trim();
-}
 export function newsForNiche(items: SpaceNewsItem[], nicheId: string, customNiche = ''): SpaceNewsItem[] {
   if (nicheId === 'all' || nicheId === 'auto') return items;
   const niche = SPACE_NICHES.find((entry) => entry.id === nicheId);
@@ -269,11 +267,7 @@ export function newsForNiche(items: SpaceNewsItem[], nicheId: string, customNich
       ? customNiche.split(/[,;\n]+/).map((term) => term.trim()).filter(Boolean)
       : [];
   if (!rawTerms.length) return [];
-  const terms = rawTerms.map(normalizeMatchText).filter(Boolean);
-  return items.filter((item) => {
-    const haystack = normalizeMatchText(item.title + ' ' + item.summary);
-    return terms.some((term) => haystack.includes(term));
-  });
+  return items.filter((item) => matchesResearchTerms(item.title + ' ' + item.summary, rawTerms));
 }
 export type SpaceNicheSuggestion = {
   id: string; title: string; topic: string; description: string;

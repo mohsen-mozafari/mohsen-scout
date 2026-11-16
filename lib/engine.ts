@@ -333,11 +333,11 @@ export function buildInternalResearch(input: InternalResearchInput): InternalRes
     ...(videos.length < 3 ? [topic + ' YouTube examples'] : []),
     ...(matchedNews.length ? [topic + ' methodology limitations'] : [topic + ' latest official research']),
   ]).slice(0, 4);
-  const topicTerms = new Set(tokenizeResearchText(topic));
-  const publisherTerms = new Set(news.slice(0, 8).flatMap((item) => tokenizeResearchText(item.title)));
-  const videoTerms = new Set(topicalVideos.slice(0, 12).flatMap((entry) => tokenizeResearchText(entry.video.title)));
-  const sharedConcepts = [...publisherTerms]
-    .filter((term) => videoTerms.has(term) && !topicTerms.has(term))
+  const topicConceptTerms = new Set(tokenizeResearchText(topic));
+  const publisherConceptTerms = new Set(news.slice(0, 8).flatMap((item) => tokenizeResearchText(item.title)));
+  const videoConceptTerms = new Set(topicalVideos.slice(0, 12).flatMap((entry) => tokenizeResearchText(entry.video.title)));
+  const sharedConcepts = [...publisherConceptTerms]
+    .filter((term) => videoConceptTerms.has(term) && !topicConceptTerms.has(term))
     .slice(0, 6);
   const potentialContradictions: string[] = (input.priorMemory?.contradictions ?? []).slice(0, 2).map((item) => {
     const detail = item.replace(/^(Previously unresolved discrepancy: |اختلاف حل‌نشده در تحقیق قبلی: )/, '');
