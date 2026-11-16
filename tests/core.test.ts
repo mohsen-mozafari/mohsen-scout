@@ -15,6 +15,8 @@ import {
 import { validateLocal } from '../lib/validation';
 import {
   ApiError,
+  buildSearchPlan,
+  getOpinion,
   nextBudget,
   quotaDay,
   relatedQueries,
@@ -23,10 +25,12 @@ import {
   retryDelayMs,
   getFreeModels,
   opinionPrompt,
+  selectFreeModel,
   testYouTube,
   type Fetcher,
 } from '../lib/api';
 import { buildIdeas } from '../lib/engine';
+import { matchesSearchText, normalizeSearchText } from '../lib/search';
 const input: ResearchInput = {
   topic: 'Small-space home studios',
   region: 'Iran',
@@ -160,6 +164,22 @@ void test('Research: creates explicit related queries without inventing stats', 
   assert.equal(queries.length, 4);
   assert(queries.every((q) => q.includes(input.topic)));
 });
+void test('Search: plans relevance-first coverage fairly across selected languages', () => {
+  const plan = buildSearchPlan('  small   home studio  ', ['en', 'fa', 'en', 'de']);
+  assert.equal(plan.length, 12);
+  assert.equal(plan[0].query, 'small home studio');
+  assert.equal(plan[0].order, 'relevance');
+  assert.deepEqual(
+    ['en', 'fa', 'de'].map((language) => plan.filter((task) => task.language === language).length),
+    [4, 4, 4],
+  );
+});
+void test('Search: normalizes Persian/Arabic letters, punctuation and numerals', () => {
+  assert.equal(normalizeSearchText('كِيْفِيَّت ویدئو ۱۲۳'), 'کیفیت ویدیو 123');
+  assert(matchesSearchText('Home-studio setup for creators', 'creators studio'));
+  assert(matchesSearchText('كِيْفِيَّت ویدئو ۱۲۳', 'ویدئو کیفیت 123'));
+  assert(!matchesSearchText('Home studio lighting', 'home microphone'));
+});
 void test('YouTube MOCK: official endpoint, independent region/language filters, deduplication', async () => {
   const urls: string[] = [];
   let units = 0;
@@ -186,18 +206,38 @@ void test('YouTube MOCK: official endpoint, independent region/language filters,
     assert(!parsed.searchParams.get('part')?.includes('statistics'));
   }
 });
-void test('YouTube MOCK: pagination bounded to two pages per query', async () => {
+void test('YouTube MOCK: pagination starts only after first-page query coverage', async () => {
   let calls = 0;
+  const orders: string[] = [];
   const result = await searchYouTube(input, {
     key: 'MOCK_PAGE',
     charge: async () => {},
-    fetcher: fetcher(() => {
+    fetcher: fetcher((url) => {
       calls++;
+      orders.push(new URL(url).searchParams.get('order') ?? '');
       return response({ nextPageToken: 'next', items: [mockItem('dQw4w9WgXcQ')] });
     }),
   });
   assert.equal(calls, 10);
   assert.equal(result.videos.length, 1);
+  assert.equal(orders[0], 'relevance');
+  assert.equal(orders[5], 'relevance');
+});
+void test('YouTube MOCK: a failed query angle does not abandon later searches', async () => {
+  const seen = new Set<string>();
+  const result = await searchYouTube(input, {
+    key: 'MOCK_PARTIAL',
+    charge: async () => {},
+    fetcher: fetcher((url) => {
+      const query = new URL(url).searchParams.get('q') ?? '';
+      seen.add(query);
+      if (query === input.topic) return response({ error: 'temporary' }, 503);
+      return response({ items: [mockItem('mockvideo02')] });
+    }),
+  });
+  assert(result.videos.some((item) => item.id === 'mockvideo02'));
+  assert(result.warnings.length > 0);
+  assert(seen.size > 1);
 });
 void test('YouTube MOCK: quota exhaustion stops without retries and invokes stop hook', async () => {
   let calls = 0;
@@ -361,6 +401,41 @@ void test('OpenRouter MOCK: free models discovered from price fields, no unavail
   assert.deepEqual(
     models.map((m) => m.id),
     ['available:free'],
+  );
+  assert.equal(selectFreeModel(models, 'available:free'), 'available:free');
+  assert.equal(selectFreeModel(models, 'retired:free'), 'available:free');
+  assert.equal(selectFreeModel([], 'retired:free'), undefined);
+});
+void test('OpenRouter MOCK: provider error envelope in HTTP 200 is surfaced safely', async () => {
+  await assert.rejects(
+    () =>
+      getOpinion(
+        'MOCK_KEY',
+        'MOCK_MODEL',
+        'MOCK prompt',
+        fetcher(() => response({ error: { code: 429, message: 'MOCK provider rate limit' } })),
+      ),
+    (error) =>
+      error instanceof ApiError &&
+      error.code === 'provider' &&
+      error.message.includes('rate limited') &&
+      !error.message.includes('MOCK provider'),
+  );
+});
+void test('OpenRouter MOCK: insufficient-credit response has a specific safe error', async () => {
+  await assert.rejects(
+    () =>
+      getOpinion(
+        'MOCK_KEY',
+        'MOCK_MODEL',
+        'MOCK prompt',
+        fetcher(() => response({ error: { code: 402, message: 'MOCK billing detail' } }, 402)),
+      ),
+    (error) =>
+      error instanceof ApiError &&
+      error.code === 'credits' &&
+      error.message.includes('insufficient') &&
+      !error.message.includes('MOCK billing'),
   );
 });
 void test('OpenRouter MOCK: unavailable model/rate limit rejected clearly', async () => {

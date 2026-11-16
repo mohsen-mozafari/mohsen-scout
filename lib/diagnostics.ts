@@ -4,6 +4,8 @@ import { moveNoteBlock } from './utils';
 import { validateLocal } from './validation';
 import {
   ApiError,
+  buildSearchPlan,
+  getOpinion,
   nextBudget,
   quotaDay,
   relatedQueries,
@@ -13,9 +15,11 @@ import {
   requestJson,
   retryDelayMs,
   opinionPrompt,
+  selectFreeModel,
   type Fetcher,
 } from './api';
 import { buildIdeas } from './engine';
+import { matchesSearchText } from './search';
 import { scheduleChecks } from '../tests/schedule.cases';
 export type TestResult = { name: string; passed: boolean; detail?: string };
 const check = (value: unknown, message = 'Assertion failed') => {
@@ -349,6 +353,23 @@ export async function runDiagnostics(): Promise<TestResult[]> {
       },
     ],
     [
+      'Relevance-first multilingual query plan',
+      () => {
+        const plan = buildSearchPlan(input.topic, ['en', 'fa', 'de']);
+        check(plan.length === 12);
+        check(plan[0].order === 'relevance');
+        check(['en', 'fa', 'de'].every((language) => plan.filter((task) => task.language === language).length === 4));
+      },
+    ],
+    [
+      'Persian/Arabic token-aware local search',
+      () => {
+        check(matchesSearchText('كِيْفِيَّت ویدئو ۱۲۳', 'ویدئو کیفیت 123'));
+        check(matchesSearchText('Home studio lighting', 'studio home'));
+        check(!matchesSearchText('Home studio lighting', 'home microphone'));
+      },
+    ],
+    [
       'MOCK official endpoint & region/language',
       async () => {
         let calls = 0;
@@ -569,6 +590,32 @@ export async function runDiagnostics(): Promise<TestResult[]> {
           ),
         );
         check(models.length === 1 && models[0].id === 'MOCK:free');
+        check(selectFreeModel(models, 'MOCK:retired') === 'MOCK:free');
+      },
+    ],
+    [
+      'MOCK OpenRouter embedded provider errors',
+      async () => {
+        await rejects(
+          () =>
+            getOpinion(
+              'MOCK_KEY',
+              'MOCK_MODEL',
+              'MOCK prompt',
+              fetcher(() => mock({ error: { code: 429, message: 'MOCK rate limit' } })),
+            ),
+          'provider',
+        );
+        await rejects(
+          () =>
+            getOpinion(
+              'MOCK_KEY',
+              'MOCK_MODEL',
+              'MOCK prompt',
+              fetcher(() => mock({ error: { code: 402, message: 'MOCK billing detail' } }, 402)),
+            ),
+          'credits',
+        );
       },
     ],
     [

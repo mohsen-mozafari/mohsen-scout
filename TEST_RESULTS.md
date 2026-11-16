@@ -179,3 +179,13 @@ Guide: https://bilt.me/docs/guides/publish-to-google-play#build-an-aab-without-g
 3. Enter personal keys only in Settings and observe live success/error behavior.
 4. Generate/sign/install an Android build and test persistence, transfer, permissions, scheduler, battery and keyboard behavior.
 5. Record an actual artifact path/download URL and hash only after the file exists.
+
+
+## Source hardening update — 2026-11-16
+
+- YouTube search now uses relevance-first, language-balanced first-page coverage. Optional second pages run only after first-page coverage. The 12-call limit counts actual network attempts, including GET retries; a temporary failure for one query angle no longer immediately discards later query angles.
+- Library, Notes and Opportunities local search now matches every query token regardless of order and normalizes common Persian/Arabic letter variants, marks, zero-width characters and Persian/Arabic digits. This is not fuzzy typo correction.
+- Second Opinion selects and persists an available free model if the saved model has disappeared from OpenRouter's live catalogue. Common HTTP failures and error envelopes returned inside HTTP 200 responses are handled with safe, specific messages. Generation POST requests are never automatically retried.
+- Added Node and installed-app mock regression cases covering relevance planning, local normalization, stale-model fallback and OpenRouter provider/credit errors.
+
+**Verification status: NOT RUN in this session.** Source changes and tests were prepared for GitHub, but no local Node/npm command runner or Android device is exposed here. New tests are authored, not counted as passed. No live API credentials or requests were used; no APK/AAB was built. Run `npm test`, `npm run lint`, `npm run lint:css`, then Settings → App info → Run mock regression checks before release sign-off.

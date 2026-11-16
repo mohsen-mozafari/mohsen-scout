@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { matchesSearchText } from '@/lib/search';
 import { View, Text, Linking, Image, FlatList } from 'react-native';
 import { Button } from 'heroui-native';
 import { router } from 'expo-router';
@@ -37,9 +38,10 @@ export default function Library() {
       (l) =>
         (folder === 'All' || l.folder === folder) &&
         (tag === 'All tags' || l.tags.includes(tag)) &&
-        `${l.manualTitle} ${data.videos.find((v) => v.id === l.id)?.title ?? ''} ${l.topic} ${l.note} ${l.tags.join(' ')}`
-          .toLowerCase()
-          .includes(search.toLowerCase()),
+        matchesSearchText(
+          `${l.manualTitle} ${data.videos.find((v) => v.id === l.id)?.title ?? ''} ${l.topic} ${l.note} ${l.tags.join(' ')}`,
+          search,
+        ),
     )
     .sort((a, b) =>
       sort === 'Oldest'

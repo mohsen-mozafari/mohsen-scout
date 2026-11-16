@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { matchesSearchText } from '@/lib/search';
 import { Text, View, FlatList } from 'react-native';
 import { Button } from 'heroui-native';
 import { router } from 'expo-router';
@@ -17,9 +18,10 @@ export default function Notes() {
       (n) =>
         (folder === 'All' || n.folder === folder) &&
         (tag === 'All tags' || n.tags.includes(tag)) &&
-        `${n.title} ${n.blocks.map((b) => b.text).join(' ')} ${n.tags.join(' ')}`
-          .toLowerCase()
-          .includes(search.toLowerCase()),
+        matchesSearchText(
+          `${n.title} ${n.blocks.map((b) => b.text).join(' ')} ${n.tags.join(' ')}`,
+          search,
+        ),
     )
     .sort((a, b) => b.updatedAt - a.updatedAt);
   return (

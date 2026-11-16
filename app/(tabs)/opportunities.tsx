@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { matchesSearchText } from '@/lib/search';
 import { FlatList, View, Text } from 'react-native';
 import { router } from 'expo-router';
 import { Button } from 'heroui-native';
@@ -28,7 +29,10 @@ export default function Opportunities() {
     (i) =>
       i.archived === archive &&
       (status === 'All' || i.status === status) &&
-      `${i.topic} ${i.note} ${i.decision}`.toLowerCase().includes(search.toLowerCase()),
+      matchesSearchText(
+        `${i.topic} ${i.concept} ${i.note} ${i.decision} ${i.status} ${i.assessment}`,
+        search,
+      ),
   );
   const create = () =>
     void op.run(async () => {

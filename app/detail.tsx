@@ -23,7 +23,7 @@ import { useScout } from '@/lib/store';
 import { type Idea, statuses, languages } from '@/lib/types';
 import { limitations, reasoning } from '@/lib/engine';
 import { getKey } from '@/lib/vault';
-import { getFreeModels, getOpinion, opinionPrompt } from '@/lib/api';
+import { getFreeModels, getOpinion, opinionPrompt, selectFreeModel } from '@/lib/api';
 import { uid } from '@/lib/types';
 export default function Detail() {
   const params = useLocalSearchParams<{ idea?: string; video?: string }>();
@@ -50,16 +50,14 @@ export default function Detail() {
       const key = await getKey('openrouter');
       if (!key) throw new Error('Add your OpenRouter key in Settings first.');
       const models = await getFreeModels();
-      let model = data.preferences.model;
-      if (!model) {
-        model = models[0]?.id ?? '';
-        if (!model) throw new Error('No free models are available. Try refreshing later.');
+      const model = selectFreeModel(models, data.preferences.model);
+      if (!model) throw new Error('No free models are currently available. Try refreshing later.');
+      // The saved model can disappear from OpenRouter's live catalogue.
+      if (model !== data.preferences.model) {
         await useScout
           .getState()
           .commit((d) => ({ ...d, preferences: { ...d.preferences, model } }));
       }
-      if (!models.some((m) => m.id === model))
-        throw new Error('The selected free model is unavailable. Refresh models in Settings.');
       const text = await getOpinion(
         key,
         model,
