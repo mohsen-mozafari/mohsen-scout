@@ -61,6 +61,28 @@ function AnalysisSignals({ result }: { result: InternalResearchResult }) {
             : 'This is wording overlap in the returned sample, not proof of semantic agreement or audience demand.'}</Txt>
         </View>
       )}
+      {result.entityCandidates.length > 0 && (
+        <View style={{ gap: 5 }}>
+          <Heading>{fa ? 'موجودیت‌های شناخته‌شده در شواهد' : 'Recognized entities in evidence'}</Heading>
+          {result.entityCandidates.slice(0, 12).map((entity) => (
+            <View key={entity.id} style={{ gap: 2 }}>
+              <SourceText>{entity.name}</SourceText>
+              <Txt muted>{entity.kind} · {entity.mentionCount} {fa ? 'ذکر' : 'mentions'} · {entity.evidenceIds.length} {fa ? 'رکورد شاهد' : 'evidence records'}</Txt>
+            </View>
+          ))}
+          <Txt muted>{fa
+            ? 'این فهرست از تطبیق نام‌ها و نام‌های جایگزین شناخته‌شده ساخته شده است؛ به‌معنای تشخیص جامع همه موجودیت‌ها یا اثبات رابطه علّی نیست.'
+            : 'These are exact matches against a bounded alias catalogue, not exhaustive entity recognition or proof of causal relationships.'}</Txt>
+          {result.entityRelations.length > 0 && (
+            <Txt muted>{fa
+              ? 'هم‌ذکری‌های ثبت‌شده: ' + result.entityRelations.length + '؛ هر رابطه فقط هم‌وقوعی در یک رکورد شاهد است.'
+              : 'Recorded co-mentions: ' + result.entityRelations.length + '; each link means co-occurrence in an evidence record only.'}</Txt>
+          )}
+        </View>
+      )}
+      <Txt muted>{fa
+        ? 'زمان پردازش موتور: ' + result.intelligence.selfEvaluation.processingMs + ' میلی‌ثانیه'
+        : 'Engine processing time: ' + result.intelligence.selfEvaluation.processingMs + ' ms'}</Txt>
       {result.intelligence.potentialContradictions.length > 0 && (
         <View style={{ gap: 5 }}>
           <Heading>{fa ? 'اختلاف‌هایی که باید بررسی شوند' : 'Discrepancies to verify'}</Heading>
@@ -97,6 +119,9 @@ function EngineAIReview({ topic, result }: { topic: string; result: InternalRese
       { label: 'Evidence records processed', detail: String(result.evidence.length) },
       { label: 'Editorial angles considered', detail: String(result.angles.length) },
       { label: 'Verification questions', detail: String(result.verificationQuestions.length) },
+      { label: 'Known entity candidates', detail: String(result.entityCandidates.length) },
+      { label: 'Evidence co-mention links', detail: String(result.entityRelations.length) },
+      { label: 'Local engine processing time (ms)', detail: String(result.intelligence.selfEvaluation.processingMs) },
       { label: 'Feeds represented', detail: String(quality.feedsRepresented) },
       { label: 'Independent publisher groups', detail: String(quality.independentPublishers) },
       { label: 'Duplicate records merged', detail: String(quality.duplicateStoriesMerged) },
@@ -229,6 +254,7 @@ function DiscoveryDashboardReady() {
       ? preferences.customSpaceNiche
       : niche?.topic ?? 'Space science and exploration';
   const applyScan = useCallback(async (result: Awaited<ReturnType<typeof fetchSpaceNews>>) => {
+    await useScout.getState().commit((data) => ({ ...data, feedRegistry: result.registry }));
     const relevantNews = preferences.selectedSpaceNiche === 'all'
       ? result.items
       : newsForNiche(result.items, preferences.selectedSpaceNiche, preferences.customSpaceNiche);

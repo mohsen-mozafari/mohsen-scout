@@ -3,6 +3,108 @@ export type ResearchFeedbackProfile = {
   negativeTopics: string[];
 };
 
+export type ResearchEntityKind = 'organization' | 'mission' | 'instrument' | 'celestial-body' | 'project';
+export type ResearchEntityCandidate = {
+  id: string;
+  name: string;
+  kind: ResearchEntityKind;
+  aliases: string[];
+  mentionCount: number;
+  evidenceIds: string[];
+  sourceIds: string[];
+};
+export type ResearchEntityRelation = {
+  id: string;
+  fromEntityId: string;
+  toEntityId: string;
+  type: 'co-mentioned';
+  evidenceIds: string[];
+  evidenceCount: number;
+};
+
+const RESEARCH_ENTITY_ALIASES: readonly {
+  name: string;
+  kind: ResearchEntityKind;
+  aliases: readonly string[];
+}[] = [
+  { name: 'NASA', kind: 'organization', aliases: ['NASA', 'National Aeronautics and Space Administration'] },
+  { name: 'ESA', kind: 'organization', aliases: ['ESA', 'European Space Agency'] },
+  { name: 'JPL', kind: 'organization', aliases: ['JPL', 'Jet Propulsion Laboratory'] },
+  { name: 'CNEOS', kind: 'organization', aliases: ['CNEOS', 'Center for Near-Earth Object Studies'] },
+  { name: 'SpaceX', kind: 'organization', aliases: ['SpaceX', 'Space Exploration Technologies'] },
+  { name: 'JWST', kind: 'instrument', aliases: ['JWST', 'James Webb Space Telescope', 'Webb telescope', 'تلسکوپ جیمز وب'] },
+  { name: 'Hubble Space Telescope', kind: 'instrument', aliases: ['Hubble Space Telescope', 'Hubble telescope', 'هابل'] },
+  { name: 'Artemis', kind: 'mission', aliases: ['Artemis', 'Artemis program', 'برنامه آرتمیس'] },
+  { name: 'Euclid', kind: 'mission', aliases: ['Euclid', 'Euclid mission', 'ماموریت اقلیدس'] },
+  { name: 'Europa Clipper', kind: 'mission', aliases: ['Europa Clipper'] },
+  { name: 'Mars', kind: 'celestial-body', aliases: ['Mars', 'planet Mars', 'مریخ'] },
+  { name: 'Moon', kind: 'celestial-body', aliases: ['Moon', 'Earth\'s Moon', 'ماه زمین', 'قمر زمین'] },
+  { name: 'Jupiter', kind: 'celestial-body', aliases: ['Jupiter', 'مشتری'] },
+  { name: 'Saturn', kind: 'celestial-body', aliases: ['Saturn', 'زحل'] },
+];
+
+export type ResearchEntityDocument = { id: string; text: string; sourceId?: string };
+
+export function extractResearchEntityCandidates(
+  documents: readonly ResearchEntityDocument[],
+): ResearchEntityCandidate[] {
+  const results: ResearchEntityCandidate[] = [];
+  for (const entity of RESEARCH_ENTITY_ALIASES) {
+    const evidenceIds: string[] = [];
+    const sourceIds = new Set<string>();
+    let mentionCount = 0;
+    for (const document of documents) {
+      const normalizedText = ' ' + normalizeResearchText(document.text) + ' ';
+      let documentMentions = 0;
+      for (const alias of entity.aliases) {
+        const needle = ' ' + normalizeResearchText(alias) + ' ';
+        if (needle.trim().length <= 2) continue;
+        let offset = 0;
+        while ((offset = normalizedText.indexOf(needle, offset)) >= 0) {
+          documentMentions += 1;
+          offset += needle.length;
+        }
+      }
+      if (documentMentions) {
+        mentionCount += documentMentions;
+        evidenceIds.push(document.id);
+        if (document.sourceId) sourceIds.add(document.sourceId);
+      }
+    }
+    if (evidenceIds.length) results.push({
+      id: 'entity:' + entity.name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+      name: entity.name,
+      kind: entity.kind,
+      aliases: [...entity.aliases],
+      mentionCount,
+      evidenceIds: [...new Set(evidenceIds)],
+      sourceIds: [...sourceIds].sort(),
+    });
+  }
+  return results.sort((a, b) => b.evidenceIds.length - a.evidenceIds.length || b.mentionCount - a.mentionCount || a.name.localeCompare(b.name));
+}
+
+export function buildResearchEntityRelations(
+  entities: readonly ResearchEntityCandidate[],
+): ResearchEntityRelation[] {
+  const relations: ResearchEntityRelation[] = [];
+  for (let left = 0; left < entities.length; left += 1) {
+    for (let right = left + 1; right < entities.length; right += 1) {
+      const evidenceIds = entities[left].evidenceIds.filter((id) => entities[right].evidenceIds.includes(id));
+      if (!evidenceIds.length) continue;
+      relations.push({
+        id: 'co-mention:' + entities[left].id + ':' + entities[right].id,
+        fromEntityId: entities[left].id,
+        toEntityId: entities[right].id,
+        type: 'co-mentioned',
+        evidenceIds,
+        evidenceCount: evidenceIds.length,
+      });
+    }
+  }
+  return relations;
+}
+
 export type ResearchDocument = {
   title: string;
   summary?: string;

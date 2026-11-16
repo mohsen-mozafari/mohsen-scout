@@ -10,6 +10,10 @@ import {
   matchesResearchTerms,
   tokenizeResearchText,
   type ResearchFeedbackProfile,
+  extractResearchEntityCandidates,
+  buildResearchEntityRelations,
+  type ResearchEntityCandidate,
+  type ResearchEntityRelation,
 } from './intelligence';
 
 export const limitations =
@@ -55,6 +59,8 @@ export type InternalEngineAngle = {
 
 export type InternalResearchResult = {
   topic: string;
+  entityCandidates: ResearchEntityCandidate[];
+  entityRelations: ResearchEntityRelation[];
   summary: string;
   evidence: InternalEngineEvidence[];
   angles: InternalEngineAngle[];
@@ -81,6 +87,9 @@ export type InternalResearchResult = {
       wikimediaMonthlyObservations: number;
       openResearchQuestionCount: number;
       contradictionWarningCount: number;
+      entityCandidateCount: number;
+      coMentionRelationCount: number;
+      processingMs: number;
       limitations: string[];
     };
   };
@@ -133,6 +142,7 @@ function median(values: number[]): number | null {
 
 /** Local-only analysis over fetched evidence; no network, storage writes or AI calls. */
 export function buildInternalResearch(input: InternalResearchInput): InternalResearchResult {
+  const startedAt = Date.now();
   const topic = cleanTopic(input.topic);
   const fa = input.language === 'fa';
   const text = (english: string, persian: string) => fa ? persian : english;
@@ -162,6 +172,12 @@ export function buildInternalResearch(input: InternalResearchInput): InternalRes
   })).sort((a, b) => b.score - a.score ||
     (b.video.viewCount ?? -1) - (a.video.viewCount ?? -1) ||
     (b.video.likeCount ?? -1) - (a.video.likeCount ?? -1) || a.index - b.index);
+  const entityDocuments = [
+    ...allNews.map((item) => ({ id: item.sourceUrl, text: item.title + ' ' + item.summary, sourceId: item.sourceId })),
+    ...videos.map((video) => ({ id: 'youtube:' + video.id, text: video.title, sourceId: 'youtube-sample' })),
+  ];
+  const entityCandidates = extractResearchEntityCandidates(entityDocuments);
+  const entityRelations = buildResearchEntityRelations(entityCandidates);
   const channelCount = new Set(videos.map((video) => video.channel)).size;
   const views = videos.map((video) => video.viewCount).filter((value): value is number => value != null);
   const likes = videos.map((video) => video.likeCount).filter((value): value is number => value != null);
@@ -401,6 +417,9 @@ export function buildInternalResearch(input: InternalResearchInput): InternalRes
     wikimediaMonthlyObservations: trend.observations,
     openResearchQuestionCount: gaps.length + verificationQuestions.length,
     contradictionWarningCount: potentialContradictions.length,
+    entityCandidateCount: entityCandidates.length,
+    coMentionRelationCount: entityRelations.length,
+    processingMs: Math.max(0, Date.now() - startedAt),
     limitations: [...gaps],
   };
   const intelligence = {
@@ -418,7 +437,7 @@ export function buildInternalResearch(input: InternalResearchInput): InternalRes
       'سناریوی مشروط سوم: اگر جهت سری زمانی عوض شود، نباید الگوی فعلی را به آینده تعمیم داد.',
     ].slice(0, trend.scenarios.length) : trend.scenarios,
   };
-  return { topic, summary, evidence, angles, verificationQuestions, limitations: limitationsList, intelligence };
+  return { topic, entityCandidates, entityRelations, summary, evidence, angles, verificationQuestions, limitations: limitationsList, intelligence };
 }
 function matchedVideos(report: Report, queries: readonly string[]) {
   const expected = new Set(queries.map((query) => query.trim().toLowerCase()));

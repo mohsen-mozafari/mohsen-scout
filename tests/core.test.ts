@@ -84,9 +84,10 @@ void test('Migration: older saved preferences receive safe Space defaults', () =
   assert.equal(migrated.preferences.defaultResearchDays, 30);
   assert.equal(migrated.preferences.uiLanguage, 'fa');
   const legacyWithoutResearchMemory = Object.fromEntries(
-    Object.entries(current).filter(([key]) => key !== 'researchMemory'),
+    Object.entries(current).filter(([key]) => key !== 'researchMemory' && key !== 'feedRegistry'),
   );
   assert.deepEqual(validateLocal(legacyWithoutResearchMemory).researchMemory, []);
+  assert.deepEqual(validateLocal(legacyWithoutResearchMemory).feedRegistry, []);
 });
 void test('YouTube trend sample uses official search and video statistics endpoints with bounded quota', async () => {
   let charges = 0;
@@ -1166,6 +1167,9 @@ void test('Internal engine self-evaluation reports measured inputs, deduplicatio
   assert.equal(audit.duplicateNewsMerged, 1);
   assert.equal(audit.youtubeSampleCount, 1);
   assert.equal(audit.wikimediaMonthlyObservations, 0);
+  assert.equal(audit.entityCandidateCount, result.entityCandidates.length);
+  assert.equal(audit.coMentionRelationCount, result.entityRelations.length);
+  assert.ok(audit.processingMs >= 0);
   assert.ok(audit.openResearchQuestionCount > 0);
 });
 
