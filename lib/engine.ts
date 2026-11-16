@@ -173,7 +173,7 @@ export function buildInternalResearch(input: InternalResearchInput): InternalRes
     (b.video.viewCount ?? -1) - (a.video.viewCount ?? -1) ||
     (b.video.likeCount ?? -1) - (a.video.likeCount ?? -1) || a.index - b.index);
   const entityDocuments = [
-    ...allNews.map((item) => ({ id: item.id, text: item.title + ' ' + item.summary, sourceId: item.sourceId })),
+    ...allNews.map((item) => ({ id: item.sourceUrl || item.id, text: item.title + ' ' + item.summary, sourceId: item.sourceId })),
     ...videos.map((video) => ({ id: 'youtube:' + video.id, text: video.title, sourceId: 'youtube-sample' })),
   ];
   const entityCandidates = extractResearchEntityCandidates(entityDocuments);

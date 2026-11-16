@@ -84,6 +84,12 @@ void test('research graph preserves original source, video and monthly pageview 
   assert.ok(model.groups.find((group) => group.id === 'findings')?.items.length);
   assert.ok(model.groups.find((group) => group.id === 'ideas')?.items.some((item) => item.id === 'idea-idea-1'));
   assert.ok(model.edges.some((edge) => edge.source === 'source-news-1' && edge.target === 'publisher:nasa:NASA' && edge.relation === 'published by'));
+  assert.ok(model.edges.some((edge) => edge.source === 'source-news-1' && edge.target === 'entity-entity:nasa' && edge.relation === 'mentions entity'));
+  assert.ok(model.edges.some((edge) =>
+    ((edge.source === 'entity-entity:nasa' && edge.target === 'entity-entity:jwst') ||
+      (edge.source === 'entity-entity:jwst' && edge.target === 'entity-entity:nasa')) &&
+    edge.relation.includes('co-mentioned in 1')
+  ));
   assert.ok(model.edges.some((edge) => edge.source === 'idea-idea-1' && edge.target === 'source-news-1' && edge.relation === 'generated from official source'));
   assert.ok(model.edges.some((edge) => edge.source === 'idea-idea-1' && edge.target === 'video-mock-video-1' && edge.relation === 'references temporary YouTube sample'));
   assert.ok(model.edges.some((edge) => edge.relation.includes('word overlap only')));

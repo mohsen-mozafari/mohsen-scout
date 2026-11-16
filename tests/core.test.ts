@@ -1166,6 +1166,9 @@ void test('Internal engine self-evaluation reports measured inputs, deduplicatio
   assert.equal(audit.duplicateNewsMerged, 1);
   assert.equal(audit.youtubeSampleCount, 1);
   assert.equal(audit.wikimediaMonthlyObservations, 0);
+  assert.equal(audit.entityCandidateCount, result.entityCandidates.length);
+  assert.equal(audit.coMentionRelationCount, result.entityRelations.length);
+  assert.ok(audit.processingMs >= 0);
   assert.ok(audit.openResearchQuestionCount > 0);
 });
 
