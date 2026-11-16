@@ -1,88 +1,112 @@
 import { Text, View } from 'react-native';
-import Svg, { G, Line, Rect, Text as SvgText } from 'react-native-svg';
 import { palette as p } from '@/lib/theme';
-import { buildResearchOverview } from '@/lib/research-overview';
-import type { LocalData } from '@/lib/types';
-type Props = { data: LocalData; language: 'fa' | 'en' };
-const series = [
-  { key: 'news' as const, color: p.blue, fa: 'خبر', en: 'News' },
-  { key: 'videos' as const, color: p.purple, fa: 'ویدئو', en: 'Videos' },
-  { key: 'reports' as const, color: p.success, fa: 'تحقیق', en: 'Research' },
-  { key: 'ideas' as const, color: p.violet, fa: 'ایده', en: 'Ideas' },
-  { key: 'links' as const, color: p.indigo, fa: 'پیوندها', en: 'Links' },
-  { key: 'notes' as const, color: p.muted, fa: 'یادداشت', en: 'Notes' },
-  { key: 'memory' as const, color: p.white, fa: 'حافظه', en: 'Memory' },
-  { key: 'ai' as const, color: p.danger, fa: 'AI دوم', en: 'AI reviews' },
-];
-export function ResearchOverviewChart({ data, language }: Props) {
+import type { InternalResearchResult } from '@/lib/engine';
+import type { Idea } from '@/lib/types';
+
+type Props = {
+  analysis?: InternalResearchResult;
+  ideas: readonly Idea[];
+  videoCount: number;
+  language: 'fa' | 'en';
+};
+
+export function ResearchOverviewChart({ analysis, ideas, videoCount, language }: Props) {
   const fa = language === 'fa';
-  const overview = buildResearchOverview(data);
-  const maxValue = Math.max(1, ...overview.activity.map((point) => point.total));
-  const plotBottom = 136, plotHeight = 120, barWidth = 22;
-  const xFor = (index: number) => 35 + index * 43;
-  const labels = {
-    title: fa ? 'نمای کلی هوشمندی و داده‌ها' : 'Research intelligence overview',
-    subtitle: fa ? 'فعالیت ثبت‌شده در ۷ روز اخیر؛ فقط داده‌های ذخیره‌شده روی دستگاه.' : 'Recorded activity over the last 7 days; local saved data only.',
-    empty: fa ? 'هنوز فعالیت ثبت‌شده‌ای برای این بازه وجود ندارد.' : 'No recorded activity in this period yet.',
-    inventory: fa ? 'موجودی فعلی داده‌ها' : 'Current data inventory',
-    news: fa ? 'خبر' : 'News', videos: fa ? 'ویدئو' : 'Videos', reports: fa ? 'گزارش' : 'Reports',
-    ideas: fa ? 'ایده فعال' : 'Active ideas', links: fa ? 'پیوند' : 'Links', notes: fa ? 'یادداشت' : 'Notes',
-    memory: fa ? 'حافظه' : 'Memory', ai: fa ? 'نظر AI' : 'AI reviews',
-  };
-  const inventory = [
-    [labels.news, overview.totals.news], [labels.videos, overview.totals.videos],
-    [labels.reports, overview.totals.reports], [labels.ideas, overview.totals.ideas],
-    [labels.links, overview.totals.links], [labels.notes, overview.totals.notes],
-    [labels.memory, overview.totals.memory], [labels.ai, overview.totals.ai],
-  ] as const;
+  const activeIdeas = ideas.filter((idea) => !idea.archived && idea.status !== 'Rejected Ideas' && idea.status !== 'Completed Research');
+  const good = activeIdeas.filter((idea) =>
+    idea.assessment === 'Strong Opportunity' ||
+    idea.assessment === 'Promising' ||
+    idea.assessment === 'Worth Exploring',
+  ).length;
+  const uncertain = activeIdeas.filter((idea) => idea.assessment === 'Uncertain').length;
+  const weak = activeIdeas.filter((idea) => idea.assessment === 'Highly Competitive').length;
+  const evidenceBacked = activeIdeas.filter((idea) =>
+    idea.videoIds.length > 0 || Boolean(idea.reportId) || Boolean(idea.sourceUrl),
+  ).length;
+  const confidence = analysis?.intelligence.confidence.level ?? 'unknown';
+  const confidenceLabel = fa
+    ? confidence === 'high' ? 'بالا' : confidence === 'moderate' ? 'متوسط' : confidence === 'low' ? 'پایین' : 'نامشخص'
+    : confidence === 'unknown' ? 'Not assessed' : confidence;
+  const evidenceRecords = analysis?.evidence.length ?? 0;
+  const publisherGroups = analysis?.intelligence.sourceQuality.independentPublishers ?? 0;
+  const gaps = analysis?.intelligence.gaps.length ?? 0;
+  const maxCount = Math.max(1, good, uncertain, weak);
+  const categories = [
+    { key: 'good', label: fa ? 'نشانهٔ مثبت' : 'Positive editorial signals', count: good, color: p.success },
+    { key: 'uncertain', label: fa ? 'نامطمئن' : 'Uncertain', count: uncertain, color: p.purple },
+    { key: 'weak', label: fa ? 'رقابت یا ضعف' : 'Competitive / weak signal', count: weak, color: p.danger },
+  ];
+  const nextAction = !analysis
+    ? (fa ? 'یک جست‌وجوی YouTube اجرا کن یا Space Radar را به‌روز کن.' : 'Run a YouTube search or refresh Space Radar.')
+    : confidence === 'low' || gaps > 0
+      ? (fa ? 'خلأهای تحقیق را با جست‌وجوی تکمیلی و بررسی منبع اصلی ببند.' : 'Close the research gaps with follow-up searches and primary-source checks.')
+      : (fa ? 'ایدهٔ برتر را با منبع اصلی و یک نمونهٔ مستقل دیگر راستی‌آزمایی کن.' : 'Validate the leading idea against a primary source and another independent sample.');
+
   return (
-    <View style={{ gap: 12 }}>
+    <View style={{ gap: 13 }}>
       <View style={{ gap: 4 }}>
-        <Text style={{ color: p.text, fontSize: 17, fontWeight: '700', textAlign: fa ? 'right' : 'left' }}>{labels.title}</Text>
-        <Text style={{ color: p.muted, fontSize: 11, lineHeight: 17, textAlign: fa ? 'right' : 'left' }}>{labels.subtitle}</Text>
+        <Text style={{ color: p.text, fontSize: 17, fontWeight: '700', textAlign: fa ? 'right' : 'left' }}>
+          {fa ? 'خلاصهٔ تصمیم‌گیری' : 'Decision snapshot'}
+        </Text>
+        <Text style={{ color: p.muted, fontSize: 11, lineHeight: 17, textAlign: fa ? 'right' : 'left' }}>
+          {fa ? 'کیفیت شواهد و وضعیت ایده‌های همین تحقیق؛ نه شمارندهٔ فایل‌های ذخیره‌شده.' : 'Evidence quality and idea status for this research — not a stored-file inventory.'}
+        </Text>
       </View>
-      {overview.hasActivity ? (
-        <View style={{ width: '100%' }}>
-          <Svg width="100%" height={170} viewBox="0 0 336 170" preserveAspectRatio="xMidYMid meet">
-            {[0, 1, 2, 3].map((step) => {
-              const y = plotBottom - (plotHeight * step) / 3;
-              return <Line key={'grid-' + step} x1={25} x2={330} y1={y} y2={y} stroke={p.border} strokeWidth={1} />;
-            })}
-            {overview.activity.map((point, index) => {
-              let currentY = plotBottom;
-              return (
-                <G key={point.at}>
-                  {series.map((item) => {
-                    const count = point[item.key];
-                    if (!count) return null;
-                    const height = (count / maxValue) * plotHeight;
-                    currentY -= height;
-                    return <Rect key={item.key} x={xFor(index)} y={currentY} width={barWidth} height={Math.max(2, height)} rx={3} fill={item.color} />;
-                  })}
-                  <SvgText x={xFor(index) + barWidth / 2} y={157} fill={p.muted} fontSize={9} textAnchor="middle">{new Date(point.at).toLocaleDateString(fa ? 'fa-IR' : 'en-US', { weekday: 'short' })}</SvgText>
-                  {point.total > 0 ? <SvgText x={xFor(index) + barWidth / 2} y={Math.max(10, currentY - 4)} fill={p.text} fontSize={9} textAnchor="middle">{String(point.total)}</SvgText> : null}
-                </G>
-              );
-            })}
-          </Svg>
-        </View>
-      ) : <Text style={{ color: p.muted, fontSize: 12, textAlign: fa ? 'right' : 'left' }}>{labels.empty}</Text>}
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
-        {series.map((item) => <View key={item.key} style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-          <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: item.color }} />
-          <Text style={{ color: p.muted, fontSize: 10 }}>{fa ? item.fa : item.en}</Text>
-        </View>)}
-      </View>
-      <View style={{ height: 1, backgroundColor: p.border }} />
-      <Text style={{ color: p.text, fontSize: 13, fontWeight: '600', textAlign: fa ? 'right' : 'left' }}>{labels.inventory}</Text>
+
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-        {inventory.map(([label, count]) => <View key={label} style={{ minWidth: '22%', flexGrow: 1, borderRadius: 12, borderWidth: 1, borderColor: p.border, backgroundColor: p.raised, padding: 10, gap: 3 }}>
-          <Text style={{ color: p.text, fontSize: 17, fontWeight: '700' }}>{count.toLocaleString(fa ? 'fa-IR' : 'en-US')}</Text>
-          <Text style={{ color: p.muted, fontSize: 10 }}>{label}</Text>
-        </View>)}
+        <View style={{ flexGrow: 1, flexBasis: 95, borderRadius: 13, borderWidth: 1, borderColor: p.border, backgroundColor: p.raised, padding: 11, gap: 4 }}>
+          <Text style={{ color: p.muted, fontSize: 10 }}>{fa ? 'اطمینان شواهد' : 'Evidence confidence'}</Text>
+          <Text style={{ color: p.text, fontSize: 17, fontWeight: '700' }}>{confidenceLabel}</Text>
+          <Text style={{ color: p.muted, fontSize: 10 }}>{evidenceRecords} {fa ? 'رکورد شاهد' : 'evidence records'}</Text>
+        </View>
+        <View style={{ flexGrow: 1, flexBasis: 95, borderRadius: 13, borderWidth: 1, borderColor: p.border, backgroundColor: p.raised, padding: 11, gap: 4 }}>
+          <Text style={{ color: p.muted, fontSize: 10 }}>{fa ? 'پوشش ناشر مستقل' : 'Independent publishers'}</Text>
+          <Text style={{ color: p.text, fontSize: 17, fontWeight: '700' }}>{publisherGroups}</Text>
+          <Text style={{ color: p.muted, fontSize: 10 }}>{videoCount} {fa ? 'نمونهٔ ویدئو' : 'video samples'}</Text>
+        </View>
+        <View style={{ flexGrow: 1, flexBasis: 95, borderRadius: 13, borderWidth: 1, borderColor: p.border, backgroundColor: p.raised, padding: 11, gap: 4 }}>
+          <Text style={{ color: p.muted, fontSize: 10 }}>{fa ? 'ایدهٔ متکی به شاهد' : 'Evidence-backed ideas'}</Text>
+          <Text style={{ color: p.text, fontSize: 17, fontWeight: '700' }}>{evidenceBacked}</Text>
+          <Text style={{ color: p.muted, fontSize: 10 }}>{activeIdeas.length} {fa ? 'ایدهٔ فعال در این مجموعه' : 'active ideas in this set'}</Text>
+        </View>
       </View>
+
+      <View style={{ gap: 9 }}>
+        <Text style={{ color: p.text, fontSize: 13, fontWeight: '600', textAlign: fa ? 'right' : 'left' }}>
+          {fa ? 'ترکیب وضعیت ایده‌ها' : 'Idea assessment mix'}
+        </Text>
+        {categories.map((category) => (
+          <View key={category.key} style={{ gap: 4 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              <Text style={{ color: p.muted, fontSize: 11 }}>{category.label}</Text>
+              <Text style={{ color: p.text, fontSize: 12, fontWeight: '700' }}>{category.count}</Text>
+            </View>
+            <View style={{ height: 7, width: '100%', overflow: 'hidden', borderRadius: 6, backgroundColor: p.border }}>
+              <View style={{ height: 7, width: String((category.count / maxCount) * 100) + '%', borderRadius: 6, backgroundColor: category.color }} />
+            </View>
+          </View>
+        ))}
+      </View>
+
+      <View style={{ gap: 4, borderTopWidth: 1, borderTopColor: p.border, paddingTop: 10 }}>
+        <Text style={{ color: p.text, fontSize: 12, fontWeight: '600', textAlign: fa ? 'right' : 'left' }}>
+          {fa ? 'خلأهای باقی‌مانده' : 'Open research gaps'} · {gaps}
+        </Text>
+        <Text style={{ color: p.muted, fontSize: 11, lineHeight: 17, textAlign: fa ? 'right' : 'left' }}>
+          {analysis?.intelligence.gaps.slice(0, 2).join(' · ') || (analysis
+            ? (fa ? 'خلأ مشخصی در این خروجی ثبت نشده است؛ صحت ادعاها همچنان نیازمند منبع اصلی است.' : 'No explicit gap was recorded; claims still require primary-source verification.')
+            : (fa ? 'هنوز تحلیلی برای این موضوع ساخته نشده است.' : 'No analysis is available for this topic yet.'))}
+        </Text>
+        <Text style={{ color: p.text, fontSize: 12, fontWeight: '600', textAlign: fa ? 'right' : 'left' }}>
+          {fa ? 'اقدام بعدی پیشنهادی' : 'Suggested next action'}
+        </Text>
+        <Text style={{ color: p.muted, fontSize: 11, lineHeight: 17, textAlign: fa ? 'right' : 'left' }}>{nextAction}</Text>
+      </View>
+
       <Text style={{ color: p.muted, fontSize: 10, lineHeight: 15, textAlign: fa ? 'right' : 'left' }}>
-        {fa ? 'این نمودار حجم داده و فعالیت ثبت‌شده را نشان می‌دهد؛ نه محبوبیت، رشد بازار یا ترند جهانی.' : 'This chart shows stored data volume and recorded activity, not popularity, market growth or global trends.'}
+        {fa
+          ? 'این نمودار امتیاز احتمال ویوی بالا یا درصد وایرال‌شدن نیست. برآورد احتمالی بدون دادهٔ معتبر مخاطب و زمان انتشار ارائه نمی‌شود.'
+          : 'This is not a high-view probability or viral percentage. No likelihood is estimated without valid audience and publication-time data.'}
       </Text>
     </View>
   );

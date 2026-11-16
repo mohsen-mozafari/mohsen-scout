@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Text, View, Linking } from 'react-native';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { Button, Skeleton } from 'heroui-native';
@@ -35,7 +35,7 @@ const isResearchVideoSort = (value: string): value is ResearchVideoSort =>
   RESEARCH_SORT_OPTIONS.some((option) => option === value);
 
 export default function Discover() {
-  const params = useLocalSearchParams<{ topic?: string; idea?: string }>();
+  const params = useLocalSearchParams<{ topic?: string; idea?: string; report?: string }>();
   const preferences = useScout((s) => s.data.preferences);
   const ready = useScout((s) => s.ready);
   const busy = useScout((s) => s.busy);
@@ -52,8 +52,12 @@ export default function Discover() {
   const [category, setCategory] = useState('All categories');
   const [maximum, setMaximum] = useState('25');
   const [sort, setSort] = useState('Newest');
-  const [reportId, setReportId] = useState('');
+  const [reportId, setReportId] = useState(typeof params.report === 'string' ? params.report : '');
   const [hasKey, setHasKey] = useState(false);
+  useEffect(() => {
+    if (typeof params.topic === 'string') setTopic(params.topic);
+    if (typeof params.report === 'string') setReportId(params.report);
+  }, [params.topic, params.report]);
   const op = useOperation();
   const [previousDefaults, setPreviousDefaults] = useState({
     ready,
