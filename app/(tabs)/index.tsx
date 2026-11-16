@@ -302,6 +302,7 @@ function DiscoveryDashboardReady() {
       <FlashList
         style={{ flex: 1 }}
         data={[]}
+        renderItem={() => null}
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
         ListHeaderComponent={
