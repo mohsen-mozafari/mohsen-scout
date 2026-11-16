@@ -171,28 +171,6 @@ void test('Wikimedia provider returns language-scoped article pageviews, not a s
   assert.equal(SEARCH_DEMAND_PROVIDERS[0].id, 'wikimedia-pageviews');
 });
 
-void test('A failed forced refresh labels last-good feed data stale and retries on next entry', async () => {
-  const nasa = SPACE_NEWS_SOURCES.find((source) => source.id === 'esa-space')!;
-  let attempts = 0;
-  const fetcher: typeof fetch = async () => {
-    attempts++;
-    if (attempts === 1) return new Response('<rss><item><title>ESA Space News baseline</title><link>https://www.esa.int/baseline</link></item></rss>', { status: 200 });
-    if (attempts === 2 || attempts === 3) return new Response('Unavailable', { status: 503 });
-    return new Response('<rss><item><title>ESA Space News recovered</title><link>https://www.esa.int/recovered</link></item></rss>', { status: 200 });
-  };
-  const initial = await fetchSpaceNews([nasa.id], fetcher, true);
-  assert.equal(initial.warnings.length, 0);
-  assert.equal(attempts, 1);
-  const cached = await fetchSpaceNews([nasa.id], fetcher);
-  assert.equal(cached.items[0].title, 'ESA Space News baseline');
-  assert.equal(attempts, 1);
-  const partial = await fetchSpaceNews([nasa.id], fetcher, true);
-  assert.equal(partial.warnings.length, 1);
-  const recovered = await fetchSpaceNews([nasa.id], fetcher, true);
-  assert.equal(recovered.items[0].title, 'ESA Space News recovered');
-  assert.equal(attempts, 4);
-});
-
 void test('Space News retries only the unavailable official feed instead of caching partial results', async () => {
   const nasa = SPACE_NEWS_SOURCES.find((source) => source.id === 'nasa')!;
   const science = SPACE_NEWS_SOURCES.find((source) => source.id === 'esa-science')!;
@@ -375,7 +353,7 @@ void test('Conditional feed requests send ETag and Last-Modified and reuse the l
   assert.equal(calls, 2);
 });
 
-void test('A failed refresh keeps the last-good cache and respects exponential retry backoff', async () => {
+void test('A failed refresh preserves last-good data, labels it stale, and recovers after exponential retry backoff', async () => {
   const source = SPACE_NEWS_SOURCES.find((item) => item.id === 'cneos')!;
   let attempts = 0;
   const fetcher: typeof fetch = async () => {
