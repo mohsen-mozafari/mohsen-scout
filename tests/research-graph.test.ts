@@ -49,24 +49,22 @@ void test('research graph preserves original source, video and monthly pageview 
   const analysis = buildInternalResearch({
     topic: 'JWST exoplanet atmosphere',
     news: news.map((item) => ({
-      title: item.title,
-      summary: item.summary,
-      sourceName: item.sourceName,
-      sourceUrl: item.url,
-      publishedAt: item.publishedAt,
-      sourceId: item.sourceId,
+      title: item.title, summary: item.summary, sourceName: item.sourceName,
+      sourceUrl: item.url, publishedAt: item.publishedAt, sourceId: item.sourceId,
     })),
-    wiki,
-    videos,
-    language: 'en',
+    wiki, videos, language: 'en',
   });
+  const generatedIdeas = [{
+    id: 'idea-1',
+    topic: 'How methane signals are interpreted',
+    concept: 'Explain the evidence trail and its limitations.',
+    videoIds: ['mock-video-1'],
+    sourceUrl: news[0].url,
+    sourceName: 'NASA',
+    ideaCategory: 'Explainer',
+  }];
   const model = buildResearchGraphModel({
-    topic: 'JWST exoplanet atmosphere',
-    news,
-    wiki,
-    videos,
-    analysis,
-    language: 'en',
+    topic: 'JWST exoplanet atmosphere', news, wiki, videos, analysis, language: 'en', generatedIdeas,
   });
   const sourceGroup = model.groups.find((group) => group.id === 'sources');
   const videoGroup = model.groups.find((group) => group.id === 'youtube');
@@ -80,22 +78,25 @@ void test('research graph preserves original source, video and monthly pageview 
   assert.match(contextGroup?.items.find((item) => item.id === 'trend-observations')?.detail ?? '', /2026-11 — 160/);
   assert.ok(model.groups.find((group) => group.id === 'evidence')?.items.length);
   assert.ok(model.groups.find((group) => group.id === 'findings')?.items.length);
+  assert.ok(model.groups.find((group) => group.id === 'ideas')?.items.some((item) => item.id === 'idea-idea-1'));
+  assert.ok(model.edges.some((edge) => edge.source === 'source-news-1' && edge.target === 'publisher:nasa:NASA' && edge.relation === 'published by'));
+  assert.ok(model.edges.some((edge) => edge.source === 'idea-idea-1' && edge.target === 'source-news-1' && edge.relation === 'generated from official source'));
+  assert.ok(model.edges.some((edge) => edge.source === 'idea-idea-1' && edge.target === 'video-mock-video-1' && edge.relation === 'references temporary YouTube sample'));
+  assert.ok(model.edges.some((edge) => edge.relation.includes('word overlap only')));
   assert.equal(model.summary, analysis.summary);
 });
 
 void test('research graph does not invent empty source, video or public-interest nodes', () => {
   const analysis = buildInternalResearch({ topic: 'Unverified topic', language: 'en' });
   const model = buildResearchGraphModel({
-    topic: 'Unverified topic',
-    news: [],
-    videos: [],
-    analysis,
-    language: 'en',
+    topic: 'Unverified topic', news: [], videos: [], analysis, language: 'en',
   });
-
   assert.equal(model.groups.some((group) => group.id === 'sources'), false);
   assert.equal(model.groups.some((group) => group.id === 'youtube'), false);
   assert.equal(model.groups.some((group) => group.id === 'context'), false);
+  assert.equal(model.groups.some((group) => group.id === 'ideas'), false);
   assert.ok(model.groups.some((group) => group.id === 'evidence'));
   assert.ok(model.groups.some((group) => group.id === 'findings'));
+  assert.equal(model.nodes.filter((node) => node.type === 'news').length, 0);
+  assert.equal(model.edges.some((edge) => edge.relation.includes('word overlap')), false);
 });

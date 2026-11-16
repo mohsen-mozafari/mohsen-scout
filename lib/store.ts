@@ -13,7 +13,7 @@ import {
 import { readData, writeData } from './storage';
 import { getKey } from './vault';
 import { ApiError, nextBudget, searchYouTube } from './api';
-import { buildIdeas } from './engine';
+import { generateEditorialIdeas } from './idea-generation';
 import { attachReportToIdea as attachReport, attachVideoReferenceToIdea as attachVideoReference, getOrCreateSourceIdea, type SourceIdeaInput } from './idea-research';
 type State = {
   data: LocalData;
@@ -85,7 +85,8 @@ export const useScout = create<State>((set, get) => ({
       );
       if (cached) {
         set({ progress: 'Using a recent local search sample.' });
-        return cached;
+        if (!cached.analyzed) await get().analyze(cached.id);
+        return get().data.reports.find((item) => item.id === cached.id) ?? cached;
       }
       const result = await searchYouTube(
         input,
@@ -102,11 +103,25 @@ export const useScout = create<State>((set, get) => ({
         input: { ...input, topic: input.topic.trim() },
         id: uid(),
         createdAt: Date.now(),
-        analyzed: false,
+        analyzed: true,
       };
+      const generatedIdeas = generateEditorialIdeas({
+        topic: report.input.topic,
+        videos: result.videos.map((video) => ({
+          id: video.id, title: video.title, description: video.description,
+          channel: video.channel, publishedAt: video.publishedAt,
+          viewCount: video.viewCount ?? null, likeCount: video.likeCount ?? null,
+        })),
+        reportId: report.id,
+        existingIdeas: get().data.ideas,
+        region: report.input.region,
+        languages: report.input.languages,
+        language: get().data.preferences.uiLanguage ?? 'fa',
+      });
       await get().commit((data) => ({
         ...data,
         reports: [report, ...data.reports],
+        ideas: [...generatedIdeas, ...data.ideas],
         videos: [...new Map([...data.videos, ...result.videos].map((v) => [v.id, v])).values()],
         preferences: { ...data.preferences, lastInput: input },
       }));
@@ -127,10 +142,23 @@ export const useScout = create<State>((set, get) => ({
   analyze: async (id) => {
     const report = get().data.reports.find((r) => r.id === id);
     if (!report || report.analyzed) return;
+    const generatedIdeas = generateEditorialIdeas({
+      topic: report.input.topic,
+      videos: report.videos.map((video) => ({
+        id: video.id, title: video.title, description: video.description,
+        channel: video.channel, publishedAt: video.publishedAt,
+        viewCount: video.viewCount ?? null, likeCount: video.likeCount ?? null,
+      })),
+      reportId: report.id,
+      existingIdeas: get().data.ideas,
+      region: report.input.region,
+      languages: report.input.languages,
+      language: get().data.preferences.uiLanguage ?? 'fa',
+    });
     await get().commit((data) => ({
       ...data,
       reports: data.reports.map((r) => (r.id === id ? { ...r, analyzed: true } : r)),
-      ideas: [...buildIdeas(report, data.preferences.uiLanguage ?? 'fa'), ...data.ideas],
+      ideas: [...generatedIdeas, ...data.ideas],
     }));
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   },

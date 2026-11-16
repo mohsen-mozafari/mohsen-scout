@@ -66,6 +66,9 @@ const schema = z.object({
       imageUrl: text.url().optional(),
       sourceUrl: text.url().optional(),
       sourceName: text.optional(),
+      engineGenerated: z.boolean().optional(),
+      ideaCategory: text.max(80).optional(),
+      generationKey: text.max(1200).optional(),
     }),
   ),
   links: z.array(

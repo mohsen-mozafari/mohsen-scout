@@ -21,6 +21,10 @@ import { useScout } from '@/lib/store';
 import { statuses } from '@/lib/types';
 import { getIdeaDisplayTitle, isIdeaDisplayable } from '@/lib/idea-research';
 import { createManualIdea } from '@/lib/engine';
+import { generateEditorialIdeas, IDEA_GENERATION_CATEGORIES, type IdeaGenerationCategory } from '@/lib/idea-generation';
+import { getTopicDossier } from '@/lib/topic-dossier';
+import { SPACE_NICHES } from '@/lib/space';
+import { normalizeResearchText } from '@/lib/intelligence';
 import { palette as p } from '@/lib/theme';
 import { translateText } from '@/lib/i18n';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
@@ -30,19 +34,87 @@ export default function Opportunities() {
   const [status, setStatus] = useState('All');
   const [search, setSearch] = useState('');
   const [archive, setArchive] = useState(false);
+  const [category, setCategory] = useState('All angles');
+  const [generationMessage, setGenerationMessage] = useState('');
   const [draftOpen, setDraftOpen] = useState(false);
   const [draftTopic, setDraftTopic] = useState('');
   const [draftConcept, setDraftConcept] = useState('');
   const [draftDecision, setDraftDecision] = useState('');
   const preferences = useScout((s) => s.data.preferences);
   const op = useOperation();
+  const fa = preferences.uiLanguage === 'fa';
+  const faCategoryLabels: Record<IdeaGenerationCategory, string> = {
+    Explainer: 'توضیحی',
+    'Evidence audit': 'بررسی شواهد',
+    Comparison: 'مقایسه',
+    Timeline: 'خط زمانی',
+    'Open question': 'پرسش بی‌پاسخ',
+    'Cross-source': 'ارتباط میان منابع',
+    Storytelling: 'روایت مستند',
+  };
+  const allCategoryLabel = fa ? 'همه زاویه‌ها' : 'All angles';
+  const categoryLabel = (value?: string) => value && value in faCategoryLabels && fa ? faCategoryLabels[value as IdeaGenerationCategory] : value ?? (fa ? 'ایده تحریری' : 'Editorial angle');
+  const categoryOptions = [allCategoryLabel, ...IDEA_GENERATION_CATEGORIES.map((value) => categoryLabel(value))];
   const displayableIdeas = ideas.filter(isIdeaDisplayable);
   const filtered = displayableIdeas.filter(
     (i) =>
       i.archived === archive &&
       (status === 'All' || i.status === status) &&
+      (category === 'All angles' || !i.engineGenerated || i.ideaCategory === category) &&
       `${getIdeaDisplayTitle(i, preferences.uiLanguage ?? 'fa')} ${i.concept} ${i.note} ${i.decision}`.toLowerCase().includes(search.toLowerCase()),
   );
+  const generate = (requestedCategory?: IdeaGenerationCategory) => void op.run(async () => {
+    const current = useScout.getState().data;
+    const latestReport = current.reports[0];
+    const niche = SPACE_NICHES.find((item) => item.id === current.preferences.selectedSpaceNiche);
+    const topic = latestReport?.input.topic ?? (
+      current.preferences.selectedSpaceNiche === 'custom'
+        ? current.preferences.customSpaceNiche
+        : niche?.topic ?? 'Space science and exploration'
+    );
+    const dossier = getTopicDossier(topic);
+    const reportMatches = Boolean(latestReport && normalizeResearchText(latestReport.input.topic) === normalizeResearchText(topic));
+    const reportVideos = reportMatches && latestReport ? latestReport.videos : [];
+    const dossierVideos = dossier?.videos ?? [];
+    const videos = (dossierVideos.length ? dossierVideos : reportVideos).map((video) => ({
+      id: video.id,
+      title: video.title,
+      description: video.description,
+      channel: video.channel,
+      publishedAt: video.publishedAt,
+      viewCount: video.viewCount ?? null,
+      likeCount: video.likeCount ?? null,
+    }));
+    const generated = generateEditorialIdeas({
+      topic,
+      news: dossier?.news ?? [],
+      videos,
+      context: dossier?.wiki ? [{
+        title: dossier.wiki.articleTitle,
+        summary: dossier.wiki.summary,
+        sourceUrl: dossier.wiki.articleUrl,
+        sourceName: 'Wikimedia',
+      }] : [],
+      existingIdeas: current.ideas,
+      ...(reportMatches && latestReport && videos.length ? { reportId: latestReport.id } : {}),
+      region: current.preferences.region,
+      languages: current.preferences.languages,
+      language: current.preferences.uiLanguage ?? 'fa',
+      ...(requestedCategory ? { category: requestedCategory } : {}),
+      limit: 5,
+    });
+    if (!generated.length) {
+      setGenerationMessage(current.preferences.uiLanguage === 'fa'
+        ? 'از آخرین تحقیق، شاهد کافی یا زاویه تازه‌ای برای تولید ایده پیدا نشد. ابتدا یک جست‌وجو یا Deep Research انجام بده.'
+        : 'No suitable new angle could be generated from the latest evidence. Run a search or Deep Research first.');
+      return;
+    }
+    await useScout.getState().commit((data) => ({ ...data, ideas: [...generated, ...data.ideas] }));
+    setGenerationMessage(current.preferences.uiLanguage === 'fa'
+      ? generated.length + ' ایده تازه از شواهد محلی تولید شد؛ درخواست جدیدی برای YouTube ارسال نشد.'
+      : generated.length + ' new ideas were generated locally from the available evidence. No new YouTube request was made.');
+  }, 'New evidence-based ideas generated.');
+
   const openCreate = () => {
     setDraftTopic(preferences.lastInput?.topic ?? '');
     setDraftConcept('');
@@ -82,6 +154,21 @@ export default function Opportunities() {
               selected={[status]}
               onChange={(v) => setStatus(v[0])}
             />
+            <Choices
+              label={fa ? 'تولید بر اساس زاویه' : 'Generate by angle'}
+              options={categoryOptions}
+              selected={[category === 'All angles' ? allCategoryLabel : categoryLabel(category)]}
+              onChange={(values) => {
+                const selectedIndex = categoryOptions.indexOf(values[0]);
+                const selected = selectedIndex <= 0 ? 'All angles' : IDEA_GENERATION_CATEGORIES[selectedIndex - 1];
+                setCategory(selected);
+                generate(selected === 'All angles' ? undefined : selected);
+              }}
+            />
+            <Action busy={op.busy} onPress={() => generate(category === 'All angles' ? undefined : category as IdeaGenerationCategory)}>
+              {fa ? 'تولید ایده‌های تازه / بازتولید ایده‌ها' : 'Generate New Ideas / Refresh Ideas'}
+            </Action>
+            {generationMessage ? <Txt muted>{generationMessage}</Txt> : null}
             {draftOpen && (
               <View style={[styles.panel, { gap: 12 }]}>
                 <Text style={styles.heading}>{translateText("Create a complete idea", preferences.uiLanguage ?? "fa")}</Text>
@@ -121,10 +208,11 @@ export default function Opportunities() {
               onPress={() => router.push({ pathname: '/detail', params: { idea: item.id } })}
             >
               <View style={{ flex: 1, minWidth: 0, gap: 8 }}>
-                <BadgeText>{item.assessment + ' · ' + item.status}</BadgeText>
+                <BadgeText>{item.engineGenerated ? (fa ? 'تولید موتور · ' : 'ENGINE GENERATED · ') + categoryLabel(item.ideaCategory) : (fa ? 'ایده شخصی' : 'PERSONAL IDEA')} · {item.assessment} · {item.status}</BadgeText>
                 <SourceHeading>{getIdeaDisplayTitle(item, preferences.uiLanguage ?? 'fa')}</SourceHeading>
                 {item.concept ? <SourceText muted numberOfLines={3}>{item.concept}</SourceText> : <Txt muted>Concept missing — open the editor to complete this draft before requesting an AI opinion.</Txt>}
                 {item.sourceName ? <View style={styles.row}><Txt muted>Source:</Txt><SourceText>{item.sourceName}</SourceText></View> : null}
+                {item.engineGenerated ? <Txt muted>{fa ? 'بر پایه شواهد موجود تولید شده است. برای دیدن پرسش، دلیل پیشنهاد، دامنه شواهد، مسیر روایت و مراحل راستی‌آزمایی انتخاب کن.' : 'Generated from available research evidence. Select to inspect the complete question, rationale, evidence scope, story path and verification steps.'}</Txt> : null}
                 {item.decision ? <SourceText muted>{item.decision}</SourceText> : null}
               </View>
               <ArrowUpRight color={p.purple} size={20} />
@@ -143,6 +231,7 @@ export default function Opportunities() {
                     setSearch('');
                     setStatus('All');
                     setArchive(false);
+                    setCategory('All angles');
                   }
                 : openCreate
             }

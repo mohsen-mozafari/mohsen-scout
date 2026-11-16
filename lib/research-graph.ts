@@ -1,8 +1,9 @@
 import type { YouTubeSampleVideo } from './api';
 import type { InternalResearchResult } from './engine';
 import type { SpaceNewsItem, WikiSignal } from './space';
+import { matchesResearchTerms } from './intelligence';
 
-export type ResearchGraphGroupId = 'sources' | 'youtube' | 'context' | 'evidence' | 'findings' | 'angles';
+export type ResearchGraphGroupId = 'sources' | 'youtube' | 'context' | 'evidence' | 'findings' | 'angles' | 'ideas';
 
 export type ResearchGraphItem = {
   id: string;
@@ -18,10 +19,19 @@ export type ResearchGraphGroup = {
   items: ResearchGraphItem[];
 };
 
-export type ResearchGraphModel = {
+export type ResearchGraphNodeType = 'topic' | 'publisher' | 'news' | 'youtube' | 'context' | 'evidence' | 'finding' | 'idea';
+export type ResearchGraphNode = ResearchGraphItem & { type: ResearchGraphNodeType; groupId?: ResearchGraphGroupId };
+export type ResearchGraphEdge = { id: string; source: string; target: string; relation: string };
+export type ResearchGraphModel = { topic: string; summary: string; groups: ResearchGraphGroup[]; nodes: ResearchGraphNode[]; edges: ResearchGraphEdge[] };
+
+export type ResearchGraphIdeaInput = {
+  id: string;
   topic: string;
-  summary: string;
-  groups: ResearchGraphGroup[];
+  concept: string;
+  videoIds: string[];
+  sourceUrl?: string;
+  sourceName?: string;
+  ideaCategory?: string;
 };
 
 export type BuildResearchGraphInput = {
@@ -31,6 +41,7 @@ export type BuildResearchGraphInput = {
   videos: readonly YouTubeSampleVideo[];
   analysis: InternalResearchResult;
   language: 'fa' | 'en';
+  generatedIdeas?: readonly ResearchGraphIdeaInput[];
 };
 
 export function buildResearchGraphModel(input: BuildResearchGraphInput): ResearchGraphModel {
@@ -222,9 +233,97 @@ export function buildResearchGraphModel(input: BuildResearchGraphInput): Researc
     });
   }
 
-  return {
-    topic: input.topic,
-    summary: input.analysis.summary,
-    groups,
+  if (input.generatedIdeas?.length) {
+    groups.push({
+      id: 'ideas',
+      title: text('Generated ideas', 'ایده‌های تولیدشده'),
+      items: input.generatedIdeas.map((idea) => ({
+        id: 'idea-' + idea.id,
+        title: idea.topic,
+        meta: [idea.ideaCategory, text('Generated from this research', 'تولیدشده از این تحقیق')].filter(Boolean).join(' · '),
+        detail: idea.concept,
+        ...(idea.sourceUrl ? { url: idea.sourceUrl } : {}),
+      })),
+    });
+  }
+
+  const nodes: ResearchGraphNode[] = [
+    { id: 'topic-root', type: 'topic', title: input.topic, meta: text('Research topic', 'موضوع تحقیق'), detail: input.analysis.summary },
+    ...groups.flatMap((group) => group.items.map((item): ResearchGraphNode => ({
+      ...item,
+      type: group.id === 'sources' ? 'news'
+        : group.id === 'youtube' ? 'youtube'
+          : group.id === 'context' ? 'context'
+            : group.id === 'evidence' ? 'evidence'
+              : group.id === 'angles' || group.id === 'ideas' ? 'idea' : 'finding',
+      groupId: group.id,
+    }))),
+  ];
+  const nodeIds = new Set(nodes.map((node) => node.id));
+  const edges: ResearchGraphEdge[] = [];
+  const addEdge = (source: string, target: string, relation: string) => {
+    if (!nodeIds.has(source) || !nodeIds.has(target) || source === target) return;
+    const id = source + '|' + relation + '|' + target;
+    if (!edges.some((edge) => edge.id === id)) edges.push({ id, source, target, relation });
   };
+  for (const node of nodes) {
+    if (node.id !== 'topic-root') addEdge('topic-root', node.id, text('included in this research', 'بخشی از این تحقیق'));
+  }
+
+  const publisherIds = new Map<string, string>();
+  for (const item of input.news) {
+    const publisherKey = item.sourceId + ':' + item.sourceName;
+    const publisherId = 'publisher:' + publisherKey;
+    if (!publisherIds.has(publisherKey)) {
+      publisherIds.set(publisherKey, publisherId);
+      nodes.push({
+        id: publisherId, type: 'publisher', title: item.sourceName,
+        meta: text('Original publisher', 'ناشر اصلی'),
+        detail: text('Publisher identity comes from the official feed item.', 'هویت ناشر از آیتم خوراک رسمی گرفته شده است.'),
+      });
+      nodeIds.add(publisherId);
+      addEdge('topic-root', publisherId, text('source in this research', 'منبع این تحقیق'));
+    }
+    addEdge('source-' + item.id, publisherId, text('published by', 'منتشرشده توسط'));
+  }
+  if (nodeIds.has('evidence-publisher-news')) {
+    for (const item of input.news) addEdge('source-' + item.id, 'evidence-publisher-news', text('represented in news evidence', 'بازتاب‌یافته در شواهد خبری'));
+  }
+  if (nodeIds.has('evidence-youtube-sample')) {
+    for (const video of input.videos) addEdge('video-' + video.id, 'evidence-youtube-sample', text('represented in video sample', 'بازتاب‌یافته در نمونه ویدئویی'));
+  }
+  if (nodeIds.has('wikimedia-article') && nodeIds.has('evidence-wikimedia')) {
+    addEdge('wikimedia-article', 'evidence-wikimedia', text('context for', 'زمینه برای'));
+  }
+
+  const shared = input.analysis.intelligence.sharedConcepts;
+  if (shared.length && input.news.length && input.videos.length) {
+    for (const story of input.news) {
+      for (const video of input.videos) {
+        const term = shared.find((candidate) =>
+          matchesResearchTerms(story.title + ' ' + story.summary, [candidate]) &&
+          matchesResearchTerms(video.title + ' ' + video.description, [candidate]));
+        if (term) addEdge('source-' + story.id, 'video-' + video.id,
+          text('word overlap only: ', 'فقط هم‌پوشانی واژگانی: ') + term);
+      }
+    }
+  }
+  for (const idea of input.generatedIdeas ?? []) {
+    const ideaNodeId = 'idea-' + idea.id;
+    if (idea.sourceUrl) {
+      for (const story of input.news.filter((item) => item.url === idea.sourceUrl)) {
+        addEdge(ideaNodeId, 'source-' + story.id, text('generated from official source', 'تولیدشده از منبع رسمی'));
+      }
+    }
+    for (const videoId of idea.videoIds) {
+      addEdge(ideaNodeId, 'video-' + videoId, text('references temporary YouTube sample', 'ارجاع به نمونه موقت یوتیوب'));
+    }
+  }
+  const evidenceNodes = nodes.filter((node) => node.type === 'evidence');
+  for (const idea of nodes.filter((node) => node.type === 'idea')) {
+    for (const evidence of evidenceNodes) {
+      addEdge(idea.id, evidence.id, text('editorial hypothesis derived from analysis', 'فرضیه محتوایی برگرفته از تحلیل'));
+    }
+  }
+  return { topic: input.topic, summary: input.analysis.summary, groups, nodes, edges };
 }

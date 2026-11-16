@@ -5,13 +5,14 @@ import { Button } from 'heroui-native';
 import { Page, Panel, Heading, Txt, Field, Action, styles, ErrorBox, useOperation, SourceText } from '@/components/ScoutUI';
 import { useScout } from '@/lib/store';
 import { translateText } from '@/lib/i18n';
-import { uid, RETENTION_MS } from '@/lib/types';
+import { uid, RETENTION_MS, type Idea } from '@/lib/types';
 import { getKey } from '@/lib/vault';
 import { buildInternalResearch, rankNewsForTopic, type InternalResearchResult } from '@/lib/engine';
 import { buildResearchInterestProfile, normalizeResearchText } from '@/lib/intelligence';
 import { MediaPreview } from '@/components/MediaPreview';
 import { ResearchKnowledgeGraph } from '@/components/ResearchKnowledgeGraph';
 import { getTopicDossier, rememberTopicDossier } from '@/lib/topic-dossier';
+import { generateEditorialIdeas } from '@/lib/idea-generation';
 import { searchYouTubeSample, type YouTubeSampleVideo } from '@/lib/api';
 import {
   SPACE_NICHES, fetchSpaceNews, newsForNiche, getWikipediaSignal, buildResearchOutline,
@@ -30,6 +31,7 @@ type Brief = {
   verificationQuestions: string[];
   scriptDraft: string[];
   internalAnalysis: InternalResearchResult;
+  generatedIdeas: Idea[];
 };
 
 export default function DeepResearch() {
@@ -160,8 +162,24 @@ export default function DeepResearch() {
       contradictions: internalAnalysis.intelligence.potentialContradictions.map((item) => item.slice(0, 500)).slice(0, 8),
       confidence: internalAnalysis.intelligence.confidence.level,
     };
+    const generatedIdeas = generateEditorialIdeas({
+      topic: query,
+      news: selectedNews,
+      videos: videos.map((video) => ({
+        id: video.id, title: video.title, description: video.description,
+        channel: video.channel, publishedAt: video.publishedAt,
+        viewCount: video.viewCount, likeCount: video.likeCount,
+      })),
+      context: wiki ? [{ title: wiki.articleTitle, summary: wiki.summary, sourceUrl: wiki.articleUrl, sourceName: 'Wikimedia' }] : [],
+      existingIdeas: useScout.getState().data.ideas,
+      region: preferences.region,
+      languages: preferences.languages,
+      language: preferences.uiLanguage ?? 'fa',
+      limit: 5,
+    });
     await useScout.getState().commit((data) => ({
       ...data,
+      ideas: [...generatedIdeas, ...data.ideas],
       researchMemory: [
         memoryEntry,
         ...data.researchMemory.filter((entry) => normalizeResearchText(entry.topic) !== normalizeResearchText(query)),
@@ -175,6 +193,7 @@ export default function DeepResearch() {
       videos,
       warnings,
       internalAnalysis,
+      generatedIdeas,
       ...outline,
       scriptDraft: preferences.uiLanguage === 'fa' ? [
         'قلاب — با پرسش اصلی شروع کن: ' + outline.titleIdeas[0],
@@ -243,6 +262,17 @@ export default function DeepResearch() {
             {brief.warnings.map((warning) => <Txt muted key={warning}>Limitation: {warning}</Txt>)}
           </Panel>
           <Panel>
+            <Heading>Ideas generated from this research</Heading>
+            {brief.generatedIdeas.length ? brief.generatedIdeas.map((idea) => (
+              <View key={idea.id} style={{ gap: 5 }}>
+                <Text style={styles.badge}>{idea.ideaCategory ?? 'Generated'} · {idea.assessment}</Text>
+                <Heading>{idea.topic}</Heading>
+                <Txt muted>{idea.concept}</Txt>
+                <Action secondary onPress={() => router.push({ pathname: '/detail', params: { idea: idea.id } })}>Open idea details</Action>
+              </View>
+            )) : <Txt muted>No sufficiently distinct angle could be generated from the returned evidence. Add more source material or choose a narrower question.</Txt>}
+          </Panel>
+          <Panel>
             <Heading>Internal Research Engine</Heading>
             <ResearchKnowledgeGraph
               topic={brief.topic}
@@ -251,6 +281,7 @@ export default function DeepResearch() {
               videos={brief.videos}
               analysis={brief.internalAnalysis}
               language={preferences.uiLanguage ?? 'fa'}
+              generatedIdeas={brief.generatedIdeas}
             />
             <Txt muted>{brief.internalAnalysis.summary}</Txt>
             {brief.internalAnalysis.evidence.map((item) => (

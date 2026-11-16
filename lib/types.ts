@@ -83,6 +83,9 @@ export type Idea = {
   imageUrl?: string;
   sourceUrl?: string;
   sourceName?: string;
+  engineGenerated?: boolean;
+  ideaCategory?: string;
+  generationKey?: string;
 };
 export type Report = {
   id: string;

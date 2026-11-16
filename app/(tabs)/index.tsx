@@ -16,11 +16,16 @@ import {
   fetchSpaceNews,
   type DiscoveryOpportunity,
   type SpaceNicheSuggestion,
+  newsForNiche,
+  type SpaceNewsItem,
 } from '@/lib/space';
 import { MediaPreview } from '@/components/MediaPreview';
 import { buildInternalResearch, type InternalResearchResult } from '@/lib/engine';
 import { buildResearchInterestProfile, normalizeResearchText } from '@/lib/intelligence';
 import { rememberTopicDossier } from '@/lib/topic-dossier';
+import { ResearchKnowledgeGraph } from '@/components/ResearchKnowledgeGraph';
+import { generateEditorialIdeas } from '@/lib/idea-generation';
+import type { YouTubeSampleVideo } from '@/lib/api';
 
 
 function AnalysisSignals({ result }: { result: InternalResearchResult }) {
@@ -94,12 +99,14 @@ export default function DiscoveryDashboard() {
 function DiscoveryDashboardReady() {
   const preferences = useScout((state) => state.data.preferences);
   const ideas = useScout((state) => state.data.ideas);
+  const reports = useScout((state) => state.data.reports);
   const [opportunities, setOpportunities] = useState<DiscoveryOpportunity[]>([]);
   const [warnings, setWarnings] = useState<string[]>([]);
   const [lastScannedAt, setLastScannedAt] = useState<number | null>(null);
   const [analyses, setAnalyses] = useState<Record<string, InternalResearchResult>>({});
   const [nicheSuggestions, setNicheSuggestions] = useState<SpaceNicheSuggestion[]>([]);
   const [radarBrief, setRadarBrief] = useState<InternalResearchResult>();
+  const [radarNews, setRadarNews] = useState<SpaceNewsItem[]>([]);
   const listExtraData = useMemo(() => ({ analyses, ideas }), [analyses, ideas]);
   const op = useOperation();
   const niche = SPACE_NICHES.find((item) => item.id === preferences.selectedSpaceNiche);
@@ -113,35 +120,81 @@ function DiscoveryDashboardReady() {
     : preferences.selectedSpaceNiche === 'custom'
       ? preferences.customSpaceNiche
       : niche?.topic ?? 'Space science and exploration';
-  const applyScan = useCallback((result: Awaited<ReturnType<typeof fetchSpaceNews>>) => {
+  const applyScan = useCallback(async (result: Awaited<ReturnType<typeof fetchSpaceNews>>) => {
+    const relevantNews = preferences.selectedSpaceNiche === 'all'
+      ? result.items
+      : newsForNiche(result.items, preferences.selectedSpaceNiche, preferences.customSpaceNiche);
     const nextOpportunities = buildDiscoveryOpportunities(result.items, preferences.selectedSpaceNiche, Date.now(), preferences.customSpaceNiche);
     const currentData = useScout.getState().data;
     const priorMemory = currentData.researchMemory.find((entry) => normalizeResearchText(entry.topic) === normalizeResearchText(discoveryTopic));
-    const nextRadarBrief = result.items.length ? buildInternalResearch({
+    const nextRadarBrief = relevantNews.length ? buildInternalResearch({
       topic: discoveryTopic,
       feedback: buildResearchInterestProfile(currentData.ideas),
       priorMemory,
       language: currentData.preferences.uiLanguage ?? 'fa',
-      news: result.items.slice(0, 12).map((item) => ({
+      news: relevantNews.slice(0, 24).map((item) => ({
         title: item.title, summary: item.summary, sourceName: item.sourceName,
         sourceUrl: item.url, publishedAt: item.publishedAt, sourceId: item.sourceId,
       })),
     }) : undefined;
-    rememberTopicDossier(discoveryTopic, { news: result.items, internalAnalysis: nextRadarBrief });
+    const automaticIdeas = generateEditorialIdeas({
+      topic: discoveryTopic,
+      news: relevantNews,
+      existingIdeas: currentData.ideas,
+      region: currentData.preferences.region,
+      languages: currentData.preferences.languages,
+      language: currentData.preferences.uiLanguage ?? 'fa',
+      evidenceKey: 'rss:' + relevantNews.map((item) => item.url).sort().join('|'),
+      skipExistingEvidence: true,
+      limit: 3,
+    });
+    if (automaticIdeas.length) {
+      await useScout.getState().commit((data) => ({ ...data, ideas: [...automaticIdeas, ...data.ideas] }));
+    }
+    rememberTopicDossier(discoveryTopic, { news: relevantNews, internalAnalysis: nextRadarBrief });
     for (const opportunity of nextOpportunities) {
-      const matchingNews = result.items.filter((item) => item.url === opportunity.sourceUrl || item.title === opportunity.topic);
+      const matchingNews = relevantNews.filter((item) => item.url === opportunity.sourceUrl || item.title === opportunity.topic);
       if (matchingNews.length) rememberTopicDossier(opportunity.topic, { news: matchingNews });
     }
     setOpportunities(nextOpportunities);
+    setRadarNews(relevantNews);
     setWarnings(result.warnings);
     setLastScannedAt(Date.now());
     setNicheSuggestions(buildNicheSuggestions(result.items, 6));
     setRadarBrief(nextRadarBrief);
   }, [preferences.selectedSpaceNiche, preferences.customSpaceNiche, discoveryTopic]);
+
+  const latestReport = reports[0];
+  const latestReportVideos = useMemo<YouTubeSampleVideo[]>(() => latestReport?.videos.map((video) => ({
+    id: video.id,
+    title: video.title,
+    description: video.description,
+    channel: video.channel,
+    channelId: '',
+    publishedAt: video.publishedAt,
+    thumbnailUrl: video.thumbnail,
+    viewCount: video.viewCount ?? null,
+    likeCount: video.likeCount ?? null,
+    channelSubscriberCount: null,
+    channelVideoCount: null,
+    url: 'https://www.youtube.com/watch?v=' + video.id,
+  })) ?? [], [latestReport]);
+  const latestReportAnalysis = useMemo(() => latestReport ? buildInternalResearch({
+    topic: latestReport.input.topic,
+    videos: latestReportVideos,
+    language: preferences.uiLanguage ?? 'fa',
+  }) : undefined, [latestReport, latestReportVideos, preferences.uiLanguage]);
+  const showYouTubeResearch = Boolean(latestReport && latestReportVideos.length > 0 && latestReportAnalysis);
+  const deskTopic = showYouTubeResearch ? latestReport!.input.topic : discoveryTopic;
+  const deskAnalysis = showYouTubeResearch ? latestReportAnalysis : radarBrief;
+  const deskNews = showYouTubeResearch ? [] : radarNews;
+  const deskVideos = showYouTubeResearch ? latestReportVideos : [];
+  const rssGenerationKey = 'rss:' + deskNews.map((item) => item.url).sort().join('|');
+  const deskIdeas = ideas.filter((idea) => idea.engineGenerated && !idea.archived && (showYouTubeResearch ? idea.reportId === latestReport?.id : idea.generationKey === rssGenerationKey)).slice(0, 3);
   useEffect(() => {
     let active = true;
     void fetchSpaceNews(preferences.spaceNewsSources).then((result) => {
-      if (active) applyScan(result);
+      if (active) void applyScan(result).catch(() => setWarnings(['Local research output could not be saved. Check device storage and retry.']));
     }).catch(() => {
       if (active) setWarnings(['Official news feeds could not be reached. Check the network and retry.']);
     });
@@ -149,7 +202,7 @@ function DiscoveryDashboardReady() {
   }, [preferences.spaceNewsSources, applyScan]);
   const discover = () => void op.run(async () => {
     const result = await fetchSpaceNews(preferences.spaceNewsSources, fetch, true);
-    applyScan(result);
+    await applyScan(result);
     if (!result.items.length && result.warnings.length) throw new Error(result.warnings.join(' '));
   }, 'Discovery scan completed from selected official feeds without spending YouTube quota.');
 
@@ -280,6 +333,62 @@ function DiscoveryDashboardReady() {
 
       {warnings.map((warning) => <Txt muted key={warning}>{warning}</Txt>)}
 
+      <Panel>
+        <Text style={styles.badge}>LOCAL INTELLIGENCE DESK</Text>
+        <Heading>Research output</Heading>
+        {deskAnalysis ? (
+          <>
+            <Heading>{deskTopic}</Heading>
+            <Txt muted>{showYouTubeResearch && latestReport
+              ? 'Latest YouTube research · ' + new Date(latestReport.createdAt).toLocaleString()
+              : lastScannedAt ? 'Latest selected-feed analysis · ' + new Date(lastScannedAt).toLocaleString() : 'Latest local evidence'}</Txt>
+            <Txt muted>{deskAnalysis.summary}</Txt>
+            <ResearchKnowledgeGraph
+              topic={deskTopic}
+              news={deskNews}
+              videos={deskVideos}
+              analysis={deskAnalysis}
+              language={preferences.uiLanguage ?? 'fa'}
+              generatedIdeas={deskIdeas}
+            />
+            <Heading>Key engine evidence</Heading>
+            {deskAnalysis.evidence.filter((item) => (item.id !== 'publisher-news' || deskNews.length > 0) && (item.id !== 'youtube-sample' || deskVideos.length > 0)).slice(0, 5).map((item) => (
+              <View key={item.id} style={{ gap: 3 }}>
+                <BadgeText>{item.label}</BadgeText>
+                <Txt muted>{item.detail}</Txt>
+              </View>
+            ))}
+            <AnalysisSignals result={deskAnalysis} />
+            {deskAnalysis.angles.slice(0, 3).map((angle) => (
+              <View key={angle.id} style={{ gap: 5 }}>
+                <Heading>{angle.title}</Heading>
+                <Txt>{angle.hook}</Txt>
+                <Txt muted>{angle.approach}</Txt>
+                <Txt muted>Verify: {angle.verification}</Txt>
+              </View>
+            ))}
+            <Action secondary onPress={() => router.push({ pathname: '/deep-research', params: { topic: deskTopic } })}>Continue this research</Action>
+          </>
+        ) : (
+          <>
+            <Txt muted>No completed research analysis is available yet. Start a YouTube search or refresh the official Space Radar feeds. The desk will show real evidence and findings here.</Txt>
+            <Action onPress={() => router.push('/youtube')}>Start a research search</Action>
+            <Action secondary onPress={discover}>Refresh official feeds</Action>
+          </>
+        )}
+        <View style={{ gap: 7, borderTopWidth: 1, borderTopColor: '#343047', paddingTop: 12 }}>
+          <Heading>Newly generated ideas</Heading>
+          {deskIdeas.length ? deskIdeas.map((idea) => (
+            <View key={idea.id} style={{ gap: 4 }}>
+              <SourceHeading>{idea.topic}</SourceHeading>
+              <Txt muted>{idea.ideaCategory ?? 'Generated'} · {idea.concept.slice(0, 260)}</Txt>
+              <Action secondary onPress={() => router.push({ pathname: '/detail', params: { idea: idea.id } })}>Open generated idea</Action>
+            </View>
+          )) : <Txt muted>No generated ideas yet. Run a research search or refresh the official feed to generate ideas from available evidence.</Txt>}
+          <Action secondary onPress={() => router.push('/opportunities')}>Open Ideas workspace</Action>
+        </View>
+      </Panel>
+
       {nicheSuggestions.length > 0 && (
         <Panel>
           <Heading>Active topics in official feeds</Heading>
@@ -296,32 +405,6 @@ function DiscoveryDashboardReady() {
         </Panel>
       )}
 
-      {radarBrief && (
-        <Panel>
-          <Text style={styles.badge}>LOCAL INTERNAL STORY ENGINE</Text>
-          <Heading>What the current evidence can support</Heading>
-          <Txt muted>{radarBrief.summary}</Txt>
-          {radarBrief.evidence.map((item) => (
-            <View key={item.id} style={{ gap: 3 }}>
-              <BadgeText>{item.label}</BadgeText>
-              <Txt muted>{item.detail}</Txt>
-            </View>
-          ))}
-          <AnalysisSignals result={radarBrief} />
-          <Fold title="Editorial angles generated from current sources">
-            {radarBrief.angles.map((angle) => (
-              <View key={angle.id} style={{ gap: 5 }}>
-                <Heading>{angle.title}</Heading>
-                <Txt>{angle.hook}</Txt>
-                <Txt muted>{angle.approach}</Txt>
-                <Txt muted>Verify: {angle.verification}</Txt>
-                <Action secondary onPress={() => router.push({ pathname: '/deep-research', params: { topic: discoveryTopic } })}>Deep Research this angle</Action>
-              </View>
-            ))}
-            {radarBrief.limitations.map((item) => <Txt muted key={item}>{item}</Txt>)}
-          </Fold>
-        </Panel>
-      )}
       {lastScannedAt !== null && opportunities.length === 0 && (
         <Panel>
           <Heading>{warnings.length && !nicheSuggestions.length ? 'Live publisher data is unavailable' : 'No matching opportunities found'}</Heading>

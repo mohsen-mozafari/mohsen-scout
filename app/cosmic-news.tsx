@@ -16,10 +16,12 @@ export default function CosmicNews() {
   const [items, setItems] = useState<SpaceNewsItem[]>([]);
   const [warnings, setWarnings] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
+  const [visibleCount, setVisibleCount] = useState(15);
   const [scope, setScope] = useState('All selected feeds');
   const displayedItems = scope === 'Selected niche'
     ? newsForNiche(items, nicheId, preferences.customSpaceNiche)
     : items;
+  const visibleItems = displayedItems.slice(0, visibleCount);
   const op = useOperation();
 
   const saveItem = (item: SpaceNewsItem) => void op.run(async () => {
@@ -44,6 +46,7 @@ export default function CosmicNews() {
     void fetchSpaceNews(preferences.spaceNewsSources).then((result) => {
       if (!active) return;
       setItems(result.items);
+      setVisibleCount(15);
       setWarnings(result.warnings);
     }).catch(() => {
       if (active) setWarnings(['Official news feeds could not be reached. Check the network and retry.']);
@@ -56,6 +59,7 @@ export default function CosmicNews() {
   const refresh = () => void op.run(async () => {
     const result = await fetchSpaceNews(preferences.spaceNewsSources, fetch, true);
     setItems(result.items);
+    setVisibleCount(15);
     setWarnings(result.warnings);
     if (!result.items.length && result.warnings.length) throw new Error(result.warnings.join(' '));
   }, 'Space news updated from selected feeds.');
@@ -79,11 +83,11 @@ export default function CosmicNews() {
       <Panel>
         <Heading>How Cosmic News works</Heading>
         <Txt muted>Refresh retrieves the RSS/Atom feeds enabled in Settings. Headlines and summaries remain in the publisher’s original language, alongside the date and original link. Open the original story to verify its claims.</Txt>
-        <Choices label="Show stories" options={['All selected feeds', 'Selected niche']} selected={[scope]} onChange={(values) => setScope(values[0])} />
+        <Choices label="Show stories" options={['All selected feeds', 'Selected niche']} selected={[scope]} onChange={(values) => { setScope(values[0]); setVisibleCount(15); }} />
         <Txt muted>{niche?.title ?? (nicheId === 'custom' ? 'Custom niche: ' + preferences.customSpaceNiche : 'All space topics')}</Txt>
         <Action busy={op.busy} onPress={refresh}>Refresh selected feeds</Action>
         {warnings.map((warning) => <Txt muted key={warning}>{warning}</Txt>)}
-        <Text style={styles.badge}>{displayedItems.length} {scope === 'Selected niche' ? 'matching niche reports' : 'source reports'}</Text>
+        <Text style={styles.badge}>{Math.min(visibleCount, displayedItems.length)} / {displayedItems.length} {scope === 'Selected niche' ? 'matching niche reports' : 'source reports'}</Text>
         {loading && <Txt muted>Checking enabled publishers independently…</Txt>}
         {!loading && !items.length && <Txt muted>No live article was returned. This is a publisher/network availability issue, not proof that the topic has no news. Retry when the connection recovers, or continue researching below.</Txt>}
       </Panel>
@@ -100,7 +104,7 @@ export default function CosmicNews() {
           ))}
         </Panel>
       )}
-      {displayedItems.map((item) => {
+      {visibleItems.map((item) => {
         return (
           <Panel key={item.id}>
             {item.imageUrl ? <MediaPreview uri={item.imageUrl} aspectRatio={16 / 9} viewer alt={item.title} /> : null}
@@ -117,6 +121,11 @@ export default function CosmicNews() {
           </Panel>
         );
       })}
+      {visibleCount < displayedItems.length ? (
+        <Action secondary onPress={() => setVisibleCount((current) => Math.min(current + 15, displayedItems.length))}>
+          Show More · {displayedItems.length - visibleCount} remaining
+        </Action>
+      ) : null}
       {Boolean(op.error) && <ErrorBox message={op.error} onRetry={refresh} />}
       {Boolean(op.message) && <Txt muted>{op.message}</Txt>}
     </Page>
