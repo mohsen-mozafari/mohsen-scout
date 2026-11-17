@@ -557,7 +557,7 @@ function DiscoveryDashboardReady() {
         </Panel>
 
         <Panel>
-          <BadgeText>{fa ? 'انتخاب اول · ایدهٔ برتر' : 'YOUR NEXT MOVE · TOP IDEA'}
+          <BadgeText>{fa ? 'انتخاب اول · ایدهٔ برتر' : 'YOUR NEXT MOVE · TOP IDEA'}</BadgeText>
           <Heading>{fa ? 'بهترین ایده برای توسعه' : 'Best idea to develop'}</Heading>
           {bestIdea ? (
             <View style={{ gap: 8 }}>
