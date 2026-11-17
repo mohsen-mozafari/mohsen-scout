@@ -128,8 +128,8 @@ function EngineAIReview({ topic, result }: { topic: string; result: InternalRese
       { label: 'Topic-matched / excluded news', detail: audit.topicMatchedNewsCount + ' / ' + audit.unmatchedNewsCount },
       { label: 'YouTube input / title-matched recent', detail: audit.youtubeSampleCount + ' / ' + audit.matchedVideoCount },
       { label: 'Recent candidates / excluded videos', detail: audit.recentVideoCandidateCount + ' / ' + audit.excludedVideoCount },
-      { label: 'Matched videos with raw view counts', detail: audit.videoViewCountsAvailable },
-      { label: 'Publication window (days)', detail: audit.videoWindowDays },
+      { label: 'Matched videos with raw view counts', detail: String(audit.videoViewCountsAvailable) },
+      { label: 'Publication window (days)', detail: String(audit.videoWindowDays) },
       { label: 'Independent publisher groups', detail: String(quality.independentPublishers) },
       { label: 'Official feeds represented', detail: String(quality.feedsRepresented) },
       { label: 'Duplicate records merged', detail: String(quality.duplicateStoriesMerged) },
@@ -555,7 +555,7 @@ function DiscoveryDashboardReady() {
     if (generated.length) {
       void useScout.getState().commit((data) => ({ ...data, ideas: [...generated, ...data.ideas] })).catch(() => {});
     }
-  }, [latestReportId, combinedEvidenceKey, deskTopic, deskNews, deskVideos, preferences.region, preferences.languages, preferences.uiLanguage]);
+  }, [latestReport, latestReport?.id, latestReportId, combinedEvidenceKey, deskTopic, deskNews, deskVideos, preferences.region, preferences.languages, preferences.uiLanguage]);
 
   const nicheTerms = useMemo<string[]>(() => {
     if (preferences.selectedSpaceNiche === 'custom') {
