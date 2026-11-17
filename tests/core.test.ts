@@ -535,12 +535,17 @@ void test('YouTube MOCK: official endpoint, independent region/language filters,
   for (const url of searchUrls) {
     const parsed = new URL(url);
     assert.equal(parsed.hostname, 'www.googleapis.com');
-    assert.equal(parsed.searchParams.get('regionCode'), 'IR');
-    assert.equal(parsed.searchParams.get('relevanceLanguage'), 'en');
     assert.equal(parsed.searchParams.get('videoDuration'), 'short');
     assert.equal(parsed.searchParams.get('videoCategoryId'), '27');
     assert.equal(parsed.searchParams.get('maxResults'), '50');
     assert.equal(parsed.searchParams.get('part'), 'snippet');
+    if (parsed.searchParams.get('order') === 'viewCount') {
+      assert.equal(parsed.searchParams.has('regionCode'), false);
+      assert.equal(parsed.searchParams.has('relevanceLanguage'), false);
+    } else {
+      assert.equal(parsed.searchParams.get('regionCode'), 'IR');
+      assert.equal(parsed.searchParams.get('relevanceLanguage'), 'en');
+    }
   }
 });
 
