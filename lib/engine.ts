@@ -218,6 +218,30 @@ export function buildInternalResearch(input: InternalResearchInput): InternalRes
         : input.wiki.articleTitle + ' · ' + input.wiki.language.toUpperCase() + ' Wikipedia. ' + (latest ? 'Latest returned month: ' + latest.month + ', ' + latest.views.toLocaleString() + ' article pageviews across ' + series.length + ' returned month(s).' : 'No monthly pageview observations were returned.') + ' Article pageviews are not search volume, unique people, or YouTube views.',
     });
   }
+  if (news.length) {
+    evidence.push({
+      id: 'retrieved-news-headlines',
+      label: text('Retrieved official news headlines', 'تیتر خبرهای رسمی دریافت‌شده'),
+      detail: news.slice(0, 10).map((item, index) =>
+        (index + 1) + '. ' + item.sourceName + ' · ' + item.title +
+        (item.publishedAt ? ' · ' + new Date(item.publishedAt).toLocaleDateString(fa ? 'fa-IR' : 'en-US') : ''),
+      ).join('\n').slice(0, 2800),
+    });
+  }
+  if (videos.length) {
+    evidence.push({
+      id: 'retrieved-youtube-videos',
+      label: text('Retrieved YouTube titles and public metrics', 'عنوان ویدئوهای یوتیوب و آمار عمومی'),
+      detail: [...videos]
+        .sort((a, b) => (b.viewCount ?? -1) - (a.viewCount ?? -1))
+        .slice(0, 12)
+        .map((video, index) =>
+          (index + 1) + '. ' + video.title + ' · ' + video.channel +
+          ' · ' + (video.viewCount == null ? text('views unavailable', 'بازدید ناموجود') : video.viewCount.toLocaleString() + (fa ? ' بازدید' : ' views')) +
+          ' · ' + (video.likeCount == null ? text('likes unavailable', 'پسند ناموجود') : video.likeCount.toLocaleString() + (fa ? ' پسند' : ' likes')),
+        ).join('\n').slice(0, 3200),
+    });
+  }
   if (videos.length) {
     evidence.push({
       id: 'youtube-sample',

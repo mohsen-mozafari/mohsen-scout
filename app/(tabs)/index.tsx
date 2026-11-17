@@ -130,6 +130,7 @@ function EngineAIReview({ topic, result }: { topic: string; result: InternalRese
       { label: 'Editorial angles generated', detail: String(result.angles.length) },
       { label: 'Verification questions', detail: String(result.verificationQuestions.length) },
       { label: 'Known entity candidates', detail: String(result.entityCandidates.length) },
+      ...result.evidence.map((item) => ({ label: item.label, detail: item.detail })),
     ],
     gaps: ['Recorded research gaps: ' + result.intelligence.gaps.length],
     discrepancies: ['Potential discrepancies recorded: ' + result.intelligence.potentialContradictions.length],
@@ -142,8 +143,9 @@ function EngineAIReview({ topic, result }: { topic: string; result: InternalRese
     language: fa ? 'fa' : 'en',
   });
   const researchFingerprint = fingerprintText(
-    result.evidence.map((item) => item.id).join('|') + '|' +
-    result.intelligence.gaps.length + '|' + result.intelligence.potentialContradictions.length,
+    result.topic + '|' +
+    result.evidence.map((item) => item.id + ':' + item.detail).join('|') + '|' +
+    result.intelligence.gaps.join('|') + '|' + result.intelligence.potentialContradictions.join('|'),
   );
   const visibleCacheKey = preferences.model
     ? engineReviewCacheKey(preferences.model, prompt, researchFingerprint)
@@ -467,9 +469,19 @@ function DiscoveryDashboardReady() {
           channelVideoCount: null,
           url: 'https://www.youtube.com/watch?v=' + video.id,
         }));
+        const currentNews = radarNews.map((item) => ({
+          title: item.title,
+          summary: item.summary,
+          sourceName: item.sourceName,
+          sourceUrl: item.url,
+          publishedAt: item.publishedAt,
+          sourceId: item.sourceId,
+        }));
         const result = buildInternalResearch({
           topic: report.input.topic,
           videos,
+          news: currentNews,
+          feedback: buildResearchInterestProfile(useScout.getState().data.ideas),
           language: preferences.uiLanguage ?? 'fa',
         });
         if (active) setReportAnalysisState({ id: report.id, result });
@@ -483,7 +495,7 @@ function DiscoveryDashboardReady() {
       active = false;
       clearTimeout(timer);
     };
-  }, [latestReportId, latestReportSignature, preferences.uiLanguage, fa]);
+  }, [latestReportId, latestReportSignature, preferences.uiLanguage, fa, radarNews]);
 
   const latestReportAnalysis = reportAnalysisState?.id === latestReportId
     ? reportAnalysisState.result
@@ -491,7 +503,7 @@ function DiscoveryDashboardReady() {
   const showYouTubeResearch = Boolean(latestReport && latestReport.videos.length > 0);
   const deskTopic = showYouTubeResearch ? latestReport!.input.topic : discoveryTopic;
   const deskAnalysis = showYouTubeResearch ? latestReportAnalysis : radarBrief;
-  const deskNews = showYouTubeResearch ? [] : radarNews;
+  const deskNews = radarNews;
   const deskVideos = showYouTubeResearch ? latestReportVideos : [];
   const rssGenerationKey = 'rss:' + deskNews.map((item) => item.url).sort().join('|');
   const deskIdeas = ideas.filter((idea) =>
@@ -523,7 +535,29 @@ function DiscoveryDashboardReady() {
     <Page title="MOHSEN SCOUT">
       <View style={{ gap: 14 }}>
         <Panel>
-          <BadgeText>{fa ? 'انتخاب اول · ایدهٔ برتر' : 'YOUR NEXT MOVE · TOP IDEA'}</BadgeText>
+          <BadgeText>{fa ? 'خلاصه تصمیم · نقطه شروع' : 'DECISION SUMMARY · START HERE'}</BadgeText>
+          <Heading>{fa ? 'وضعیت تحقیق در یک نگاه' : 'Research at a glance'}</Heading>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+            <View style={{ flexGrow: 1, flexBasis: 110 }}>
+              <BadgeText>{fa ? 'گزارش‌های ذخیره‌شده' : 'SAVED REPORTS'}</BadgeText>
+              <Heading>{String(reports.length)}</Heading>
+            </View>
+            <View style={{ flexGrow: 1, flexBasis: 110 }}>
+              <BadgeText>{fa ? 'ایده‌های فعال' : 'ACTIVE IDEAS'}</BadgeText>
+              <Heading>{String(rankedIdeas.length)}</Heading>
+            </View>
+            <View style={{ flexGrow: 1, flexBasis: 110 }}>
+              <BadgeText>{fa ? 'خبرهای دریافت‌شده' : 'NEWS ITEMS'}</BadgeText>
+              <Heading>{String(radarNews.length)}</Heading>
+            </View>
+          </View>
+          <Txt muted>{fa
+            ? 'اولویت بعدی، بهترین ایدهٔ قابل بررسی است؛ شواهد و محدودیت‌ها در بخش‌های پایین‌تر آمده‌اند.'
+            : 'Start with the best idea to validate. Supporting evidence and limitations are grouped below.'}</Txt>
+        </Panel>
+
+        <Panel>
+          <BadgeText>{fa ? 'انتخاب اول · ایدهٔ برتر' : 'YOUR NEXT MOVE · TOP IDEA'}
           <Heading>{fa ? 'بهترین ایده برای توسعه' : 'Best idea to develop'}</Heading>
           {bestIdea ? (
             <View style={{ gap: 8 }}>
@@ -551,7 +585,10 @@ function DiscoveryDashboardReady() {
 
         <Panel>
           <BadgeText>{fa ? 'تحقیق و تصمیم' : 'RESEARCH · EVIDENCE · DECISION'}</BadgeText>
-          <Heading>{fa ? 'آخرین جست‌وجوی YouTube و نتیجهٔ موتور داخلی' : 'Latest YouTube research and local decision'}</Heading>
+          <Heading>{fa ? 'نتیجهٔ ترکیبی خبرها و YouTube' : 'Combined news and YouTube assessment'}</Heading>
+          <Txt muted>{fa
+            ? 'موتور داخلی خبرهای رسمی و نمونه ویدئوها را در یک تحلیل کنار هم قرار می‌دهد؛ هر منبع و آمار همچنان جداگانه قابل بررسی است.'
+            : 'The local engine evaluates official news and YouTube samples together while keeping each source and metric individually inspectable.'}</Txt>
           {latestReport ? (
             <View style={{ gap: 7 }}>
               <SourceHeading>{latestReport.input.topic}</SourceHeading>

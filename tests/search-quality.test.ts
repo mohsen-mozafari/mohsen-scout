@@ -8,22 +8,23 @@ const jsonResponse = (body: unknown, status = 200) =>
 const urlOf = (input: string | URL | Request) =>
   typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
 
-void test('YouTube search plan distributes the 12-request cap across languages before secondary angles', () => {
+void test('YouTube search plan reserves a global popularity lane before language-balanced searches', () => {
   const languages = ['en', 'fa', 'de', 'fr'];
   const plan = buildYouTubeSearchPlan('Mars exploration', languages);
   assert.equal(plan.length, 12);
-  assert.deepEqual(plan.slice(0, 4).map((item) => item.language), languages);
-  assert.deepEqual(plan.slice(0, 4).map((item) => item.bucket), ['relevance', 'relevance', 'relevance', 'relevance']);
+  assert.deepEqual(plan[0], { language: '', query: 'Mars exploration', order: 'viewCount', bucket: 'popularity' });
+  assert.deepEqual(plan.slice(1, 5).map((item) => item.language), languages);
   assert.ok(languages.every((language) => plan.some((item) => item.language === language && item.bucket === 'relevance')));
+  assert.equal(plan.filter((item) => item.bucket === 'popularity').length, 1);
   assert.ok(plan.filter((item) => item.bucket !== 'explainer').every((item) => item.query === 'Mars exploration'));
 });
 
-void test('YouTube search plan removes duplicate language codes and preserves all four query angles when possible', () => {
+void test('YouTube search plan removes duplicate language codes and retains global popularity plus all language angles', () => {
   const plan = buildYouTubeSearchPlan('JWST', ['en', 'EN', 'fa']);
-  assert.equal(plan.length, 8);
-  assert.deepEqual([...new Set(plan.map((item) => item.language))], ['en', 'fa']);
-  assert.deepEqual([...new Set(plan.map((item) => item.bucket))], ['relevance', 'popularity', 'recent', 'explainer']);
-  assert.ok(plan.filter((item) => item.bucket !== 'explainer').every((item) => item.query === 'JWST'));
+  assert.equal(plan.length, 7);
+  assert.deepEqual(plan[0], { language: '', query: 'JWST', order: 'viewCount', bucket: 'popularity' });
+  assert.deepEqual([...new Set(plan.slice(1).map((item) => item.language))], ['en', 'fa']);
+  assert.deepEqual([...new Set(plan.map((item) => item.bucket))], ['popularity', 'relevance', 'recent', 'explainer']);
   assert.ok(plan.filter((item) => item.bucket === 'explainer').every((item) => item.query === 'JWST explained'));
 });
 

@@ -51,7 +51,7 @@ export default function Discover() {
   const [duration, setDuration] = useState('Any duration');
   const [category, setCategory] = useState('All categories');
   const [maximum, setMaximum] = useState('25');
-  const [sort, setSort] = useState('Newest');
+  const [sort, setSort] = useState('Most Views');
   const [reportId, setReportId] = useState(typeof params.report === 'string' ? params.report : '');
   const [hasKey, setHasKey] = useState(false);
   const op = useOperation();
@@ -89,7 +89,7 @@ export default function Discover() {
   const sortedReportVideos = report
     ? sortResearchVideos(report.videos, sort as ResearchVideoSort, topic)
     : [];
-  const run = async () => {
+  const run = async (forceRefresh = false) => {
     const input: ResearchInput = {
       topic,
       region,
@@ -122,7 +122,7 @@ export default function Discover() {
                 : '',
       maxResults: Number(maximum),
     };
-    const result = await useScout.getState().research(input);
+    const result = await useScout.getState().research(input, 'manual', forceRefresh);
     if (result) setReportId(result.id);
   };
   return (
@@ -169,7 +169,7 @@ export default function Discover() {
           />
           <Choices
             label="Maximum unique videos"
-            options={['10', '25', '50', '100']}
+            options={['10', '25', '50']}
             selected={[maximum]}
             onChange={(v) => { setMaximum(v[0]); setReportId(''); }}
           />
@@ -243,6 +243,9 @@ export default function Discover() {
               {report.videos.length} {report.videos.length === 1 ? 'video' : 'videos'}
             </Text>
           </View>
+          <Action secondary busy={busy} onPress={() => void run(true)}>
+            {preferences.uiLanguage === 'fa' ? 'جست‌وجوی تازه و نادیده‌گرفتن حافظهٔ موقت' : 'Fetch fresh results (bypass recent cache)'}
+          </Action>
           {report.warnings.map((w) => (
             <Txt muted key={w}>
               {w}

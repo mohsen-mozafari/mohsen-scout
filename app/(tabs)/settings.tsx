@@ -297,12 +297,17 @@ export default function Settings() {
           onChange={(values) => setPrefs({ ...prefs, hybridIntelligence: values[0] === 'Automatic after research' })}
         />
         <Txt muted>
-          Automatic mode sends only the research topic, processed local findings and aggregate quality signals after analysis. It never sends raw news text, YouTube titles/descriptions, private notes or API keys. OpenRouter usage is limited by the existing daily cap and cached by content.
+          {prefs.uiLanguage === 'fa'
+            ? 'در حالت خودکار، پس از پایان تحلیل محلی، موضوع تحقیق، تیترهای عمومی خبرها و بخش کوتاهی از خلاصه آن‌ها، عنوان و نام کانال ویدئوهای عمومی YouTube و آمار عمومی بازدید/پسند به همراه یافته‌های پردازش‌شده موتور داخلی برای نظر دوم ارسال می‌شوند. متن کامل خبرها، توضیحات کامل ویدئوها، یادداشت‌های خصوصی و کلیدهای API ارسال نمی‌شوند. این ارسال فقط با فعال‌کردن حالت خودکار انجام می‌شود.'
+            : 'In automatic mode, after local analysis finishes, the topic, public news headlines with short excerpts, public YouTube video titles and channel names, available public view/like counts, and processed local findings are sent for the second opinion. Full articles, full video descriptions, private notes and API keys are not sent. This happens only while automatic review is enabled.'}
+          OpenRouter usage is limited by the existing daily cap and cached by evidence content.
         </Txt>
         <Action busy={op.busy} disabled={!ready} onPress={save}>Save AI automation</Action>
         <CredentialSection kind="openrouter" label="OpenRouter" />
         <Txt muted>
-          Free models are discovered live. Providers can change availability and limits. In automatic mode, approved processed research signals are sent after a completed analysis; in manual mode, a request is sent only when you ask.
+          {prefs.uiLanguage === 'fa'
+            ? 'مدل‌های رایگان به‌صورت زنده شناسایی می‌شوند و دسترسی ارائه‌دهندگان ممکن است تغییر کند. در حالت خودکار، تیترهای عمومی خبرها، عنوان ویدئوهای عمومی و آمار بازدید/پسند موجود همراه تحلیل پردازش‌شده ارسال می‌شوند؛ در حالت دستی فقط هنگام درخواست خودت ارسال انجام می‌شود.'
+            : 'Free models are discovered live and provider availability may change. Automatic mode includes public news headlines, public video titles, available view/like counts and processed analysis; manual mode sends a request only when you ask.'}
         </Txt>
         <Txt muted>Selected model: {prefs.model || 'Auto-select an available free model'}</Txt>
         <Action busy={modelBusy || op.busy} secondary onPress={loadModels}>

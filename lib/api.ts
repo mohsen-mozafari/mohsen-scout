@@ -257,14 +257,26 @@ export function buildYouTubeSearchPlan(topic: string, languages: readonly string
     ? Math.max(0, Math.min(YOUTUBE_SEARCH_REQUEST_LIMIT, Math.floor(maxRequests)))
     : YOUTUBE_SEARCH_REQUEST_LIMIT;
   if (!cleanTopic || !uniqueLanguages.length || !limit) return [];
-  const tasks: YouTubeSearchTask[] = [];
-  for (const bucket of SEARCH_BUCKET_ORDER) {
+
+  // Reserve one language- and region-independent popularity request first.
+  // YouTube orders this result by public view count; local text ranking must not
+  // reorder the popularity lane.
+  const tasks: YouTubeSearchTask[] = [
+    { language: '', query: cleanTopic, order: 'viewCount', bucket: 'popularity' },
+  ];
+  const secondaryBuckets: SearchBucket[] = ['relevance', 'recent', 'explainer'];
+  for (const bucket of secondaryBuckets) {
     for (const language of uniqueLanguages) {
-      tasks.push({ language, query: bucket === 'explainer' ? cleanTopic + ' explained' : cleanTopic, order: SEARCH_BUCKET_ORDERS[bucket], bucket });
+      tasks.push({
+        language,
+        query: bucket === 'explainer' ? cleanTopic + ' explained' : cleanTopic,
+        order: SEARCH_BUCKET_ORDERS[bucket],
+        bucket,
+      });
       if (tasks.length >= limit) return tasks;
     }
   }
-  return tasks;
+  return tasks.slice(0, limit);
 }
 
 /** Ranks a bounded YouTube sample by transparent title-first textual relevance. */
@@ -282,23 +294,28 @@ export async function searchYouTube(input: ResearchInput, options: YouTubeOption
   if (!searches.length) throw new ApiError('Select at least one research language before starting YouTube search.', 'input');
   const warnings: string[] = [];
   const languageCount = new Set(input.languages.map((language) => language.trim().toLowerCase()).filter(Boolean)).size;
-  if (searches.length < languageCount * SEARCH_BUCKET_ORDER.length) {
-    warnings.push('The 12-search safety cap covers selected languages first; some secondary query angles are omitted.');
+  if (searches.length < 1 + languageCount * 3) {
+    warnings.push('The 12-search safety cap covers a global popularity sample and primary language searches first; some secondary query angles are omitted.');
+  }
+  if (input.days === 0) {
+    warnings.push('The popularity sample is all-time and global by country/language. YouTube still returns a limited search sample, not a complete index of every matching video.');
   }
   const candidates = new Map<string, Video>();
   const bucketIds: Record<SearchBucket, string[]> = { relevance: [], popularity: [], recent: [], explainer: [] };
   let lastError: unknown;
   for (const search of searches) {
-    onProgress?.(`Sampling ${SEARCH_BUCKET_LABELS[search.bucket](topic)} · ${search.language} · ${search.order}`);
+    onProgress?.(`Sampling ${SEARCH_BUCKET_LABELS[search.bucket](topic)} · ${search.language || 'global'} · ${search.order}`);
     const params: Record<string, string> = {
       part: 'snippet', type: 'video', q: search.query, order: search.order,
-      relevanceLanguage: search.language, maxResults: '50', videoDuration: input.duration,
+      maxResults: '50', videoDuration: input.duration,
       fields: 'nextPageToken,items(id/videoId,snippet(title,description,channelTitle,publishedAt,thumbnails))',
     };
     const regionCodes: Partial<Record<Region, string>> = {
       'United States': 'US', Iran: 'IR', 'United Kingdom': 'GB', Germany: 'DE',
     };
-    if (regionCodes[input.region]) params.regionCode = regionCodes[input.region]!;
+    // Do not narrow the highest-viewed lane by region or relevance language.
+    if (search.language) params.relevanceLanguage = search.language;
+    if (search.bucket !== 'popularity' && regionCodes[input.region]) params.regionCode = regionCodes[input.region]!;
     if (input.category) params.videoCategoryId = input.category;
     if (input.days) params.publishedAfter = new Date(Date.now() - input.days * 86400000).toISOString();
     try {
@@ -330,7 +347,9 @@ export async function searchYouTube(input: ResearchInput, options: YouTubeOption
     const bucketVideos = [...new Set(bucketIds[bucket])]
       .map((id) => candidates.get(id))
       .filter((video): video is Video => Boolean(video));
-    rankedBucketIds[bucket] = rankYouTubeSearchResults(topic, bucketVideos).map((video) => video.id);
+    rankedBucketIds[bucket] = bucket === 'popularity'
+      ? bucketVideos.map((video) => video.id)
+      : rankYouTubeSearchResults(topic, bucketVideos).map((video) => video.id);
   }
   const bestMatchScore = Math.max(0, ...[...candidates.values()].map((video) => scoreResearchText(topic, video.title, video.description)));
   if (bestMatchScore === 0) {
@@ -338,9 +357,9 @@ export async function searchYouTube(input: ResearchInput, options: YouTubeOption
   }
 
   const targets: Record<SearchBucket, number> = {
-    relevance: Math.ceil(resultLimit * 0.4),
-    popularity: Math.ceil(resultLimit * 0.3),
-    recent: Math.ceil(resultLimit * 0.2),
+    relevance: Math.ceil(resultLimit * 0.25),
+    popularity: Math.ceil(resultLimit * 0.5),
+    recent: Math.ceil(resultLimit * 0.15),
     explainer: 0,
   };
   targets.explainer = Math.max(0, resultLimit - targets.relevance - targets.popularity - targets.recent);
@@ -758,8 +777,8 @@ export type InternalEngineReviewInput = {
 /** Privacy-bounded critique of processed local-engine output only. */
 export function internalEngineReviewPrompt(input: InternalEngineReviewInput): string {
   const fa = input.language === 'fa';
-  const evidence = input.evidence.slice(0, 10).map((item, index) =>
-    `${index + 1}. ${item.label.slice(0, 100)}: ${item.detail.slice(0, 360)}`,
+  const evidence = input.evidence.slice(0, 24).map((item, index) =>
+    `${index + 1}. ${item.label.slice(0, 100)}: ${item.detail.slice(0, 320)}`,
   );
   const gaps = (input.gaps ?? []).slice(0, 6).map((item) => item.slice(0, 220));
   const discrepancies = (input.discrepancies ?? []).slice(0, 6).map((item) => item.slice(0, 220));
@@ -772,9 +791,9 @@ export function internalEngineReviewPrompt(input: InternalEngineReviewInput): st
     'Potential discrepancies:\n' + (discrepancies.join('\n') || 'Not reported.'),
   ].join('\n\n');
   const instruction = fa
-    ? 'در یک پاسخ ساختاریافته، چهار مرحله را به همین ترتیب انجام بده: (۱) ممیزی کیفیت و کفایت داده و شواهد؛ (۲) تحلیل مستقل موضوع؛ (۳) نقد مخالف برای یافتن فرض پنهان، تناقض و سوگیری؛ (۴) مقایسه صریح نتیجه خودت با موتور داخلی و بازبینی نهایی. دقیقاً مشخص کن کجا توافق داری، کجا اختلاف داری و هر اختلاف به کدام داده نیاز دارد. واقعیت، استنباط و مجهول را جدا نگه دار. هیچ داده بیرونی، منبع، آمار، تقاضا یا رابطه علّی جعل نکن. اگر شواهد کافی نیست صریح بگو. خروجی را در بخش‌های «ممیزی شواهد»، «تحلیل مستقل»، «نقد مخالف»، «توافق با موتور داخلی»، «اختلاف با موتور داخلی»، «نتیجه بازبینی‌شده»، «عدم قطعیت» و «گام بعدی» بنویس. این خلاصه حقیقت قطعی نیست.'
-    : 'Perform four ordered stages in one structured response: (1) audit evidence quality; (2) independently analyze only defensible relationships; (3) adversarially challenge hidden assumptions and contradictions; (4) compare your assessment explicitly with the local engine. State where you agree, where you disagree, and what evidence would resolve each disagreement. Separate facts, inferences and unknowns. Do not invent external facts, sources, statistics, demand or causal links. State when evidence is insufficient. Return sections: Evidence Audit, Independent Analysis, Adversarial Critique, Agreement with Local Engine, Disagreement with Local Engine, Revised Conclusion, Uncertainty, and Next Step. This is a processed summary, not established fact.';
-  return (instruction + '\n\n' + payload).slice(0, 6200);
+    ? 'تمام متن توضیحی، تیترها، ارزیابی، مقایسه و پیشنهادهای خروجی باید فقط به فارسی روان و طبیعی باشند. تنها استثنا نام اشخاص و سازمان‌ها و عنوان دقیق خبرها و ویدئوهای منبع است؛ آن‌ها را عیناً به زبان اصلی نقل کن و ترجمه نکن. چهار مرحله را به همین ترتیب انجام بده: (۱) ممیزی کیفیت، تازگی و کفایت شواهد؛ (۲) تحلیل مستقل با مقایسه تیتر خبرهای رسمی و عنوان ویدئوهای YouTube و تعداد بازدید/پسند واقعی آن‌ها؛ (۳) نقد مخالف برای یافتن فرض پنهان، سوگیری، نمونه‌گیری ناقص و اختلاف میان تیتر و آمار؛ (۴) مقایسه صریح نتیجه خودت با موتور داخلی و بازبینی نهایی. از عنوان ویدئو یا تیتر خبر به‌تنهایی نتیجه‌گیری قطعی نکن. بازدید بالا را از بازدید جدید، رشد سریع، تقاضای پایدار و عملکرد آینده جدا نگه دار؛ عدد بازدید فقط مقدار خام مشاهده‌شده است. دقیقاً مشخص کن کجا توافق داری، کجا اختلاف داری و برای حل اختلاف چه داده‌ای لازم است. واقعیت، استنباط و مجهول را جدا کن. هیچ منبع، آمار، تقاضا، رابطه علّی یا ادعای بیرونی جعل نکن. اگر پوشش یا نمونه محدود است، محدودیت آن را روشن بگو. خروجی را فقط با بخش‌های «ممیزی شواهد»، «تحلیل مستقل»، «نقد مخالف»، «توافق با موتور داخلی»، «اختلاف با موتور داخلی»، «نتیجه بازبینی‌شده»، «عدم قطعیت» و «گام بعدی» بنویس. خلاصه موتور داخلی حقیقت قطعی نیست.'
+    : 'Write all analysis, headings and recommendations in clear English. Preserve exact public news and YouTube titles in their original language without translating them. Audit evidence quality and freshness; compare official headlines with YouTube titles and observed public view/like counts; challenge hidden assumptions and sampling bias; then compare your assessment with the local engine and revise the conclusion. Do not treat a headline alone as proof. Distinguish high lifetime views from recent views, growth velocity, sustained demand and future performance. State agreements, disagreements and what data would resolve them. Separate facts, inferences and unknowns. Never invent sources, metrics, demand, causal links or outside facts. Explain sample limits. Return only: Evidence Audit, Independent Analysis, Adversarial Critique, Agreement with Local Engine, Disagreement with Local Engine, Revised Conclusion, Uncertainty, Next Step.';
+  return (instruction + '\n\n' + payload).slice(0, 10500);
 }
 
 /** Stable YYYY-MM-DD key for the device's local calendar day; independent of locale formatting. */
@@ -839,7 +858,7 @@ export async function getOpinion(
     const raw = await requestJson('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model, max_tokens: 900, messages: [{ role: 'user', content: prompt }] }),
+      body: JSON.stringify({ model, max_tokens: 1300, messages: [{ role: 'user', content: prompt }] }),
     }, fetcher);
     const providerError = openRouterProviderError(raw);
     if (providerError) throw providerError;

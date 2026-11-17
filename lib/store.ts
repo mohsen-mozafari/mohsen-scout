@@ -24,7 +24,7 @@ type State = {
   error: string;
   boot: () => Promise<void>;
   commit: (change: (data: LocalData) => LocalData) => Promise<void>;
-  research: (input: ResearchInput, origin?: YouTubeQuotaOrigin) => Promise<Report | undefined>;
+  research: (input: ResearchInput, origin?: YouTubeQuotaOrigin, forceRefresh?: boolean) => Promise<Report | undefined>;
   analyze: (id: string) => Promise<void>;
   saveVideo: (video: Video, topic: string) => Promise<void>;
   saveIdea: (idea: Idea) => Promise<void>;
@@ -81,7 +81,7 @@ export const useScout = create<State>((set, get) => ({
       budget: nextBudget(data.budget, data.preferences.budget, units, new Date(), kind, origin),
     }));
   },
-  research: async (input, origin = 'manual') => {
+  research: async (input, origin = 'manual', forceRefresh = false) => {
     if (get().busy) return undefined;
     set({ busy: true, error: '', progress: 'Preparing related queries…' });
     try {
@@ -89,7 +89,7 @@ export const useScout = create<State>((set, get) => ({
         throw new Error('Enter a topic and choose at least one language.');
       const key = await getKey('youtube');
       if (!key) throw new Error('Add your YouTube API key in Settings to start research.');
-      const cached = get().data.reports.find(
+      const cached = forceRefresh ? undefined : get().data.reports.find(
         (r) =>
           JSON.stringify(r.input) === JSON.stringify(input) &&
           Date.now() - r.createdAt < 15 * 60000,

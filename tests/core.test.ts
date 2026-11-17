@@ -572,10 +572,10 @@ void test('YouTube sample keeps relevance, high-view, recent and explainer bucke
     all[item.query] = (all[item.query] ?? 0) + 1;
     return all;
   }, {});
-  assert.equal(counts[input.topic], 4);
-  assert.equal(counts['YouTube popularity order'], 3);
+  assert.equal(counts[input.topic], 3);
+  assert.equal(counts['YouTube popularity order'], 5);
   assert.equal(counts['YouTube recent results'], 2);
-  assert.equal(counts[input.topic + ' explained'], 1);
+  assert.equal(counts[input.topic + ' explained'] ?? 0, 0);
 });
 
 void test('YouTube MOCK: broad result buckets use one 50-result page each', async () => {
