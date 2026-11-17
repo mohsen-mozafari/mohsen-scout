@@ -56,8 +56,11 @@ export function selectDashboardVideos(
       if (!video.id || !Number.isFinite(video.fetchedAt)) return false;
       const age = now - video.fetchedAt;
       if (age < 0 || age >= RETENTION_MS) return false;
-      const searchable = [video.title, video.description, video.query].join(' ');
-      return effectiveTerms.some((term) => matchesResearchTerms(searchable, [term]));
+      const published = Date.parse(video.publishedAt);
+      const publicationAge = now - published;
+      if (!Number.isFinite(published) || publicationAge < 0 || publicationAge > 30 * 24 * 60 * 60 * 1000) return false;
+      // Recommendations must match the title itself, not an unrelated description or query.
+      return effectiveTerms.some((term) => matchesResearchTerms(video.title, [term]));
     })
     .slice()
     .sort((a, b) =>

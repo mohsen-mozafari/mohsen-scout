@@ -20,10 +20,10 @@ import {
 import { useScout } from '@/lib/store';
 import { statuses } from '@/lib/types';
 import { getIdeaDisplayTitle, isIdeaDisplayable } from '@/lib/idea-research';
-import { createManualIdea } from '@/lib/engine';
+import { createManualIdea, rankNewsForTopic } from '@/lib/engine';
 import { deduplicateDisplayIdeas, generateEditorialIdeas, IDEA_GENERATION_CATEGORIES, type IdeaGenerationCategory } from '@/lib/idea-generation';
 import { getTopicDossier } from '@/lib/topic-dossier';
-import { SPACE_NICHES } from '@/lib/space';
+import { getCachedSpaceNews, SPACE_NICHES } from '@/lib/space';
 import { normalizeResearchText } from '@/lib/intelligence';
 import { palette as p } from '@/lib/theme';
 import { translateText } from '@/lib/i18n';
@@ -102,18 +102,31 @@ export default function Opportunities() {
     const reportVideos = reportMatches && latestReport ? latestReport.videos : [];
     const dossierVideos = dossier?.videos ?? [];
     const mergedVideos = new Map([...dossierVideos, ...reportVideos].map((video) => [video.id, video]));
-    const videos = [...mergedVideos.values()].map((video) => ({
-      id: video.id,
-      title: video.title,
-      description: video.description,
-      channel: video.channel,
-      publishedAt: video.publishedAt,
-      viewCount: video.viewCount ?? null,
-      likeCount: video.likeCount ?? null,
-    }));
+    const now = Date.now();
+    const videoWindowMs = 30 * 24 * 60 * 60 * 1000;
+    const videos = [...mergedVideos.values()]
+      .filter((video) => {
+        const published = Date.parse(video.publishedAt);
+        const age = now - published;
+        return Number.isFinite(published) && age >= 0 && age <= videoWindowMs;
+      })
+      .map((video) => ({
+        id: video.id,
+        title: video.title,
+        description: video.description,
+        channel: video.channel,
+        publishedAt: video.publishedAt,
+        viewCount: video.viewCount ?? null,
+        likeCount: video.likeCount ?? null,
+      }));
+    const cachedNews = getCachedSpaceNews(current.feedRegistry, current.preferences.spaceNewsSources);
+    const mergedNews = new Map(
+      [...(dossier?.news ?? []), ...cachedNews].map((item) => [item.url, item]),
+    );
+    const relevantNews = rankNewsForTopic(topic, [...mergedNews.values()], 12);
     const generated = generateEditorialIdeas({
       topic,
-      news: dossier?.news ?? [],
+      news: relevantNews,
       videos,
       context: dossier?.wiki ? [{
         title: dossier.wiki.articleTitle,

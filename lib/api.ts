@@ -207,6 +207,8 @@ export type YouTubeOptions = {
   origin?: YouTubeQuotaOrigin;
   fetcher?: Fetcher;
   onQuota?: () => Promise<void>;
+  /** Shared by one research run; counts actual search HTTP attempts, including retries. */
+  searchAttemptBudget?: { used: number; limit: number };
 };
 async function youtube(endpoint: string, params: Record<string, string>, options: YouTubeOptions, units: number) {
   const query = new URLSearchParams({ ...params, key: options.key });
@@ -214,7 +216,13 @@ async function youtube(endpoint: string, params: Record<string, string>, options
   const existing = inflight.get(url);
   if (existing) return existing;
   const kind: YouTubeQuotaKind = endpoint === 'search' ? 'search' : 'other';
-  const promise = requestJson(url, {}, options.fetcher, () => options.charge(units, kind, options.origin ?? 'manual'));
+  const promise = requestJson(url, {}, options.fetcher, async () => {
+    const budget = kind === 'search' ? options.searchAttemptBudget : undefined;
+    if (budget && budget.used >= budget.limit)
+      throw new ApiError('The 12-attempt YouTube search safety limit was reached, including retries.', 'attempt-limit');
+    await options.charge(units, kind, options.origin ?? 'manual');
+    if (budget) budget.used += 1;
+  });
   inflight.set(url, promise);
   try {
     return await promise;
@@ -302,6 +310,10 @@ export async function searchYouTube(input: ResearchInput, options: YouTubeOption
   }
   const candidates = new Map<string, Video>();
   const bucketIds: Record<SearchBucket, string[]> = { relevance: [], popularity: [], recent: [], explainer: [] };
+  const researchOptions: YouTubeOptions = {
+    ...options,
+    searchAttemptBudget: { used: 0, limit: YOUTUBE_SEARCH_REQUEST_LIMIT },
+  };
   let lastError: unknown;
   for (const search of searches) {
     onProgress?.(`Sampling ${SEARCH_BUCKET_LABELS[search.bucket](topic)} · ${search.language || 'global'} · ${search.order}`);
@@ -319,7 +331,7 @@ export async function searchYouTube(input: ResearchInput, options: YouTubeOption
     if (input.category) params.videoCategoryId = input.category;
     if (input.days) params.publishedAfter = new Date(Date.now() - input.days * 86400000).toISOString();
     try {
-      const raw = await youtube('search', params, options, 100);
+      const raw = await youtube('search', params, researchOptions, 100);
       const parsed = searchSchema.safeParse(raw);
       if (!parsed.success) throw new ApiError('YouTube returned an invalid search response.', 'invalid');
       for (const item of parsed.data.items) {
@@ -337,7 +349,7 @@ export async function searchYouTube(input: ResearchInput, options: YouTubeOption
     } catch (error) {
       lastError = error;
       warnings.push((error instanceof Error ? error.message : 'A YouTube search failed.') + ' Another result bucket may still be available.');
-      if (error instanceof ApiError && ['quota', 'budget', 'key', 'permission', 'invalid', 'offline', 'timeout'].includes(error.code)) break;
+      if (error instanceof ApiError && ['quota', 'budget', 'key', 'permission', 'invalid', 'offline', 'timeout', 'attempt-limit'].includes(error.code)) break;
     }
   }
   if (!candidates.size && lastError) throw lastError;
@@ -791,8 +803,8 @@ export function internalEngineReviewPrompt(input: InternalEngineReviewInput): st
     'Potential discrepancies:\n' + (discrepancies.join('\n') || 'Not reported.'),
   ].join('\n\n');
   const instruction = fa
-    ? 'تمام متن توضیحی، تیترها، ارزیابی، مقایسه و پیشنهادهای خروجی باید فقط به فارسی روان و طبیعی باشند. تنها استثنا نام اشخاص و سازمان‌ها و عنوان دقیق خبرها و ویدئوهای منبع است؛ آن‌ها را عیناً به زبان اصلی نقل کن و ترجمه نکن. چهار مرحله را به همین ترتیب انجام بده: (۱) ممیزی کیفیت، تازگی و کفایت شواهد؛ (۲) تحلیل مستقل با مقایسه تیتر خبرهای رسمی و عنوان ویدئوهای YouTube و تعداد بازدید/پسند واقعی آن‌ها؛ (۳) نقد مخالف برای یافتن فرض پنهان، سوگیری، نمونه‌گیری ناقص و اختلاف میان تیتر و آمار؛ (۴) مقایسه صریح نتیجه خودت با موتور داخلی و بازبینی نهایی. از عنوان ویدئو یا تیتر خبر به‌تنهایی نتیجه‌گیری قطعی نکن. بازدید بالا را از بازدید جدید، رشد سریع، تقاضای پایدار و عملکرد آینده جدا نگه دار؛ عدد بازدید فقط مقدار خام مشاهده‌شده است. دقیقاً مشخص کن کجا توافق داری، کجا اختلاف داری و برای حل اختلاف چه داده‌ای لازم است. واقعیت، استنباط و مجهول را جدا کن. هیچ منبع، آمار، تقاضا، رابطه علّی یا ادعای بیرونی جعل نکن. اگر پوشش یا نمونه محدود است، محدودیت آن را روشن بگو. خروجی را فقط با بخش‌های «ممیزی شواهد»، «تحلیل مستقل»، «نقد مخالف»، «توافق با موتور داخلی»، «اختلاف با موتور داخلی»، «نتیجه بازبینی‌شده»، «عدم قطعیت» و «گام بعدی» بنویس. خلاصه موتور داخلی حقیقت قطعی نیست.'
-    : 'Write all analysis, headings and recommendations in clear English. Preserve exact public news and YouTube titles in their original language without translating them. Audit evidence quality and freshness; compare official news headlines with YouTube titles and observed public view/like counts; challenge hidden assumptions and sampling bias; then compare your assessment with the local engine and revise the conclusion. Do not treat a headline alone as proof. Distinguish high lifetime views from recent views, growth velocity, sustained demand and future performance. State agreements, disagreements and what data would resolve them. Separate facts, inferences and unknowns. Never invent sources, metrics, demand, causal links or outside facts. Explain sample limits. Return only: Evidence Audit, Independent Analysis, Adversarial Critique, Agreement with Local Engine, Disagreement with Local Engine, Revised Conclusion, Uncertainty, Next Step.';
+    ? 'تمام متن توضیحی، تیترها، ارزیابی، مقایسه و پیشنهادهای خروجی باید فقط به فارسی روان و طبیعی باشند. فقط موضوع تحریری و شاخص‌های تجمیعی موتور محلی در اختیار تو قرار دارد؛ عنوان خام، توضیحات، پیوندها و آمار هر خبر یا ویدئو عمداً ارسال نمی‌شوند. وانمود نکن که تیترهای منفرد یا محتوای ویدئوها را دیده‌ای. چهار مرحله را به همین ترتیب انجام بده: (۱) ممیزی کیفیت، تازگی و کفایت نمونه بر اساس شمارنده‌ها؛ (۲) تحلیل مستقل همبستگی و پوشش در سطح تجمیعی، بدون ادعای تطبیق معناییِ ندیده؛ (۳) نقد مخالف برای یافتن فرض پنهان، سوگیری، نمونه‌گیری ناقص و کمبود داده؛ (۴) مقایسه صریح نتیجه خودت با موتور داخلی و بازبینی نهایی. بازدید بالا را از بازدید جدید، رشد سریع، تقاضای پایدار و عملکرد آینده جدا نگه دار؛ هیچ نرخ رشد یا عملکرد آینده‌ای استنتاج نکن. دقیقاً مشخص کن کجا توافق داری، کجا اختلاف داری و برای حل اختلاف چه داده‌ای لازم است. واقعیت، استنباط و مجهول را جدا کن. هیچ منبع، آمار، تقاضا، رابطه علّی یا ادعای بیرونی جعل نکن. اگر پوشش یا نمونه محدود است، محدودیت آن را روشن بگو. خروجی را فقط با بخش‌های «ممیزی شواهد»، «تحلیل مستقل»، «نقد مخالف»، «توافق با موتور داخلی»، «اختلاف با موتور داخلی»، «نتیجه بازبینی‌شده»، «عدم قطعیت» و «گام بعدی» بنویس. خلاصه موتور داخلی حقیقت قطعی نیست.'
+    : 'Write all analysis, headings and recommendations in clear English. Only the editorial topic and aggregate indicators from the local engine are provided. Raw headlines, video titles, descriptions, URLs and per-item statistics are intentionally excluded. Do not pretend to have seen individual source items or claim to compare specific titles. Perform four passes: (1) audit evidence coverage, freshness and sample sufficiency using aggregate counts; (2) independently assess aggregate coverage and coherence without claiming unseen semantic matches; (3) challenge hidden assumptions, sampling bias, missing data and overconfidence; (4) compare your assessment with the local engine and revise the conclusion. Do not infer view velocity, sustained demand or future performance. State agreements, disagreements and what additional data would resolve them. Separate facts, inferences and unknowns. Never invent sources, metrics, demand, causal links or outside facts. Explain sample limits. Return only: Evidence Audit, Independent Analysis, Adversarial Critique, Agreement with Local Engine, Disagreement with Local Engine, Revised Conclusion, Uncertainty, Next Step.';
   return (instruction + '\n\n' + payload).slice(0, 10500);
 }
 

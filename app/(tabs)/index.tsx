@@ -16,8 +16,8 @@ import {
   newsForNiche,
   type SpaceNewsItem,
 } from '@/lib/space';
-import { buildInternalResearch, type InternalResearchResult } from '@/lib/engine';
-import { buildResearchInterestProfile, normalizeResearchText } from '@/lib/intelligence';
+import { buildInternalResearch, rankNewsForTopic, type InternalResearchResult } from '@/lib/engine';
+import { buildResearchInterestProfile, normalizeResearchText, scoreResearchText } from '@/lib/intelligence';
 import { rememberTopicDossier } from '@/lib/topic-dossier';
 import { createResearchMemoryEntry } from '@/lib/research-memory';
 import { ResearchKnowledgeGraph } from '@/components/ResearchKnowledgeGraph';
@@ -34,6 +34,7 @@ const automaticReviewStarted = new Set<string>();
 function AnalysisSignals({ result }: { result: InternalResearchResult }) {
   const language = useScout((state) => state.data.preferences.uiLanguage ?? 'fa');
   const fa = language === 'fa';
+  const audit = result.intelligence.selfEvaluation;
   const confidence = result.intelligence.confidence.level;
   const confidenceLabel = fa
     ? confidence === 'high' ? 'بالا' : confidence === 'moderate' ? 'متوسط' : 'پایین'
@@ -43,6 +44,10 @@ function AnalysisSignals({ result }: { result: InternalResearchResult }) {
       <Heading>{fa ? 'حد و حدود اطمینان تحلیل' : 'Confidence and evidence scope'}</Heading>
       <BadgeText>{(fa ? 'میزان اطمینان: ' : 'Confidence: ') + confidenceLabel}</BadgeText>
       <Txt muted>{result.intelligence.confidence.reason}</Txt>
+      <Heading>{fa ? 'تطبیق نمونه با موضوع' : 'Topic match in the sample'}</Heading>
+      <Txt muted>{fa
+        ? 'خبر هم‌موضوع: ' + audit.topicMatchedNewsCount + ' از ' + audit.uniqueNewsCount + ' · ویدئوی تازه با عنوان هم‌موضوع: ' + audit.matchedVideoCount + ' از ' + audit.youtubeSampleCount + ' · بازه: ' + audit.videoWindowDays + ' روز · دارای آمار بازدید: ' + audit.videoViewCountsAvailable
+        : 'Topic-matched news: ' + audit.topicMatchedNewsCount + '/' + audit.uniqueNewsCount + ' · Recent title-matched videos: ' + audit.matchedVideoCount + '/' + audit.youtubeSampleCount + ' · Window: ' + audit.videoWindowDays + ' days · With view counts: ' + audit.videoViewCountsAvailable}</Txt>
       <Txt muted>{fa
         ? 'خوراک‌های حاضر: ' + result.intelligence.sourceQuality.feedsRepresented +
           ' · گروه‌های مستقل ناشر: ' + result.intelligence.sourceQuality.independentPublishers +
@@ -114,13 +119,17 @@ function EngineAIReview({ topic, result }: { topic: string; result: InternalRese
   const opinions = useScout((state) => state.data.opinions);
   const fa = preferences.uiLanguage === 'fa';
   const quality = result.intelligence.sourceQuality;
+  const audit = result.intelligence.selfEvaluation;
   const prompt = internalEngineReviewPrompt({
     topic,
-    summary: fa
-      ? 'موتور داخلی موضوع، شواهد پردازش‌شده، خلأها و میزان اطمینان را ارزیابی کرده است. محتوای خام خبر و فراداده ویدئو در این درخواست ارسال نمی‌شود.'
-      : 'The local engine assessed the topic, processed evidence signals, research gaps and confidence. Raw news content and video metadata are not included in this request.',
+    summary: result.summary,
     evidence: [
-      { label: 'Evidence records processed', detail: String(result.evidence.length) },
+      { label: 'Input news / unique news', detail: audit.inputNewsCount + ' / ' + audit.uniqueNewsCount },
+      { label: 'Topic-matched / excluded news', detail: audit.topicMatchedNewsCount + ' / ' + audit.unmatchedNewsCount },
+      { label: 'YouTube input / title-matched recent', detail: audit.youtubeSampleCount + ' / ' + audit.matchedVideoCount },
+      { label: 'Recent candidates / excluded videos', detail: audit.recentVideoCandidateCount + ' / ' + audit.excludedVideoCount },
+      { label: 'Matched videos with raw view counts', detail: audit.videoViewCountsAvailable },
+      { label: 'Publication window (days)', detail: audit.videoWindowDays },
       { label: 'Independent publisher groups', detail: String(quality.independentPublishers) },
       { label: 'Official feeds represented', detail: String(quality.feedsRepresented) },
       { label: 'Duplicate records merged', detail: String(quality.duplicateStoriesMerged) },
@@ -130,7 +139,6 @@ function EngineAIReview({ topic, result }: { topic: string; result: InternalRese
       { label: 'Editorial angles generated', detail: String(result.angles.length) },
       { label: 'Verification questions', detail: String(result.verificationQuestions.length) },
       { label: 'Known entity candidates', detail: String(result.entityCandidates.length) },
-      ...result.evidence.map((item) => ({ label: item.label, detail: item.detail })),
     ],
     gaps: ['Recorded research gaps: ' + result.intelligence.gaps.length],
     discrepancies: ['Potential discrepancies recorded: ' + result.intelligence.potentialContradictions.length],
@@ -143,8 +151,7 @@ function EngineAIReview({ topic, result }: { topic: string; result: InternalRese
     language: fa ? 'fa' : 'en',
   });
   const researchFingerprint = fingerprintText(
-    result.topic + '|' +
-    result.evidence.map((item) => item.id + ':' + item.detail).join('|') + '|' +
+    result.topic + '|' + result.summary + '|' + JSON.stringify(audit) + '|' +
     result.intelligence.gaps.join('|') + '|' + result.intelligence.potentialContradictions.join('|'),
   );
   const visibleCacheKey = preferences.model
@@ -314,6 +321,7 @@ function DiscoveryDashboardReady() {
   const fa = preferences.uiLanguage === 'fa';
   const [warnings, setWarnings] = useState<string[]>([]);
   const [lastScannedAt, setLastScannedAt] = useState<number | null>(null);
+  const [dashboardNow, setDashboardNow] = useState(() => Date.now());
   const [nicheSuggestions, setNicheSuggestions] = useState<SpaceNicheSuggestion[]>([]);
   const [radarBrief, setRadarBrief] = useState<InternalResearchResult>();
   const [radarNews, setRadarNews] = useState<SpaceNewsItem[]>([]);
@@ -348,6 +356,7 @@ function DiscoveryDashboardReady() {
         setRadarNews(relevantNews);
         setWarnings(result.warnings);
         setLastScannedAt(Date.now());
+        setDashboardNow(Date.now());
         // Yield one frame before local CPU work so the native UI can paint and respond.
         await new Promise<void>((resolve) => setTimeout(resolve, 32));
 
@@ -503,18 +512,50 @@ function DiscoveryDashboardReady() {
   const showYouTubeResearch = Boolean(latestReport && latestReport.videos.length > 0);
   const deskTopic = showYouTubeResearch ? latestReport!.input.topic : discoveryTopic;
   const deskAnalysis = showYouTubeResearch ? latestReportAnalysis : radarBrief;
-  const deskNews = radarNews;
-  const deskVideos = showYouTubeResearch ? latestReportVideos : [];
+  const deskNews = useMemo(() => rankNewsForTopic(deskTopic, radarNews, 12), [deskTopic, radarNews]);
+  const deskVideos = useMemo(() => showYouTubeResearch
+    ? latestReportVideos
+      .filter((video) => {
+        const published = Date.parse(video.publishedAt);
+        const age = dashboardNow - published;
+        return Number.isFinite(published) && age >= 0 && age <= 30 * 24 * 60 * 60 * 1000 && scoreResearchText(deskTopic, video.title) > 0;
+      })
+      .sort((a, b) => (b.viewCount ?? -1) - (a.viewCount ?? -1))
+      .slice(0, 12)
+    : [], [showYouTubeResearch, latestReportVideos, deskTopic, dashboardNow]);
   const rssGenerationKey = 'rss:' + deskNews.map((item) => item.url).sort().join('|');
   const deskIdeas = ideas.filter((idea) =>
     idea.engineGenerated && !idea.archived &&
     (showYouTubeResearch ? idea.reportId === latestReport?.id : idea.generationKey === rssGenerationKey),
   ).slice(0, 3);
-  const bestIdea = useMemo(() => chooseBestIdea(ideas), [ideas]);
+  const bestIdea = useMemo(() => chooseBestIdea(deskIdeas), [deskIdeas]);
   const rankedIdeas = useMemo(() => rankDashboardIdeasForHome(ideas), [ideas]);
-  const recommendations = (deskIdeas.length ? deskIdeas : rankedIdeas)
+  const recommendations = deskIdeas
     .filter((idea) => idea.id !== bestIdea?.id)
     .slice(0, 3);
+  const combinedEvidenceKey = fingerprintText(
+    deskTopic + '|' + deskNews.map((item) => item.url).sort().join('|') + '|' + deskVideos.map((video) => video.id).sort().join('|'),
+  );
+  useEffect(() => {
+    if (!latestReport || (!deskNews.length && !deskVideos.length)) return;
+    const current = useScout.getState().data;
+    const generated = generateEditorialIdeas({
+      topic: deskTopic,
+      news: deskNews,
+      videos: deskVideos,
+      reportId: latestReport.id,
+      existingIdeas: current.ideas,
+      evidenceKey: 'combined:' + combinedEvidenceKey,
+      skipExistingEvidence: true,
+      region: preferences.region,
+      languages: preferences.languages,
+      language: preferences.uiLanguage ?? 'fa',
+      limit: 8,
+    });
+    if (generated.length) {
+      void useScout.getState().commit((data) => ({ ...data, ideas: [...generated, ...data.ideas] })).catch(() => {});
+    }
+  }, [latestReportId, combinedEvidenceKey, deskTopic, deskNews, deskVideos, preferences.region, preferences.languages, preferences.uiLanguage]);
 
   const nicheTerms = useMemo<string[]>(() => {
     if (preferences.selectedSpaceNiche === 'custom') {
@@ -525,7 +566,6 @@ function DiscoveryDashboardReady() {
   const feedTopic = preferences.selectedSpaceNiche === 'all'
     ? latestReport?.input.topic ?? discoveryTopic
     : discoveryTopic;
-  const [dashboardNow] = useState(() => Date.now());
   const feedVideos = useMemo(
     () => selectDashboardVideos(latestReportVideoRecords ?? [], feedTopic, nicheTerms, dashboardNow, 5),
     [latestReportVideoRecords, feedTopic, nicheTerms, dashboardNow],
@@ -586,6 +626,9 @@ function DiscoveryDashboardReady() {
         <Panel>
           <BadgeText>{fa ? 'تحقیق و تصمیم' : 'RESEARCH · EVIDENCE · DECISION'}</BadgeText>
           <Heading>{fa ? 'نتیجهٔ ترکیبی خبرها و YouTube' : 'Combined news and YouTube assessment'}</Heading>
+          <Txt muted>{fa
+            ? 'تحلیل فقط بر تیترهای هم‌موضوع و ویدئوهای تاریخ‌دار ۳۰ روز اخیر تکیه می‌کند؛ تعداد بازدید مقدار خام نمونه است، نه نرخ رشد.'
+            : 'Analysis uses topic-matched headlines and dated videos from the latest 30 days; view counts are raw sample values, not growth rates.'}</Txt>
           <Txt muted>{fa
             ? 'موتور داخلی خبرهای رسمی و نمونه ویدئوها را در یک تحلیل کنار هم قرار می‌دهد؛ هر منبع و آمار همچنان جداگانه قابل بررسی است.'
             : 'The local engine evaluates official news and YouTube samples together while keeping each source and metric individually inspectable.'}</Txt>

@@ -40,6 +40,9 @@ export type InternalResearchInput = {
   feedback?: ResearchFeedbackProfile;
   language?: 'fa' | 'en';
   priorMemory?: ResearchMemoryEntry;
+  videoWindowDays?: number;
+  /** Injectable clock for deterministic freshness tests. */
+  now?: number;
 };
 
 export type InternalEngineEvidence = {
@@ -84,6 +87,12 @@ export type InternalResearchResult = {
       undatedNewsCount: number;
       staleNewsCount: number;
       youtubeSampleCount: number;
+      matchedVideoCount: number;
+      recentVideoCandidateCount: number;
+      excludedVideoCount: number;
+      videoViewCountsAvailable: number;
+      videoWindowDays: number;
+      unmatchedNewsCount: number;
       wikimediaMonthlyObservations: number;
       openResearchQuestionCount: number;
       contradictionWarningCount: number;
@@ -143,6 +152,9 @@ function median(values: number[]): number | null {
 /** Local-only analysis over fetched evidence; no network, storage writes or AI calls. */
 export function buildInternalResearch(input: InternalResearchInput): InternalResearchResult {
   const startedAt = Date.now();
+  const now = Number.isFinite(input.now) ? input.now! : Date.now();
+  const videoWindowDays = Number.isFinite(input.videoWindowDays) ? Math.max(1, Math.min(90, Math.floor(input.videoWindowDays!))) : 30;
+  const videoWindowStart = now - videoWindowDays * 86400000;
   const topic = cleanTopic(input.topic);
   const fa = input.language === 'fa';
   const text = (english: string, persian: string) => fa ? persian : english;
@@ -160,20 +172,25 @@ export function buildInternalResearch(input: InternalResearchInput): InternalRes
       (b.item.publishedAt ? Date.parse(b.item.publishedAt) : 0) -
       (a.item.publishedAt ? Date.parse(a.item.publishedAt) : 0) || a.index - b.index);
   const matchedNews = rankedNews.filter((entry) => entry.score > 0);
-  const news = (matchedNews.length ? matchedNews : rankedNews).slice(0, 12).map((entry) => entry.item);
+  const news = matchedNews.slice(0, 12).map((entry) => entry.item);
   const publisherNames = [...new Set(news.flatMap((item) =>
     item.sourceName.split('·').map((name) => name.trim()).filter(Boolean)))];
   const declaredPublisherCount = Math.max(0, ...news.map((item) => item.sourceCount ?? 0));
   const publisherCount = Math.max(publisherNames.length, declaredPublisherCount);
 
-  const videos = [...new Map((input.videos ?? []).map((video) => [video.id, video])).values()];
-  const rankedVideos = videos.map((video, index) => ({
+  const inputVideos = [...new Map((input.videos ?? []).map((video) => [video.id, video])).values()];
+  const recentVideoCandidates = inputVideos.filter((video) => {
+    const published = Date.parse(video.publishedAt);
+    return Number.isFinite(published) && published >= videoWindowStart && published <= now + 86400000;
+  });
+  const rankedVideos = recentVideoCandidates.map((video, index) => ({
     video, index, score: topicRelevanceScore(topic, video.title),
-  })).sort((a, b) => b.score - a.score ||
+  })).filter((entry) => entry.score > 0).sort((a, b) => b.score - a.score ||
     (b.video.viewCount ?? -1) - (a.video.viewCount ?? -1) ||
     (b.video.likeCount ?? -1) - (a.video.likeCount ?? -1) || a.index - b.index);
+  const videos = rankedVideos.map((entry) => entry.video);
   const entityDocuments = [
-    ...allNews.map((item) => ({ id: item.sourceUrl, text: item.title + ' ' + item.summary, sourceId: item.sourceId })),
+    ...news.map((item) => ({ id: item.sourceUrl, text: item.title + ' ' + item.summary, sourceId: item.sourceId })),
     ...videos.map((video) => ({ id: 'youtube:' + video.id, text: video.title, sourceId: 'youtube-sample' })),
   ];
   const entityCandidates = extractResearchEntityCandidates(entityDocuments);
@@ -204,7 +221,14 @@ export function buildInternalResearch(input: InternalResearchInput): InternalRes
     evidence.push({
       id: 'publisher-news',
       label: text('Official publisher coverage', 'پوشش ناشران رسمی'),
-      detail: text('No selected official RSS item was supplied to this analysis. Verify the original publisher before presenting a factual claim.', 'هیچ خبر رسمی از خوراک‌های انتخاب‌شده به این تحلیل نرسیده است. پیش از بیان ادعای واقعی، ناشر اصلی را بررسی کنید.')
+      detail: text(
+        allNews.length
+          ? 'No supplied publisher headline matched the topic; ' + allNews.length + ' unmatched item(s) were excluded.'
+          : 'No selected official RSS item was supplied to this analysis. Verify the original publisher before presenting a factual claim.',
+        allNews.length
+          ? 'هیچ تیتر خبری با موضوع تطبیق نداشت؛ ' + allNews.length + ' خبر نامرتبط از تحلیل اصلی حذف شد.'
+          : 'هیچ خبر رسمی از خوراک‌های انتخاب‌شده به این تحلیل نرسیده است. پیش از بیان ادعای واقعی، ناشر اصلی را بررسی کنید.',
+      )
     });
   }
   if (input.wiki) {
@@ -326,15 +350,17 @@ export function buildInternalResearch(input: InternalResearchInput): InternalRes
   const limitationsList = [
     ...(fa ? [
       'این موتور به‌صورت محلی و بر پایه شواهد بارگذاری‌شده در برنامه اجرا می‌شود و در این مرحله منبع تازه‌ای دریافت نمی‌کند.',
+      'فقط ویدئوهای تاریخ‌دار با تطبیق مستقیم عنوان در ' + videoWindowDays + ' روز اخیر وارد نمونه تحلیلی می‌شوند.',
       'زاویه‌های محتوایی فرضیه‌اند، نه یافته علمی و نه پیش‌بینی بازدید، رشد یا وایرال شدن.',
       'پوشش خبری ناشران، بازدید مقاله‌های ویکی‌مدیا و نمونه یوتیوب سیگنال‌های جداگانه‌اند و نباید در یک امتیاز ترکیبی ادغام شوند.',
     ] : [
       'This engine runs locally on evidence already loaded in the app; it does not fetch new sources.',
+      'Only videos with a direct title match and a valid publication date within the latest ' + videoWindowDays + ' days enter the analysis sample.',
       'Editorial angles are hypotheses, not scientific findings or predictions of views, growth or virality.',
       'Publisher feed coverage, Wikimedia article pageviews and YouTube samples are separate signals and must not be combined into a score.',
     ]),
-    ...(matchedNews.length < news.length && news.length
-      ? [text('Some supplied publisher items had no direct keyword overlap with the topic; treat them as broad context, not confirmed topic matches.', 'برخی گزارش‌های ناشر با واژه‌های موضوع تطبیق مستقیم نداشتند؛ آن‌ها را زمینه عمومی بدان، نه تطبیق قطعی با موضوع.')]
+    ...(matchedNews.length < allNews.length
+      ? [text('Unmatched publisher records were excluded from the primary evidence and reflected only in audit counts.', 'خبرهای بدون تطبیق مستقیم از شواهد اصلی حذف شدند و فقط در شمارنده ممیزی ثبت شدند.')]
       : []),
     ...(!news.length && !input.wiki && !videos.length
       ? [text('No source evidence was supplied. Treat all angles as starting questions only.', 'هیچ شاهد منبعی ارائه نشده است؛ همه زاویه‌ها را فقط پرسش‌های آغازین در نظر بگیر.')]
@@ -358,7 +384,7 @@ export function buildInternalResearch(input: InternalResearchInput): InternalRes
     ? (fa ? summaryParts.join(' ') + ' این سیگنال‌ها مشاهدات جداگانه‌اند؛ موتور امتیاز ترکیبی فرصت محاسبه نمی‌کند و عملکرد آینده را پیش‌بینی نمی‌کند.' : summaryParts.join(' ') + ' These signals remain separate observations; this engine does not calculate a composite opportunity score or predict performance.')
     : text('No source evidence was supplied. The local engine can prepare questions, but this topic is still exploratory until sources are checked.', 'هیچ شاهد منبعی ارائه نشده است. موتور محلی می‌تواند پرسش‌های تحقیق را آماده کند، اما تا بررسی منابع این موضوع اکتشافی باقی می‌ماند.');
 
-  const sourceQuality = analyzeSourceQuality(allNews, deduplicated.duplicatesMerged);
+  const sourceQuality = analyzeSourceQuality(news, deduplicated.duplicatesMerged);
   const trend = analyzeMonthlyViews(input.wiki?.monthlyViews ?? []);
   const evidenceTypes = Number(news.length > 0) + Number(Boolean(input.wiki)) + Number(videos.length > 0);
   const confidence: InternalResearchResult['intelligence']['confidence'] =
@@ -371,7 +397,15 @@ export function buildInternalResearch(input: InternalResearchInput): InternalRes
   if (!matchedNews.length) gaps.push(text('No direct publisher headline matched the requested topic.', 'هیچ تیتر مستقیمی از ناشران با موضوع درخواستی تطبیق نداشت.'));
   if (sourceQuality.independentPublishers < 2) gaps.push(text('Independent publisher confirmation is limited.', 'تأیید از سوی ناشران مستقل محدود است.'));
   if (!input.wiki || trend.observations < 4) gaps.push(text('There is not enough monthly public-interest history to infer a reliable direction.', 'سابقه ماهانه توجه عمومی برای تشخیص جهت قابل اعتماد کافی نیست.'));
-  if (videos.length < 3) gaps.push(text('The YouTube sample is too small for a robust comparison.', 'نمونه یوتیوب برای مقایسه قابل اتکا کوچک است.'));
+  if (videos.length < 3) gaps.push(text('The recent, title-matched YouTube sample is too small for a robust comparison.', 'نمونه تازه و دارای تطبیق مستقیم عنوان در YouTube برای مقایسه قابل اتکا کوچک است.'));
+  if (inputVideos.length > recentVideoCandidates.length) gaps.push(text(
+    (inputVideos.length - recentVideoCandidates.length) + ' video(s) were outside the publication-date window or undated.',
+    (inputVideos.length - recentVideoCandidates.length) + ' ویدئو به‌دلیل قدیمی یا بی‌تاریخ بودن از پنجره زمانی کنار گذاشته شد.',
+  ));
+  if (recentVideoCandidates.length > videos.length) gaps.push(text(
+    (recentVideoCandidates.length - videos.length) + ' recent video(s) did not match the topic in their titles.',
+    (recentVideoCandidates.length - videos.length) + ' ویدئوی تازه در عنوان با موضوع تطبیق نداشت و کنار گذاشته شد.',
+  ));
   if (sourceQuality.undatedItems > 0) gaps.push(text('Some source items have no publication date.', 'تاریخ انتشار بعضی منابع مشخص نیست.'));
   if (sourceQuality.staleItems > 0) gaps.push(text('Some source items are older than 90 days.', 'بعضی منابع بیش از ۹۰ روز قدمت دارند.'));
   const followUpQueries = (fa ? [
@@ -395,7 +429,7 @@ export function buildInternalResearch(input: InternalResearchInput): InternalRes
     const detail = item.replace(/^(Previously unresolved discrepancy: |اختلاف حل‌نشده در تحقیق قبلی: )/, '');
     return text('Previously unresolved discrepancy: ' + detail, 'اختلاف حل‌نشده در تحقیق قبلی: ' + detail);
   });
-  const numericClaims = originalNews.map((item) => {
+  const numericClaims = news.map((item) => {
     const values = [...item.title.matchAll(/(\d+(?:[.,]\d+)?)\s*(%|km|miles?|years?|days?|hours?)/gi)]
       .map((match) => ({ value: Number(match[1].replace(',', '.')), unit: match[2].toLowerCase() }));
     return { item, values };
@@ -433,11 +467,17 @@ export function buildInternalResearch(input: InternalResearchInput): InternalRes
     inputNewsCount: originalNews.length,
     uniqueNewsCount: allNews.length,
     topicMatchedNewsCount: matchedNews.length,
+    unmatchedNewsCount: Math.max(0, allNews.length - matchedNews.length),
     duplicateNewsMerged: deduplicated.duplicatesMerged,
     independentPublisherFamilies: sourceQuality.independentPublishers,
     undatedNewsCount: sourceQuality.undatedItems,
     staleNewsCount: sourceQuality.staleItems,
-    youtubeSampleCount: videos.length,
+    youtubeSampleCount: inputVideos.length,
+    matchedVideoCount: videos.length,
+    recentVideoCandidateCount: recentVideoCandidates.length,
+    excludedVideoCount: Math.max(0, inputVideos.length - videos.length),
+    videoViewCountsAvailable: views.length,
+    videoWindowDays,
     wikimediaMonthlyObservations: trend.observations,
     openResearchQuestionCount: gaps.length + verificationQuestions.length,
     contradictionWarningCount: potentialContradictions.length,

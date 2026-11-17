@@ -1073,7 +1073,7 @@ void test('Internal research engine joins publisher, Wikimedia and YouTube evide
     topic: 'Exoplanet atmospheres',
     news: [
       {
-        title: 'New atmosphere observation',
+        title: 'New exoplanet atmosphere observation',
         summary: 'A source-reported observation for testing.',
         sourceName: 'NASA',
         sourceUrl: 'https://www.nasa.gov/mock-report',
@@ -1081,7 +1081,7 @@ void test('Internal research engine joins publisher, Wikimedia and YouTube evide
         publishedAt: '2026-11-14T12:00:00.000Z',
       },
       {
-        title: 'New atmosphere observation',
+        title: 'New exoplanet atmosphere observation',
         summary: 'A matching report from another selected feed.',
         sourceName: 'NASA JPL',
         sourceUrl: 'https://www.jpl.nasa.gov/mock-report',
@@ -1096,7 +1096,7 @@ void test('Internal research engine joins publisher, Wikimedia and YouTube evide
     },
     videos: [{
       id: 'dQw4w9WgXcQ',
-      title: 'MOCK video evidence',
+      title: 'Exoplanet atmosphere discovery explained',
       channel: 'MOCK science channel',
       publishedAt: '2026-11-13T12:00:00.000Z',
       viewCount: 1000,
@@ -1114,6 +1114,35 @@ void test('Internal research engine joins publisher, Wikimedia and YouTube evide
   assert.equal(result.intelligence.sourceQuality.duplicateStoriesMerged, 1);
   assert.equal(result.verificationQuestions.length, 4);
   assert(!JSON.stringify(result).toLowerCase().includes('viral score'));
+});
+
+void test('Internal engine excludes unrelated headlines and uses only title-matched YouTube videos from the latest 30 days', () => {
+  const fixedNow = Date.parse('2026-11-18T12:00:00.000Z');
+  const result = buildInternalResearch({
+    topic: 'Exoplanet atmospheres',
+    now: fixedNow,
+    videoWindowDays: 30,
+    news: [
+      { title: 'James Webb reveals an exoplanet atmosphere', summary: 'A new spectral observation.', sourceName: 'NASA', sourceUrl: 'https://www.nasa.gov/mock-exoplanet', sourceId: 'nasa', publishedAt: '2026-11-17T10:00:00.000Z' },
+      { title: 'Artemis lunar test flight update', summary: 'A crewed lunar mission update.', sourceName: 'NASA JPL', sourceUrl: 'https://www.jpl.nasa.gov/mock-artemis', sourceId: 'jpl', publishedAt: '2026-11-17T11:00:00.000Z' },
+    ],
+    videos: [
+      { id: 'dQw4w9WgXcQ', title: 'James Webb observes an exoplanet atmosphere', channel: 'Science One', publishedAt: '2026-11-17T09:00:00.000Z', viewCount: 800, likeCount: 40 },
+      { id: 'M7lc1UVf-VE', title: 'Artemis lunar mission update', channel: 'Space Two', publishedAt: '2026-11-17T08:00:00.000Z', viewCount: 5000, likeCount: 200 },
+      { id: '9bZkp7q19f0', title: 'Exoplanet atmosphere discoveries in 2025', channel: 'Old Science', publishedAt: '2026-10-01T09:00:00.000Z', viewCount: 9000, likeCount: 400 },
+      { id: 'aqz-KE-bpKQ', title: 'Exoplanet atmosphere announced for the future', channel: 'Future Science', publishedAt: '2026-12-01T09:00:00.000Z', viewCount: 12000, likeCount: 500 },
+    ],
+  });
+  const audit = result.intelligence.selfEvaluation;
+  assert.equal(audit.topicMatchedNewsCount, 1);
+  assert.equal(audit.unmatchedNewsCount, 1);
+  assert.equal(audit.youtubeSampleCount, 4);
+  assert.equal(audit.recentVideoCandidateCount, 2);
+  assert.equal(audit.matchedVideoCount, 1);
+  assert.equal(audit.excludedVideoCount, 3);
+  assert.equal(audit.videoViewCountsAvailable, 1);
+  assert.ok(!result.evidence.some((item) => item.detail.includes('Artemis')));
+  assert.ok(result.evidence.some((item) => item.id === 'youtube-sample' && item.detail.includes('800')));
 });
 
 void test('Topic relevance ranks a direct publisher match above unrelated feed context', () => {
@@ -1198,10 +1227,10 @@ void test('Internal engine self-evaluation reports measured inputs, deduplicatio
   const result = buildInternalResearch({
     topic: 'Exoplanet atmospheres',
     news: [
-      { title: 'New atmosphere observation', summary: 'Source report.', sourceName: 'NASA', sourceUrl: 'https://www.nasa.gov/mock-a', sourceId: 'nasa', publishedAt: '2026-11-14T12:00:00.000Z' },
-      { title: 'New atmosphere observation', summary: 'Same syndicated report.', sourceName: 'NASA JPL', sourceUrl: 'https://www.jpl.nasa.gov/mock-a', sourceId: 'jpl', publishedAt: '2026-11-14T13:00:00.000Z' },
+      { title: 'New exoplanet atmosphere observation', summary: 'Source report.', sourceName: 'NASA', sourceUrl: 'https://www.nasa.gov/mock-a', sourceId: 'nasa', publishedAt: '2026-11-14T12:00:00.000Z' },
+      { title: 'New exoplanet atmosphere observation', summary: 'Same syndicated report.', sourceName: 'NASA JPL', sourceUrl: 'https://www.jpl.nasa.gov/mock-a', sourceId: 'jpl', publishedAt: '2026-11-14T13:00:00.000Z' },
     ],
-    videos: [{ id: 'dQw4w9WgXcQ', title: 'MOCK sample video', channel: 'MOCK channel', publishedAt: '2026-11-13T12:00:00.000Z', viewCount: 1000, likeCount: 50 }],
+    videos: [{ id: 'dQw4w9WgXcQ', title: 'Exoplanet atmospheres explained by the Webb telescope', channel: 'MOCK channel', publishedAt: '2026-11-13T12:00:00.000Z', viewCount: 1000, likeCount: 50 }],
   });
   const audit = result.intelligence.selfEvaluation;
   assert.equal(audit.inputNewsCount, 2);

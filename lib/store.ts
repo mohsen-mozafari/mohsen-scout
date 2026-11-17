@@ -14,8 +14,9 @@ import { readData, writeData } from './storage';
 import { getKey } from './vault';
 import { ApiError, nextBudget, reserveYoutubeRefreshCycle, searchYouTube, type YouTubeQuotaKind, type YouTubeQuotaOrigin } from './api';
 import { generateEditorialIdeas } from './idea-generation';
+import { rankNewsForTopic } from './engine';
 import { attachReportToIdea as attachReport, attachVideoReferenceToIdea as attachVideoReference, getOrCreateSourceIdea, type SourceIdeaInput } from './idea-research';
-import { hydrateSpaceNewsRegistry } from './space';
+import { getCachedSpaceNews, hydrateSpaceNewsRegistry } from './space';
 type State = {
   data: LocalData;
   ready: boolean;
@@ -34,6 +35,16 @@ type State = {
   charge: (units: number, kind?: YouTubeQuotaKind, origin?: YouTubeQuotaOrigin) => Promise<void>;
   clearError: () => void;
 };
+const ENGINE_VIDEO_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
+
+function recentEngineVideos<T extends { publishedAt: string }>(videos: readonly T[], now = Date.now()): T[] {
+  return videos.filter((video) => {
+    const published = Date.parse(video.publishedAt);
+    const age = now - published;
+    return Number.isFinite(published) && age >= 0 && age <= ENGINE_VIDEO_WINDOW_MS;
+  });
+}
+
 let queue = Promise.resolve();
 export const useScout = create<State>((set, get) => ({
   data: defaults(),
@@ -122,9 +133,17 @@ export const useScout = create<State>((set, get) => ({
         createdAt: Date.now(),
         analyzed: true,
       };
+      const currentData = get().data;
+      const matchedNews = rankNewsForTopic(
+        report.input.topic,
+        getCachedSpaceNews(currentData.feedRegistry, currentData.preferences.spaceNewsSources),
+        12,
+      );
+      const currentVideos = recentEngineVideos(result.videos);
       const generatedIdeas = generateEditorialIdeas({
         topic: report.input.topic,
-        videos: result.videos.map((video) => ({
+        news: matchedNews,
+        videos: currentVideos.map((video) => ({
           id: video.id, title: video.title, description: video.description,
           channel: video.channel, publishedAt: video.publishedAt,
           viewCount: video.viewCount ?? null, likeCount: video.likeCount ?? null,
@@ -160,9 +179,16 @@ export const useScout = create<State>((set, get) => ({
   analyze: async (id) => {
     const report = get().data.reports.find((r) => r.id === id);
     if (!report || report.analyzed) return;
+    const currentData = get().data;
+    const matchedNews = rankNewsForTopic(
+      report.input.topic,
+      getCachedSpaceNews(currentData.feedRegistry, currentData.preferences.spaceNewsSources),
+      12,
+    );
     const generatedIdeas = generateEditorialIdeas({
       topic: report.input.topic,
-      videos: report.videos.map((video) => ({
+      news: matchedNews,
+      videos: recentEngineVideos(report.videos).map((video) => ({
         id: video.id, title: video.title, description: video.description,
         channel: video.channel, publishedAt: video.publishedAt,
         viewCount: video.viewCount ?? null, likeCount: video.likeCount ?? null,

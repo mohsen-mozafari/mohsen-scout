@@ -21,8 +21,10 @@ void test('AI engine review prompt is grounded in aggregate local intelligence s
   assert.match(prompt, /Independent Analysis/);
   assert.match(prompt, /Adversarial Critique/);
   assert.match(prompt, /Revised Conclusion/);
-  assert.match(prompt, /public view\/like counts/i);
-  assert.match(prompt, /news headlines/i);
+  assert.match(prompt, /aggregate indicators/i);
+  assert.match(prompt, /Raw headlines, video titles, descriptions, URLs and per-item statistics are intentionally excluded/i);
+  assert.match(prompt, /Do not pretend to have seen individual source items/i);
+  assert.match(prompt, /Do not infer view velocity/i);
   assert.doesNotMatch(prompt, /https?:\/\//i);
   assert.doesNotMatch(prompt, /youtube\.com|nasa\.gov|esa\.int/i);
 });
