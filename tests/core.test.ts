@@ -79,7 +79,7 @@ void test('Migration: older saved preferences receive safe Space defaults', () =
     budget: 1500, model: '', schedule: 'Manual' as const, paused: false,
   } };
   const migrated = validateLocal(legacy);
-  assert.deepEqual(migrated.preferences.spaceNewsSources, ['nasa', 'jpl', 'cneos', 'esa-space', 'esa-science']);
+  assert.deepEqual(migrated.preferences.spaceNewsSources, ['nasa', 'jpl', 'cneos', 'esa-space', 'esa-science', 'space-com', 'phys-space', 'universe-today', 'sky-telescope']);
   assert.equal(migrated.preferences.spaceInterestLanguage, 'en');
   assert.equal(migrated.preferences.selectedSpaceNiche, 'all');
   assert.equal(migrated.preferences.customSpaceNiche, '');
@@ -467,6 +467,8 @@ void test('Backup: round trip preserves personal data and strips all API metadat
   assert.equal(imported.preferences.hybridIntelligence, false);
   assert.equal(imported.researchMemory.length, 1);
   assert.equal(imported.researchMemory[0].sources[0].title, 'Exoplanet atmosphere observed at 40 km');
+  assert.deepEqual(imported.preferences.spaceNewsSources, defaults().preferences.spaceNewsSources);
+  assert.equal(imported.preferences.spaceNewsSourcesVersion, 2);
 });
 void test('Backup: malformed/oversized/wrong version files rejected before mutation', () => {
   assert.throws(() => importBackup('{'));

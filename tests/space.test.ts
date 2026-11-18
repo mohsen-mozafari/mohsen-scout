@@ -161,8 +161,8 @@ void test('Research outline keeps unknowns and verification questions explicit',
   assert.equal(outline.verificationQuestions.length, 4);
 });
 
-void test('Provider defaults are official source IDs and can be replaced by local settings', () => {
-  assert.deepEqual(DEFAULT_SPACE_NEWS_SOURCES, ['nasa', 'jpl', 'cneos', 'esa-space', 'esa-science']);
+void test('Provider defaults include all free publisher source IDs and can be replaced by local settings', () => {
+  assert.deepEqual(DEFAULT_SPACE_NEWS_SOURCES, ['nasa', 'jpl', 'cneos', 'esa-space', 'esa-science', 'space-com', 'phys-space', 'universe-today', 'sky-telescope']);
   assert.ok(DEFAULT_SPACE_NEWS_SOURCES.every((id) => SPACE_NEWS_SOURCES.some((source) => source.id === id)));
 });
 

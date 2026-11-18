@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { defaults, type LocalData, regions, statuses } from './types';
+import { defaults, type LocalData, regions, statuses, DEFAULT_SPACE_NEWS_SOURCE_IDS } from './types';
 const text = z.string().max(50000);
 const identifierSchema = z.string().min(1).max(200);
 const timestamp = z.number().finite().nonnegative();
@@ -77,7 +77,8 @@ const preferences = z.object({
   model: text,
   hybridIntelligence: z.boolean().optional().default(true),
   defaultResearchDays: z.union([z.literal(0), z.literal(7), z.literal(30), z.literal(90)]).optional().default(30),
-  spaceNewsSources: z.array(z.enum(['nasa', 'jpl', 'cneos', 'esa-space', 'esa-science'])).max(5).optional().default(['nasa', 'jpl', 'cneos', 'esa-space', 'esa-science']),
+  spaceNewsSources: z.array(z.enum(['nasa', 'jpl', 'cneos', 'esa-space', 'esa-science', 'space-com', 'phys-space', 'universe-today', 'sky-telescope'])).max(9).optional().default(['nasa', 'jpl', 'cneos', 'esa-space', 'esa-science', 'space-com', 'phys-space', 'universe-today', 'sky-telescope']),
+  spaceNewsSourcesVersion: z.literal(2).optional(),
   spaceInterestLanguage: z.enum(['en', 'fa', 'de', 'fr', 'es', 'ja']).optional().default('en'),
   selectedSpaceNiche: z.string().max(100).optional().default('all'),
   customSpaceNiche: z.string().max(160).optional().default(''),
@@ -155,6 +156,7 @@ export function exportBackup(data: LocalData) {
           hybridIntelligence: data.preferences.hybridIntelligence,
           defaultResearchDays: data.preferences.defaultResearchDays,
           spaceNewsSources: data.preferences.spaceNewsSources,
+          spaceNewsSourcesVersion: 2,
           spaceInterestLanguage: data.preferences.spaceInterestLanguage,
           selectedSpaceNiche: data.preferences.selectedSpaceNiche,
           customSpaceNiche: data.preferences.customSpaceNiche,
@@ -177,6 +179,17 @@ export function importBackup(raw: string): LocalData {
   if (!result.success)
     throw new Error('This is not a valid MOHSEN SCOUT backup. Nothing was changed.');
   const fresh = defaults();
+  const savedPreferences = result.data.personal.preferences;
+  const restoredSources = savedPreferences.spaceNewsSources ?? [...DEFAULT_SPACE_NEWS_SOURCE_IDS];
+  const wasLegacyDefault = restoredSources.length === 5 && ['nasa', 'jpl', 'cneos', 'esa-space', 'esa-science'].every((source) => restoredSources.includes(source as typeof restoredSources[number]));
+  const migratedPreferences = {
+    ...fresh.preferences,
+    ...savedPreferences,
+    spaceNewsSources: savedPreferences.spaceNewsSourcesVersion === 2 || !wasLegacyDefault
+      ? restoredSources
+      : [...DEFAULT_SPACE_NEWS_SOURCE_IDS],
+    spaceNewsSourcesVersion: 2 as const,
+  };
   return {
     ...fresh,
     ...result.data.personal,
@@ -187,8 +200,7 @@ export function importBackup(raw: string): LocalData {
       ),
     })),
     preferences: {
-      ...fresh.preferences,
-      ...result.data.personal.preferences,
+      ...migratedPreferences,
       schedule: 'Manual',
       paused: false,
       lastInput: undefined,
