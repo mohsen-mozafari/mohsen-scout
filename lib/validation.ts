@@ -41,7 +41,8 @@ const schema = z.object({
     schedule: z.enum(['Manual', 'Every 12 hours', 'Daily', 'Weekly']),
     paused: z.boolean(),
     lastInput: inputSchema.optional(),
-    spaceNewsSources: z.array(z.enum(['nasa', 'jpl', 'cneos', 'esa-space', 'esa-science'])).max(5).optional().default(['nasa', 'jpl', 'cneos', 'esa-space', 'esa-science']),
+    spaceNewsSources: z.array(z.enum(['nasa', 'jpl', 'cneos', 'esa-space', 'esa-science', 'space-com', 'phys-space', 'universe-today', 'sky-telescope'])).max(9).optional().default(['nasa', 'jpl', 'cneos', 'esa-space', 'esa-science', 'space-com', 'phys-space', 'universe-today', 'sky-telescope']),
+    spaceNewsSourcesVersion: z.literal(2).optional().default(2),
     spaceInterestLanguage: z.enum(['en', 'fa', 'de', 'fr', 'es', 'ja']).optional().default('en'),
     selectedSpaceNiche: z.string().max(100).optional().default('all'),
     customSpaceNiche: z.string().max(160).optional().default(''),
@@ -127,7 +128,7 @@ const schema = z.object({
   ),
   videos: z.array(video),
   feedRegistry: z.array(z.object({
-    sourceId: z.enum(['nasa', 'jpl', 'cneos', 'esa-space', 'esa-science']),
+    sourceId: z.enum(['nasa', 'jpl', 'cneos', 'esa-space', 'esa-science', 'space-com', 'phys-space', 'universe-today', 'sky-telescope']),
     configuredUrl: text.url(),
     endpoint: text.url(),
     format: z.enum(['rss', 'atom', 'json', 'unknown']),
@@ -141,7 +142,7 @@ const schema = z.object({
     lastModified: text.max(200).optional(),
     cachedItems: z.array(z.object({
       id: text.max(500),
-      sourceId: z.enum(['nasa', 'jpl', 'cneos', 'esa-space', 'esa-science']),
+      sourceId: z.enum(['nasa', 'jpl', 'cneos', 'esa-space', 'esa-science', 'space-com', 'phys-space', 'universe-today', 'sky-telescope']),
       sourceName: text.max(160),
       title: text.max(500),
       summary: text.max(4000),
@@ -149,7 +150,7 @@ const schema = z.object({
       publishedAt: z.string().datetime().nullable(),
       imageUrl: text.url().optional(),
     })).max(100),
-  })).max(5).optional().default([]),
+  })).max(9).optional().default([]),
   researchMemory: z.array(z.object({
     topic: text.max(180),
     updatedAt: time,

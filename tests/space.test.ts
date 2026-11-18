@@ -16,6 +16,16 @@ import {
   getCachedSpaceNews,
 } from '../lib/space';
 
+void test('default research feed includes nine free, keyless publisher RSS sources', () => {
+  const expected = ['nasa', 'jpl', 'cneos', 'esa-space', 'esa-science', 'space-com', 'phys-space', 'universe-today', 'sky-telescope'];
+  assert.deepEqual(DEFAULT_SPACE_NEWS_SOURCES, expected);
+  for (const id of expected) {
+    const source = SPACE_NEWS_SOURCES.find((item) => item.id === id);
+    assert.ok(source, 'Missing source: ' + id);
+    assert.equal(new URL(source.url).protocol, 'https:');
+  }
+});
+
 void test('saved news is immediately available, sorted and restricted to enabled publisher feeds', () => {
   const nasaItem = {
     id: 'nasa-new', sourceId: 'nasa' as const, sourceName: 'NASA',

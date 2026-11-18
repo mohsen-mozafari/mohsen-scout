@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { fingerprintText, internalEngineReviewPrompt, nextOpenRouterUsage } from '../lib/api';
+import { buildInternalResearch } from '../lib/engine';
 
 void test('AI engine review prompt is grounded in aggregate local intelligence signals', () => {
   const prompt = internalEngineReviewPrompt({
@@ -28,6 +29,20 @@ void test('AI engine review prompt is grounded in aggregate local intelligence s
   assert.match(prompt, /do not infer growth rates, market competition or virality/i);
   assert.doesNotMatch(prompt, /https?:\/\//i);
   assert.doesNotMatch(prompt, /youtube\.com|nasa\.gov|esa\.int/i);
+});
+
+void test('internal engine evaluates more than twelve matching news records without truncating the evidence audit', () => {
+  const news = Array.from({ length: 24 }, (_, index) => ({
+    title: 'Mars exploration mission update ' + index,
+    summary: 'New rover and planetary science findings for Mars.',
+    sourceName: index % 2 ? 'NASA JPL' : 'ESA',
+    sourceUrl: 'https://' + (index % 2 ? 'www.nasa.gov' : 'www.esa.int') + '/mars/story-' + index,
+    publishedAt: new Date(Date.UTC(2026, 10, 1 + (index % 15))).toISOString(),
+    sourceId: index % 2 ? 'jpl' : 'esa-space',
+  }));
+  const result = buildInternalResearch({ topic: 'Mars exploration', news, now: Date.parse('2026-11-18T12:00:00Z') });
+  assert.equal(result.intelligence.selfEvaluation.topicMatchedNewsCount, 24);
+  assert.equal(result.intelligence.sourceQuality.uniqueStories, 24);
 });
 
 void test('OpenRouter usage counter increments and resets on a new local day', () => {

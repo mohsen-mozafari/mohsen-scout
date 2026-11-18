@@ -23,7 +23,7 @@ import { getIdeaDisplayTitle, isIdeaDisplayable } from '@/lib/idea-research';
 import { createManualIdea, rankNewsForTopic } from '@/lib/engine';
 import { deduplicateDisplayIdeas, generateEditorialIdeas, IDEA_GENERATION_CATEGORIES, type IdeaGenerationCategory } from '@/lib/idea-generation';
 import { getTopicDossier } from '@/lib/topic-dossier';
-import { getCachedSpaceNews, SPACE_NICHES } from '@/lib/space';
+import { fetchSpaceNews, getCachedSpaceNews, SPACE_NICHES } from '@/lib/space';
 import { matchesSearchText, normalizeSearchText } from '@/lib/search';
 import { palette as p } from '@/lib/theme';
 import { translateText } from '@/lib/i18n';
@@ -88,6 +88,11 @@ export default function Opportunities() {
       : IDEA_GENERATION_CATEGORIES.find((candidate) => candidate === category);
 
   const generate = (requestedCategory?: IdeaGenerationCategory) => void op.run(async () => {
+    const initial = useScout.getState().data;
+    const refreshedNews = await fetchSpaceNews(initial.preferences.spaceNewsSources, fetch, true);
+    if (refreshedNews.registry.length) {
+      await useScout.getState().commit((data) => ({ ...data, feedRegistry: refreshedNews.registry }));
+    }
     const current = useScout.getState().data;
     const latestReport = current.reports[0];
     const niche = SPACE_NICHES.find((item) => item.id === current.preferences.selectedSpaceNiche);
@@ -120,18 +125,20 @@ export default function Opportunities() {
       }));
     const cachedNews = getCachedSpaceNews(current.feedRegistry, current.preferences.spaceNewsSources);
     const mergedNews = new Map(
-      [...(dossier?.news ?? []), ...cachedNews].map((item) => [item.url, item]),
+      [...(dossier?.news ?? []), ...cachedNews, ...refreshedNews.items].map((item) => [item.url, item]),
     );
-    const relevantNews = rankNewsForTopic(topic, [...mergedNews.values()], 12);
+    const relevantNews = rankNewsForTopic(topic, [...mergedNews.values()], 40);
     const generated = generateEditorialIdeas({
       topic,
       news: relevantNews,
       videos,
       context: dossier?.wiki ? [{
         title: dossier.wiki.articleTitle,
-        summary: dossier.wiki.summary,
+        summary: [dossier.wiki.summary, dossier.wiki.monthlyViews.length
+          ? 'Monthly Wikipedia article pageviews: ' + dossier.wiki.monthlyViews.map((point) => point.month + '=' + point.views).join(', ')
+          : 'No monthly Wikimedia pageview observations were returned.'].filter(Boolean).join('\n'),
         sourceUrl: dossier.wiki.articleUrl,
-        sourceName: 'Wikimedia',
+        sourceName: 'Wikimedia Pageviews · attention proxy',
       }] : [],
       existingIdeas: current.ideas,
       ...(reportMatches && latestReport && videos.length ? { reportId: latestReport.id } : {}),
@@ -149,8 +156,8 @@ export default function Opportunities() {
     }
     await useScout.getState().commit((data) => ({ ...data, ideas: [...generated, ...data.ideas] }));
     setGenerationMessage(current.preferences.uiLanguage === 'fa'
-      ? generated.length + ' ایده تازه از شواهد محلی تولید شد؛ درخواست جدیدی برای YouTube ارسال نشد.'
-      : generated.length + ' new ideas were generated locally from the available evidence. No new YouTube request was made.');
+      ? generated.length + ' ایده تازه از شواهد به‌روز یا نسخه ذخیره‌شده تولید شد؛ درخواست جدیدی برای YouTube ارسال نشد.' + (refreshedNews.warnings.length ? ' بعضی خوراک‌ها به‌روز نشدند و از نسخه ذخیره‌شده استفاده شد.' : '')
+      : generated.length + ' new ideas were generated locally from refreshed or last-good evidence. No new YouTube request was made.' + (refreshedNews.warnings.length ? ' Some feeds could not refresh; last-good cached copies were retained.' : ''));
   }, 'New evidence-based ideas generated.');
 
   const openCreate = () => {

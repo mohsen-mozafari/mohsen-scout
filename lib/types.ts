@@ -129,7 +129,8 @@ export type Opinion = {
   model: string;
   createdAt: number;
 };
-export type SpaceNewsSourceId = 'nasa' | 'jpl' | 'cneos' | 'esa-space' | 'esa-science';
+export const DEFAULT_SPACE_NEWS_SOURCE_IDS: SpaceNewsSourceId[] = ['nasa', 'jpl', 'cneos', 'esa-space', 'esa-science', 'space-com', 'phys-space', 'universe-today', 'sky-telescope'];
+export type SpaceNewsSourceId = 'nasa' | 'jpl' | 'cneos' | 'esa-space' | 'esa-science' | 'space-com' | 'phys-space' | 'universe-today' | 'sky-telescope';
 export type WikiLanguage = 'en' | 'fa' | 'de' | 'fr' | 'es' | 'ja';
 export type UiLanguage = 'fa' | 'en';
 export type Preferences = {
@@ -151,6 +152,7 @@ export type Preferences = {
   paused: boolean;
   lastInput?: ResearchInput;
   spaceNewsSources: SpaceNewsSourceId[];
+  spaceNewsSourcesVersion?: 2;
   spaceInterestLanguage: WikiLanguage;
   selectedSpaceNiche: string;
   customSpaceNiche: string;
@@ -184,7 +186,7 @@ export type ResearchMemoryEntry = {
   history?: ResearchMemorySnapshot[];
 };
 export type FeedRegistryRecord = {
-  sourceId: 'nasa' | 'jpl' | 'cneos' | 'esa-space' | 'esa-science';
+  sourceId: SpaceNewsSourceId;
   configuredUrl: string;
   endpoint: string;
   format: 'rss' | 'atom' | 'json' | 'unknown';
@@ -198,7 +200,7 @@ export type FeedRegistryRecord = {
   lastModified?: string;
   cachedItems: {
     id: string;
-    sourceId: 'nasa' | 'jpl' | 'cneos' | 'esa-space' | 'esa-science';
+    sourceId: SpaceNewsSourceId;
     sourceName: string;
     title: string;
     summary: string;
@@ -237,7 +239,8 @@ export function defaults(): LocalData {
       hybridIntelligence: false,
       schedule: 'Daily',
       paused: false,
-      spaceNewsSources: ['nasa', 'jpl', 'cneos', 'esa-space', 'esa-science'],
+      spaceNewsSources: [...DEFAULT_SPACE_NEWS_SOURCE_IDS],
+      spaceNewsSourcesVersion: 2,
       spaceInterestLanguage: 'en',
       selectedSpaceNiche: 'all',
       customSpaceNiche: '',

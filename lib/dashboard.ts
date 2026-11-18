@@ -45,7 +45,7 @@ export function selectDashboardVideos(
   topic: string,
   nicheTerms: readonly string[] = [],
   now = Date.now(),
-  limit = 5,
+  limit = 12,
 ): Video[] {
   const terms = nicheTerms.map((term) => term.trim()).filter(Boolean);
   const effectiveTerms = terms.length ? terms : topic.trim() ? [topic.trim()] : [];
@@ -68,7 +68,7 @@ export function selectDashboardVideos(
       b.fetchedAt - a.fetchedAt ||
       a.id.localeCompare(b.id),
     )
-    .slice(0, Math.max(0, Math.min(12, Math.floor(limit))));
+    .slice(0, Math.max(0, Math.min(24, Math.floor(limit))));
 }
 
 /** Cache identity mirrors the persisted engine-opinion key, so reviews survive relaunches. */

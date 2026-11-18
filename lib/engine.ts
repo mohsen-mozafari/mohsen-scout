@@ -172,7 +172,7 @@ export function buildInternalResearch(input: InternalResearchInput): InternalRes
       (b.item.publishedAt ? Date.parse(b.item.publishedAt) : 0) -
       (a.item.publishedAt ? Date.parse(a.item.publishedAt) : 0) || a.index - b.index);
   const matchedNews = rankedNews.filter((entry) => entry.score > 0);
-  const news = matchedNews.slice(0, 12).map((entry) => entry.item);
+  const news = matchedNews.slice(0, 40).map((entry) => entry.item);
   const publisherNames = [...new Set(news.flatMap((item) =>
     item.sourceName.split('·').map((name) => name.trim()).filter(Boolean)))];
   const declaredPublisherCount = Math.max(0, ...news.map((item) => item.sourceCount ?? 0));

@@ -3,7 +3,7 @@ import { requestJson, type Fetcher } from './api';
 import { classifyPublicationFreshness, deduplicateResearchEvidence, matchesResearchTerms, normalizeResearchText, scoreResearchText } from './intelligence';
 import type { FeedRegistryRecord } from './types';
 
-export type SpaceNewsSourceId = 'nasa' | 'jpl' | 'cneos' | 'esa-space' | 'esa-science';
+export type SpaceNewsSourceId = 'nasa' | 'jpl' | 'cneos' | 'esa-space' | 'esa-science' | 'space-com' | 'phys-space' | 'universe-today' | 'sky-telescope';
 export type WikiLanguage = 'en' | 'fa' | 'de' | 'fr' | 'es' | 'ja';
 export type SearchDemandProviderId = 'wikimedia-pageviews';
 export type SearchDemandSignal = WikiSignal;
@@ -44,9 +44,21 @@ export const SPACE_NEWS_SOURCES: SpaceNewsSource[] = [
   {
     id: 'esa-science', name: 'ESA', label: 'ESA Space Science', url: 'https://www.esa.int/rss/science.rss',
   },
+  {
+    id: 'space-com', name: 'Space.com', label: 'Space.com · Space & Astronomy', url: 'https://www.space.com/feeds/all',
+  },
+  {
+    id: 'phys-space', name: 'Phys.org', label: 'Phys.org · Space Science', url: 'https://phys.org/rss-feed/space-news/',
+  },
+  {
+    id: 'universe-today', name: 'Universe Today', label: 'Universe Today · Astronomy', url: 'https://www.universetoday.com/feed/',
+  },
+  {
+    id: 'sky-telescope', name: 'Sky & Telescope', label: 'Sky & Telescope · Astronomy News', url: 'https://skyandtelescope.com/astronomy-news/rss',
+  },
 ];
 export const DEFAULT_SPACE_NEWS_SOURCES: SpaceNewsSourceId[] = [
-  'nasa', 'jpl', 'cneos', 'esa-space', 'esa-science',
+  'nasa', 'jpl', 'cneos', 'esa-space', 'esa-science', 'space-com', 'phys-space', 'universe-today', 'sky-telescope',
 ];
 
 export const SPACE_NICHES = [
@@ -132,9 +144,8 @@ function safeOfficialImageUrl(value: string): string | undefined {
   try {
     const parsed = new URL(value.trim());
     const host = parsed.hostname.toLowerCase();
-    const trusted = host === 'nasa.gov' || host.endsWith('.nasa.gov') ||
-      host === 'jpl.nasa.gov' || host.endsWith('.jpl.nasa.gov') ||
-      host === 'esa.int' || host.endsWith('.esa.int');
+    const trustedDomains = ['nasa.gov', 'jpl.nasa.gov', 'esa.int', 'space.com', 'phys.org', 'universetoday.com', 'skyandtelescope.com'];
+    const trusted = trustedDomains.some((domain) => host === domain || host.endsWith('.' + domain));
     return parsed.protocol === 'https:' && trusted ? parsed.href : undefined;
   } catch {
     return undefined;
@@ -355,7 +366,7 @@ export async function fetchSpaceNews(
   force = false,
 ): Promise<{ items: SpaceNewsItem[]; warnings: string[]; registry: FeedRegistryRecord[] }> {
   const ids = SPACE_NEWS_SOURCES.filter((source) => enabledSources.includes(source.id)).map((source) => source.id);
-  if (!ids.length) return { items: [], warnings: ['Enable at least one official news feed in Space Radar sources.'], registry: [] };
+  if (!ids.length) return { items: [], warnings: ['Enable at least one publisher news feed in Space Radar sources.'], registry: [] };
   const namespace = fetcherNamespace(fetcher);
   const cacheKey = namespace + ':' + [...ids].sort().join(',');
   const inflight = newsInflight.get(cacheKey);
@@ -527,13 +538,13 @@ export function buildNicheSuggestions(items: SpaceNewsItem[], limit = 6): SpaceN
       .sort((a, b) => Date.parse(b) - Date.parse(a))[0] ?? null;
     return {
       id: niche.id, title: niche.title, topic: niche.topic,
-      description: niche.description + ' Current match count reflects only selected official publisher feeds.',
+      description: niche.description + ' Current match count reflects only the selected publisher feeds.',
       matchedStories: matches.length, newestAt,
     };
   }).filter((item) => item.matchedStories > 0)
     .sort((a, b) => b.matchedStories - a.matchedStories ||
       (b.newestAt ? Date.parse(b.newestAt) : 0) - (a.newestAt ? Date.parse(a.newestAt) : 0))
-    .slice(0, Math.min(4, maxItems));
+    .slice(0, Math.min(8, maxItems));
 
   // Combine established subject areas with actual new headlines so the dashboard
   // is not limited to a fixed niche catalogue.
@@ -548,7 +559,7 @@ export function buildNicheSuggestions(items: SpaceNewsItem[], limit = 6): SpaceN
       id: 'story:' + item.id,
       title: item.title,
       topic: item.title,
-      description: 'Fresh official headline from ' + item.sourceName + '. Open the original report and verify its scientific claims before treating it as a full niche.',
+      description: 'Fresh publisher headline from ' + item.sourceName + '. Open the original report and verify its scientific claims before treating it as a full niche.',
       matchedStories: 1,
       newestAt: item.publishedAt,
     }));

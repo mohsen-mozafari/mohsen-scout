@@ -290,8 +290,9 @@ function titleSimilarity(left: string, right: string): number {
 
 function publisherFamily(item: ResearchDocument): string {
   const id = item.sourceId?.toLowerCase() ?? '';
-  if (id === 'nasa' || id === 'jpl') return 'nasa';
+  if (id === 'nasa' || id === 'jpl' || id === 'cneos') return 'nasa';
   if (id.startsWith('esa')) return 'esa';
+  if (id === 'space-com' || id === 'phys-space' || id === 'universe-today' || id === 'sky-telescope') return id;
   const name = normalizeResearchText(item.sourceName ?? '');
   return name || (canonicalizeResearchUrl(item.sourceUrl).split('/')[2] ?? 'unknown');
 }

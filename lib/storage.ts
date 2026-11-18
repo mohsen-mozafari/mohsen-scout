@@ -39,6 +39,15 @@ export async function readData(): Promise<LocalData> {
         migratedPreferences.schedule === 'Manual') {
         migratedPreferences.schedule = 'Daily';
       }
+      // Expand the original built-in five-feed list once, but preserve any custom source selection.
+      if (migratedPreferences.spaceNewsSourcesVersion !== 2) {
+        const legacySources = ['nasa', 'jpl', 'cneos', 'esa-space', 'esa-science'];
+        const savedSources = savedPreferences.spaceNewsSources;
+        const wasLegacyDefault = !Array.isArray(savedSources) ||
+          (savedSources.length === legacySources.length && legacySources.every((source) => savedSources.includes(source)));
+        if (wasLegacyDefault) migratedPreferences.spaceNewsSources = [...data.preferences.spaceNewsSources];
+        migratedPreferences.spaceNewsSourcesVersion = 2;
+      }
       Object.assign(data, { preferences: migratedPreferences });
       Object.assign(persisted, { preferences: savedPreferences });
     } else if (row.key in data) {
