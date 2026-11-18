@@ -17,6 +17,7 @@ import {
   Txt,
 } from '@/components/ScoutUI';
 import { useScout } from '@/lib/store';
+import { matchesSearchText } from '@/lib/search';
 import { type SavedLink } from '@/lib/types';
 import { palette as p } from '@/lib/theme';
 import { personalLinks } from '@/lib/backup';
@@ -40,9 +41,10 @@ export default function Library() {
       (l) =>
         (folder === 'All' || l.folder === folder) &&
         (tag === 'All tags' || l.tags.includes(tag)) &&
-        `${l.manualTitle} ${data.videos.find((v) => v.id === l.id)?.title ?? ''} ${l.topic} ${l.note} ${l.tags.join(' ')}`
-          .toLowerCase()
-          .includes(search.toLowerCase()),
+        matchesSearchText(
+          `${l.manualTitle} ${data.videos.find((v) => v.id === l.id)?.title ?? ''} ${l.topic} ${l.note} ${l.tags.join(' ')}`,
+          search,
+        ),
     )
     .sort((a, b) =>
       sort === 'Oldest'

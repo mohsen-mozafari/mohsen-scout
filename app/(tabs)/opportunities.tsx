@@ -24,7 +24,7 @@ import { createManualIdea, rankNewsForTopic } from '@/lib/engine';
 import { deduplicateDisplayIdeas, generateEditorialIdeas, IDEA_GENERATION_CATEGORIES, type IdeaGenerationCategory } from '@/lib/idea-generation';
 import { getTopicDossier } from '@/lib/topic-dossier';
 import { getCachedSpaceNews, SPACE_NICHES } from '@/lib/space';
-import { normalizeResearchText } from '@/lib/intelligence';
+import { matchesSearchText } from '@/lib/search';
 import { palette as p } from '@/lib/theme';
 import { translateText } from '@/lib/i18n';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
@@ -61,16 +61,15 @@ export default function Opportunities() {
   };
   const categoryOptions = [allCategoryLabel, ...IDEA_GENERATION_CATEGORIES.map((value) => categoryLabel(value))];
   const displayableIdeas = deduplicateDisplayIdeas(ideas.filter(isIdeaDisplayable));
-  const normalizedSearch = normalizeResearchText(search);
   const filtered = displayableIdeas.filter((i) => {
-    const searchable = normalizeResearchText([
+    const searchable = [
       getIdeaDisplayTitle(i, preferences.uiLanguage ?? 'fa'),
       i.concept, i.note, i.decision, i.sourceName ?? '', i.sourceUrl ?? '', i.ideaCategory ?? '',
-    ].join(' '));
+    ].join(' ');
     return i.archived === archive &&
       (status === 'All' || i.status === status) &&
       (category === 'All angles' || (i.engineGenerated && i.ideaCategory === category)) &&
-      (!normalizedSearch || searchable.includes(normalizedSearch));
+      matchesSearchText(searchable, search);
   });
   const sortedFiltered = [...filtered].sort((a, b) => {
     if (sort === 'Newest') return b.createdAt - a.createdAt;

@@ -6,6 +6,7 @@ import { NotebookPen, Plus, ArrowUpRight } from 'lucide-react-native';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 import { Page, styles, Field, Choices, Action, Empty, Txt } from '@/components/ScoutUI';
 import { useScout } from '@/lib/store';
+import { matchesSearchText } from '@/lib/search';
 import { palette as p } from '@/lib/theme';
 import { translateText } from '@/lib/i18n';
 export default function Notes() {
@@ -19,9 +20,10 @@ export default function Notes() {
       (n) =>
         (folder === 'All' || n.folder === folder) &&
         (tag === 'All tags' || n.tags.includes(tag)) &&
-        `${n.title} ${n.blocks.map((b) => b.text).join(' ')} ${n.tags.join(' ')}`
-          .toLowerCase()
-          .includes(search.toLowerCase()),
+        matchesSearchText(
+          `${n.title} ${n.blocks.map((b) => b.text).join(' ')} ${n.tags.join(' ')}`,
+          search,
+        ),
     )
     .sort((a, b) => b.updatedAt - a.updatedAt);
   return (
