@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { matchesSearchText } from '@/lib/search';
-import { View, Text, Linking, Image, FlatList } from 'react-native';
+import { translateText } from '@/lib/i18n';
+import { View, Text, Linking, FlatList } from 'react-native';
 import { Button } from 'heroui-native';
 import { router } from 'expo-router';
 import { ArrowUpRight, Plus, Download } from 'lucide-react-native';
@@ -17,12 +17,15 @@ import {
   Txt,
 } from '@/components/ScoutUI';
 import { useScout } from '@/lib/store';
+import { matchesSearchText } from '@/lib/search';
 import { type SavedLink } from '@/lib/types';
 import { palette as p } from '@/lib/theme';
 import { personalLinks } from '@/lib/backup';
 import { shareText } from '@/lib/transfer';
+import { MediaPreview } from '@/components/MediaPreview';
 export default function Library() {
   const data = useScout((s) => s.data);
+  const language = useScout((s) => s.data.preferences.uiLanguage ?? 'fa');
   const [search, setSearch] = useState('');
   const [folder, setFolder] = useState('All');
   const [tag, setTag] = useState('All tags');
@@ -93,7 +96,7 @@ export default function Library() {
         keyboardShouldPersistTaps="handled"
         ListHeaderComponent={
           <View style={{ gap: 18, marginBottom: 24 }}>
-            <Text style={styles.title}>Your reference shelf.</Text>
+            <Text style={styles.title}>{translateText("Your reference shelf.", language)}</Text>
             <Field
               label="Search library"
               value={search}
@@ -134,6 +137,9 @@ export default function Library() {
                 </Action>
               </View>
             )}
+            <Action secondary onPress={() => router.push('/notes')}>
+              Open research notes
+            </Action>
             <Action secondary icon={Plus} onPress={() => setAddOpen(true)}>
               Add a personal link
             </Action>
@@ -215,20 +221,16 @@ export default function Library() {
               style={[styles.rule, { gap: 12, marginBottom: 20 }]}
             >
               {Boolean(video?.thumbnail) && (
-                <Image
-                  source={{ uri: video?.thumbnail }}
-                  resizeMode="cover"
-                  style={{ width: '100%', height: 180, borderRadius: 14 }}
-                />
+                <MediaPreview uri={video?.thumbnail} aspectRatio={16 / 9} viewer alt={video?.title ?? 'Saved video'} />
               )}
               <Button
                 variant="tertiary"
-                className="h-auto justify-start px-0"
+                className="h-auto min-w-0 justify-start rounded-2xl px-4 py-3"
                 onPress={() => router.push({ pathname: '/detail', params: { video: item.id } })}
               >
-                <View style={{ flex: 1 }}>
+                <View style={{ flex: 1, minWidth: 0 }}>
                   <Text style={styles.heading}>
-                    {item.manualTitle || video?.title || item.topic || 'Saved YouTube link'}
+                    {item.manualTitle || video?.title || item.topic || translateText('Saved YouTube link', language)}
                   </Text>
                   {video && <Txt muted>{video.channel}</Txt>}
                 </View>
@@ -241,7 +243,7 @@ export default function Library() {
               )}
               <Txt muted>
                 {item.folder || 'Unfiled'} · Saved{' '}
-                {new Date(item.savedAt).toLocaleDateString('en-US')}
+                {new Date(item.savedAt).toLocaleDateString(language === 'fa' ? 'fa-IR' : 'en-US')}
               </Txt>
               {Boolean(item.note) && <Txt>{item.note}</Txt>}
               <View style={{ flexDirection: 'row', gap: 8 }}>

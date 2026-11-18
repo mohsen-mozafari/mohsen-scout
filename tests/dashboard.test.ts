@@ -1,0 +1,160 @@
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import { getOpinion, selectFreeModel } from '../lib/api';
+import {
+  chooseBestIdea,
+  engineReviewCacheKey,
+  findCachedEngineReview,
+  rankDashboardIdeas,
+  runSingleFlight,
+  selectDashboardVideos,
+} from '../lib/dashboard';
+import { RETENTION_MS, type Idea, type Opinion, type Video } from '../lib/types';
+
+const now = Date.UTC(2026, 10, 17, 12, 0, 0);
+
+function idea(id: string, assessment: Idea['assessment'], overrides: Partial<Idea> = {}): Idea {
+  return {
+    id,
+    topic: id,
+    concept: 'A testable video concept.',
+    note: '',
+    status: 'New Discoveries',
+    decision: '',
+    videoIds: [],
+    createdAt: now,
+    archived: false,
+    assessment,
+    region: 'United States',
+    languages: ['en'],
+    ...overrides,
+  };
+}
+
+function video(id: string, title: string, viewCount: number | null, fetchedAt = now): Video {
+  return {
+    id,
+    title,
+    description: 'Original sample description.',
+    channel: 'Test channel',
+    thumbnail: 'https://example.com/' + id + '.jpg',
+    publishedAt: '2026-11-16T12:00:00Z',
+    fetchedAt,
+    query: title,
+    viewCount,
+    likeCount: null,
+  };
+}
+
+void test('dashboard chooses the strongest active idea and excludes archived, rejected and completed items', () => {
+  const completed = idea('completed', 'Strong Opportunity', { status: 'Completed Research' });
+  const rejected = idea('rejected', 'Strong Opportunity', { status: 'Rejected Ideas' });
+  const archived = idea('archived', 'Strong Opportunity', { archived: true });
+  const promising = idea('promising', 'Promising', { videoIds: ['video-1'] });
+  const strong = idea('strong', 'Strong Opportunity', { reportId: 'report-1', createdAt: now - 1000 });
+  const newestStrong = idea('newest-strong', 'Strong Opportunity', { sourceUrl: 'https://example.com/source', createdAt: now });
+  assert.equal(chooseBestIdea([completed, rejected, archived, promising, strong, newestStrong])?.id, 'newest-strong');
+  assert.deepEqual(rankDashboardIdeas([completed, rejected, archived]).map((item) => item.id), []);
+});
+
+void test('dashboard video feed filters strictly to the selected niche and sorts by raw views', () => {
+  const items = [
+    video('relevant-low', 'JWST publishes an early galaxy image', 120),
+    video('irrelevant-high', 'Mars rover explores a crater', 900000),
+    video('relevant-high', 'Space telescope detects an exoplanet', 5200),
+    video('relevant-no-count', 'New JWST observation', null),
+  ];
+  const result = selectDashboardVideos(items, 'space telescope', ['JWST', 'space telescope'], now, 5);
+  assert.deepEqual(result.map((item) => item.id), ['relevant-high', 'relevant-low', 'relevant-no-count']);
+});
+
+void test('dashboard video feed omits expired metadata and returns empty for missing evidence', () => {
+  const fresh = video('fresh', 'JWST observation', 100);
+  const expired = video('expired', 'JWST old observation', 5000, now - RETENTION_MS - 1);
+  assert.deepEqual(selectDashboardVideos([expired, fresh], 'JWST', ['JWST'], now, 5).map((item) => item.id), ['fresh']);
+  assert.deepEqual(selectDashboardVideos([fresh], 'Mars', ['Mars'], now, 5), []);
+  assert.deepEqual(selectDashboardVideos([], 'JWST', ['JWST'], now, 5), []);
+});
+
+void test('live free-model selection falls back from a stale saved model and preserves a live choice', () => {
+  const models = [{ id: 'provider/current-free' }, { id: 'provider/second-free' }];
+  assert.equal(selectFreeModel(models, 'provider/removed-model'), 'provider/current-free');
+  assert.equal(selectFreeModel(models, 'provider/second-free'), 'provider/second-free');
+  assert.equal(selectFreeModel([], 'provider/removed-model'), '');
+});
+
+void test('persisted second-opinion cache is reused only for the exact model and evidence fingerprint', () => {
+  const model = 'provider/current-free';
+  const prompt = 'Processed editorial topic and evidence aggregates';
+  const fingerprint = 'evidence-abc';
+  const cached: Opinion = {
+    id: 'opinion-1',
+    ideaId: engineReviewCacheKey(model, prompt, fingerprint),
+    text: 'Cached review',
+    model,
+    createdAt: now,
+  };
+  assert.equal(findCachedEngineReview([cached], model, prompt, fingerprint)?.text, 'Cached review');
+  assert.equal(findCachedEngineReview([cached], 'provider/other-free', prompt, fingerprint), undefined);
+  assert.equal(findCachedEngineReview([cached], model, prompt, 'evidence-new'), undefined);
+});
+
+
+void test('OpenRouter serializes generation and releases its lock after a failed preflight', async () => {
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  let calls = 0;
+  const fetcher = async () => {
+    calls += 1;
+    return new Response(JSON.stringify({
+      choices: [{ message: { content: 'A single mocked review.' } }],
+    }), { status: 200, headers: { 'content-type': 'application/json' } });
+  };
+
+  const first = getOpinion('test-key', 'provider/free-model', 'approved aggregate prompt', async () => {
+    await gate;
+  }, fetcher);
+  await assert.rejects(
+    getOpinion('test-key', 'provider/free-model', 'duplicate prompt', undefined, fetcher),
+    /Another OpenRouter analysis is already running/,
+  );
+  release();
+  assert.equal(await first, 'A single mocked review.');
+  assert.equal(calls, 1);
+
+  await assert.rejects(
+    getOpinion('test-key', 'provider/free-model', 'preflight failure', async () => {
+      throw new Error('mock quota preflight failure');
+    }, fetcher),
+    /mock quota preflight failure/,
+  );
+  assert.equal(await getOpinion('test-key', 'provider/free-model', 'retry after failure', undefined, fetcher), 'A single mocked review.');
+  assert.equal(calls, 2);
+});
+
+
+void test('Space Radar shares one in-flight refresh and unlocks the next attempt after failure', async () => {
+  const slot: { current: Promise<string> | null } = { current: null };
+  let release!: (value: string) => void;
+  const gate = new Promise<string>((resolve) => { release = resolve; });
+  let calls = 0;
+  const refresh = async () => {
+    calls += 1;
+    return gate;
+  };
+
+  const first = runSingleFlight(slot, refresh);
+  const concurrent = runSingleFlight(slot, refresh);
+  assert.strictEqual(concurrent, first);
+  await Promise.resolve();
+  assert.equal(calls, 1);
+  release('scan complete');
+  assert.equal(await first, 'scan complete');
+  assert.equal(slot.current, null);
+
+  await assert.rejects(
+    runSingleFlight(slot, async () => { throw new Error('mock feed failure'); }),
+    /mock feed failure/,
+  );
+  assert.equal(slot.current, null);
+});

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Text, Linking, Image } from 'react-native';
+import { Text, Linking, View } from 'react-native';
 import { Skeleton } from 'heroui-native';
 import { Link, router, useLocalSearchParams } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
@@ -17,14 +17,18 @@ import {
   styles,
   ErrorBox,
   useOperation,
+  SourceTitle,
+  SourceText,
 } from '@/components/ScoutUI';
 import { VideoRow } from '@/components/VideoRow';
 import { useScout } from '@/lib/store';
 import { type Idea, statuses, languages } from '@/lib/types';
-import { limitations, reasoning } from '@/lib/engine';
+import { buildIdeaAnalysis, limitations, reasoning } from '@/lib/engine';
+import { getIdeaDisplayTitle } from '@/lib/idea-research';
 import { getKey } from '@/lib/vault';
-import { getFreeModels, getOpinion, opinionPrompt, selectFreeModel } from '@/lib/api';
+import { localDateKey, getFreeModels, getOpinion, nextOpenRouterUsage, opinionPrompt, selectFreeModel } from '@/lib/api';
 import { uid } from '@/lib/types';
+import { MediaPreview } from '@/components/MediaPreview';
 export default function Detail() {
   const params = useLocalSearchParams<{ idea?: string; video?: string }>();
   const data = useScout((s) => s.data);
@@ -43,16 +47,29 @@ export default function Detail() {
     setEdit(original);
   }
   const idea = edit ?? original;
+  const uiLanguage = data.preferences.uiLanguage ?? 'fa';
+  const ideaDisplayTopic = idea ? getIdeaDisplayTitle(idea, uiLanguage) : '';
+  const hasMeaningfulIdeaTopic = Boolean(
+    idea &&
+    ((idea.topic.trim() && idea.topic.trim().toLowerCase() !== 'untitled idea') || idea.concept.trim()),
+  );
+  const ideaOpinionTopic = hasMeaningfulIdeaTopic ? ideaDisplayTopic : '';
+  const ideaReadyForOpinion = Boolean(ideaOpinionTopic.trim() && idea?.concept.trim());
   const related = idea ? data.videos.filter((v) => idea.videoIds.includes(v.id)) : [];
+  const analysisSections = idea
+    ? buildIdeaAnalysis({ ...idea, topic: ideaDisplayTopic }, related, uiLanguage)
+    : [];
+  const savedReferences = idea ? data.links.filter((link) => idea.videoIds.includes(link.id)) : [];
+  const researchNotes = idea ? data.notes.filter((note) => note.ideaId === idea.id) : [];
   const secondOpinion = () =>
     void op.run(async () => {
       if (!idea) return;
+      if (!ideaReadyForOpinion) throw new Error('Add a meaningful topic and non-empty video concept before requesting an AI opinion.');
       const key = await getKey('openrouter');
       if (!key) throw new Error('Add your OpenRouter key in Settings first.');
       const models = await getFreeModels();
       const model = selectFreeModel(models, data.preferences.model);
       if (!model) throw new Error('No free models are currently available. Try refreshing later.');
-      // The saved model can disappear from OpenRouter's live catalogue.
       if (model !== data.preferences.model) {
         await useScout
           .getState()
@@ -61,7 +78,16 @@ export default function Detail() {
       const text = await getOpinion(
         key,
         model,
-        opinionPrompt(idea.topic, idea.concept, idea.decision),
+        opinionPrompt(ideaOpinionTopic, idea.concept, idea.decision, uiLanguage),
+        async () => {
+          const current = useScout.getState().data.preferences;
+          const day = localDateKey();
+          const usage = nextOpenRouterUsage(current.openRouterUsageDay, current.openRouterRequestsToday, day);
+          await useScout.getState().commit((d) => ({
+            ...d,
+            preferences: { ...d.preferences, ...usage },
+          }));
+        },
       );
       await useScout.getState().commit((d) => ({
         ...d,
@@ -89,6 +115,7 @@ export default function Detail() {
         assessment: 'Uncertain',
         region: report?.input.region || data.preferences.region,
         languages: report?.input.languages || data.preferences.languages,
+        imageUrl: video?.thumbnail || undefined,
       };
       await useScout.getState().saveIdea(draft);
       router.replace({ pathname: '/detail', params: { idea: draft.id } });
@@ -116,25 +143,19 @@ export default function Detail() {
           Back to {idea ? 'Opportunities' : 'My Library'}
         </Link>
       )}
-      <Text style={styles.title}>
-        {idea?.topic ||
-          savedLink?.manualTitle ||
-          video?.title ||
-          savedLink?.topic ||
-          'Saved YouTube link'}
-      </Text>
+      <SourceTitle>
+        {idea
+          ? getIdeaDisplayTitle(idea, data.preferences.uiLanguage ?? 'fa')
+          : savedLink?.manualTitle || video?.title || savedLink?.topic || (data.preferences.uiLanguage === 'fa' ? 'پیوند ذخیره‌شده یوتیوب' : 'Saved YouTube link')}
+      </SourceTitle>
       {video && (
         <>
-          <Image
-            source={{ uri: video.thumbnail }}
-            resizeMode="cover"
-            style={{ width: '100%', height: 210, borderRadius: 18 }}
-          />
-          <Txt>
+          <MediaPreview uri={video.thumbnail} aspectRatio={16 / 9} onPress={() => void Linking.openURL('https://www.youtube.com/watch?v=' + video.id).catch(() => {})} alt={video.title} />
+          <SourceText>
             {video.channel} · {new Date(video.publishedAt).toLocaleDateString('en-US')}
-          </Txt>
+          </SourceText>
           <Text style={styles.badge}>YouTube · Original title and description</Text>
-          <Txt>{video.description}</Txt>
+          <SourceText>{video.description}</SourceText>
         </>
       )}
       {!idea && (
@@ -157,16 +178,62 @@ export default function Detail() {
       )}
       {idea && (
         <>
+          {idea.imageUrl ? <MediaPreview uri={idea.imageUrl} aspectRatio={16 / 9} viewer alt={idea.topic} /> : null}
           <Panel>
             <Text style={styles.badge}>{idea.assessment}</Text>
             <Heading>Video concept</Heading>
-            <Txt>{idea.concept || 'Add your own concept.'}</Txt>
+            <SourceText>{idea.concept || 'Add your own concept.'}</SourceText>
             <Heading>Why investigate it?</Heading>
-            <Txt>{reasoning(idea)}</Txt>
+            <Txt>{reasoning(idea, related.length, data.preferences.uiLanguage ?? 'fa')}</Txt>
+          </Panel>
+          <Panel>
+            <Heading>{data.preferences.uiLanguage === 'fa' ? 'تحلیل تحریری موتور داخلی' : 'Internal editorial analysis'}</Heading>
+            <Txt muted>{data.preferences.uiLanguage === 'fa'
+              ? 'این بررسی محلی است و فقط از مفهوم ثبت‌شده و نمونه‌های پیوندخورده موجود روی دستگاه استفاده می‌کند؛ منبع تازه‌ای دریافت نمی‌کند و نظر AI نیست.'
+              : 'This local review uses only the saved concept and linked examples already on this device. It fetches no new sources and is not an AI opinion.'}</Txt>
+            {analysisSections.map((section) => (
+              <View key={section.id} style={{ gap: 6 }}>
+                <Heading>{section.title}</Heading>
+                <SourceText>{section.body}</SourceText>
+                {section.items?.map((item) => <SourceText muted key={item}>{'• ' + item}</SourceText>)}
+              </View>
+            ))}
           </Panel>
           <Txt muted>
             {idea.region} · {idea.languages.map((l) => languages[l] || l).join(', ')}
           </Txt>
+          {idea.sourceUrl ? (
+            <Action secondary onPress={() => void Linking.openURL(idea.sourceUrl!).catch(() => {})}>
+              {'Open original source · ' + (idea.sourceName || 'Publisher')}
+            </Action>
+          ) : null}
+          <Panel>
+            <Heading>Continue this research</Heading>
+            <Txt muted>Each tool opens with this idea&apos;s topic. Results can be connected back here without creating a second copy of the idea.</Txt>
+            <Action secondary onPress={() => router.push({ pathname: '/youtube', params: { topic: idea.topic, idea: idea.id } })}>YouTube research</Action>
+            <Action secondary onPress={() => router.push({ pathname: '/trend-intelligence', params: { topic: idea.topic, idea: idea.id } })}>Explore a paginated YouTube sample</Action>
+            <Action secondary onPress={() => router.push({ pathname: '/search-demand', params: { topic: idea.topic, idea: idea.id } })}>Compare public interest</Action>
+            <Action secondary onPress={() => router.push({ pathname: '/deep-research', params: { topic: idea.topic, idea: idea.id } })}>Prepare a deep research brief</Action>
+          </Panel>
+          {savedReferences.length > 0 && (
+            <Fold title={`Saved video references (${savedReferences.length})`}>
+              <Txt muted>These are personal YouTube links you chose to keep. API titles, thumbnails and statistics remain temporary and are not copied into your notes or backup.</Txt>
+              {savedReferences.map((link) => (
+                <Action key={link.id} secondary onPress={() => void Linking.openURL(link.url).catch(() => {})}>
+                  {link.manualTitle.trim() || 'Open saved YouTube reference'}
+                </Action>
+              ))}
+            </Fold>
+          )}
+          {researchNotes.length > 0 && (
+            <Fold title={`Linked research notes (${researchNotes.length})`}>
+              {researchNotes.map((note) => (
+                <Action key={note.id} secondary onPress={() => router.push({ pathname: '/note', params: { id: note.id } })}>
+                  {note.title}
+                </Action>
+              ))}
+            </Fold>
+          )}
           <Fold title="Observed evidence" open>
             {related.length ? (
               related.map((v) => <VideoRow key={v.id} video={v} topic={idea.topic} />)
@@ -262,9 +329,12 @@ export default function Detail() {
             No YouTube titles, descriptions, statistics or notes are sent.
           </Txt>
           {!consent ? (
-            <Action icon={Sparkles} secondary onPress={() => setConsent(true)}>
-              Request AI Second Opinion
-            </Action>
+            <>
+              {!ideaReadyForOpinion && <Txt muted>AI Second Opinion is enabled when a meaningful title and non-empty concept are available. Older drafts with a saved concept can use a derived title; edit the idea to choose your own.</Txt>}
+              <Action icon={Sparkles} secondary disabled={!ideaReadyForOpinion} onPress={() => setConsent(true)}>
+                Request AI Second Opinion
+              </Action>
+            </>
           ) : (
             <Panel>
               <Heading>Share this idea with OpenRouter?</Heading>
@@ -272,10 +342,10 @@ export default function Detail() {
                 You choose when to send. Replies are subjective and may disagree with the internal
                 assessment. Free models have provider rate limits.
               </Txt>
-              <Txt>Topic: {idea.topic}</Txt>
+              <Txt>Topic: {ideaOpinionTopic}</Txt>
               <Txt>Concept: {idea.concept}</Txt>
               <Txt>Decision: {idea.decision || 'Not set'}</Txt>
-              <Action busy={op.busy} onPress={secondOpinion}>
+              <Action busy={op.busy} disabled={!ideaReadyForOpinion} onPress={secondOpinion}>
                 Send for second opinion
               </Action>
               <Action secondary disabled={op.busy} onPress={() => setConsent(false)}>

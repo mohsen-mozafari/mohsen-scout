@@ -1,16 +1,16 @@
 # MOHSEN SCOUT
 
-Personal, English-language YouTube research assistant for Mohsen. AMOLED black, violet/indigo action gradient, and a visible query map rather than invented trend charts.
+Personal, Persian-first (English-selectable) YouTube research assistant for Mohsen. AMOLED black, violet/indigo action gradient, and a visible query map rather than invented trend charts.
 
 ## Implemented
 
 - Five workspaces: Discover, Opportunities, My Library, Notes, Settings. Short tab labels `Ideas` and `Library` keep navigation readable at 320pt; screen titles retain the full names.
 - Native SQLite separates personal content from YouTube metadata. Keys use Expo SecureStore; browser preview keeps keys in memory only.
-- Official YouTube Data API v3 search: relevance-first, language-balanced query expansion, independent region/language, recency, duration, category, maximum results, two pages per query and a 12 actual network-attempt/run cap (including retries), deduplication, timeouts, bounded retries, per-attempt budget, quota-stop handling and 15-minute result reuse.
+- Official YouTube Data API v3 search: independent region/language, recency, duration, category, maximum results, query expansion, two-page/query and twelve-search/run caps, deduplication, timeouts, bounded GET retries, per-attempt budget, quota-stop handling, 15-minute result reuse.
 - Separate CONTINUE ANALYSIS produces explicitly labeled editorial hypotheses and actual reference videos, never performance scores. Automatic labels are cautious; all assessment/collection labels are available for personal decisions.
 - Opt-in OpenRouter opinions use live-discovered zero-price models and a consent preview. Only editorial topic, concept, personal decision are sent; no API titles/descriptions/statistics. POST generation is not automatically retried.
-- Editable local opportunities, bookmarks/folders/tags/notes, block-based pages, token-aware Persian/Arabic/Latin local search, personal-link export, validated JSON backup/restore, Android share sheet, optional background research and notification permissions.
-- Native/PWA compass artwork, Persian setup/handoff documentation, isolated mocked regression checks.
+- Editable local opportunities, bookmarks/folders/tags/notes, block-based pages, personal-link export, validated JSON backup/restore, Android share sheet, optional background research and notification permissions.
+- Persian-first UI with an English option, original-language publisher/video metadata, native/PWA compass artwork, Persian setup/handoff documentation, and isolated mocked regression checks.
 
 ## Verification
 
@@ -22,7 +22,7 @@ Personal, English-language YouTube research assistant for Mohsen. AMOLED black, 
 
 See `README_FA.md` and `HANDOFF_FA.md`. Enter keys in Settings only, never in chat or source. Research needs a YouTube key; notes and personal links work without one. OpenRouter is optional.
 
-Source is this project root. No backend or registration is required. `eas.json` includes an internal Android APK profile for an exported source build; it does not mean a build exists. Bilt documents signed **AAB** downloads, not a directly installable APK: https://bilt.me/docs/guides/publish-to-google-play#build-an-aab-without-google-play . Export source: https://bilt.me/docs/features/code-export .
+Source is this project root. No backend or registration is required. `eas.json` includes an internal Android APK profile for an exported source build; it does not mean a build exists. The GitHub Actions workflow in this repository is the release path for its signed ARM64 APK; use the latest successful workflow artifact rather than an unrelated app-builder export.
 
 ```sh
 npm install

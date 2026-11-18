@@ -1,4 +1,4 @@
-export const regions = ['United States', 'Worldwide', 'Iran'] as const;
+export const regions = ['United States', 'Worldwide', 'Iran', 'United Kingdom', 'Germany'] as const;
 export type Region = (typeof regions)[number];
 export const languages: Record<string, string> = {
   en: 'English',
@@ -42,6 +42,8 @@ export type Video = {
   publishedAt: string;
   fetchedAt: number;
   query: string;
+  viewCount?: number | null;
+  likeCount?: number | null;
 };
 export type Assessment =
   | 'Strong Opportunity'
@@ -78,6 +80,12 @@ export type Idea = {
   region: Region;
   languages: string[];
   reportId?: string;
+  imageUrl?: string;
+  sourceUrl?: string;
+  sourceName?: string;
+  engineGenerated?: boolean;
+  ideaCategory?: string;
+  generationKey?: string;
 };
 export type Report = {
   id: string;
@@ -111,6 +119,8 @@ export type Note = {
   tags: string[];
   blocks: NoteBlock[];
   updatedAt: number;
+  /** Optional relationship to a personal research idea. */
+  ideaId?: string;
 };
 export type Opinion = {
   id: string;
@@ -119,19 +129,89 @@ export type Opinion = {
   model: string;
   createdAt: number;
 };
+export const DEFAULT_SPACE_NEWS_SOURCE_IDS: SpaceNewsSourceId[] = ['nasa', 'jpl', 'cneos', 'esa-space', 'esa-science', 'space-com', 'phys-space', 'universe-today', 'sky-telescope'];
+export type SpaceNewsSourceId = 'nasa' | 'jpl' | 'cneos' | 'esa-space' | 'esa-science' | 'space-com' | 'phys-space' | 'universe-today' | 'sky-telescope';
+export type WikiLanguage = 'en' | 'fa' | 'de' | 'fr' | 'es' | 'ja';
+export type UiLanguage = 'fa' | 'en';
 export type Preferences = {
+  uiLanguage: UiLanguage;
   name: string;
   email: string;
   region: Region;
   languages: string[];
+  defaultResearchDays: 0 | 7 | 30 | 90;
   budget: number;
   model: string;
+  /** Automatic privacy-bounded external review after local research completes. */
+  hybridIntelligence: boolean;
+  /** Local OpenRouter usage accounting; legacy backups may omit these fields. */
+  openRouterUsageDay?: string;
+  openRouterRequestsToday?: number;
+  youtubeRefreshTimestamps?: number[];
   schedule: 'Manual' | 'Every 12 hours' | 'Daily' | 'Weekly';
   paused: boolean;
   lastInput?: ResearchInput;
+  spaceNewsSources: SpaceNewsSourceId[];
+  spaceNewsSourcesVersion?: 2;
+  spaceInterestLanguage: WikiLanguage;
+  selectedSpaceNiche: string;
+  customSpaceNiche: string;
 };
-export type Budget = { date: string; units: number; requests: number; exhausted: boolean };
+export type Budget = {
+  date: string; units: number; requests: number; exhausted: boolean;
+  searchManualRequests?: number; searchAutomaticRequests?: number; searchReserveRequests?: number;
+  otherManualUnits?: number; otherAutomaticUnits?: number; otherReserveUnits?: number;
+};
+export type ResearchMemorySnapshot = {
+  capturedAt: number;
+  sourceFingerprint: string;
+  sourceCount: number;
+  newSourceCount: number;
+  updatedSourceCount: number;
+  keyFindings: string[];
+  unresolvedQuestions: string[];
+  contradictions: string[];
+  confidence: 'low' | 'moderate' | 'high';
+  changes: string[];
+};
+export type ResearchMemoryEntry = {
+  topic: string;
+  updatedAt: number;
+  sources: { sourceId?: string; sourceName: string; title: string; sourceUrl: string; publishedAt: string | null }[];
+  keyFindings: string[];
+  unresolvedQuestions: string[];
+  contradictions: string[];
+  confidence: 'low' | 'moderate' | 'high';
+  /** Bounded, versioned snapshots. Legacy entries without history remain valid. */
+  history?: ResearchMemorySnapshot[];
+};
+export type FeedRegistryRecord = {
+  sourceId: SpaceNewsSourceId;
+  configuredUrl: string;
+  endpoint: string;
+  format: 'rss' | 'atom' | 'json' | 'unknown';
+  status: 'healthy' | 'stale' | 'unavailable' | 'unknown';
+  lastCheckedAt: number;
+  lastSuccessAt: number;
+  failureCount: number;
+  retryAt: number;
+  lastError: string;
+  etag?: string;
+  lastModified?: string;
+  cachedItems: {
+    id: string;
+    sourceId: SpaceNewsSourceId;
+    sourceName: string;
+    title: string;
+    summary: string;
+    url: string;
+    publishedAt: string | null;
+    imageUrl?: string;
+  }[];
+};
 export type LocalData = {
+  feedRegistry: FeedRegistryRecord[];
+  researchMemory: ResearchMemoryEntry[];
   preferences: Preferences;
   ideas: Idea[];
   links: SavedLink[];
@@ -145,15 +225,25 @@ export const uid = () => `${Date.now().toString(36)}-${Math.random().toString(36
 export const RETENTION_MS = 29 * 24 * 60 * 60 * 1000;
 export function defaults(): LocalData {
   return {
+    feedRegistry: [],
+    researchMemory: [],
     preferences: {
+      uiLanguage: 'fa',
       name: 'Mohsen',
       email: '',
       region: 'United States',
       languages: ['en'],
+      defaultResearchDays: 30,
       budget: 1500,
       model: '',
-      schedule: 'Manual',
+      hybridIntelligence: false,
+      schedule: 'Daily',
       paused: false,
+      spaceNewsSources: [...DEFAULT_SPACE_NEWS_SOURCE_IDS],
+      spaceNewsSourcesVersion: 2,
+      spaceInterestLanguage: 'en',
+      selectedSpaceNiche: 'all',
+      customSpaceNiche: '',
     },
     ideas: [],
     links: [],
@@ -161,7 +251,7 @@ export function defaults(): LocalData {
     opinions: [],
     reports: [],
     videos: [],
-    budget: { date: '', units: 0, requests: 0, exhausted: false },
+    budget: { date: '', units: 0, requests: 0, exhausted: false, searchManualRequests: 0, searchAutomaticRequests: 0, searchReserveRequests: 0, otherManualUnits: 0, otherAutomaticUnits: 0, otherReserveUnits: 0 },
   };
 }
 export function purgeExpired(data: LocalData, now = Date.now()): LocalData {
@@ -176,6 +266,12 @@ export function purgeExpired(data: LocalData, now = Date.now()): LocalData {
   const retainedIds = new Set([...videos.map((v) => v.id), ...data.links.map((l) => l.id)]);
   return {
     ...data,
+    researchMemory: [...data.researchMemory]
+      .map((entry) => entry.history && entry.history.length > 8
+        ? { ...entry, history: entry.history.slice(0, 8) }
+        : entry)
+      .sort((a, b) => b.updatedAt - a.updatedAt)
+      .slice(0, 40),
     videos,
     reports,
     ideas: data.ideas.map((idea) => {

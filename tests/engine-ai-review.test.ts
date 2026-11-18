@@ -1,0 +1,79 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { fingerprintText, internalEngineReviewPrompt, nextOpenRouterUsage } from '../lib/api';
+import { buildInternalResearch } from '../lib/engine';
+
+void test('AI engine review prompt is grounded in aggregate local intelligence signals', () => {
+  const prompt = internalEngineReviewPrompt({
+    topic: 'Space science and exploration',
+    summary: 'The local engine processed a limited set of publisher records.',
+    evidence: [
+      { label: 'Feed records', detail: '12 records processed' },
+      { label: 'Independent publisher groups', detail: '3 groups represented' },
+      { label: 'Duplicate records merged', detail: '4 duplicates merged' },
+    ],
+    confidence: { level: 'moderate', reason: 'Computed from sample coverage and freshness only.' },
+    language: 'en',
+  });
+  assert.match(prompt, /local engine processed/i);
+  assert.match(prompt, /12 records processed/);
+  assert.match(prompt, /3 groups represented/);
+  assert.match(prompt, /Decision/);
+  assert.match(prompt, /Useful Findings/);
+  assert.match(prompt, /Adversarial Check/);
+  assert.match(prompt, /Next Action/);
+  assert.match(prompt, /Gather more evidence/);
+  assert.match(prompt, /aggregate local-engine indicators/i);
+  assert.match(prompt, /raw headlines, video titles, descriptions, links and per-item statistics are intentionally excluded/i);
+  assert.match(prompt, /Do not pretend to have seen individual sources or videos/i);
+  assert.match(prompt, /do not infer growth rates, market competition or virality/i);
+  assert.doesNotMatch(prompt, /https?:\/\//i);
+  assert.doesNotMatch(prompt, /youtube\.com|nasa\.gov|esa\.int/i);
+});
+
+void test('internal engine evaluates more than twelve matching news records without truncating the evidence audit', () => {
+  const news = Array.from({ length: 24 }, (_, index) => ({
+    title: 'Mars exploration mission update ' + index,
+    summary: 'New rover and planetary science findings for Mars.',
+    sourceName: index % 2 ? 'NASA JPL' : 'ESA',
+    sourceUrl: 'https://' + (index % 2 ? 'www.nasa.gov' : 'www.esa.int') + '/mars/story-' + index,
+    publishedAt: new Date(Date.UTC(2026, 10, 1 + (index % 15))).toISOString(),
+    sourceId: index % 2 ? 'jpl' : 'esa-space',
+  }));
+  const result = buildInternalResearch({ topic: 'Mars exploration', news, now: Date.parse('2026-11-18T12:00:00Z') });
+  assert.equal(result.intelligence.selfEvaluation.topicMatchedNewsCount, 24);
+  assert.equal(result.intelligence.sourceQuality.uniqueStories, 24);
+});
+
+void test('OpenRouter usage counter increments and resets on a new local day', () => {
+  assert.deepEqual(nextOpenRouterUsage('2026-11-16', 6, '2026-11-16'), {
+    openRouterUsageDay: '2026-11-16',
+    openRouterRequestsToday: 7,
+  });
+  assert.deepEqual(nextOpenRouterUsage('2026-11-15', 29, '2026-11-16'), {
+    openRouterUsageDay: '2026-11-16',
+    openRouterRequestsToday: 1,
+  });
+  assert.throws(
+    () => nextOpenRouterUsage('2026-11-16', 30, '2026-11-16'),
+    /30 requests for today/,
+  );
+});
+
+void test('AI prompt cache fingerprint is stable and changes with content or model identity', () => {
+  const prompt = 'processed evidence summary';
+  const first = fingerprintText('free-model-a\n' + prompt);
+  assert.equal(first, fingerprintText('free-model-a\n' + prompt));
+  assert.notEqual(first, fingerprintText('free-model-b\n' + prompt));
+  assert.notEqual(first, fingerprintText('free-model-a\n' + prompt + ' changed'));
+});
+
+void test('external review prompt explicitly separates agreement and disagreement with the local engine', () => {
+  const prompt = internalEngineReviewPrompt({
+    topic: 'Test topic', summary: 'Processed local assessment.', evidence: [],
+    confidence: { level: 'low', reason: 'Small sample.' }, language: 'en',
+  });
+  assert.match(prompt, /Decision/);
+  assert.match(prompt, /Missing Data/);
+  assert.match(prompt, /Reframe the topic/);
+});

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { defaults, type LocalData, regions, statuses } from './types';
+import { defaults, type LocalData, regions, statuses, DEFAULT_SPACE_NEWS_SOURCE_IDS } from './types';
 const text = z.string().max(50000);
 const identifierSchema = z.string().min(1).max(200);
 const timestamp = z.number().finite().nonnegative();
@@ -25,6 +25,7 @@ const noteSchema = z.object({
   folder: text,
   tags: z.array(text).max(100),
   updatedAt: timestamp,
+  ideaId: identifierSchema.optional(),
   blocks: z
     .array(
       z.object({
@@ -63,6 +64,9 @@ const ideaSchema = z.object({
   ]),
   region: z.enum(regions),
   languages: z.array(z.string().max(10)).min(1).max(50),
+  imageUrl: z.string().url().optional(),
+  sourceUrl: z.string().url().optional(),
+  sourceName: text.optional(),
 });
 const preferences = z.object({
   name: text,
@@ -71,6 +75,13 @@ const preferences = z.object({
   languages: z.array(z.string().max(10)).min(1).max(50),
   budget: z.number().int().min(100).max(10000),
   model: text,
+  hybridIntelligence: z.boolean().optional().default(true),
+  defaultResearchDays: z.union([z.literal(0), z.literal(7), z.literal(30), z.literal(90)]).optional().default(30),
+  spaceNewsSources: z.array(z.enum(['nasa', 'jpl', 'cneos', 'esa-space', 'esa-science', 'space-com', 'phys-space', 'universe-today', 'sky-telescope'])).max(9).optional().default(['nasa', 'jpl', 'cneos', 'esa-space', 'esa-science', 'space-com', 'phys-space', 'universe-today', 'sky-telescope']),
+  spaceNewsSourcesVersion: z.literal(2).optional(),
+  spaceInterestLanguage: z.enum(['en', 'fa', 'de', 'fr', 'es', 'ja']).optional().default('en'),
+  selectedSpaceNiche: z.string().max(100).optional().default('all'),
+  customSpaceNiche: z.string().max(160).optional().default(''),
 });
 const backupSchema = z.object({
   app: z.literal('MOHSEN SCOUT'),
@@ -80,6 +91,33 @@ const backupSchema = z.object({
     links: z.array(link).max(20000),
     notes: z.array(noteSchema).max(20000),
     ideas: z.array(ideaSchema).max(20000),
+    researchMemory: z.array(z.object({
+      topic: text,
+      updatedAt: timestamp,
+      sources: z.array(z.object({
+        sourceId: text.optional(),
+        sourceName: text,
+        title: text,
+        sourceUrl: text,
+        publishedAt: z.string().datetime().nullable(),
+      })).max(12),
+      keyFindings: z.array(text).max(12),
+      unresolvedQuestions: z.array(text).max(12),
+      contradictions: z.array(text).max(8),
+      confidence: z.enum(['low', 'moderate', 'high']),
+      history: z.array(z.object({
+      capturedAt: timestamp,
+      sourceFingerprint: text.max(64),
+      sourceCount: z.number().int().min(0).max(12),
+      newSourceCount: z.number().int().min(0).max(12),
+      updatedSourceCount: z.number().int().min(0).max(12),
+      keyFindings: z.array(text.max(2000)).max(8),
+      unresolvedQuestions: z.array(text.max(500)).max(12),
+      contradictions: z.array(text.max(500)).max(8),
+      confidence: z.enum(['low', 'moderate', 'high']),
+      changes: z.array(text.max(300)).max(4),
+    })).max(8).optional().default([]),
+    })).max(40).optional().default([]),
     preferences,
   }),
 });
@@ -101,6 +139,7 @@ export function exportBackup(data: LocalData) {
           savedAt,
         })),
         notes: data.notes,
+        researchMemory: data.researchMemory,
         ideas: data.ideas.map(({ reportId: _reportId, ...value }) => ({
           ...value,
           videoIds: value.videoIds.filter((id) =>
@@ -114,6 +153,13 @@ export function exportBackup(data: LocalData) {
           languages: data.preferences.languages,
           budget: data.preferences.budget,
           model: data.preferences.model,
+          hybridIntelligence: data.preferences.hybridIntelligence,
+          defaultResearchDays: data.preferences.defaultResearchDays,
+          spaceNewsSources: data.preferences.spaceNewsSources,
+          spaceNewsSourcesVersion: 2,
+          spaceInterestLanguage: data.preferences.spaceInterestLanguage,
+          selectedSpaceNiche: data.preferences.selectedSpaceNiche,
+          customSpaceNiche: data.preferences.customSpaceNiche,
         },
       },
     },
@@ -133,6 +179,17 @@ export function importBackup(raw: string): LocalData {
   if (!result.success)
     throw new Error('This is not a valid MOHSEN SCOUT backup. Nothing was changed.');
   const fresh = defaults();
+  const savedPreferences = result.data.personal.preferences;
+  const restoredSources = savedPreferences.spaceNewsSources ?? [...DEFAULT_SPACE_NEWS_SOURCE_IDS];
+  const wasLegacyDefault = restoredSources.length === 5 && ['nasa', 'jpl', 'cneos', 'esa-space', 'esa-science'].every((source) => restoredSources.includes(source as typeof restoredSources[number]));
+  const migratedPreferences = {
+    ...fresh.preferences,
+    ...savedPreferences,
+    spaceNewsSources: savedPreferences.spaceNewsSourcesVersion === 2 || !wasLegacyDefault
+      ? restoredSources
+      : [...DEFAULT_SPACE_NEWS_SOURCE_IDS],
+    spaceNewsSourcesVersion: 2 as const,
+  };
   return {
     ...fresh,
     ...result.data.personal,
@@ -142,7 +199,12 @@ export function importBackup(raw: string): LocalData {
         result.data.personal.links.some((savedLink) => savedLink.id === id),
       ),
     })),
-    preferences: { ...fresh.preferences, ...result.data.personal.preferences },
+    preferences: {
+      ...migratedPreferences,
+      schedule: 'Manual',
+      paused: false,
+      lastInput: undefined,
+    },
   };
 }
 export function restorePersonalData(current: LocalData, restored: LocalData): LocalData {
@@ -157,6 +219,7 @@ export function restorePersonalData(current: LocalData, restored: LocalData): Lo
     ideas: restored.ideas,
     links: restored.links,
     notes: restored.notes,
+    researchMemory: restored.researchMemory,
     opinions: current.opinions.filter((opinion) => {
       const before = current.ideas.find((idea) => idea.id === opinion.ideaId);
       const after = restored.ideas.find((idea) => idea.id === opinion.ideaId);

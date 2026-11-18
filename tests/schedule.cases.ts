@@ -14,6 +14,8 @@ const rejected = async (work: () => Promise<void>, message: string) => {
   }
   throw new Error('Expected rejection');
 };
+const manual = (): Preferences => ({ ...defaults().preferences, schedule: 'Manual' });
+
 const active = (): Preferences => ({
   ...defaults().preferences,
   schedule: 'Daily',
@@ -69,7 +71,7 @@ export const scheduleChecks: Check[] = [
       const order: string[] = [];
       await commitWithSchedule(
         true,
-        defaults().preferences,
+        manual(),
         active(),
         async () => {
           order.push('commit');
@@ -136,7 +138,7 @@ export const scheduleChecks: Check[] = [
           commitWithSchedule(
             true,
             active(),
-            defaults().preferences,
+            manual(),
             async () => {
               throw new Error('Synthetic write failure');
             },
@@ -164,7 +166,7 @@ export const scheduleChecks: Check[] = [
       await commitWithSchedule(
         true,
         active(),
-        defaults().preferences,
+        manual(),
         async () => {},
         async (prefs) => {
           order.push(prefs.schedule);

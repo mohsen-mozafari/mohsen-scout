@@ -45,6 +45,7 @@ export default function NoteEditor() {
           },
         ],
         updatedAt: Date.now(),
+        ...(idea ? { ideaId: idea } : {}),
       },
   );
   const [type, setType] = useState<NoteBlock['type']>('paragraph');

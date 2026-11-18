@@ -1,381 +1,878 @@
-import { useCallback, useState } from 'react';
-import { Text, View } from 'react-native';
-import { router, useFocusEffect } from 'expo-router';
-import { Button, Skeleton } from 'heroui-native';
-import { ArrowRight, SlidersHorizontal, Sparkles, KeyRound, Search } from 'lucide-react-native';
-import { LinearGradient } from '@/components/ui/primitives/LinearGradient';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { View } from 'react-native';
+
+import { router } from 'expo-router';
 import {
-  Page,
-  Panel,
-  Txt,
-  Heading,
-  Field,
-  Choices,
-  Action,
-  Fold,
-  Empty,
-  styles,
-  useOperation,
-  ErrorBox,
+  Page, Panel, Heading, Txt, Action, Fold, styles, ErrorBox, useOperation,
+  SourceHeading, SourceText, BadgeText,
 } from '@/components/ScoutUI';
-import { VideoRow } from '@/components/VideoRow';
-import { palette as p } from '@/lib/theme';
 import { useScout } from '@/lib/store';
-import { regions, languages, type ResearchInput, type Report } from '@/lib/types';
-import { relatedQueries } from '@/lib/api';
-import { limitations } from '@/lib/engine';
+import { useShallow } from 'zustand/react/shallow';
+import { uid } from '@/lib/types';
+import {
+  SPACE_NICHES,
+  buildNicheSuggestions,
+  fetchSpaceNews,
+  getWikipediaSignal,
+  type SpaceNicheSuggestion,
+  newsForNiche,
+  type SpaceNewsItem,
+} from '@/lib/space';
+import { buildInternalResearch, rankNewsForTopic, type InternalResearchResult } from '@/lib/engine';
+import { buildResearchInterestProfile, normalizeResearchText, scoreResearchText } from '@/lib/intelligence';
+import { rememberTopicDossier } from '@/lib/topic-dossier';
+import { createResearchMemoryEntry } from '@/lib/research-memory';
+import { ResearchKnowledgeGraph } from '@/components/ResearchKnowledgeGraph';
+import { VideoRow } from '@/components/VideoRow';
+import { chooseBestIdea, engineReviewCacheKey, findCachedEngineReview, runSingleFlight, selectDashboardVideos } from '@/lib/dashboard';
+import { generateEditorialIdeas } from '@/lib/idea-generation';
+import { fingerprintText, getFreeModels, getOpinion, internalEngineReviewPrompt, localDateKey, nextOpenRouterUsage, quotaDay, selectFreeModel, type YouTubeSampleVideo } from '@/lib/api';
 import { getKey } from '@/lib/vault';
-export default function Discover() {
-  const preferences = useScout((s) => s.data.preferences);
-  const ready = useScout((s) => s.ready);
-  const busy = useScout((s) => s.busy);
-  const progress = useScout((s) => s.progress);
-  const reports = useScout((s) => s.data.reports);
-  const ideas = useScout((s) => s.data.ideas);
-  const [topic, setTopic] = useState('');
-  const [region, setRegion] = useState<ResearchInput['region']>(preferences.region);
-  const [selectedLanguages, setLanguages] = useState(preferences.languages);
-  const [period, setPeriod] = useState('Last 30 days');
-  const [duration, setDuration] = useState('Any duration');
-  const [category, setCategory] = useState('All categories');
-  const [maximum, setMaximum] = useState('25');
-  const [reportId, setReportId] = useState('');
-  const [hasKey, setHasKey] = useState(false);
-  const op = useOperation();
-  const [previousDefaults, setPreviousDefaults] = useState({
-    ready,
-    region: preferences.region,
-    languages: preferences.languages,
-  });
-  if (
-    previousDefaults.ready !== ready ||
-    previousDefaults.region !== preferences.region ||
-    previousDefaults.languages !== preferences.languages
-  ) {
-    setPreviousDefaults({ ready, region: preferences.region, languages: preferences.languages });
-    if (ready) {
-      setRegion(preferences.region);
-      setLanguages(preferences.languages);
-    }
-  }
-  useFocusEffect(
-    useCallback(() => {
-      let active = true;
-      void getKey('youtube').then((key) => {
-        if (active) setHasKey(Boolean(key));
-      });
-      return () => {
-        active = false;
-      };
-    }, []),
-  );
-  const report: Report | undefined = reports.find((r) => r.id === reportId);
-  const run = async () => {
-    const input: ResearchInput = {
-      topic,
-      region,
-      languages: selectedLanguages,
-      days:
-        period === 'Last 7 days'
-          ? 7
-          : period === 'Last 90 days'
-            ? 90
-            : period === 'Any time'
-              ? 0
-              : 30,
-      duration:
-        duration === 'Short (<4 min)'
-          ? 'short'
-          : duration === 'Medium (4–20 min)'
-            ? 'medium'
-            : duration === 'Long (>20 min)'
-              ? 'long'
-              : 'any',
-      category:
-        category === 'Education'
-          ? '27'
-          : category === 'Science & tech'
-            ? '28'
-            : category === 'Entertainment'
-              ? '24'
-              : category === 'How-to & style'
-                ? '26'
-                : '',
-      maxResults: Number(maximum),
-    };
-    const result = await useScout.getState().research(input);
-    if (result) setReportId(result.id);
-  };
+import { ResearchOverviewChart } from '@/components/ResearchOverviewChart';
+
+const automaticReviewStarted = new Set<string>();
+
+
+function AnalysisSignals({ result }: { result: InternalResearchResult }) {
+  const language = useScout((state) => state.data.preferences.uiLanguage ?? 'fa');
+  const fa = language === 'fa';
+  const audit = result.intelligence.selfEvaluation;
+  const confidence = result.intelligence.confidence.level;
+  const confidenceLabel = fa
+    ? confidence === 'high' ? 'بالا' : confidence === 'moderate' ? 'متوسط' : 'پایین'
+    : confidence;
   return (
-    <Page>
-      <View style={{ gap: 10, paddingVertical: 4 }}>
-        <Text style={[styles.title, { fontSize: 38, lineHeight: 44 }]}>
-          Find your{'\n'}
-          <Text style={{ color: p.purple }}>next angle.</Text>
-        </Text>
-        <Txt muted>A research desk for your next YouTube idea.</Txt>
-      </View>
-      <Panel>
-        <Field
-          label="What are you exploring?"
-          value={topic}
-          onChange={setTopic}
-          placeholder="e.g. Small-space home studios"
-        />
-        <Choices
-          label="Target region"
-          options={regions}
-          selected={[region]}
-          onChange={(values) => setRegion(values[0])}
-        />
-        <Choices
-          label="Video language"
-          options={['English', 'Persian', 'Spanish']}
-          selected={selectedLanguages.map((code) => languages[code])}
-          multiple
-          onChange={(names) =>
-            setLanguages([
-              ...selectedLanguages.filter((code) => !['en', 'fa', 'es'].includes(code)),
-              ...names
-                .map((name) => Object.keys(languages).find((code) => languages[code] === name)!)
-                .filter(Boolean),
-            ])
-          }
-        />
-        <Fold title={`More languages · ${selectedLanguages.length} selected`}>
-          <Choices
-            options={Object.values(languages).filter(
-              (name) => !['English', 'Persian', 'Spanish'].includes(name),
-            )}
-            selected={selectedLanguages.map((code) => languages[code])}
-            multiple
-            onChange={(names) =>
-              setLanguages([
-                ...selectedLanguages.filter((code) => ['en', 'fa', 'es'].includes(code)),
-                ...names
-                  .map((name) => Object.keys(languages).find((code) => languages[code] === name)!)
-                  .filter(Boolean),
-              ])
-            }
-          />
-        </Fold>
-        <Fold title="Research filters">
-          <Choices
-            label="Publication period"
-            options={['Last 7 days', 'Last 30 days', 'Last 90 days', 'Any time']}
-            selected={[period]}
-            onChange={(v) => setPeriod(v[0])}
-          />
-          <Choices
-            label="Duration"
-            options={['Any duration', 'Short (<4 min)', 'Medium (4–20 min)', 'Long (>20 min)']}
-            selected={[duration]}
-            onChange={(v) => setDuration(v[0])}
-          />
-          <Choices
-            label="Category"
-            options={[
-              'All categories',
-              'Education',
-              'Science & tech',
-              'Entertainment',
-              'How-to & style',
-            ]}
-            selected={[category]}
-            onChange={(v) => setCategory(v[0])}
-          />
-          <Choices
-            label="Maximum unique videos"
-            options={['10', '25', '50', '100']}
-            selected={[maximum]}
-            onChange={(v) => setMaximum(v[0])}
-          />
-        </Fold>
-        <View style={{ borderRadius: 16, overflow: 'hidden' }}>
-          <LinearGradient
-            colors={[p.violet, p.indigo]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={{ padding: 2 }}
-          >
-            <Button
-              className="rounded-2xl bg-transparent"
-              isDisabled={busy || !ready}
-              onPress={() => void run()}
-            >
-              <Search size={18} color={p.white} strokeWidth={1.8} />
-              <Button.Label>{busy ? 'Researching…' : 'START RESEARCH'}</Button.Label>
-              <ArrowRight size={18} color={p.white} strokeWidth={1.8} />
-            </Button>
-          </LinearGradient>
+    <Fold title={fa ? 'کیفیت شواهد و گام‌های بعدی' : 'Evidence quality & next steps'}>
+      <Heading>{fa ? 'حد و حدود اطمینان تحلیل' : 'Confidence and evidence scope'}</Heading>
+      <BadgeText>{(fa ? 'میزان اطمینان: ' : 'Confidence: ') + confidenceLabel}</BadgeText>
+      <Txt muted>{result.intelligence.confidence.reason}</Txt>
+      <Heading>{fa ? 'تطبیق نمونه با موضوع' : 'Topic match in the sample'}</Heading>
+      <Txt muted>{fa
+        ? 'خبر هم‌موضوع: ' + audit.topicMatchedNewsCount + ' از ' + audit.uniqueNewsCount + ' · ویدئوی تازه با عنوان هم‌موضوع: ' + audit.matchedVideoCount + ' از ' + audit.youtubeSampleCount + ' · بازه: ' + audit.videoWindowDays + ' روز · دارای آمار بازدید: ' + audit.videoViewCountsAvailable
+        : 'Topic-matched news: ' + audit.topicMatchedNewsCount + '/' + audit.uniqueNewsCount + ' · Recent title-matched videos: ' + audit.matchedVideoCount + '/' + audit.youtubeSampleCount + ' · Window: ' + audit.videoWindowDays + ' days · With view counts: ' + audit.videoViewCountsAvailable}</Txt>
+      <Txt muted>{fa
+        ? 'خوراک‌های حاضر: ' + result.intelligence.sourceQuality.feedsRepresented +
+          ' · گروه‌های مستقل ناشر: ' + result.intelligence.sourceQuality.independentPublishers +
+          ' · خبرهای تکراری ادغام‌شده: ' + result.intelligence.sourceQuality.duplicateStoriesMerged
+        : 'Feeds represented: ' + result.intelligence.sourceQuality.feedsRepresented +
+          ' · Independent publisher groups: ' + result.intelligence.sourceQuality.independentPublishers +
+          ' · Duplicate stories merged: ' + result.intelligence.sourceQuality.duplicateStoriesMerged}</Txt>
+      {result.intelligence.gaps.length > 0 && (
+        <View style={{ gap: 5 }}>
+          <Heading>{fa ? 'خلأهای تحقیق' : 'Research gaps'}</Heading>
+          {result.intelligence.gaps.map((gap) => <Txt muted key={gap}>{gap}</Txt>)}
         </View>
-      </Panel>
-      {Boolean(topic.trim()) && !report && (
-        <View style={{ gap: 12 }}>
-          <Heading>Query map</Heading>
-          {relatedQueries(topic).map((query, index) => (
-            <View style={[styles.row, { marginLeft: index ? 16 : 0 }]} key={query}>
-              <View
-                style={{
-                  width: index ? 18 : 6,
-                  height: index ? 1 : 6,
-                  backgroundColor: index ? p.border : p.purple,
-                  borderRadius: 3,
-                }}
-              />
-              <Txt muted>{query}</Txt>
+      )}
+      {result.intelligence.sharedConcepts.length > 0 && (
+        <View style={{ gap: 5 }}>
+          <Heading>{fa ? 'واژه‌های مشترک میان نمونه‌ها' : 'Shared concepts in the sample'}</Heading>
+          <SourceText>{result.intelligence.sharedConcepts.join(fa ? '، ' : ', ')}</SourceText>
+          <Txt muted>{fa
+            ? 'این بخش هم‌پوشانی واژگانی نمونه دریافت‌شده را نشان می‌دهد، نه اثبات توافق معنایی یا تقاضا.'
+            : 'This is wording overlap in the returned sample, not proof of semantic agreement or audience demand.'}</Txt>
+        </View>
+      )}
+      {result.entityCandidates.length > 0 && (
+        <View style={{ gap: 5 }}>
+          <Heading>{fa ? 'موجودیت‌های شناخته‌شده در شواهد' : 'Recognized entities in evidence'}</Heading>
+          {result.entityCandidates.slice(0, 12).map((entity) => (
+            <View key={entity.id} style={{ gap: 2 }}>
+              <SourceText>{entity.name}</SourceText>
+              <Txt muted>{entity.kind} · {entity.mentionCount} {fa ? 'ذکر' : 'mentions'} · {entity.evidenceIds.length} {fa ? 'رکورد شاهد' : 'evidence records'}</Txt>
             </View>
           ))}
+          <Txt muted>{fa
+            ? 'این فهرست از تطبیق نام‌ها و نام‌های جایگزین شناخته‌شده ساخته شده است؛ به‌معنای تشخیص جامع همه موجودیت‌ها یا اثبات رابطه علّی نیست.'
+            : 'These are exact matches against a bounded alias catalogue, not exhaustive entity recognition or proof of causal relationships.'}</Txt>
+          {result.entityRelations.length > 0 && (
+            <Txt muted>{fa
+              ? 'هم‌ذکری‌های ثبت‌شده: ' + result.entityRelations.length + '؛ هر رابطه فقط هم‌وقوعی در یک رکورد شاهد است.'
+              : 'Recorded co-mentions: ' + result.entityRelations.length + '; each link means co-occurrence in an evidence record only.'}</Txt>
+          )}
         </View>
       )}
-      {!hasKey && !report && (
-        <Button
-          variant="tertiary"
-          onPress={() => router.push('/settings')}
-          className="h-auto justify-start px-0"
-        >
-          <KeyRound size={18} color={p.purple} />
-          <Button.Label className="flex-1">Set up your YouTube API key</Button.Label>
-          <ArrowRight size={16} color={p.muted} />
-        </Button>
-      )}
-      {busy && (
-        <View style={{ gap: 12 }}>
-          <Txt muted>{progress}</Txt>
-          <Skeleton className="h-36 rounded-2xl" />
-          <Skeleton className="h-16 rounded-2xl" />
+      <Txt muted>{fa
+        ? 'زمان پردازش موتور: ' + result.intelligence.selfEvaluation.processingMs + ' میلی‌ثانیه'
+        : 'Engine processing time: ' + result.intelligence.selfEvaluation.processingMs + ' ms'}</Txt>
+      {result.intelligence.potentialContradictions.length > 0 && (
+        <View style={{ gap: 5 }}>
+          <Heading>{fa ? 'اختلاف‌هایی که باید بررسی شوند' : 'Discrepancies to verify'}</Heading>
+          {result.intelligence.potentialContradictions.map((item) => <Txt muted key={item}>{item}</Txt>)}
         </View>
       )}
-      {Boolean(op.error) && (
-        <ErrorBox
-          message={op.error}
-          onRetry={() => void op.run(() => useScout.getState().analyze(reportId))}
-        />
+      {result.intelligence.followUpQueries.length > 0 && (
+        <View style={{ gap: 5 }}>
+          <Heading>{fa ? 'جست‌وجوهای تکمیلی پیشنهادی' : 'Suggested follow-up searches'}</Heading>
+          {result.intelligence.followUpQueries.map((query) => <SourceText key={query}>{query}</SourceText>)}
+        </View>
       )}
-      {report && (
-        <>
-          <View style={styles.row}>
-            <Heading>Research desk</Heading>
-            <Text style={[styles.badge, { marginLeft: 'auto' }]}>
-              {report.videos.length} {report.videos.length === 1 ? 'video' : 'videos'}
-            </Text>
+      {result.intelligence.scenarios.length > 0 && (
+        <View style={{ gap: 5 }}>
+          <Heading>{fa ? 'سناریوهای مشروط' : 'Conditional scenarios'}</Heading>
+          {result.intelligence.scenarios.map((scenario) => <Txt muted key={scenario}>{scenario}</Txt>)}
+        </View>
+      )}
+    </Fold>
+  );
+}
+
+function EngineAIReview({ topic, result }: { topic: string; result: InternalResearchResult }) {
+  const preferences = useScout(useShallow((state) => ({
+    model: state.data.preferences.model,
+    hybridIntelligence: state.data.preferences.hybridIntelligence,
+    uiLanguage: state.data.preferences.uiLanguage,
+  })));
+  const opinions = useScout((state) => state.data.opinions);
+  const fa = preferences.uiLanguage === 'fa';
+  const quality = result.intelligence.sourceQuality;
+  const audit = result.intelligence.selfEvaluation;
+  const prompt = internalEngineReviewPrompt({
+    topic,
+    summary: result.summary,
+    evidence: [
+      { label: 'Input news / unique news', detail: audit.inputNewsCount + ' / ' + audit.uniqueNewsCount },
+      { label: 'Topic-matched / excluded news', detail: audit.topicMatchedNewsCount + ' / ' + audit.unmatchedNewsCount },
+      { label: 'YouTube input / title-matched recent', detail: audit.youtubeSampleCount + ' / ' + audit.matchedVideoCount },
+      { label: 'Recent candidates / excluded videos', detail: audit.recentVideoCandidateCount + ' / ' + audit.excludedVideoCount },
+      { label: 'Matched videos with raw view counts', detail: String(audit.videoViewCountsAvailable) },
+      { label: 'Publication window (days)', detail: String(audit.videoWindowDays) },
+      { label: 'Independent publisher groups', detail: String(quality.independentPublishers) },
+      { label: 'Official feeds represented', detail: String(quality.feedsRepresented) },
+      { label: 'Duplicate records merged', detail: String(quality.duplicateStoriesMerged) },
+      { label: 'Stale / undated records', detail: String(quality.staleItems + quality.undatedItems) },
+      { label: 'Research gaps / possible discrepancies', detail: String(result.intelligence.gaps.length + result.intelligence.potentialContradictions.length) },
+      { label: 'Evidence relationships', detail: String(result.entityRelations.length) },
+      { label: 'Editorial angles generated', detail: String(result.angles.length) },
+      { label: 'Verification questions', detail: String(result.verificationQuestions.length) },
+      { label: 'Known entity candidates', detail: String(result.entityCandidates.length) },
+    ],
+    gaps: result.intelligence.gaps,
+    discrepancies: result.intelligence.potentialContradictions,
+    confidence: {
+      level: result.intelligence.confidence.level,
+      reason: fa
+        ? 'این سطح محلی بر اساس پوشش نمونه و تنوع ناشر محاسبه شده و تأیید صحت ادعاها نیست.'
+        : 'This local level reflects sample coverage and publisher diversity; it is not factual verification.',
+    },
+    language: fa ? 'fa' : 'en',
+  });
+  const researchFingerprint = fingerprintText(
+    result.topic + '|' + result.summary + '|' + JSON.stringify(audit) + '|' +
+    result.intelligence.gaps.join('|') + '|' + result.intelligence.potentialContradictions.join('|'),
+  );
+  const visibleCacheKey = preferences.model
+    ? engineReviewCacheKey(preferences.model, prompt, researchFingerprint)
+    : '';
+  const savedReview = findCachedEngineReview(opinions, preferences.model ?? '', prompt, researchFingerprint);
+  const [reviewState, setReviewState] = useState({ key: visibleCacheKey, text: savedReview?.text ?? '' });
+  const [externalKeyAvailable, setExternalKeyAvailable] = useState<boolean | null>(null);
+  const [reviewBusy, setReviewBusy] = useState(false);
+  const [reviewError, setReviewError] = useState('');
+  const [reviewMessage, setReviewMessage] = useState('');
+  const review = reviewState.key === visibleCacheKey ? reviewState.text : savedReview?.text ?? '';
+  const reviewInFlightRef = useRef(false);
+
+  const runReview = async (automaticTriggerKey?: string) => {
+    if (reviewInFlightRef.current) {
+      if (automaticTriggerKey) automaticReviewStarted.delete(automaticTriggerKey);
+      return;
+    }
+    reviewInFlightRef.current = true;
+    setReviewBusy(true);
+    setReviewError('');
+    setReviewMessage('');
+    let reviewSucceeded = false;
+    try {
+      // Give the native UI a frame to paint progress before network work.
+      await new Promise<void>((resolve) => setTimeout(resolve, 32));
+      const key = await getKey('openrouter');
+      setExternalKeyAvailable(Boolean(key));
+      if (!key) throw new Error(fa ? 'ابتدا کلید OpenRouter را در تنظیمات ذخیره کن.' : 'Save your OpenRouter key in Settings first.');
+
+      const current = useScout.getState().data;
+      const storedModel = current.preferences.model;
+      const cachedStoredModel = findCachedEngineReview(current.opinions, storedModel ?? '', prompt, researchFingerprint);
+      if (cachedStoredModel && storedModel) {
+        setReviewState({ key: engineReviewCacheKey(storedModel, prompt, researchFingerprint), text: cachedStoredModel.text });
+        reviewSucceeded = true;
+        setReviewMessage(fa ? 'نظر ذخیره‌شده بارگذاری شد.' : 'Saved second opinion loaded.');
+        return;
+      }
+
+      // Every new generation still requires a live zero-price model selection.
+      const models = await getFreeModels();
+      const model = selectFreeModel(models, storedModel ?? '');
+      if (!model) throw new Error(fa
+        ? 'هیچ مدل رایگان و فعالی از OpenRouter در دسترس نیست. بعداً دوباره تلاش کن.'
+        : 'No currently available free OpenRouter model was found. Try again later.');
+
+      if (model !== storedModel) {
+        await useScout.getState().commit((data) => ({
+          ...data,
+          preferences: { ...data.preferences, model },
+        }));
+      }
+
+      const cacheKey = engineReviewCacheKey(model, prompt, researchFingerprint);
+      const cached = findCachedEngineReview(useScout.getState().data.opinions, model, prompt, researchFingerprint);
+      if (cached) {
+        setReviewState({ key: cacheKey, text: cached.text });
+        reviewSucceeded = true;
+        setReviewMessage(fa ? 'نظر ذخیره‌شده بارگذاری شد.' : 'Saved second opinion loaded.');
+        return;
+      }
+
+      // Generation POST is called once; requestJson does not auto-retry POST requests.
+      const response = await getOpinion(key, model, prompt, async () => {
+        const currentPreferences = useScout.getState().data.preferences;
+        const usage = nextOpenRouterUsage(
+          currentPreferences.openRouterUsageDay,
+          currentPreferences.openRouterRequestsToday,
+          localDateKey(),
+        );
+        await useScout.getState().commit((data) => ({
+          ...data,
+          preferences: { ...data.preferences, model, ...usage },
+        }));
+      });
+      const opinion = { id: uid(), ideaId: cacheKey, text: response, model, createdAt: Date.now() };
+      setReviewState({ key: cacheKey, text: response });
+      await useScout.getState().commit((data) => ({
+        ...data,
+        opinions: [opinion, ...data.opinions].slice(0, 100),
+      }));
+      reviewSucceeded = true;
+      setReviewMessage(fa ? 'نظر دوم ذخیره شد.' : 'Second opinion saved.');
+    } catch (error) {
+      setReviewError(error instanceof Error
+        ? error.message
+        : (fa ? 'دریافت نظر دوم ناموفق بود؛ اتصال یا تنظیمات مدل را بررسی کن.' : 'The second opinion failed. Check connectivity and model settings.'));
+    } finally {
+      reviewInFlightRef.current = false;
+      setReviewBusy(false);
+      if (automaticTriggerKey && !reviewSucceeded) automaticReviewStarted.delete(automaticTriggerKey);
+    }
+  };
+
+  const runReviewRef = useRef(runReview);
+  useEffect(() => {
+    runReviewRef.current = runReview;
+  });
+
+  useEffect(() => {
+    if (!preferences.hybridIntelligence || savedReview || externalKeyAvailable === false || !prompt.trim()) return;
+    const triggerKey = fingerprintText(prompt + '\n' + researchFingerprint);
+    if (automaticReviewStarted.has(triggerKey) || reviewInFlightRef.current) return;
+    automaticReviewStarted.add(triggerKey);
+    void getKey('openrouter').then((key) => {
+      setExternalKeyAvailable(Boolean(key));
+      if (!key) {
+        automaticReviewStarted.delete(triggerKey);
+        return;
+      }
+      void runReviewRef.current(triggerKey);
+    }).catch(() => automaticReviewStarted.delete(triggerKey));
+  }, [preferences.hybridIntelligence, savedReview, prompt, researchFingerprint, externalKeyAvailable]);
+
+  return (
+    <View style={{ gap: 8 }}>
+      <BadgeText>{review ? 'SECOND OPINION · SAVED' : 'SECOND OPINION · OPTIONAL'}</BadgeText>
+      <Heading>{fa ? 'بازبینی مستقل با AI' : 'Independent AI review'}</Heading>
+      <Txt muted>{fa
+        ? 'مدل فقط موضوع و شاخص‌های تجمیعی را می‌بیند؛ تیتر خبرها، عنوان ویدئوها، پیوندها و آمار تک‌تک موارد ارسال نمی‌شوند. دریافت پاسخ در پس‌زمینه انجام می‌شود و جابه‌جایی میان بخش‌های برنامه را قفل نمی‌کند.'
+        : 'The model receives only the topic and aggregate indicators — never raw headlines, video titles, links or per-item statistics. The reply is fetched asynchronously and does not lock navigation.'}</Txt>
+      {savedReview ? <Txt muted>{'Model: ' + savedReview.model + ' · ' + new Date(savedReview.createdAt).toLocaleString()}</Txt> : null}
+      <Txt muted>{reviewBusy
+        ? (fa ? 'در حال دریافت نظر دوم؛ می‌توانی هم‌زمان در بخش‌های دیگر کار کنی.' : 'Getting the second opinion. You can keep using other sections.')
+        : preferences.hybridIntelligence
+          ? externalKeyAvailable === false
+            ? (fa ? 'برای اجرای خودکار، کلید OpenRouter را در تنظیمات ذخیره کن.' : 'Save an OpenRouter key in Settings to enable automatic review.')
+            : (fa ? 'نظر دوم پس از تحلیل داخلی اجرا می‌شود؛ نتیجه بعد از تکمیل نمایش داده خواهد شد.' : 'The second opinion runs after local analysis; its result appears when complete.')
+          : (fa ? 'اجرای خودکار خاموش است؛ می‌توانی نظر دوم را دستی دریافت کنی.' : 'Automatic review is off. You can request a second opinion manually.')}</Txt>
+      <Action busy={reviewBusy} onPress={() => void runReview()}>
+        {fa ? 'دریافت نظر دوم' : 'Get second opinion'}
+      </Action>
+      {reviewError ? <ErrorBox message={reviewError} onRetry={() => void runReview()} /> : null}
+      {reviewMessage ? <Txt muted>{reviewMessage}</Txt> : null}
+      {review ? (
+        <Fold title={fa ? 'نمایش کامل نظر دوم' : 'View full second opinion'}>
+          <Txt>{review}</Txt>
+        </Fold>
+      ) : null}
+    </View>
+  );
+}
+export default function DiscoveryDashboard() {
+  const ready = useScout((state) => state.ready);
+  if (!ready) {
+    return (
+      <Page title="MOHSEN SCOUT">
+        <Txt muted>Loading your local research workspace…</Txt>
+      </Page>
+    );
+  }
+  return <DiscoveryDashboardReady />;
+}
+
+function DiscoveryDashboardReady() {
+  const preferences = useScout(useShallow((state) => ({
+    uiLanguage: state.data.preferences.uiLanguage ?? 'fa',
+    selectedSpaceNiche: state.data.preferences.selectedSpaceNiche,
+    customSpaceNiche: state.data.preferences.customSpaceNiche,
+    spaceInterestLanguage: state.data.preferences.spaceInterestLanguage ?? 'en',
+    spaceNewsSources: state.data.preferences.spaceNewsSources,
+    region: state.data.preferences.region,
+    languages: state.data.preferences.languages,
+    schedule: state.data.preferences.schedule,
+    paused: state.data.preferences.paused,
+    hybridIntelligence: state.data.preferences.hybridIntelligence,
+    budget: state.data.preferences.budget,
+  })));
+  const ideas = useScout((state) => state.data.ideas);
+  const reports = useScout((state) => state.data.reports);
+  const memoryCount = useScout((state) => state.data.researchMemory.length);
+  const youtubeBudget = useScout((state) => state.data.budget);
+  const quotaDate = quotaDay();
+  const quotaUsage = youtubeBudget.date === quotaDate
+    ? youtubeBudget
+    : { date: quotaDate, units: 0, requests: 0, exhausted: false };
+  const fa = preferences.uiLanguage === 'fa';
+  const [warnings, setWarnings] = useState<string[]>([]);
+  const [lastScannedAt, setLastScannedAt] = useState<number | null>(null);
+  const [dashboardNow, setDashboardNow] = useState(() => Date.now());
+  const [nicheSuggestions, setNicheSuggestions] = useState<SpaceNicheSuggestion[]>([]);
+  const [radarBrief, setRadarBrief] = useState<InternalResearchResult>();
+  const [radarNews, setRadarNews] = useState<SpaceNewsItem[]>([]);
+  const [scanning, setScanning] = useState(false);
+  const [reportAnalysisState, setReportAnalysisState] = useState<{ id: string; result: InternalResearchResult }>();
+  const scanInFlightRef = useRef<Promise<void> | null>(null);
+  const op = useOperation();
+
+  const niche = SPACE_NICHES.find((item) => item.id === preferences.selectedSpaceNiche);
+  const nicheTitle = preferences.selectedSpaceNiche === 'all'
+    ? (fa ? 'همه موضوعات فضایی' : 'All space topics')
+    : preferences.selectedSpaceNiche === 'custom'
+      ? (preferences.customSpaceNiche.trim() || (fa ? 'موضوع دلخواه' : 'Custom niche'))
+      : niche?.title ?? (fa ? 'همه موضوعات فضایی' : 'All space topics');
+  const discoveryTopic = preferences.selectedSpaceNiche === 'all'
+    ? 'Space science and exploration'
+    : preferences.selectedSpaceNiche === 'custom'
+      ? preferences.customSpaceNiche
+      : niche?.topic ?? 'Space science and exploration';
+
+  const runScan = useCallback((force = false): Promise<void> =>
+    runSingleFlight(scanInFlightRef, async () => {
+      setScanning(true);
+      try {
+        // Fetch this free attention proxy alongside RSS, but never delay the fresh feed preview.
+        const wikiPromise = getWikipediaSignal(discoveryTopic, preferences.spaceInterestLanguage ?? 'en').catch(() => undefined);
+        const result = await fetchSpaceNews(preferences.spaceNewsSources, fetch, force);
+        const relevantNews = preferences.selectedSpaceNiche === 'all'
+          ? result.items
+          : newsForNiche(result.items, preferences.selectedSpaceNiche, preferences.customSpaceNiche);
+
+        // Show the latest feed preview first and defer CPU-heavy local analysis until
+        // gestures/navigation settle, so scroll and tab changes remain responsive.
+        setRadarNews(relevantNews);
+        setWarnings(result.warnings);
+        setLastScannedAt(Date.now());
+        setDashboardNow(Date.now());
+        // Yield one frame before local CPU work so the native UI can paint and respond.
+        await new Promise<void>((resolve) => setTimeout(resolve, 96));
+        const wiki = await wikiPromise;
+
+        const currentData = useScout.getState().data;
+        const priorMemory = currentData.researchMemory.find(
+          (entry) => normalizeResearchText(entry.topic) === normalizeResearchText(discoveryTopic),
+        );
+        const nextRadarBrief = relevantNews.length || wiki ? buildInternalResearch({
+          topic: discoveryTopic,
+          feedback: buildResearchInterestProfile(currentData.ideas),
+          priorMemory,
+          language: currentData.preferences.uiLanguage ?? 'fa',
+          news: relevantNews.slice(0, 60).map((item) => ({
+            title: item.title,
+            summary: item.summary,
+            sourceName: item.sourceName,
+            sourceUrl: item.url,
+            publishedAt: item.publishedAt,
+            sourceId: item.sourceId,
+          })),
+          ...(wiki ? { wiki } : {}),
+        }) : undefined;
+        const automaticIdeas = generateEditorialIdeas({
+          topic: discoveryTopic,
+          news: relevantNews,
+          context: wiki ? [{
+            title: wiki.articleTitle,
+            summary: [wiki.summary, wiki.monthlyViews.length
+              ? 'Wikimedia monthly article pageviews: ' + wiki.monthlyViews.map((point) => point.month + '=' + point.views).join(', ')
+              : 'No monthly Wikimedia pageview observations were returned.'].filter(Boolean).join('\n'),
+            sourceUrl: wiki.articleUrl,
+            sourceName: 'Wikimedia Pageviews · attention proxy',
+          }] : [],
+          existingIdeas: currentData.ideas,
+          region: currentData.preferences.region,
+          languages: currentData.preferences.languages,
+          language: currentData.preferences.uiLanguage ?? 'fa',
+          evidenceKey: 'rss:' + relevantNews.map((item) => item.url).sort().join('|'),
+          skipExistingEvidence: true,
+          limit: 5,
+        });
+        const nextMemory = nextRadarBrief ? createResearchMemoryEntry({
+          topic: discoveryTopic,
+          news: relevantNews,
+          analysis: nextRadarBrief,
+          previous: priorMemory,
+          now: Date.now(),
+          language: currentData.preferences.uiLanguage ?? 'fa',
+        }) : undefined;
+
+        // One serialized SQLite write replaces three queued commits for a single scan.
+        // The updater uses the latest store state so unrelated edits are never overwritten.
+        await useScout.getState().commit((data) => ({
+          ...data,
+          feedRegistry: result.registry,
+          ideas: automaticIdeas.length ? [...automaticIdeas, ...data.ideas] : data.ideas,
+          researchMemory: nextMemory
+            ? [
+                nextMemory,
+                ...data.researchMemory.filter((entry) => normalizeResearchText(entry.topic) !== normalizeResearchText(discoveryTopic)),
+              ].slice(0, 40)
+            : data.researchMemory,
+        }));
+
+        rememberTopicDossier(discoveryTopic, { news: relevantNews, ...(wiki ? { wiki } : {}), internalAnalysis: nextRadarBrief });
+        setNicheSuggestions(buildNicheSuggestions(result.items, 8).filter((suggestion) => !suggestion.id.startsWith('story:')));
+        setRadarBrief(nextRadarBrief);
+        if (force && !result.items.length && result.warnings.length) {
+          throw new Error(result.warnings.join(' '));
+        }
+      } finally {
+        setScanning(false);
+      }
+    }), [
+    preferences.spaceNewsSources,
+    preferences.selectedSpaceNiche,
+    preferences.customSpaceNiche,
+    preferences.spaceInterestLanguage,
+    discoveryTopic,
+  ]);
+
+  useEffect(() => {
+    void runScan(false).catch(() => {
+      setWarnings([fa
+        ? 'خوراک‌های رسمی در دسترس نبودند یا ذخیرهٔ نتیجه کامل نشد. اتصال و فضای ذخیره‌سازی را بررسی و دوباره تلاش کن.'
+        : 'Official feeds were unavailable or the local result could not be saved. Check connectivity and storage, then retry.']);
+    });
+  }, [runScan, fa]);
+
+  const latestReport = reports[0];
+  const latestReportId = latestReport?.id ?? '';
+  const latestReportSignature = latestReport
+    ? latestReport.videos.map((video) => video.id + ':' + video.fetchedAt).join('|')
+    : '';
+  const latestReportVideoRecords = latestReport?.videos;
+  const latestReportVideos = useMemo<YouTubeSampleVideo[]>(() => (latestReportVideoRecords ?? []).map((video) => ({
+    id: video.id,
+    title: video.title,
+    description: video.description,
+    channel: video.channel,
+    channelId: '',
+    publishedAt: video.publishedAt,
+    thumbnailUrl: video.thumbnail,
+    viewCount: video.viewCount ?? null,
+    likeCount: video.likeCount ?? null,
+    channelSubscriberCount: null,
+    channelVideoCount: null,
+    url: 'https://www.youtube.com/watch?v=' + video.id,
+  })), [latestReportVideoRecords]);
+  useEffect(() => {
+    if (!latestReportId || !latestReportSignature) return;
+    let active = true;
+    const timer = setTimeout(() => {
+      if (!active) return;
+      const report = useScout.getState().data.reports.find((item) => item.id === latestReportId);
+      if (!report || !report.videos.length) return;
+      try {
+        const videos: YouTubeSampleVideo[] = report.videos.map((video) => ({
+          id: video.id,
+          title: video.title,
+          description: video.description,
+          channel: video.channel,
+          channelId: '',
+          publishedAt: video.publishedAt,
+          thumbnailUrl: video.thumbnail,
+          viewCount: video.viewCount ?? null,
+          likeCount: video.likeCount ?? null,
+          channelSubscriberCount: null,
+          channelVideoCount: null,
+          url: 'https://www.youtube.com/watch?v=' + video.id,
+        }));
+        const currentNews = radarNews.map((item) => ({
+          title: item.title,
+          summary: item.summary,
+          sourceName: item.sourceName,
+          sourceUrl: item.url,
+          publishedAt: item.publishedAt,
+          sourceId: item.sourceId,
+        }));
+        const result = buildInternalResearch({
+          topic: report.input.topic,
+          videos,
+          news: currentNews,
+          feedback: buildResearchInterestProfile(useScout.getState().data.ideas),
+          language: preferences.uiLanguage ?? 'fa',
+        });
+        if (active) setReportAnalysisState({ id: report.id, result });
+      } catch {
+        if (active) setWarnings([fa
+          ? 'تحلیل محلی آخرین جست‌وجو کامل نشد؛ گزارش و ویدئوهای ذخیره‌شده همچنان در دسترس‌اند.'
+          : 'The latest local analysis could not be completed. The saved report and videos remain available.']);
+      }
+    }, 160);
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [latestReportId, latestReportSignature, preferences.uiLanguage, fa, radarNews]);
+
+  const latestReportAnalysis = reportAnalysisState?.id === latestReportId
+    ? reportAnalysisState.result
+    : undefined;
+  const showYouTubeResearch = Boolean(latestReport && latestReport.videos.length > 0);
+  const deskTopic = showYouTubeResearch ? latestReport!.input.topic : discoveryTopic;
+  const deskAnalysis = showYouTubeResearch ? latestReportAnalysis : radarBrief;
+  const deskNews = useMemo(() => rankNewsForTopic(deskTopic, radarNews, 40), [deskTopic, radarNews]);
+  const deskVideos = useMemo(() => showYouTubeResearch
+    ? latestReportVideos
+      .filter((video) => {
+        const published = Date.parse(video.publishedAt);
+        const age = dashboardNow - published;
+        return Number.isFinite(published) && age >= 0 && age <= 30 * 24 * 60 * 60 * 1000 && scoreResearchText(deskTopic, video.title) > 0;
+      })
+      .sort((a, b) => (b.viewCount ?? -1) - (a.viewCount ?? -1))
+      .slice(0, 24)
+    : [], [showYouTubeResearch, latestReportVideos, deskTopic, dashboardNow]);
+  const rssGenerationKey = 'rss:' + deskNews.map((item) => item.url).sort().join('|');
+  const deskIdeas = ideas.filter((idea) =>
+    idea.engineGenerated && !idea.archived &&
+    (showYouTubeResearch ? idea.reportId === latestReport?.id : idea.generationKey === rssGenerationKey),
+  ).slice(0, 3);
+  const bestIdea = useMemo(() => chooseBestIdea(deskIdeas), [deskIdeas]);
+  const recommendations = deskIdeas
+    .filter((idea) => idea.id !== bestIdea?.id)
+    .slice(0, 3);
+  const combinedEvidenceKey = fingerprintText(
+    deskTopic + '|' + deskNews.map((item) => item.url).sort().join('|') + '|' + deskVideos.map((video) => video.id).sort().join('|'),
+  );
+  useEffect(() => {
+    if (!latestReport || (!deskNews.length && !deskVideos.length)) return;
+    const current = useScout.getState().data;
+    const generated = generateEditorialIdeas({
+      topic: deskTopic,
+      news: deskNews,
+      videos: deskVideos,
+      reportId: latestReport.id,
+      existingIdeas: current.ideas,
+      evidenceKey: 'combined:' + combinedEvidenceKey,
+      skipExistingEvidence: true,
+      region: preferences.region,
+      languages: preferences.languages,
+      language: preferences.uiLanguage ?? 'fa',
+      limit: 8,
+    });
+    if (generated.length) {
+      void useScout.getState().commit((data) => ({ ...data, ideas: [...generated, ...data.ideas] })).catch(() => {});
+    }
+  }, [latestReport, latestReport?.id, latestReportId, combinedEvidenceKey, deskTopic, deskNews, deskVideos, preferences.region, preferences.languages, preferences.uiLanguage]);
+
+  const nicheTerms = useMemo<string[]>(() => {
+    if (preferences.selectedSpaceNiche === 'custom') {
+      return preferences.customSpaceNiche.split(/[,;\n]+/).map((term) => term.trim()).filter(Boolean);
+    }
+    return preferences.selectedSpaceNiche === 'all' ? [] : niche?.keywords ? [...niche.keywords] : [];
+  }, [preferences.selectedSpaceNiche, preferences.customSpaceNiche, niche]);
+  const feedTopic = preferences.selectedSpaceNiche === 'all'
+    ? latestReport?.input.topic ?? discoveryTopic
+    : discoveryTopic;
+  const feedVideos = useMemo(
+    () => selectDashboardVideos(latestReportVideoRecords ?? [], feedTopic, nicheTerms, dashboardNow, 12),
+    [latestReportVideoRecords, feedTopic, nicheTerms, dashboardNow],
+  );
+
+  const audit = deskAnalysis?.intelligence.selfEvaluation;
+  const sharedTerms = deskAnalysis?.intelligence.sharedConcepts ?? [];
+  const nextGap = deskAnalysis?.intelligence.gaps[0];
+  const nextQuery = deskAnalysis?.intelligence.followUpQueries[0];
+  const primaryNews = deskNews[0];
+
+  return (
+    <Page title="MOHSEN SCOUT">
+      <View style={{ gap: 12 }}>
+        <Panel>
+          <BadgeText>{fa ? 'میزکار تحقیق · تمرکز فعلی' : 'RESEARCH DESK · CURRENT FOCUS'}</BadgeText>
+          <SourceHeading>{showYouTubeResearch ? latestReport!.input.topic : nicheTitle}</SourceHeading>
+          <Txt muted>{latestReport
+            ? (fa ? 'آخرین جست‌وجوی YouTube: ' : 'Latest YouTube research: ') + new Date(latestReport.createdAt).toLocaleString()
+            : (fa ? 'هنوز گزارش YouTube ذخیره نشده؛ موضوع را انتخاب و اولین جست‌وجو را اجرا کن.' : 'No YouTube report is saved yet. Choose a topic and run your first search.')}</Txt>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+            <View style={{ flexGrow: 1, flexBasis: 92, gap: 3 }}>
+              <BadgeText>{fa ? 'خبر هم‌موضوع' : 'MATCHED NEWS'}</BadgeText>
+              <Heading>{String(audit?.topicMatchedNewsCount ?? 0)}</Heading>
+            </View>
+            <View style={{ flexGrow: 1, flexBasis: 92, gap: 3 }}>
+              <BadgeText>{fa ? 'ویدئوی هم‌موضوع' : 'MATCHED VIDEOS'}</BadgeText>
+              <Heading>{String(audit?.matchedVideoCount ?? 0)}</Heading>
+            </View>
+            <View style={{ flexGrow: 1, flexBasis: 92, gap: 3 }}>
+              <BadgeText>{fa ? 'گروه ناشر مستقل' : 'PUBLISHER GROUPS'}</BadgeText>
+              <Heading>{String(deskAnalysis?.intelligence.sourceQuality.independentPublishers ?? 0)}</Heading>
+            </View>
+            <View style={{ flexGrow: 1, flexBasis: 92, gap: 3 }}>
+              <BadgeText>{fa ? 'خبرهای یکتا' : 'UNIQUE STORIES'}</BadgeText>
+              <Heading>{String(deskAnalysis?.intelligence.sourceQuality.uniqueStories ?? 0)}</Heading>
+            </View>
+            <View style={{ flexGrow: 1, flexBasis: 92, gap: 3 }}>
+              <BadgeText>{fa ? 'خوراک‌های حاضر در تحلیل' : 'FEEDS REPRESENTED'}</BadgeText>
+              <Heading>{String(deskAnalysis?.intelligence.sourceQuality.feedsRepresented ?? 0)}</Heading>
+            </View>
+            <View style={{ flexGrow: 1, flexBasis: 92, gap: 3 }}>
+              <BadgeText>{fa ? 'قدیمی یا بی‌تاریخ' : 'STALE / UNDATED'}</BadgeText>
+              <Heading>{String((deskAnalysis?.intelligence.sourceQuality.staleItems ?? 0) + (deskAnalysis?.intelligence.sourceQuality.undatedItems ?? 0))}</Heading>
+            </View>
+            <View style={{ flexGrow: 1, flexBasis: 92, gap: 3 }}>
+              <BadgeText>{fa ? 'مشاهدات ماهانه ویکی‌مدیا' : 'WIKIMEDIA MONTHS'}</BadgeText>
+              <Heading>{String(audit?.wikimediaMonthlyObservations ?? 0)}</Heading>
+            </View>
           </View>
-          {report.warnings.map((w) => (
-            <Txt muted key={w}>
-              {w}
-            </Txt>
-          ))}
-          <Fold title="Evidence & limitations">
-            <Txt muted>{limitations}</Txt>
-            <Txt muted>
-              Collected {new Date(report.createdAt).toLocaleString('en-US')}. Cached for 15 minutes.
-              Metadata expires after 29 days.
-            </Txt>
-            <Txt muted>Queries: {report.queries.join(' · ')}</Txt>
-          </Fold>
-          <Fold title="Emerging Topics" open>
-            <Txt muted>Recent examples, not proof of an emerging trend.</Txt>
-            {report.videos.slice(0, 2).map((v) => (
-              <View style={{ gap: 6 }} key={v.id}>
-                <Txt>{v.title}</Txt>
-                <Txt muted>
-                  Observed publication: {new Date(v.publishedAt).toLocaleDateString('en-US')}
-                </Txt>
+          <Action onPress={() => router.push({ pathname: '/youtube', params: { topic: deskTopic } })}>
+            {fa ? 'شروع یا ادامه تحقیق در YouTube' : 'Start or continue YouTube research'}
+          </Action>
+          {latestReport ? (
+            <Action secondary onPress={() => router.push({ pathname: '/youtube', params: { topic: latestReport.input.topic, report: latestReport.id } })}>
+              {fa ? 'باز کردن گزارش کامل' : 'Open full report'}
+            </Action>
+          ) : null}
+        </Panel>
+
+        {deskAnalysis ? (
+          <Panel>
+            <BadgeText>{fa ? 'خلاصه هوشمند · بر پایه شواهد موجود' : 'INTELLIGENCE BRIEF · EVIDENCE-BASED'}</BadgeText>
+            <Heading>{fa ? 'مهم‌ترین چیزی که فعلاً می‌دانیم' : 'What the current evidence tells us'}</Heading>
+            <Txt>{deskAnalysis.summary}</Txt>
+            {sharedTerms.length ? (
+              <View style={{ gap: 5 }}>
+                <Heading>{fa ? 'هم‌پوشانی متن خبر و YouTube' : 'News and YouTube wording overlap'}</Heading>
+                <SourceHeading>{sharedTerms.slice(0, 4).join(fa ? '، ' : ', ')}</SourceHeading>
+                <Txt muted>{fa
+                  ? 'این واژه‌ها در عنوان بعضی خبرها و ویدئوهای همین نمونه تکرار شده‌اند؛ این فقط هم‌پوشانی متن است، نه اثبات تقاضا یا توافق معنایی.'
+                  : 'These words recur in some headlines and video titles in this sample. This is wording overlap, not proof of demand or semantic agreement.'}</Txt>
               </View>
-            ))}
-          </Fold>
-          <Fold title="Popular Topics">
-            <Txt muted>
-              Examples ordered by YouTube popularity, not an estimate of market demand.
-            </Txt>
-            {report.videos
-              .filter((v) => v.query.includes('YouTube popularity order'))
-              .map((v) => (
-                <VideoRow key={v.id} video={v} topic={topic} />
-              ))}
-            {!report.videos.some((v) => v.query.includes('YouTube popularity order')) && (
-              <Txt muted>No distinct popularity-ordered examples in this sample.</Txt>
-            )}
-          </Fold>
-          <Fold title="Interesting Subtopics">
-            <Txt muted>Generated search angles to investigate, not discovered trends.</Txt>
-            {report.queries.slice(1).map((q) => (
-              <Txt key={q}>{q}</Txt>
-            ))}
-          </Fold>
-          <Fold title="Research Questions">
-            <Txt>
-              Who is this useful for? Which claim can you demonstrate? What would your version add?
-              Which assumptions need direct audience research?
-            </Txt>
-          </Fold>
-          {!report.analyzed && (
-            <Action
-              icon={Sparkles}
-              busy={op.busy}
-              onPress={() => void op.run(() => useScout.getState().analyze(report.id))}
-            >
-              CONTINUE ANALYSIS
-            </Action>
-          )}
-          {report.analyzed && (
-            <View style={{ gap: 14 }}>
-              <Heading>Content Opportunities</Heading>
-              {ideas
-                .filter((i) => i.reportId === report.id)
-                .map((idea) => (
-                  <Button
-                    variant="secondary"
-                    key={idea.id}
-                    onPress={() => router.push({ pathname: '/detail', params: { idea: idea.id } })}
-                    className="h-auto justify-start p-4"
-                  >
-                    <View style={{ flex: 1, gap: 8 }}>
-                      <Txt>{idea.topic}</Txt>
-                      <Text style={styles.badge}>{idea.assessment}</Text>
-                    </View>
-                    <ArrowRight color={p.purple} size={18} />
-                  </Button>
-                ))}
-            </View>
-          )}
-          <Fold title="Relevant Videos" open>
-            {!report.videos.length ? (
-              <Empty
-                title="No videos matched this search."
-                action="Change filters"
-                onPress={() => setReportId('')}
-              />
+            ) : primaryNews ? (
+              <View style={{ gap: 4 }}>
+                <Heading>{fa ? 'مرتبط‌ترین خبر دریافت‌شده' : 'Most relevant retrieved publisher item'}</Heading>
+                <SourceHeading>{primaryNews.title}</SourceHeading>
+                <Txt muted>{primaryNews.sourceName}{primaryNews.publishedAt ? ' · ' + new Date(primaryNews.publishedAt).toLocaleDateString() : ''}</Txt>
+              </View>
             ) : (
-              report.videos.map((v) => <VideoRow key={v.id} video={v} topic={topic} />)
+              <Txt muted>{fa
+                ? 'در نمونه فعلی هم‌پوشانی واژگانی قابل نمایش میان خبر و ویدئو وجود ندارد؛ نتیجه را به کل موضوع تعمیم نده.'
+                : 'No shared wording was detected between the current news and video sample. Do not generalize this absence to the whole topic.'}</Txt>
+            )}
+            <View style={{ gap: 5 }}>
+              <Heading>{fa ? 'اقدام بعدی پیشنهادی' : 'Recommended next action'}</Heading>
+              <Txt>{nextGap ?? (fa
+                ? 'خلأ آشکاری در ممیزی خودکار این نمونه ثبت نشده است؛ پیش از تولید، ادعاهای اصلی را در منبع اولیه بررسی کن.'
+                : 'No additional gap was flagged by the current audit. Verify key claims against the original sources.')}</Txt>
+              {nextQuery ? (
+                <Action secondary onPress={() => router.push({ pathname: '/youtube', params: { topic: nextQuery } })}>
+                  {fa ? 'بررسی عبارت تکمیلی: ' + nextQuery : 'Research next: ' + nextQuery}
+                </Action>
+              ) : null}
+              <Action secondary onPress={() => router.push({ pathname: '/deep-research', params: { topic: deskTopic } })}>
+                {fa ? 'تبدیل این سرنخ به تحقیق عمیق' : 'Turn this lead into deep research'}
+              </Action>
+            </View>
+          </Panel>
+        ) : (
+          <Panel>
+            <BadgeText>{fa ? 'هنوز تحلیل اختصاصی ساخته نشده' : 'NO TOPIC-SPECIFIC BRIEF YET'}</BadgeText>
+            <Heading>{fa ? 'اول یک نمونه واقعی جمع‌آوری کن' : 'Collect a real sample first'}</Heading>
+            <Txt muted>{fa
+              ? 'خبرهای عمومی یا آمار کلی به‌تنهایی برای پیشنهاد محتوای قابل اتکا کافی نیستند. یک موضوع مشخص را در YouTube جست‌وجو کن تا گزارش، ویدئوها و خلأهای تحقیق در همین صفحه خلاصه شوند.'
+              : 'General news and broad statistics are not enough for a useful recommendation. Search one specific YouTube topic so its sample, videos and research gaps can be summarized here.'}</Txt>
+            <Action onPress={() => router.push({ pathname: '/youtube', params: { topic: discoveryTopic } })}>
+              {fa ? 'جست‌وجوی موضوع انتخاب‌شده' : 'Research the selected topic'}
+            </Action>
+          </Panel>
+        )}
+
+        {bestIdea ? (
+          <Panel>
+            <BadgeText>{fa ? 'نامزد محتوایی · ابتدا اعتبارسنجی کن' : 'EDITORIAL CANDIDATE · VALIDATE FIRST'}</BadgeText>
+            <Heading>{fa ? 'یک زاویه برای تبدیل به ویدئو' : 'A video angle to develop'}</Heading>
+            <SourceHeading>{bestIdea.topic}</SourceHeading>
+            <Txt>{bestIdea.concept.slice(0, 420)}</Txt>
+            <Txt muted>{bestIdea.note.slice(0, 220)}</Txt>
+            <Action onPress={() => router.push({ pathname: '/detail', params: { idea: bestIdea.id } })}>
+              {fa ? 'تکمیل ایده و بررسی شواهد' : 'Develop idea and inspect evidence'}
+            </Action>
+          </Panel>
+        ) : null}
+
+        <Panel>
+          <Fold title={fa ? 'ممیزی شواهد و تحلیل کامل' : 'Evidence audit and full analysis'}>
+            {deskAnalysis ? (
+              <View style={{ gap: 12 }}>
+                {deskAnalysis.evidence
+                  .filter((item) => ['publisher-news', 'wikimedia', 'youtube-sample', 'cross-source-overlap'].includes(item.id))
+                  .map((item) => (
+                    <View key={item.id} style={{ gap: 5 }}>
+                      <BadgeText>{item.label}</BadgeText>
+                      <Txt muted>{item.detail}</Txt>
+                    </View>
+                  ))}
+                <AnalysisSignals result={deskAnalysis} />
+                <Fold title={fa ? 'نقشه ارتباط شواهد' : 'Evidence relationship map'}>
+                  <ResearchKnowledgeGraph topic={deskTopic} news={deskNews} videos={deskVideos} analysis={deskAnalysis} language={preferences.uiLanguage ?? 'fa'} generatedIdeas={deskIdeas} />
+                </Fold>
+                <Fold title={fa ? 'نمودار و روند داده موجود' : 'Charts and available data'}>
+                  <ResearchOverviewChart analysis={deskAnalysis} ideas={deskIdeas} videoCount={deskVideos.length} language={preferences.uiLanguage ?? 'fa'} />
+                </Fold>
+                <Fold title={fa ? 'زاویه‌های محتوا و راستی‌آزمایی' : 'Editorial angles and verification'}>
+                  {deskAnalysis.angles.slice(0, 3).map((angle) => (
+                    <View key={angle.id} style={{ gap: 5 }}>
+                      <Heading>{angle.title}</Heading>
+                      <Txt>{angle.hook}</Txt>
+                      <Txt muted>{angle.approach}</Txt>
+                      <Txt muted>{(fa ? 'راستی‌آزمایی: ' : 'Verify: ') + angle.verification}</Txt>
+                    </View>
+                  ))}
+                </Fold>
+              </View>
+            ) : (
+              <Txt muted>{fa ? 'پس از جمع‌آوری نمونه، جزئیات تحلیل اینجا نمایش داده می‌شود.' : 'Detailed analysis will appear here after a research sample is collected.'}</Txt>
             )}
           </Fold>
-        </>
-      )}
-      {!report && !busy && reports.length > 0 && (
-        <Fold title="Recent research">
-          {reports.slice(0, 10).map((r) => (
-            <Action
-              key={r.id}
-              secondary
-              onPress={() => {
-                setReportId(r.id);
-                setTopic(r.input.topic);
-              }}
-            >
-              {r.input.topic}
-            </Action>
-          ))}
-        </Fold>
-      )}
-      {!report && !busy && (
-        <View style={[styles.row, { paddingBottom: 8 }]}>
-          <SlidersHorizontal size={16} color={p.muted} />
-          <Text style={[styles.muted, { flex: 1 }]}>
-            Region and language are independent. No AI required.
-          </Text>
-        </View>
-      )}
+        </Panel>
+
+        {deskAnalysis ? (
+          <Panel>
+            <EngineAIReview topic={deskTopic} result={deskAnalysis} />
+          </Panel>
+        ) : null}
+
+        <Panel>
+          <Fold title={fa ? 'ویدئوها، ایده‌ها و گزارش‌های اخیر' : 'Videos, ideas and recent reports'}>
+            <View style={{ gap: 12 }}>
+              {feedVideos.length ? (
+                <View style={{ gap: 8 }}>
+                  <Heading>{fa ? 'ویدئوهای نمونه مرتبط' : 'Related sample videos'}</Heading>
+                  {feedVideos.slice(0, 8).map((video) => <VideoRow key={video.id} video={video} topic={feedTopic} />)}
+                </View>
+              ) : (
+                <Txt muted>{fa
+                  ? 'ویدئوی ذخیره‌شده و منطبق با موضوع پیدا نشد؛ برای جلوگیری از نمایش نتایج نامرتبط، فهرست خالی است.'
+                  : 'No saved video matched this topic, so unrelated results are not shown.'}</Txt>
+              )}
+              {recommendations.length ? (
+                <View style={{ gap: 8 }}>
+                  <Heading>{fa ? 'زاویه‌های محتوایی دیگر' : 'Other editorial angles'}</Heading>
+                  {recommendations.slice(0, 3).map((idea) => (
+                    <View key={idea.id} style={{ gap: 5 }}>
+                      <SourceHeading>{idea.topic}</SourceHeading>
+                      <Txt muted>{idea.concept.slice(0, 220)}</Txt>
+                      <Action secondary onPress={() => router.push({ pathname: '/detail', params: { idea: idea.id } })}>
+                        {fa ? 'بررسی این ایده' : 'Review this idea'}
+                      </Action>
+                    </View>
+                  ))}
+                </View>
+              ) : null}
+              {reports.length ? (
+                <View style={{ gap: 7 }}>
+                  <Heading>{fa ? 'جست‌وجوهای ذخیره‌شده' : 'Saved research runs'}</Heading>
+                  {reports.slice(0, 4).map((report) => (
+                    <Action key={report.id} secondary onPress={() => router.push({ pathname: '/youtube', params: { topic: report.input.topic, report: report.id } })}>
+                      {report.input.topic + ' · ' + new Date(report.createdAt).toLocaleDateString()}
+                    </Action>
+                  ))}
+                </View>
+              ) : null}
+              <Action secondary onPress={() => router.push('/opportunities')}>
+                {fa ? 'مدیریت همه ایده‌ها' : 'Manage all ideas'}
+              </Action>
+            </View>
+          </Fold>
+        </Panel>
+
+        <Panel>
+          <Fold title={fa ? 'Space Radar و وضعیت منابع' : 'Space Radar and source status'}>
+            <View style={{ gap: 10 }}>
+              <Heading>{nicheTitle}</Heading>
+              <Txt muted>{niche?.description ?? (fa
+                ? 'خوراک‌های رسمی ناشرها برای این موضوع گردآوری می‌شوند؛ خبر به‌تنهایی اثبات ترند یا تقاضا نیست.'
+                : 'Selected publisher feeds are grouped by topic; headlines alone do not prove a trend or demand.')}</Txt>
+              <View style={[styles.row, { flexWrap: 'wrap' }]}>
+                <View style={{ flex: 1, minWidth: 130 }}>
+                  <Action busy={scanning || op.busy} onPress={() => void op.run(
+                    () => runScan(true),
+                    fa ? 'به‌روزرسانی خبرخوان کامل شد.' : 'Publisher feed refresh completed.',
+                  )}>
+                    {fa ? 'به‌روزرسانی خبرخوان' : 'Refresh publisher feeds'}
+                  </Action>
+                </View>
+              </View>
+              <Txt muted>{lastScannedAt
+                ? (fa ? 'آخرین بررسی: ' : 'Last source update: ') + new Date(lastScannedAt).toLocaleString()
+                : (fa ? 'هنوز زمان به‌روزرسانی این نشست ثبت نشده است.' : 'No source update timestamp is available in this session.') + ' · ' + radarNews.length + (fa ? ' خبر دریافت‌شده' : ' retrieved items')}</Txt>
+              {scanning ? <Txt muted>{fa ? 'به‌روزرسانی ادامه دارد؛ می‌توانی به تب‌های دیگر بروی.' : 'Refresh is running; you can continue using other tabs.'}</Txt> : null}
+              {warnings.slice(0, 2).map((warning, i) => <Txt muted key={String(i) + warning}>{warning}</Txt>)}
+              {nicheSuggestions.length ? (
+                <View style={{ gap: 7 }}>
+                  <Heading>{fa ? 'موضوعات مرتبط کشف‌شده در خوراک‌ها' : 'Related topics found in feeds'}</Heading>
+                  {nicheSuggestions.slice(0, 6).map((suggestion) => (
+                    <View key={suggestion.id} style={{ gap: 4 }}>
+                      <SourceHeading>{suggestion.title}</SourceHeading>
+                      <Txt muted>{suggestion.description}</Txt>
+                      <Action secondary onPress={() => router.push({ pathname: '/youtube', params: { topic: suggestion.topic } })}>
+                        {fa ? 'تحقیق درباره موضوع' : 'Research this topic'}
+                      </Action>
+                    </View>
+                  ))}
+                </View>
+              ) : null}
+              <Fold title={fa ? 'اطلاعات فنی و سهمیه‌ها' : 'Technical details and quotas'}>
+                <Txt muted>{'YouTube quota: ' + quotaUsage.units + ' / ' + preferences.budget + ' units · ' + quotaUsage.requests + ' requests'}</Txt>
+                <Txt muted>{memoryCount + (fa ? ' موضوع در حافظه تحقیق محلی' : ' topics in local research memory') + ' · ' + reports.length + ' saved reports'}</Txt>
+                <Txt muted>{fa
+                  ? 'نظر دوم AI: ' + (preferences.hybridIntelligence ? 'خودکار و روشن' : 'فقط دستی')
+                  : 'AI second opinion: ' + (preferences.hybridIntelligence ? 'Automatic and enabled' : 'Manual only')}</Txt>
+                <Txt muted>{fa
+                  ? 'زمان‌بندی YouTube: ' + (preferences.schedule === 'Manual' ? 'خاموش' : preferences.paused ? 'متوقف' : preferences.schedule)
+                  : 'YouTube schedule: ' + (preferences.schedule === 'Manual' ? 'Off' : preferences.paused ? 'Paused' : preferences.schedule)}</Txt>
+                <Action secondary onPress={() => router.push('/settings')}>
+                  {fa ? 'تنظیم کلیدها و ترجیحات' : 'Configure keys and preferences'}
+                </Action>
+              </Fold>
+            </View>
+          </Fold>
+        </Panel>
+
+        <Panel>
+          <BadgeText>{fa ? 'ابزارهای اصلی' : 'WORKSPACE TOOLS'}</BadgeText>
+          <Heading>{fa ? 'دسترسی به بخش‌های برنامه' : 'Open another workspace'}</Heading>
+          <View style={[styles.row, { flexWrap: 'wrap' }]}>
+            <Action secondary onPress={() => router.push('/deep-research')}>{fa ? 'تحقیق عمیق' : 'Deep Research'}</Action>
+            <Action secondary onPress={() => router.push('/trend-intelligence')}>{fa ? 'هوشمندی روند' : 'Trend Intelligence'}</Action>
+            <Action secondary onPress={() => router.push('/search-demand')}>{fa ? 'شاخص توجه ویکی‌مدیا' : 'Wikimedia attention'}</Action>
+            <Action secondary onPress={() => router.push('/notes')}>{fa ? 'یادداشت‌ها' : 'Notes'}</Action>
+          </View>
+        </Panel>
+        {op.error ? <ErrorBox message={op.error} onRetry={op.clear} /> : null}
+        {op.message ? <Txt muted>{op.message}</Txt> : null}
+      </View>
     </Page>
   );
 }

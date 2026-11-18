@@ -26,7 +26,10 @@ import { configureSchedule, enableNotifications, scheduleNotice } from '@/lib/sc
 import { commitWithSchedule } from '@/lib/schedule';
 import { router } from 'expo-router';
 import { palette as p } from '@/lib/theme';
+import { translateText } from '@/lib/i18n';
+import { SPACE_NICHES, SPACE_NEWS_SOURCES, type WikiLanguage } from '@/lib/space';
 function CredentialSection({ kind, label }: { kind: Credential; label: string }) {
+  const language = useScout((state) => state.data.preferences.uiLanguage ?? 'fa');
   const [key, setValue] = useState('');
   const [stored, setStored] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
@@ -58,9 +61,9 @@ function CredentialSection({ kind, label }: { kind: Credential; label: string })
       <View style={{ gap: 8 }}>
         <View style={styles.row}>
           <KeyRound size={18} color={p.purple} />
-          <Text style={[styles.heading, { flex: 1 }]}>{label}</Text>
+          <Text style={[styles.heading, { flex: 1 }]}>{translateText(label, language)}</Text>
         </View>
-        <Text style={styles.badge}>{stored ? '•••• Saved' : 'Not set'}</Text>
+        <Text style={styles.badge}>{stored ? '•••• ' + translateText('Saved', language) : translateText('Not set', language)}</Text>
       </View>
       <Field
         label={stored ? 'Replace key' : 'API key'}
@@ -173,6 +176,12 @@ export default function Settings() {
           value={prefs.name}
           onChange={(name) => setPrefs({ ...prefs, name })}
         />
+        <Choices
+          label="App language"
+          options={["Persian", "English"]}
+          selected={[prefs.uiLanguage === "en" ? "English" : "Persian"]}
+          onChange={(values) => setPrefs({ ...prefs, uiLanguage: values[0] === "English" ? "en" : "fa" })}
+        />
         <Field
           label="Email (optional, stays local)"
           value={prefs.email}
@@ -202,6 +211,66 @@ export default function Settings() {
           Save defaults
         </Action>
       </Fold>
+
+      <Fold title="Content discovery defaults">
+        <Txt muted>These preferences are saved on this device and used automatically by Discovery and research screens.</Txt>
+        <Choices
+          label="Discovery scope"
+          options={['All space topics', 'Custom niche', ...SPACE_NICHES.map((niche) => niche.title)]}
+          selected={[prefs.selectedSpaceNiche === 'all'
+            ? 'All space topics'
+            : prefs.selectedSpaceNiche === 'custom'
+              ? 'Custom niche'
+              : SPACE_NICHES.find((niche) => niche.id === prefs.selectedSpaceNiche)?.title ?? 'All space topics']}
+          onChange={(values) => {
+            const selected = SPACE_NICHES.find((niche) => niche.title === values[0]);
+            setPrefs({
+              ...prefs,
+              selectedSpaceNiche: values[0] === 'All space topics'
+                ? 'all'
+                : values[0] === 'Custom niche'
+                  ? 'custom'
+                  : selected?.id ?? 'all',
+            });
+          }}
+        />
+        <Field
+          label="Custom niche / topic terms"
+          value={prefs.customSpaceNiche}
+          onChange={(customSpaceNiche) => setPrefs({ ...prefs, customSpaceNiche })}
+          placeholder="e.g. JWST spectroscopy, exoplanet atmospheres"
+        />
+        <Txt muted>Separate related terms with commas. All-space mode scans every enabled official feed; custom mode matches these terms in publisher titles and summaries. This is source coverage, not search-volume or audience-demand data.</Txt>
+        <Choices
+          label="Official news sources"
+          options={SPACE_NEWS_SOURCES.map((source) => source.label)}
+          selected={(prefs.spaceNewsSources ?? []).map((id) => SPACE_NEWS_SOURCES.find((source) => source.id === id)?.label ?? id)}
+          multiple
+          onChange={(labels) => setPrefs({
+            ...prefs,
+            spaceNewsSources: SPACE_NEWS_SOURCES.filter((source) => labels.includes(source.label)).map((source) => source.id),
+          })}
+        />
+        <Choices
+          label="Wikimedia article language"
+          options={['English', 'Persian', 'German', 'French', 'Spanish', 'Japanese']}
+          selected={[({ en: 'English', fa: 'Persian', de: 'German', fr: 'French', es: 'Spanish', ja: 'Japanese' } as Record<WikiLanguage, string>)[prefs.spaceInterestLanguage ?? 'en']]}
+          onChange={(values) => {
+            const codes: Record<string, WikiLanguage> = { English: 'en', Persian: 'fa', German: 'de', French: 'fr', Spanish: 'es', Japanese: 'ja' };
+            setPrefs({ ...prefs, spaceInterestLanguage: codes[values[0]] ?? 'en' });
+          }}
+        />
+        <Choices
+          label="Default YouTube research period"
+          options={['Last 7 days', 'Last 30 days', 'Last 90 days', 'All time']}
+          selected={[prefs.defaultResearchDays === 7 ? 'Last 7 days' : prefs.defaultResearchDays === 90 ? 'Last 90 days' : prefs.defaultResearchDays === 0 ? 'All time' : 'Last 30 days']}
+          onChange={(values) => {
+            const days: Record<string, Preferences['defaultResearchDays']> = { 'Last 7 days': 7, 'Last 30 days': 30, 'Last 90 days': 90, 'All time': 0 };
+            setPrefs({ ...prefs, defaultResearchDays: days[values[0]] ?? 30 });
+          }}
+        />
+        <Action busy={op.busy} disabled={!ready} onPress={save}>Save discovery preferences</Action>
+      </Fold>
       <Fold title="YouTube API" open>
         <CredentialSection kind="youtube" label="YouTube Data API v3" />
         <Txt muted>
@@ -221,10 +290,24 @@ export default function Settings() {
         </Action>
       </Fold>
       <Fold title="OpenRouter · optional">
+        <Choices
+          label="Automatic external AI second opinion"
+          options={['Automatic after research', 'Manual only']}
+          selected={[prefs.hybridIntelligence ? 'Automatic after research' : 'Manual only']}
+          onChange={(values) => setPrefs({ ...prefs, hybridIntelligence: values[0] === 'Automatic after research' })}
+        />
+        <Txt muted>
+          {prefs.uiLanguage === 'fa'
+            ? 'در حالت خودکار، پس از پایان تحلیل محلی، موضوع تحقیق، تیترهای عمومی خبرها و بخش کوتاهی از خلاصه آن‌ها، عنوان و نام کانال ویدئوهای عمومی YouTube و آمار عمومی بازدید/پسند به همراه یافته‌های پردازش‌شده موتور داخلی برای نظر دوم ارسال می‌شوند. متن کامل خبرها، توضیحات کامل ویدئوها، یادداشت‌های خصوصی و کلیدهای API ارسال نمی‌شوند. این ارسال فقط با فعال‌کردن حالت خودکار انجام می‌شود.'
+            : 'In automatic mode, after local analysis finishes, the topic, public news headlines with short excerpts, public YouTube video titles and channel names, available public view/like counts, and processed local findings are sent for the second opinion. Full articles, full video descriptions, private notes and API keys are not sent. This happens only while automatic review is enabled.'}
+          OpenRouter usage is limited by the existing daily cap and cached by evidence content.
+        </Txt>
+        <Action busy={op.busy} disabled={!ready} onPress={save}>Save AI automation</Action>
         <CredentialSection kind="openrouter" label="OpenRouter" />
         <Txt muted>
-          Free models are discovered live. Providers can change availability and limits. Nothing is
-          sent until you explicitly request an opinion.
+          {prefs.uiLanguage === 'fa'
+            ? 'مدل‌های رایگان به‌صورت زنده شناسایی می‌شوند و دسترسی ارائه‌دهندگان ممکن است تغییر کند. در حالت خودکار، تیترهای عمومی خبرها، عنوان ویدئوهای عمومی و آمار بازدید/پسند موجود همراه تحلیل پردازش‌شده ارسال می‌شوند؛ در حالت دستی فقط هنگام درخواست خودت ارسال انجام می‌شود.'
+            : 'Free models are discovered live and provider availability may change. Automatic mode includes public news headlines, public video titles, available view/like counts and processed analysis; manual mode sends a request only when you ask.'}
         </Txt>
         <Txt muted>Selected model: {prefs.model || 'Auto-select an available free model'}</Txt>
         <Action busy={modelBusy || op.busy} secondary onPress={loadModels}>
@@ -283,7 +366,7 @@ export default function Settings() {
           Open Google quota
         </Action>
       </Fold>
-      <Fold title="Scheduled research">
+      <Fold title="Automatic YouTube research">
         <Choices
           label="Frequency"
           options={['Manual', 'Every 12 hours', 'Daily', 'Weekly'] as const}
@@ -385,11 +468,27 @@ export default function Settings() {
       </Fold>
       <Fold title="Privacy & data management">
         <Txt muted>
-          YouTube receives your searches and API key. OpenRouter receives only your explicitly
-          approved editorial prompt. Nothing is sent to an app-owned server. No video, audio,
+          YouTube receives your searches and API key. OpenRouter receives the topic and processed aggregate research signals only when automatic hybrid review is enabled, or the prompt you manually request. Raw news/video metadata, private notes and API keys are not sent. Nothing is sent to an app-owned server. No video, audio,
           subtitle or caption downloads. API titles, descriptions and thumbnails expire within 29
           days; saved personal links and notes remain.
         </Txt>
+        <Txt muted>{'Saved research memory: ' + data.researchMemory.length + ' topic(s). This memory is used only for local research comparisons and can be cleared independently.'}</Txt>
+        <Action
+          secondary
+          disabled={!data.researchMemory.length || op.busy}
+          onPress={() => {
+            if (confirm !== 'memory') {
+              setConfirm('memory');
+              return;
+            }
+            void op.run(async () => {
+              await useScout.getState().commit((d) => ({ ...d, researchMemory: [] }));
+              setConfirm('');
+            }, 'Research memory cleared. Notes, ideas and saved links were kept.');
+          }}
+        >
+          {confirm === 'memory' ? 'Confirm clear research memory' : 'Clear research memory'}
+        </Action>
         <Action
           secondary
           busy={op.busy}
@@ -445,7 +544,7 @@ export default function Settings() {
       </Fold>
       <Fold title="App info">
         <Heading>MOHSEN SCOUT</Heading>
-        <Txt>Version 1.0.0 · Personal research assistant for Mohsen</Txt>
+        <Txt>Version 1.3.8 · Personal research assistant</Txt>
         <Txt muted>
           YouTube is a trademark of Google LLC. This app is not affiliated with YouTube. No
           comprehensive trend coverage or guaranteed results.

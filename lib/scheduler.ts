@@ -4,6 +4,7 @@ import * as Notifications from 'expo-notifications';
 import { useScout } from './store';
 import { type Preferences } from './types';
 import { researchNotification } from './schedule';
+import { fetchSpaceNews } from './space';
 const TASK = 'mohsen-scout-research';
 if (!TaskManager.isTaskDefined(TASK))
   TaskManager.defineTask(TASK, async () => {
@@ -14,7 +15,15 @@ if (!TaskManager.isTaskDefined(TASK))
       const prefs = useScout.getState().data.preferences;
       if (prefs.paused || prefs.schedule === 'Manual' || !prefs.lastInput)
         return BackgroundTask.BackgroundTaskResult.Success;
-      const result = await useScout.getState().research(prefs.lastInput);
+      // Refresh selected official publisher feeds during the same scheduled cycle.
+      // Feed failures must not prevent independent YouTube research from running.
+      try {
+        const feeds = await fetchSpaceNews(prefs.spaceNewsSources, fetch, true);
+        await useScout.getState().commit((data) => ({ ...data, feedRegistry: feeds.registry }));
+      } catch {
+        // Preserve the last saved feed registry and continue with YouTube.
+      }
+      const result = await useScout.getState().research(prefs.lastInput, 'automatic', true);
       if (!result) return BackgroundTask.BackgroundTaskResult.Failed;
       const permissions = await Notifications.getPermissionsAsync();
       if (permissions.granted) await Notifications.scheduleNotificationAsync(researchNotification);
