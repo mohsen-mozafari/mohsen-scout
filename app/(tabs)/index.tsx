@@ -852,4 +852,3 @@ function DiscoveryDashboardReady() {
     </Page>
   );
 }
-}
