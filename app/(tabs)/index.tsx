@@ -293,7 +293,11 @@ function EngineAIReview({ topic, result }: { topic: string; result: InternalRese
       </Action>
       {reviewError ? <ErrorBox message={reviewError} onRetry={() => void runReview()} /> : null}
       {reviewMessage ? <Txt muted>{reviewMessage}</Txt> : null}
-      {review ? <Txt>{review}</Txt> : null}
+      {review ? (
+        <Fold title={fa ? 'نمایش کامل نظر دوم' : 'View full second opinion'}>
+          <Txt>{review}</Txt>
+        </Fold>
+      ) : null}
     </View>
   );
 }
@@ -724,9 +728,7 @@ function DiscoveryDashboardReady() {
 
         {deskAnalysis ? (
           <Panel>
-            <Fold title={fa ? 'نظر دوم هوش مصنوعی' : 'Independent AI second opinion'}>
-              <EngineAIReview topic={deskTopic} result={deskAnalysis} />
-            </Fold>
+            <EngineAIReview topic={deskTopic} result={deskAnalysis} />
           </Panel>
         ) : null}
 
