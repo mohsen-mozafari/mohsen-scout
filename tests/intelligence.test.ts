@@ -173,7 +173,7 @@ void test('entity relationships are evidence-backed co-mentions and never labell
 
 void test('bulk evidence de-duplication keeps publisher provenance across a large feed sample', () => {
   const items = Array.from({ length: 150 }, (_, index) => {
-    const title = 'Webb telescope reports methane evidence in exoplanet atmosphere ' + index;
+    const title = 'Webb telescope reports methane evidence in exoplanet atmosphere record' + String(index).padStart(3, '0');
     return [
       { title, summary: 'MOCK source report', sourceName: 'NASA', sourceId: 'nasa', sourceUrl: 'https://nasa.gov/story/' + index + '?utm_source=rss' },
       { title, summary: 'MOCK syndicated report', sourceName: 'JPL', sourceId: 'jpl', sourceUrl: 'https://jpl.nasa.gov/story/' + index },

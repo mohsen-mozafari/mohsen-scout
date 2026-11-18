@@ -214,7 +214,7 @@ function expandedConceptTokens(value: string): ReadonlySet<string> {
   return tokens;
 }
 
-/** Transparent lexical-semantic relevance/** Transparent lexical-semantic relevance using normalization and a small, explicit alias map. */
+/** Transparent lexical-semantic relevance using normalization and a small, explicit alias map. */
 export function scoreResearchText(topic: string, title: string, summary = ''): number {
   const normalizedTopic = normalizeResearchText(topic);
   if (!normalizedTopic) return 0;
