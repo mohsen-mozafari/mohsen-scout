@@ -133,7 +133,7 @@ void test('OpenRouter daily quota reads the official account-key endpoint', asyn
   let endpoint = '';
   let authorization = '';
   const quota = await getOpenRouterDailyQuota('MOCK_OPENROUTER_KEY', async (url, init) => {
-    endpoint = String(url);
+    endpoint = typeof url === 'string' ? url : url instanceof URL ? url.href : url.url;
     authorization = new Headers(init?.headers).get('Authorization') ?? '';
     return response({ data: { free_model_daily_requests: { used: 17, limit: 50, remaining: 33 } } });
   });
