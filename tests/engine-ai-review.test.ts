@@ -58,6 +58,7 @@ void test('external review prompt explicitly separates agreement and disagreemen
     topic: 'Test topic', summary: 'Processed local assessment.', evidence: [],
     confidence: { level: 'low', reason: 'Small sample.' }, language: 'en',
   });
-  assert.match(prompt, /Agreement with Local Engine/);
-  assert.match(prompt, /Disagreement with Local Engine/);
+  assert.match(prompt, /Decision/);
+  assert.match(prompt, /Missing Data/);
+  assert.match(prompt, /Reframe the topic/);
 });
