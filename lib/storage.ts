@@ -84,4 +84,3 @@ export async function writeData(data: LocalData, previousData?: Partial<Record<k
     // A busy checkpoint is deferred; committed data remains safe.
   }
 }
-}

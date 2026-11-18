@@ -288,4 +288,3 @@ export function purgeExpired(data: LocalData, now = Date.now()): LocalData {
   });
   return { ...data, videos, reports, ideas: ideasChanged ? ideas : data.ideas };
 }
-}
