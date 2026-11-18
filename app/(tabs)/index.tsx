@@ -26,7 +26,7 @@ import { ResearchKnowledgeGraph } from '@/components/ResearchKnowledgeGraph';
 import { VideoRow } from '@/components/VideoRow';
 import { chooseBestIdea, engineReviewCacheKey, findCachedEngineReview, runSingleFlight, selectDashboardVideos } from '@/lib/dashboard';
 import { generateEditorialIdeas } from '@/lib/idea-generation';
-import { fingerprintText, getFreeModels, getOpinion, internalEngineReviewPrompt, localDateKey, nextOpenRouterUsage, quotaDay, selectFreeModel, type YouTubeSampleVideo } from '@/lib/api';
+import { fingerprintText, getFreeModels, getOpenRouterDailyQuota, getOpinion, internalEngineReviewPrompt, localDateKey, nextOpenRouterUsage, quotaDay, selectFreeModel, type YouTubeSampleVideo } from '@/lib/api';
 import { getKey } from '@/lib/vault';
 import { ResearchOverviewChart } from '@/components/ResearchOverviewChart';
 
@@ -222,8 +222,14 @@ function EngineAIReview({ topic, result }: { topic: string; result: InternalRese
         return;
       }
 
-      // Generation POST is called once; requestJson does not auto-retry POST requests.
-      const response = await getOpinion(key, model, prompt, async (quota) => {
+      // Refresh the free-model daily counter separately from the generation request.
+      const quota = model.toLowerCase().endsWith(':free')
+        ? await getOpenRouterDailyQuota(key).catch(() => undefined)
+        : undefined;
+      if (quota && quota.remaining <= 0)
+        throw new Error('OpenRouter free-model daily quota is exhausted (' + quota.used + '/' + quota.limit + ' UTC).');
+      // The generation POST remains a single request; quota status is a separate GET.
+      const response = await getOpinion(key, model, prompt, async () => {
         const currentPreferences = useScout.getState().data.preferences;
         const usage = nextOpenRouterUsage(
           currentPreferences.openRouterUsageDay,
@@ -234,7 +240,17 @@ function EngineAIReview({ topic, result }: { topic: string; result: InternalRese
         );
         await useScout.getState().commit((data) => ({
           ...data,
-          preferences: { ...data.preferences, model, ...usage },
+          preferences: {
+            ...data.preferences,
+            model,
+            ...usage,
+            ...(quota ? {
+              openRouterDailyLimit: quota.limit,
+              openRouterDailyUsed: quota.used + 1,
+              openRouterDailyRemaining: Math.max(0, quota.remaining - 1),
+              openRouterQuotaCheckedAt: Date.now(),
+            } : {}),
+          },
         }));
       });
       const opinion = { id: uid(), ideaId: cacheKey, text: response, model, createdAt: Date.now() };

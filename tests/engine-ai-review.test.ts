@@ -55,8 +55,8 @@ void test('OpenRouter usage counter increments and resets on a new local day', (
     openRouterRequestsToday: 1,
   });
   assert.throws(
-    () => nextOpenRouterUsage('2026-11-16', 30, '2026-11-16'),
-    /30 requests for today/,
+    () => nextOpenRouterUsage('2026-11-16', 50, '2026-11-16', 50, 50),
+    /daily request limit is exhausted/,
   );
 });
 

@@ -852,11 +852,35 @@ export async function getOpenRouterDailyQuota(
   fetcher: Fetcher = fetch,
 ): Promise<OpenRouterDailyQuota | undefined> {
   if (!key.trim()) throw new ApiError('Save your OpenRouter key in Settings first.', 'key');
-  const raw = await requestJson('https://openrouter.ai/api/v1/key', {
-    headers: { Authorization: 'Bearer ' + key },
-  }, fetcher);
-  const parsed = openRouterQuotaSchema.safeParse(raw);
-  return parsed.success ? parsed.data.data.free_model_daily_requests : undefined;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8000);
+  try {
+    const response = await fetcher('https://openrouter.ai/api/v1/key', {
+      headers: { Authorization: 'Bearer ' + key },
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      const code = response.status === 429 ? 'rate' : response.status === 401 ? 'key' : 'provider';
+      throw new ApiError(
+        response.status === 429
+          ? 'OpenRouter quota status is rate-limited. Try refreshing it later.'
+          : response.status === 401
+            ? 'The OpenRouter key was rejected. Check or replace it in Settings.'
+            : 'OpenRouter quota status could not be refreshed.',
+        code,
+      );
+    }
+    const raw: unknown = await response.json();
+    const parsed = openRouterQuotaSchema.safeParse(raw);
+    return parsed.success ? parsed.data.data.free_model_daily_requests : undefined;
+  } catch (error) {
+    if (error instanceof ApiError) throw error;
+    if (controller.signal.aborted)
+      throw new ApiError('OpenRouter quota status request timed out.', 'timeout');
+    throw new ApiError('Could not refresh OpenRouter quota status.', 'offline');
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 export function nextOpenRouterUsage(
@@ -913,17 +937,7 @@ export async function getOpinion(
     throw new ApiError('The OpenRouter key, selected model and idea prompt are required.', 'input');
   opinionRequestInFlight = true;
   try {
-    let quota: OpenRouterDailyQuota | undefined;
-    if (model.trim().toLowerCase().endsWith(':free')) {
-      try {
-        quota = await getOpenRouterDailyQuota(key, fetcher);
-      } catch {
-        // The chat completion endpoint remains authoritative if quota lookup is unavailable.
-      }
-    }
-    if (quota && quota.remaining <= 0)
-      throw new ApiError('OpenRouter free-model daily quota is exhausted (' + quota.used + '/' + quota.limit + ' UTC).', 'budget');
-    await beforeRequest?.(quota);
+    await beforeRequest?.();
     const raw = await requestJson('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },

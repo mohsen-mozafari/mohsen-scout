@@ -519,13 +519,15 @@ void test('Library: link export only includes personal fields', () => {
   assert(text.includes('Remember this'));
   assert(!text.includes(video.title));
 });
-void test('Quota: resets on Pacific day, counts retries, rejects exhausted/budget overflow', () => {
+void test('Quota: resets on Pacific day and keeps Search independent from non-search quota', () => {
   const date = quotaDay();
   const current = { date, units: 100, requests: 1, exhausted: false };
   assert.equal(nextBudget(current, 500, 100).units, 200);
   assert.throws(() => nextBudget(current, 150, 100), ApiError);
-  assert.throws(() => nextBudget({ ...current, exhausted: true }, 500, 1), ApiError);
-  assert.equal(nextBudget({ ...current, date: 'old', exhausted: true }, 500, 100).units, 100);
+  assert.throws(() => nextBudget({ ...current, otherExhausted: true }, 500, 1), ApiError);
+  const searchStillWorks = nextBudget({ ...current, otherExhausted: true }, 500, 1, new Date(), 'search');
+  assert.equal(searchStillWorks.searchManualRequests, 1);
+  assert.equal(nextBudget({ ...current, date: 'old', otherExhausted: true }, 500, 100).units, 100);
 });
 void test('Research: creates explicit related queries without inventing stats', () => {
   const queries = relatedQueries(input.topic);
@@ -549,7 +551,7 @@ void test('YouTube MOCK: official endpoint, independent region/language filters,
   assert.equal(result.videos[0].title, video.title);
   assert.equal(result.videos[0].viewCount, 1234);
   assert.equal(result.videos[0].likeCount, 56);
-  assert.equal(units, 401);
+  assert.equal(units, 5);
   const searchUrls = urls.filter((url) => new URL(url).pathname.endsWith('/search'));
   assert.equal(searchUrls.length, 4);
   assert.deepEqual(new Set(searchUrls.map((url) => new URL(url).searchParams.get('order'))), new Set(['relevance', 'viewCount', 'date']));

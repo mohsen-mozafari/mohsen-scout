@@ -260,22 +260,31 @@ export function defaults(): LocalData {
   };
 }
 export function purgeExpired(data: LocalData, now = Date.now()): LocalData {
-  // Skip rebuilding every domain on ordinary saves. Most commits do not coincide
-  // with a 29-day expiry boundary, and stable references keep storage writes small.
   const hasExpiredVideo = data.videos.some((video) => now - video.fetchedAt >= RETENTION_MS);
   const hasExpiredReport = data.reports.some((report) =>
     now - report.createdAt >= RETENTION_MS ||
     report.videos.some((video) => now - video.fetchedAt >= RETENTION_MS),
   );
-  if (!hasExpiredVideo && !hasExpiredReport) return data;
 
-  const videos = data.videos.filter((video) => now - video.fetchedAt < RETENTION_MS);
-  const reports = data.reports
-    .filter((report) => now - report.createdAt < RETENTION_MS)
-    .map((report) => {
-      const keptVideos = report.videos.filter((video) => now - video.fetchedAt < RETENTION_MS);
-      return keptVideos.length === report.videos.length ? report : { ...report, videos: keptVideos };
-    });
+  const originalReportIds = new Set(data.reports.map((report) => report.id));
+  const originalVideoIds = new Set([...data.videos.map((video) => video.id), ...data.links.map((link) => link.id)]);
+  const hasOrphanedIdeaReference = data.ideas.some((idea) =>
+    Boolean(idea.reportId && !originalReportIds.has(idea.reportId)) ||
+    idea.videoIds.some((id) => !originalVideoIds.has(id)),
+  );
+  if (!hasExpiredVideo && !hasExpiredReport && !hasOrphanedIdeaReference) return data;
+
+  const videos = hasExpiredVideo
+    ? data.videos.filter((video) => now - video.fetchedAt < RETENTION_MS)
+    : data.videos;
+  const reports = hasExpiredReport
+    ? data.reports
+      .filter((report) => now - report.createdAt < RETENTION_MS)
+      .map((report) => {
+        const keptVideos = report.videos.filter((video) => now - video.fetchedAt < RETENTION_MS);
+        return keptVideos.length === report.videos.length ? report : { ...report, videos: keptVideos };
+      })
+    : data.reports;
   const reportIds = new Set(reports.map((report) => report.id));
   const retainedIds = new Set([...videos.map((video) => video.id), ...data.links.map((link) => link.id)]);
   let ideasChanged = false;

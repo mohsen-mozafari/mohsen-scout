@@ -26,7 +26,7 @@ import { type Idea, statuses, languages } from '@/lib/types';
 import { buildIdeaAnalysis, limitations, reasoning } from '@/lib/engine';
 import { getIdeaDisplayTitle } from '@/lib/idea-research';
 import { getKey } from '@/lib/vault';
-import { localDateKey, getFreeModels, getOpinion, nextOpenRouterUsage, opinionPrompt, selectFreeModel } from '@/lib/api';
+import { localDateKey, getFreeModels, getOpenRouterDailyQuota, getOpinion, nextOpenRouterUsage, opinionPrompt, selectFreeModel } from '@/lib/api';
 import { uid } from '@/lib/types';
 import { MediaPreview } from '@/components/MediaPreview';
 export default function Detail() {
@@ -75,11 +75,16 @@ export default function Detail() {
           .getState()
           .commit((d) => ({ ...d, preferences: { ...d.preferences, model } }));
       }
+      const quota = model.toLowerCase().endsWith(':free')
+        ? await getOpenRouterDailyQuota(key).catch(() => undefined)
+        : undefined;
+      if (quota && quota.remaining <= 0)
+        throw new Error('OpenRouter free-model daily quota is exhausted (' + quota.used + '/' + quota.limit + ' UTC).');
       const text = await getOpinion(
         key,
         model,
         opinionPrompt(ideaOpinionTopic, idea.concept, idea.decision, uiLanguage),
-        async (quota) => {
+        async () => {
           const current = useScout.getState().data.preferences;
           const day = localDateKey();
           const usage = nextOpenRouterUsage(
