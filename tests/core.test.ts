@@ -521,7 +521,7 @@ void test('Library: link export only includes personal fields', () => {
 });
 void test('Quota: resets on Pacific day and keeps Search independent from non-search quota', () => {
   const date = quotaDay();
-  const current = { date, units: 100, requests: 1, exhausted: false };
+  const current = { date, units: 100, requests: 1, exhausted: false, otherManualUnits: 100 };
   assert.equal(nextBudget(current, 500, 100).units, 200);
   assert.throws(() => nextBudget(current, 150, 100), ApiError);
   assert.throws(() => nextBudget({ ...current, otherExhausted: true }, 500, 1), ApiError);
