@@ -24,7 +24,7 @@ import { createManualIdea, rankNewsForTopic } from '@/lib/engine';
 import { deduplicateDisplayIdeas, generateEditorialIdeas, IDEA_GENERATION_CATEGORIES, type IdeaGenerationCategory } from '@/lib/idea-generation';
 import { getTopicDossier } from '@/lib/topic-dossier';
 import { getCachedSpaceNews, SPACE_NICHES } from '@/lib/space';
-import { matchesSearchText } from '@/lib/search';
+import { matchesSearchText, normalizeSearchText } from '@/lib/search';
 import { palette as p } from '@/lib/theme';
 import { translateText } from '@/lib/i18n';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
@@ -97,7 +97,7 @@ export default function Opportunities() {
         : niche?.topic ?? 'Space science and exploration'
     );
     const dossier = getTopicDossier(topic);
-    const reportMatches = latestReport !== undefined && normalizeResearchText(latestReport.input.topic) === normalizeResearchText(topic);
+    const reportMatches = latestReport !== undefined && normalizeSearchText(latestReport.input.topic) === normalizeSearchText(topic);
     const reportVideos = reportMatches && latestReport ? latestReport.videos : [];
     const dossierVideos = dossier?.videos ?? [];
     const mergedVideos = new Map([...dossierVideos, ...reportVideos].map((video) => [video.id, video]));
