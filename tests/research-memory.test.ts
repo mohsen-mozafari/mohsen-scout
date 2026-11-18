@@ -57,12 +57,15 @@ void test('research memory stores publisher-only evidence and creates a bounded 
   });
   assert.ok(changed);
   assert.equal(changed.history?.length, 2);
+  assert.equal(changed.sources.length, 2);
+  assert.ok(changed.sources.some((item) => item.sourceUrl.endsWith('/story-one')));
+  assert.ok(changed.sources.some((item) => item.sourceUrl.endsWith('/story-two')));
   assert.equal(changed.history?.[0].newSourceCount, 1);
   assert.equal(changed.history?.[0].confidence, 'high');
   assert.ok(changed.history?.[0].changes.length);
 });
 
-void test('research memory does not create an empty entry and caps snapshots at eight', () => {
+void test('research memory does not create empty entries and preserves long histories', () => {
   assert.equal(createResearchMemoryEntry({
     topic: 'No publisher evidence',
     news: [],
@@ -93,7 +96,7 @@ void test('research memory does not create an empty entry and caps snapshots at 
     previous: { ...base, history: oldHistory },
     now: 99,
   })!;
-  assert.equal(capped.history?.length, 8);
+  assert.equal(capped.history?.length, 9);
 });
 
 void test('legacy local data and backup memory remain readable with versioned history', () => {

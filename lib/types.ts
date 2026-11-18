@@ -144,9 +144,13 @@ export type Preferences = {
   model: string;
   /** Automatic privacy-bounded external review after local research completes. */
   hybridIntelligence: boolean;
-  /** Local OpenRouter usage accounting; legacy backups may omit these fields. */
+  /** Local mirror of OpenRouter free-model daily quota for this key. */
   openRouterUsageDay?: string;
   openRouterRequestsToday?: number;
+  openRouterDailyLimit?: number;
+  openRouterDailyUsed?: number;
+  openRouterDailyRemaining?: number;
+  openRouterQuotaCheckedAt?: number;
   youtubeRefreshTimestamps?: number[];
   schedule: 'Manual' | 'Every 12 hours' | 'Daily' | 'Weekly';
   paused: boolean;
@@ -159,6 +163,7 @@ export type Preferences = {
 };
 export type Budget = {
   date: string; units: number; requests: number; exhausted: boolean;
+  searchExhausted?: boolean; otherExhausted?: boolean;
   searchManualRequests?: number; searchAutomaticRequests?: number; searchReserveRequests?: number;
   otherManualUnits?: number; otherAutomaticUnits?: number; otherReserveUnits?: number;
 };
@@ -234,7 +239,7 @@ export function defaults(): LocalData {
       region: 'United States',
       languages: ['en'],
       defaultResearchDays: 30,
-      budget: 1500,
+      budget: 10000,
       model: '',
       hybridIntelligence: false,
       schedule: 'Daily',
@@ -251,35 +256,36 @@ export function defaults(): LocalData {
     opinions: [],
     reports: [],
     videos: [],
-    budget: { date: '', units: 0, requests: 0, exhausted: false, searchManualRequests: 0, searchAutomaticRequests: 0, searchReserveRequests: 0, otherManualUnits: 0, otherAutomaticUnits: 0, otherReserveUnits: 0 },
+    budget: { date: '', units: 0, requests: 0, exhausted: false, searchExhausted: false, otherExhausted: false, searchManualRequests: 0, searchAutomaticRequests: 0, searchReserveRequests: 0, otherManualUnits: 0, otherAutomaticUnits: 0, otherReserveUnits: 0 },
   };
 }
 export function purgeExpired(data: LocalData, now = Date.now()): LocalData {
-  const videos = data.videos.filter((v) => now - v.fetchedAt < RETENTION_MS);
+  // Skip rebuilding every domain on ordinary saves. Most commits do not coincide
+  // with a 29-day expiry boundary, and stable references keep storage writes small.
+  const hasExpiredVideo = data.videos.some((video) => now - video.fetchedAt >= RETENTION_MS);
+  const hasExpiredReport = data.reports.some((report) =>
+    now - report.createdAt >= RETENTION_MS ||
+    report.videos.some((video) => now - video.fetchedAt >= RETENTION_MS),
+  );
+  if (!hasExpiredVideo && !hasExpiredReport) return data;
+
+  const videos = data.videos.filter((video) => now - video.fetchedAt < RETENTION_MS);
   const reports = data.reports
-    .filter((r) => now - r.createdAt < RETENTION_MS)
-    .map((report) => ({
-      ...report,
-      videos: report.videos.filter((v) => now - v.fetchedAt < RETENTION_MS),
-    }));
-  const reportIds = new Set(reports.map((r) => r.id));
-  const retainedIds = new Set([...videos.map((v) => v.id), ...data.links.map((l) => l.id)]);
-  return {
-    ...data,
-    researchMemory: [...data.researchMemory]
-      .map((entry) => entry.history && entry.history.length > 8
-        ? { ...entry, history: entry.history.slice(0, 8) }
-        : entry)
-      .sort((a, b) => b.updatedAt - a.updatedAt)
-      .slice(0, 40),
-    videos,
-    reports,
-    ideas: data.ideas.map((idea) => {
-      const videoIds = idea.videoIds.filter((id) => retainedIds.has(id));
-      const reportId = idea.reportId && reportIds.has(idea.reportId) ? idea.reportId : undefined;
-      return videoIds.length === idea.videoIds.length && reportId === idea.reportId
-        ? idea
-        : { ...idea, videoIds, reportId };
-    }),
-  };
+    .filter((report) => now - report.createdAt < RETENTION_MS)
+    .map((report) => {
+      const keptVideos = report.videos.filter((video) => now - video.fetchedAt < RETENTION_MS);
+      return keptVideos.length === report.videos.length ? report : { ...report, videos: keptVideos };
+    });
+  const reportIds = new Set(reports.map((report) => report.id));
+  const retainedIds = new Set([...videos.map((video) => video.id), ...data.links.map((link) => link.id)]);
+  let ideasChanged = false;
+  const ideas = data.ideas.map((idea) => {
+    const videoIds = idea.videoIds.filter((id) => retainedIds.has(id));
+    const reportId = idea.reportId && reportIds.has(idea.reportId) ? idea.reportId : undefined;
+    if (videoIds.length === idea.videoIds.length && reportId === idea.reportId) return idea;
+    ideasChanged = true;
+    return { ...idea, videoIds, reportId };
+  });
+  return { ...data, videos, reports, ideas: ideasChanged ? ideas : data.ideas };
+}
 }

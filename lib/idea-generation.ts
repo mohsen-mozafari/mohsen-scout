@@ -291,7 +291,7 @@ export function generateEditorialIdeas(input: GenerateEditorialIdeasInput): Idea
   if (!topic) return [];
 
   const news = [...(input.news ?? [])];
-  const videos = selectIdeaGenerationVideos(topic, input.videos ?? [], 12);
+  const videos = selectIdeaGenerationVideos(topic, input.videos ?? [], 25);
   const context = [...(input.context ?? [])];
   const documents: Document[] = [
     ...news.map((item) => ({

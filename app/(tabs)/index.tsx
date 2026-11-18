@@ -223,12 +223,14 @@ function EngineAIReview({ topic, result }: { topic: string; result: InternalRese
       }
 
       // Generation POST is called once; requestJson does not auto-retry POST requests.
-      const response = await getOpinion(key, model, prompt, async () => {
+      const response = await getOpinion(key, model, prompt, async (quota) => {
         const currentPreferences = useScout.getState().data.preferences;
         const usage = nextOpenRouterUsage(
           currentPreferences.openRouterUsageDay,
           currentPreferences.openRouterRequestsToday,
           localDateKey(),
+          quota?.limit ?? (model.toLowerCase().endsWith(':free') ? 50 : 10000),
+          quota?.used,
         );
         await useScout.getState().commit((data) => ({
           ...data,
@@ -239,7 +241,7 @@ function EngineAIReview({ topic, result }: { topic: string; result: InternalRese
       setReviewState({ key: cacheKey, text: response });
       await useScout.getState().commit((data) => ({
         ...data,
-        opinions: [opinion, ...data.opinions].slice(0, 100),
+        opinions: [opinion, ...data.opinions],
       }));
       reviewSucceeded = true;
       setReviewMessage(fa ? 'نظر دوم ذخیره شد.' : 'Second opinion saved.');
@@ -390,7 +392,7 @@ function DiscoveryDashboardReady() {
           feedback: buildResearchInterestProfile(currentData.ideas),
           priorMemory,
           language: currentData.preferences.uiLanguage ?? 'fa',
-          news: relevantNews.slice(0, 60).map((item) => ({
+          news: relevantNews.map((item) => ({
             title: item.title,
             summary: item.summary,
             sourceName: item.sourceName,

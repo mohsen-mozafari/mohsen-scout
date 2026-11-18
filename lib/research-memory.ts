@@ -54,6 +54,19 @@ export function createResearchMemoryEntry(input: {
   const now = input.now ?? Date.now();
   const fa = input.language === 'fa';
   const byUrl = new Map<string, PublisherMemorySource>();
+  // Preserve previously collected source records and append newly observed URLs.
+  for (const old of input.previous?.sources ?? []) {
+    const canonical = canonicalizeResearchUrl(old.sourceUrl);
+    if (canonical.startsWith('https://')) {
+      byUrl.set(canonical, {
+        sourceId: old.sourceId,
+        sourceName: old.sourceName,
+        title: old.title,
+        url: canonical,
+        publishedAt: old.publishedAt,
+      });
+    }
+  }
   const sorted = [...input.news].sort((a, b) => {
     const date = (value: string | null) => value ? Date.parse(value) || 0 : 0;
     return date(b.publishedAt) - date(a.publishedAt);
@@ -63,7 +76,7 @@ export function createResearchMemoryEntry(input: {
     if (!canonical.startsWith('https://') || !item.title.trim() || !item.sourceName.trim()) continue;
     if (!byUrl.has(canonical)) byUrl.set(canonical, item);
   }
-  const sources = [...byUrl.entries()].slice(0, 12).map(([canonical, item]) => ({
+  const sources = [...byUrl.entries()].map(([canonical, item]) => ({
     sourceId: item.sourceId?.slice(0, 80),
     sourceName: item.sourceName.trim().slice(0, 160),
     title: item.title.trim().slice(0, 500),
@@ -127,7 +140,7 @@ export function createResearchMemoryEntry(input: {
   };
   const oldHistory = input.previous?.history ?? [];
   const history = oldHistory[0]?.sourceFingerprint === sourceFingerprint
-    ? oldHistory.slice(0, 8)
-    : [snapshot, ...oldHistory].slice(0, 8);
+    ? oldHistory
+    : [snapshot, ...oldHistory];
   return { topic, updatedAt: now, sources, keyFindings, unresolvedQuestions, contradictions, confidence, history };
 }

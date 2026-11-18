@@ -12,7 +12,7 @@ import {
 } from './types';
 import { readData, writeData } from './storage';
 import { getKey } from './vault';
-import { ApiError, nextBudget, reserveYoutubeRefreshCycle, searchYouTube, type YouTubeQuotaKind, type YouTubeQuotaOrigin } from './api';
+import { nextBudget, searchYouTube, type YouTubeQuotaKind, type YouTubeQuotaOrigin } from './api';
 import { generateEditorialIdeas } from './idea-generation';
 import { rankNewsForTopic } from './engine';
 import { attachReportToIdea as attachReport, attachVideoReferenceToIdea as attachVideoReference, getOrCreateSourceIdea, type SourceIdeaInput } from './idea-research';
@@ -36,6 +36,8 @@ type State = {
   clearError: () => void;
 };
 const ENGINE_VIDEO_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
+const RETENTION_SWEEP_INTERVAL_MS = 6 * 60 * 60 * 1000;
+let lastRetentionSweepAt = 0;
 
 function recentEngineVideos<T extends { publishedAt: string }>(videos: readonly T[], now = Date.now()): T[] {
   return videos.filter((video) => {
@@ -56,6 +58,7 @@ export const useScout = create<State>((set, get) => ({
   boot: async () => {
     try {
       const data = await readData();
+      lastRetentionSweepAt = Date.now();
       hydrateSpaceNewsRegistry(data.feedRegistry);
       set({ data, ready: true, error: '' });
     } catch {
@@ -67,7 +70,11 @@ export const useScout = create<State>((set, get) => ({
     const action = queue.then(async () => {
       if (!get().ready) throw new Error('Local data is not ready. Retry opening it.');
       const previousData = get().data;
-      const data = purgeExpired(change(previousData));
+      const changedData = change(previousData);
+      const now = Date.now();
+      const data = now - lastRetentionSweepAt >= RETENTION_SWEEP_INTERVAL_MS
+        ? (lastRetentionSweepAt = now, purgeExpired(changedData, now))
+        : changedData;
       try {
         // Persist only the data domains that changed. In particular, saving an AI
         // opinion must not rewrite large news/video/report rows in the same database.
@@ -110,19 +117,20 @@ export const useScout = create<State>((set, get) => ({
         if (!cached.analyzed) await get().analyze(cached.id);
         return get().data.reports.find((item) => item.id === cached.id) ?? cached;
       }
-      const reservedCycles = reserveYoutubeRefreshCycle(get().data.preferences.youtubeRefreshTimestamps, Date.now());
-      await get().commit((data) => ({
-        ...data,
-        preferences: { ...data.preferences, youtubeRefreshTimestamps: reservedCycles },
-      }));
       const result = await searchYouTube(
         input,
         {
           key,
           origin,
           charge: (units, kind = 'other') => get().charge(units, kind, origin),
-          onQuota: () =>
-            get().commit((data) => ({ ...data, budget: { ...data.budget, exhausted: true } })),
+          onQuota: (kind) =>
+            get().commit((data) => ({
+              ...data,
+              budget: {
+                ...data.budget,
+                ...(kind === 'search' ? { searchExhausted: true } : { otherExhausted: true }),
+              },
+            })),
         },
         (progress) => set({ progress }),
       );
@@ -137,7 +145,7 @@ export const useScout = create<State>((set, get) => ({
       const matchedNews = rankNewsForTopic(
         report.input.topic,
         getCachedSpaceNews(currentData.feedRegistry, currentData.preferences.spaceNewsSources),
-        12,
+        1000,
       );
       const currentVideos = recentEngineVideos(result.videos);
       const generatedIdeas = generateEditorialIdeas({
@@ -165,8 +173,6 @@ export const useScout = create<State>((set, get) => ({
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       return report;
     } catch (error) {
-      if (error instanceof ApiError && error.code === 'quota')
-        await get().commit((data) => ({ ...data, budget: { ...data.budget, exhausted: true } }));
       set({
         error: error instanceof Error ? error.message : 'Research could not finish. Try again.',
       });

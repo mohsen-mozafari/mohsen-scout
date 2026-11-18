@@ -79,13 +79,28 @@ export default function Detail() {
         key,
         model,
         opinionPrompt(ideaOpinionTopic, idea.concept, idea.decision, uiLanguage),
-        async () => {
+        async (quota) => {
           const current = useScout.getState().data.preferences;
           const day = localDateKey();
-          const usage = nextOpenRouterUsage(current.openRouterUsageDay, current.openRouterRequestsToday, day);
+          const usage = nextOpenRouterUsage(
+            current.openRouterUsageDay,
+            current.openRouterRequestsToday,
+            day,
+            quota?.limit ?? (model.toLowerCase().endsWith(':free') ? 50 : 10000),
+            quota?.used,
+          );
           await useScout.getState().commit((d) => ({
             ...d,
-            preferences: { ...d.preferences, ...usage },
+            preferences: {
+              ...d.preferences,
+              ...usage,
+              ...(quota ? {
+                openRouterDailyLimit: quota.limit,
+                openRouterDailyUsed: quota.used + 1,
+                openRouterDailyRemaining: Math.max(0, quota.remaining - 1),
+                openRouterQuotaCheckedAt: Date.now(),
+              } : {}),
+            },
           }));
         },
       );
