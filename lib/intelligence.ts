@@ -140,8 +140,21 @@ const CONCEPT_ALIASES: readonly (readonly string[])[] = [
   ['dark energy', 'انرژی تاریک'],
 ];
 
+const NORMALIZED_TEXT_CACHE_LIMIT = 4096;
+const normalizedTextCache = new Map<string, string>();
+const expandedTokenCache = new Map<string, ReadonlySet<string>>();
+const EXPANDED_TOKEN_CACHE_LIMIT = 2048;
+
 export function normalizeResearchText(value: string): string {
-  return value
+  if (value.length <= 4096) {
+    const cached = normalizedTextCache.get(value);
+    if (cached !== undefined) {
+      normalizedTextCache.delete(value);
+      normalizedTextCache.set(value, cached);
+      return cached;
+    }
+  }
+  const normalized = value
     .normalize('NFKC')
     .toLocaleLowerCase()
     .replace(/ي/g, 'ی')
@@ -154,6 +167,14 @@ export function normalizeResearchText(value: string): string {
     .replace(/[^\p{L}\p{N}]+/gu, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+  if (value.length <= 4096) {
+    normalizedTextCache.set(value, normalized);
+    if (normalizedTextCache.size > NORMALIZED_TEXT_CACHE_LIMIT) {
+      const oldest = normalizedTextCache.keys().next().value;
+      if (oldest !== undefined) normalizedTextCache.delete(oldest);
+    }
+  }
+  return normalized;
 }
 
 export function tokenizeResearchText(value: string): string[] {
@@ -176,18 +197,24 @@ function conceptIndexes(value: string): number[] {
     .filter((index) => index >= 0);
 }
 
-function expandedConceptTokens(value: string): Set<string> {
+function expandedConceptTokens(value: string): ReadonlySet<string> {
+  const cached = expandedTokenCache.get(value);
+  if (cached) {
+    expandedTokenCache.delete(value);
+    expandedTokenCache.set(value, cached);
+    return cached;
+  }
   const tokens = new Set(tokenizeResearchText(value));
   for (const index of conceptIndexes(value)) tokens.add('__concept_' + index);
+  expandedTokenCache.set(value, tokens);
+  if (expandedTokenCache.size > EXPANDED_TOKEN_CACHE_LIMIT) {
+    const oldest = expandedTokenCache.keys().next().value;
+    if (oldest !== undefined) expandedTokenCache.delete(oldest);
+  }
   return tokens;
 }
 
-function sharesConceptAlias(left: string, right: string): boolean {
-  const leftConcepts = new Set(conceptIndexes(left));
-  return conceptIndexes(right).some((index) => leftConcepts.has(index));
-}
-
-/** Transparent lexical-semantic relevance using normalization and a small, explicit alias map. */
+/** Transparent lexical-semantic relevance/** Transparent lexical-semantic relevance using normalization and a small, explicit alias map. */
 export function scoreResearchText(topic: string, title: string, summary = ''): number {
   const normalizedTopic = normalizeResearchText(topic);
   if (!normalizedTopic) return 0;
@@ -209,19 +236,29 @@ export function scoreResearchText(topic: string, title: string, summary = ''): n
   return score;
 }
 
-export function matchesResearchTerms(value: string, terms: readonly string[]): boolean {
+export function matchesAnyResearchTerms(value: string, terms: readonly string[]): boolean {
   const normalizedValue = normalizeResearchText(value);
-  if (!normalizedValue) return false;
+  if (!normalizedValue || !terms.length) return false;
   const valueTokens = expandedConceptTokens(value);
-  return terms.some((term) => {
+  for (const term of terms) {
     const normalizedTerm = normalizeResearchText(term);
-    if (!normalizedTerm) return false;
-    if (normalizedValue.includes(normalizedTerm) || sharesConceptAlias(value, term)) return true;
-    const termTokens = [...expandedConceptTokens(term)];
-    if (!termTokens.length) return false;
-    const overlap = termTokens.filter((token) => valueTokens.has(token)).length;
-    return overlap >= Math.max(1, Math.ceil(termTokens.length * 0.6));
-  });
+    if (!normalizedTerm) continue;
+    if (normalizedValue.includes(normalizedTerm)) return true;
+    const termTokens = expandedConceptTokens(term);
+    for (const token of termTokens) {
+      if (token.startsWith('__concept_') && valueTokens.has(token)) return true;
+    }
+    let overlap = 0;
+    for (const token of termTokens) {
+      if (valueTokens.has(token)) overlap += 1;
+    }
+    if (overlap >= Math.max(1, Math.ceil(termTokens.size * 0.6))) return true;
+  }
+  return false;
+}
+
+export function matchesResearchTerms(value: string, terms: readonly string[]): boolean {
+  return matchesAnyResearchTerms(value, terms);
 }
 
 function relevanceWithFeedback<T extends ResearchDocument>(
@@ -232,8 +269,8 @@ function relevanceWithFeedback<T extends ResearchDocument>(
   let score = scoreResearchText(topic, item.title, item.summary ?? '');
   if (!feedback) return score;
   const text = item.title + ' ' + (item.summary ?? '');
-  if (feedback.positiveTopics.some((term) => matchesResearchTerms(text, [term]))) score += 1;
-  if (feedback.negativeTopics.some((term) => matchesResearchTerms(text, [term]))) score -= 2;
+  if (matchesAnyResearchTerms(text, feedback.positiveTopics)) score += 1;
+  if (matchesAnyResearchTerms(text, feedback.negativeTopics)) score -= 2;
   return score;
 }
 
@@ -279,12 +316,10 @@ export function canonicalizeResearchUrl(value?: string): string {
   }
 }
 
-function titleSimilarity(left: string, right: string): number {
-  const a = new Set(tokenizeResearchText(left));
-  const b = new Set(tokenizeResearchText(right));
+function titleTokenSimilarity(a: ReadonlySet<string>, b: ReadonlySet<string>): number {
   if (!a.size || !b.size) return 0;
   let intersection = 0;
-  for (const token of a) if (b.has(token)) intersection++;
+  for (const token of a) if (b.has(token)) intersection += 1;
   return intersection / (a.size + b.size - intersection);
 }
 
@@ -301,22 +336,57 @@ export function deduplicateResearchEvidence<T extends ResearchDocument>(
   items: readonly T[],
 ): { items: (T & Pick<ResearchDocument, 'sourceCount' | 'sourceIds'>)[]; duplicatesMerged: number } {
   const result: (T & Pick<ResearchDocument, 'sourceCount' | 'sourceIds'>)[] = [];
+  const canonicalUrlIndex = new Map<string, number>();
+  const normalizedTitleIndex = new Map<string, number>();
+  const tokenIndex = new Map<string, number[]>();
+  const titleTokenSets: Set<string>[] = [];
   let duplicatesMerged = 0;
+
   for (const item of items) {
     const canonicalUrl = canonicalizeResearchUrl(item.sourceUrl);
     const normalizedTitle = normalizeResearchText(item.title);
-    const duplicateIndex = result.findIndex((existing) => {
-      const existingUrl = canonicalizeResearchUrl(existing.sourceUrl);
-      if (canonicalUrl && existingUrl && canonicalUrl === existingUrl) return true;
-      const existingTitle = normalizeResearchText(existing.title);
-      if (normalizedTitle && normalizedTitle === existingTitle) return true;
-      return tokenizeResearchText(item.title).length >= 4 &&
-        titleSimilarity(item.title, existing.title) >= 0.94;
-    });
-    if (duplicateIndex < 0) {
+    const titleTokens = new Set(tokenizeResearchText(item.title));
+    let duplicateIndex = Number.MAX_SAFE_INTEGER;
+    const urlMatch = canonicalUrl ? canonicalUrlIndex.get(canonicalUrl) : undefined;
+    const titleMatch = normalizedTitle ? normalizedTitleIndex.get(normalizedTitle) : undefined;
+    if (urlMatch !== undefined) duplicateIndex = Math.min(duplicateIndex, urlMatch);
+    if (titleMatch !== undefined) duplicateIndex = Math.min(duplicateIndex, titleMatch);
+
+    // At Jaccard >= 0.94, title token sets share almost all of their tokens.
+    // Probe a rare 7%+ subset, avoiding a full scan of the existing collection.
+    if (titleTokens.size >= 4) {
+      const postings = [...titleTokens]
+        .map((token) => tokenIndex.get(token))
+        .filter((list): list is number[] => Boolean(list))
+        .sort((a, b) => a.length - b.length);
+      const probeCount = Math.min(postings.length, Math.floor(titleTokens.size * 0.07) + 1);
+      const candidates = new Set<number>();
+      for (let postingIndex = 0; postingIndex < probeCount; postingIndex += 1) {
+        for (const candidate of postings[postingIndex]) {
+          if (candidate < duplicateIndex) candidates.add(candidate);
+        }
+      }
+      for (const candidate of candidates) {
+        if (titleTokenSimilarity(titleTokens, titleTokenSets[candidate]) >= 0.94) {
+          duplicateIndex = Math.min(duplicateIndex, candidate);
+        }
+      }
+    }
+
+    if (duplicateIndex === Number.MAX_SAFE_INTEGER) {
+      const index = result.length;
       result.push(item);
+      titleTokenSets.push(titleTokens);
+      if (canonicalUrl) canonicalUrlIndex.set(canonicalUrl, index);
+      if (normalizedTitle) normalizedTitleIndex.set(normalizedTitle, index);
+      for (const token of titleTokens) {
+        const posting = tokenIndex.get(token);
+        if (posting) posting.push(index);
+        else tokenIndex.set(token, [index]);
+      }
       continue;
     }
+
     const previous = result[duplicateIndex];
     const names = [...new Set([
       ...(previous.sourceName ?? '').split('·').map((part) => part.trim()),

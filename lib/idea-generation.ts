@@ -264,26 +264,67 @@ export function selectIdeaGenerationVideos(
 export function deduplicateDisplayIdeas(ideas: readonly Idea[]): Idea[] {
   const seenIds = new Set<string>();
   const seenGeneratedTitles = new Set<string>();
-  const seenGeneratedConcepts: Set<string>[] = [];
-  return ideas.filter((idea) => {
-    if (seenIds.has(idea.id)) return false;
+  const tokenIndex = new Map<string, number[]>();
+  const acceptedGeneratedTokens: Set<string>[] = [];
+  const output: Idea[] = [];
+
+  for (const idea of ideas) {
+    if (seenIds.has(idea.id)) continue;
     seenIds.add(idea.id);
-    if (!idea.engineGenerated) return true;
+    if (!idea.engineGenerated) {
+      output.push(idea);
+      continue;
+    }
+
     const title = normalizeResearchText(idea.topic);
-    if (!title) return true;
-    if (seenGeneratedTitles.has(title)) return false;
+    if (!title) {
+      output.push(idea);
+      continue;
+    }
+    if (seenGeneratedTitles.has(title)) continue;
+
     const centralQuestion = idea.concept.match(/(?:Central question:|پرسش محوری:)\s*([^\n]+)/i)?.[1] ?? '';
     const tokens = semanticTokens(idea.topic + ' ' + centralQuestion);
-    for (const previous of seenGeneratedConcepts) {
-      const overlap = [...tokens].filter((token) => previous.has(token)).length;
-      const containment = overlap / Math.max(1, Math.min(tokens.size, previous.size));
-      const jaccard = overlap / Math.max(1, tokens.size + previous.size - overlap);
-      if (containment >= 0.88 && jaccard >= 0.72) return false;
+    let duplicate = false;
+
+    // Existing similarity requires >=0.88 containment and >=0.72 Jaccard.
+    // Such a pair shares at least 63% of either token set, so probing the
+    // least-common 64%+ avoids scanning all previously accepted ideas.
+    if (tokens.size > 0) {
+      const postings = [...tokens]
+        .map((token) => tokenIndex.get(token))
+        .filter((list): list is number[] => Boolean(list))
+        .sort((a, b) => a.length - b.length);
+      const probeCount = Math.min(postings.length, Math.floor(tokens.size * 0.64) + 1);
+      const candidates = new Set<number>();
+      for (let postingIndex = 0; postingIndex < probeCount; postingIndex += 1) {
+        for (const candidate of postings[postingIndex]) candidates.add(candidate);
+      }
+      for (const candidate of candidates) {
+        const previous = acceptedGeneratedTokens[candidate];
+        let overlap = 0;
+        for (const token of tokens) if (previous.has(token)) overlap += 1;
+        const containment = overlap / Math.max(1, Math.min(tokens.size, previous.size));
+        const jaccard = overlap / Math.max(1, tokens.size + previous.size - overlap);
+        if (containment >= 0.88 && jaccard >= 0.72) {
+          duplicate = true;
+          break;
+        }
+      }
     }
+
+    if (duplicate) continue;
     seenGeneratedTitles.add(title);
-    seenGeneratedConcepts.push(tokens);
-    return true;
-  });
+    const acceptedIndex = acceptedGeneratedTokens.length;
+    acceptedGeneratedTokens.push(tokens);
+    for (const token of tokens) {
+      const posting = tokenIndex.get(token);
+      if (posting) posting.push(acceptedIndex);
+      else tokenIndex.set(token, [acceptedIndex]);
+    }
+    output.push(idea);
+  }
+  return output;
 }
 
 export function generateEditorialIdeas(input: GenerateEditorialIdeasInput): Idea[] {
@@ -322,13 +363,16 @@ export function generateEditorialIdeas(input: GenerateEditorialIdeasInput): Idea
   // Anchors may come from the strongest topic-relevant videos and publisher evidence.
   // Raw video metadata is not copied into the saved Idea record.
   for (const document of documents) {
-    const uniqueTerms = new Set(tokenizeResearchText(document.text));
-    for (const term of uniqueTerms) {
+    const frequencies = new Map<string, number>();
+    for (const term of tokenizeResearchText(document.text)) {
+      frequencies.set(term, (frequencies.get(term) ?? 0) + 1);
+    }
+    for (const [term, frequency] of frequencies) {
       if (term.length < 3 || topicTokens.has(term)) continue;
       const current = termStats.get(term) ?? { documents: 0, frequency: 0, videoDocuments: 0 };
       current.documents += 1;
       if (document.kind === 'youtube') current.videoDocuments += 1;
-      current.frequency += tokenizeResearchText(document.text).filter((value) => value === term).length;
+      current.frequency += frequency;
       termStats.set(term, current);
     }
   }

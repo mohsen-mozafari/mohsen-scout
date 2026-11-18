@@ -1,6 +1,9 @@
 import type { ResearchMemoryEntry, ResearchMemorySnapshot } from './types';
 import { canonicalizeResearchUrl, normalizeResearchText } from './intelligence';
 
+const MAX_RESEARCH_MEMORY_SOURCES = 120;
+const MAX_RESEARCH_MEMORY_HISTORY = 36;
+
 export type PublisherMemorySource = {
   sourceId?: string;
   sourceName: string;
@@ -76,13 +79,18 @@ export function createResearchMemoryEntry(input: {
     if (!canonical.startsWith('https://') || !item.title.trim() || !item.sourceName.trim()) continue;
     if (!byUrl.has(canonical)) byUrl.set(canonical, item);
   }
-  const sources = [...byUrl.entries()].map(([canonical, item]) => ({
-    sourceId: item.sourceId?.slice(0, 80),
-    sourceName: item.sourceName.trim().slice(0, 160),
-    title: item.title.trim().slice(0, 500),
-    sourceUrl: canonical,
-    publishedAt: item.publishedAt,
-  }));
+  const sources = [...byUrl.entries()]
+    .map(([canonical, item]) => ({
+      sourceId: item.sourceId?.slice(0, 80),
+      sourceName: item.sourceName.trim().slice(0, 160),
+      title: item.title.trim().slice(0, 500),
+      sourceUrl: canonical,
+      publishedAt: item.publishedAt,
+    }))
+    .sort((a, b) =>
+      (Date.parse(b.publishedAt ?? '') || 0) - (Date.parse(a.publishedAt ?? '') || 0),
+    )
+    .slice(0, MAX_RESEARCH_MEMORY_SOURCES);
   if (!sources.length) return undefined;
 
   const keyFindings = unique(input.analysis.evidence.filter((item) => item.id === 'publisher-news').map((item) => item.detail), 8, 2000);
@@ -139,8 +147,9 @@ export function createResearchMemoryEntry(input: {
     changes: changes.slice(0, 4),
   };
   const oldHistory = input.previous?.history ?? [];
-  const history = oldHistory[0]?.sourceFingerprint === sourceFingerprint
+  const history = (oldHistory[0]?.sourceFingerprint === sourceFingerprint
     ? oldHistory
-    : [snapshot, ...oldHistory];
+    : [snapshot, ...oldHistory]
+  ).slice(0, MAX_RESEARCH_MEMORY_HISTORY);
   return { topic, updatedAt: now, sources, keyFindings, unresolvedQuestions, contradictions, confidence, history };
 }

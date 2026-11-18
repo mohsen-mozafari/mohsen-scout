@@ -78,9 +78,7 @@ export async function writeData(data: LocalData, previousData?: Partial<Record<k
       await tx.runAsync(`INSERT OR REPLACE INTO ${table} (key,value) VALUES (?,?)`, key, JSON.stringify(value));
     }
   });
-  try {
-    await connection.execAsync('PRAGMA wal_checkpoint(TRUNCATE);');
-  } catch {
-    // A busy checkpoint is deferred; committed data remains safe.
-  }
+  // SQLite's wal_autocheckpoint performs periodic maintenance. A TRUNCATE
+  // checkpoint after every small edit adds synchronous I/O and can contend
+  // with readers as the local research database grows.
 }

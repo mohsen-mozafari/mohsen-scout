@@ -7,7 +7,7 @@ import {
   deduplicateResearchEvidence,
   rankResearchEvidence,
   scoreResearchText,
-  matchesResearchTerms,
+  matchesAnyResearchTerms,
   tokenizeResearchText,
   type ResearchFeedbackProfile,
   extractResearchEntityCandidates,
@@ -164,8 +164,9 @@ export function buildInternalResearch(input: InternalResearchInput): InternalRes
   const rankedNews = allNews
     .map((item, index) => {
       let score = topicRelevanceScore(topic, item.title, item.summary);
-      if (input.feedback?.positiveTopics.some((term) => matchesResearchTerms(item.title + ' ' + item.summary, [term]))) score += 1;
-      if (input.feedback?.negativeTopics.some((term) => matchesResearchTerms(item.title + ' ' + item.summary, [term]))) score -= 2;
+      const searchable = item.title + ' ' + item.summary;
+      if (input.feedback && matchesAnyResearchTerms(searchable, input.feedback.positiveTopics)) score += 1;
+      if (input.feedback && matchesAnyResearchTerms(searchable, input.feedback.negativeTopics)) score -= 2;
       return { item, index, score };
     })
     .sort((a, b) => b.score - a.score ||

@@ -118,3 +118,34 @@ void test('legacy local data and backup memory remain readable with versioned hi
   const restoredLegacy = importBackup(exportBackup(legacy));
   assert.equal(restoredLegacy.researchMemory[0].history?.length, 0);
 });
+
+
+void test('research memory source records and snapshots remain bounded across repeated scans', () => {
+  const first = createResearchMemoryEntry({
+    topic: 'JWST long-term research',
+    news: Array.from({ length: 150 }, (_, index) => ({
+      ...story(String(index), 'JWST report number ' + index),
+      publishedAt: new Date(Date.UTC(2026, 10, 19, 0, 0, index)).toISOString(),
+    })),
+    analysis: analysis(),
+    now: Date.parse('2026-11-19T12:00:00Z'),
+    language: 'en',
+  });
+  assert.ok(first);
+  assert.equal(first.sources.length, 120);
+  let current = first;
+  for (let index = 0; index < 45; index += 1) {
+    const next = createResearchMemoryEntry({
+      topic: 'JWST long-term research',
+      news: [story('later-' + index, 'JWST additional report ' + index)],
+      analysis: analysis(index % 2 ? 'moderate' : 'high'),
+      previous: current,
+      now: Date.parse('2026-11-19T12:00:00Z') + (index + 1) * 60000,
+      language: 'en',
+    });
+    assert.ok(next);
+    current = next;
+  }
+  assert.ok(current.sources.length <= 120);
+  assert.ok((current.history?.length ?? 0) <= 36);
+});

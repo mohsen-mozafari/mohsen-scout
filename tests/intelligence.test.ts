@@ -8,6 +8,7 @@ import {
   canonicalizeResearchUrl,
   deduplicateResearchEvidence,
   matchesResearchTerms,
+  matchesAnyResearchTerms,
   normalizeResearchText,
   rankResearchEvidence,
   scoreResearchText,
@@ -168,3 +169,35 @@ void test('entity relationships are evidence-backed co-mentions and never labell
   ), false);
 });
 
+
+
+void test('bulk evidence de-duplication keeps publisher provenance across a large feed sample', () => {
+  const items = Array.from({ length: 150 }, (_, index) => {
+    const title = 'Webb telescope reports methane evidence in exoplanet atmosphere ' + index;
+    return [
+      { title, summary: 'MOCK source report', sourceName: 'NASA', sourceId: 'nasa', sourceUrl: 'https://nasa.gov/story/' + index + '?utm_source=rss' },
+      { title, summary: 'MOCK syndicated report', sourceName: 'JPL', sourceId: 'jpl', sourceUrl: 'https://jpl.nasa.gov/story/' + index },
+      { title, summary: 'MOCK syndicated report', sourceName: 'ESA', sourceId: 'esa-space', sourceUrl: 'https://esa.int/story/' + index },
+    ];
+  }).flat();
+  const result = deduplicateResearchEvidence(items);
+  assert.equal(result.items.length, 150);
+  assert.equal(result.duplicatesMerged, 300);
+  assert.equal(result.items[149].sourceCount, 3);
+  assert.deepEqual(result.items[149].sourceIds, ['nasa', 'jpl', 'esa-space']);
+});
+
+void test('fuzzy title de-duplication still merges reordered identical token sets', () => {
+  const result = deduplicateResearchEvidence([
+    { title: 'Webb telescope reports methane evidence in exoplanet atmosphere', sourceName: 'NASA', sourceId: 'nasa', sourceUrl: 'https://nasa.gov/a' },
+    { title: 'Atmosphere exoplanet in evidence methane reports telescope Webb', sourceName: 'ESA', sourceId: 'esa-space', sourceUrl: 'https://esa.int/b' },
+  ]);
+  assert.equal(result.items.length, 1);
+  assert.equal(result.duplicatesMerged, 1);
+  assert.equal(result.items[0].sourceCount, 2);
+});
+
+void test('multi-term matching preserves known concept aliases', () => {
+  assert.equal(matchesAnyResearchTerms('JWST observed a distant exoplanet', ['James Webb Space Telescope', 'Mars rover']), true);
+  assert.equal(matchesAnyResearchTerms('Artemis lunar mission', ['James Webb Space Telescope', 'NIRSpec']), false);
+});
