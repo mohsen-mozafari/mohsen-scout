@@ -382,12 +382,13 @@ void test('Backup compatibility: version-1 backups without Space preferences sti
   const preferences = personal.preferences;
   assert.ok(preferences && typeof preferences === 'object' && !Array.isArray(preferences));
   Reflect.deleteProperty(preferences, 'spaceNewsSources');
+  Reflect.deleteProperty(preferences, 'spaceNewsSourcesVersion');
   Reflect.deleteProperty(preferences, 'spaceInterestLanguage');
   Reflect.deleteProperty(preferences, 'selectedSpaceNiche');
   Reflect.deleteProperty(preferences, 'customSpaceNiche');
   Reflect.deleteProperty(preferences, 'defaultResearchDays');
   const restored = importBackup(JSON.stringify(backup));
-  assert.deepEqual(restored.preferences.spaceNewsSources, ['nasa', 'jpl', 'cneos', 'esa-space', 'esa-science']);
+  assert.deepEqual(restored.preferences.spaceNewsSources, ['nasa', 'jpl', 'cneos', 'esa-space', 'esa-science', 'space-com', 'phys-space', 'universe-today', 'sky-telescope']);
   assert.equal(restored.preferences.spaceInterestLanguage, 'en');
   assert.equal(restored.preferences.selectedSpaceNiche, 'all');
   assert.equal(restored.preferences.customSpaceNiche, '');
