@@ -20,7 +20,7 @@ export const styles = StyleSheet.create({
   heading: { fontFamily: 'Inter_600SemiBold', fontSize: 16, lineHeight: 22, color: p.text, letterSpacing: -0.2, flexShrink: 1, minWidth: 0 },
   text: { fontFamily: 'Inter_400Regular', fontSize: 14, lineHeight: 22, color: p.text, flexShrink: 1, minWidth: 0 },
   muted: { fontFamily: 'Inter_400Regular', fontSize: 12, lineHeight: 18, color: p.muted, flexShrink: 1, minWidth: 0 },
-  panel: { paddingHorizontal: 22, paddingVertical: 20, borderRadius: 20, backgroundColor: p.surface, gap: 12 },
+  panel: { paddingHorizontal: 18, paddingVertical: 18, borderRadius: 22, backgroundColor: p.surface, borderColor: p.border, borderWidth: 1, gap: 14 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   // eslint-disable-next-line react-native/no-unused-styles -- Exported shared style used by screens and VideoRow; the rule only checks this file.
   rule: { borderBottomColor: p.border, borderBottomWidth: 1, paddingBottom: 18 },
@@ -137,7 +137,7 @@ export function Action({
       onPress={onPress}
       variant={secondary ? 'secondary' : 'primary'}
       isDisabled={disabled || busy}
-      className="rounded-2xl px-4"
+      className="min-h-11 rounded-2xl px-4"
       accessibilityLabel={label}
     >
       {Icon && <Icon size={18} color={secondary ? p.purple : p.white} strokeWidth={1.8} />}
@@ -291,7 +291,7 @@ export function Fold({
       <Button
         variant="tertiary"
         onPress={() => setExpanded(!expanded)}
-        className="h-auto justify-start rounded-none bg-transparent px-0"
+        className="min-h-11 h-auto justify-start rounded-xl bg-transparent px-1"
       >
         <Button.Label className="flex-1 flex-shrink" style={{ writingDirection: titleDirection, textAlign: titleDirection === 'rtl' ? 'right' : 'left' }}>{translatedTitle}</Button.Label>
         {expanded ? (
