@@ -700,7 +700,7 @@ function DiscoveryDashboardReady() {
         <View style={{ gap: 10 }}>
           <View style={[styles.rowBetween, { flexWrap: 'wrap' }]}>
             <Heading>Latest evidence brief</Heading>
-            {deskAnalysis ? <BadgeText>{deskAnalysis.intelligence.confidence.level.toUpperCase()} CONFIDENCE</BadgeText> : null}
+            {deskAnalysis ? <BadgeText>{`${deskAnalysis.intelligence.confidence.level.toUpperCase()} CONFIDENCE`}</BadgeText> : null}
           </View>
           {deskAnalysis ? (
             <Panel>
