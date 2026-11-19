@@ -80,6 +80,19 @@ function semanticTokens(value: string): Set<string> {
   return new Set(tokenizeResearchText(value).filter((token) => token.length > 2));
 }
 
+/** Saved idea feedback may use a longer editorial phrase than a generated anchor. */
+function matchesSavedTopicPreference(value: string, topics: readonly string[]): boolean {
+  if (matchesAnyResearchTerms(value, topics)) return true;
+  const valueTokens = semanticTokens(value);
+  if (!valueTokens.size) return false;
+  return topics.some((topic) => {
+    const topicTokens = semanticTokens(topic);
+    if (!topicTokens.size) return false;
+    const overlap = [...topicTokens].filter((token) => valueTokens.has(token)).length;
+    return overlap >= Math.max(1, Math.ceil(topicTokens.size * 0.5));
+  });
+}
+
 function ideaHasSameMeaning(candidate: Candidate, idea: Pick<Idea, 'engineGenerated' | 'ideaCategory' | 'topic' | 'concept'>, topic: string): boolean {
   if (!idea.engineGenerated) return false;
   const question = idea.concept.match(/(?:Central question:|پرسش محوری:)\s*([^\n]+)/i)?.[1] ?? '';
@@ -590,8 +603,8 @@ export function generateEditorialIdeas(input: GenerateEditorialIdeasInput): Idea
       videos: videos.map((video) => ({ title: video.title, description: video.description, channel: video.channel, publishedAt: video.publishedAt, viewCount: video.viewCount })),
       now: input.now,
     });
-    const positivePreference = matchesAnyResearchTerms(candidate.anchor, feedback.positiveTopics);
-    const negativePreference = matchesAnyResearchTerms(candidate.anchor, feedback.negativeTopics);
+    const positivePreference = matchesSavedTopicPreference(candidate.anchor, feedback.positiveTopics);
+    const negativePreference = matchesSavedTopicPreference(candidate.anchor, feedback.negativeTopics);
     candidate.opportunityScore = Math.max(0, Math.min(100,
       opportunity.score + (positivePreference ? 8 : 0) - (negativePreference ? 18 : 0)));
     candidate.opportunityConfidence = opportunity.confidence;
