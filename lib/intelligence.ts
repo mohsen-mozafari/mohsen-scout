@@ -622,6 +622,7 @@ export type EditorialOpportunitySignals = {
     freshness: number;
     /** Always null: raw lifetime views are not converted into demand or growth estimates. */
     audienceSignal: null;
+    /** Textual anchor specificity within the retrieved topic sample; not market competition. */
     differentiation: number;
   };
   reason: string;
@@ -630,8 +631,8 @@ export type EditorialOpportunitySignals = {
 /**
  * Explainable editorial prioritization from the supplied research sample.
  * This is a relative editorial decision aid, never a prediction of views,
- * revenue, audience demand, growth or virality. Raw view counts are deliberately
- * excluded from the calculation; missing evidence is not fabricated.
+ * revenue, audience demand, growth or virality. Evidence breadth/freshness are
+ * calculated from anchor-matched records only; raw views are excluded.
  */
 export type EditorialOpportunityScorerInput = {
   topic: string;
@@ -699,7 +700,6 @@ export function createEditorialOpportunityScorer(
   const documents: IndexedEditorialDocument[] = [];
   const tokenIndex = new Map<string, number[]>();
   const topicRelevantDocuments = new Set<number>();
-  let topicMatchedVideoCount = 0;
 
   for (const source of sourceDocuments) {
     const tokens = new Set(tokenizeResearchText(source.text));
@@ -713,7 +713,6 @@ export function createEditorialOpportunityScorer(
 
     if (scoreResearchText(input.topic, source.text) > 0) {
       topicRelevantDocuments.add(index);
-      if (source.kind === 'video') topicMatchedVideoCount += 1;
     }
 
     for (const token of tokens) {
@@ -725,21 +724,34 @@ export function createEditorialOpportunityScorer(
 
   return (anchor: string): EditorialOpportunitySignals => {
     const anchorTokens = new Set(tokenizeResearchText(anchor));
-    const anchorDocuments = new Set<number>();
+    const anchorMatchCounts = new Map<number, number>();
     for (const token of anchorTokens) {
-      for (const index of tokenIndex.get(token) ?? []) anchorDocuments.add(index);
+      for (const index of tokenIndex.get(token) ?? []) {
+        anchorMatchCounts.set(index, (anchorMatchCounts.get(index) ?? 0) + 1);
+      }
     }
 
-    const relevantIndexes = new Set(anchorDocuments);
-    for (const index of topicRelevantDocuments) relevantIndexes.add(index);
+    // A two-word editorial anchor must match both words. Longer anchors may
+    // tolerate one missing token, but a single generic word is never enough.
+    const minimumAnchorMatches = anchorTokens.size <= 2
+      ? anchorTokens.size
+      : Math.ceil(anchorTokens.size * 0.67);
+    const anchorDocuments = new Set<number>();
+    for (const [index, matchedTokens] of anchorMatchCounts) {
+      if (matchedTokens >= minimumAnchorMatches) anchorDocuments.add(index);
+    }
 
     const relevant: IndexedEditorialDocument[] = [];
-    for (const index of relevantIndexes) relevant.push(documents[index]);
+    for (const index of anchorDocuments) relevant.push(documents[index]);
 
-    const overlap = anchorTokens.size
-      ? anchorDocuments.size / Math.max(1, relevant.length)
+    // Only documents supporting this specific anchor contribute to its source
+    // breadth and freshness. Topic-only videos must not inflate every idea.
+    const anchorTopicDocuments = [...anchorDocuments]
+      .filter((index) => topicRelevantDocuments.has(index));
+    const relevance = topicRelevantDocuments.size
+      ? Math.round(100 * anchorTopicDocuments.length / topicRelevantDocuments.size)
       : 0;
-    const relevance = Math.round(Math.min(100, overlap * 70 + (relevant.length ? 30 : 0)));
+
     const publisherGroups = new Set<string>();
     const videoChannels = new Set<string>();
     const kinds = new Set<IndexedEditorialDocument['kind']>();
@@ -758,11 +770,15 @@ export function createEditorialOpportunityScorer(
       now - item.date <= 30 * 86400000 && now >= item.date - 86400000).length;
     const freshness = dated.length ? Math.round(100 * fresh / dated.length) : 35;
     const audienceSignal = null;
-    const anchorFrequency = anchorDocuments.size;
-    const saturation = topicMatchedVideoCount;
-    const differentiation = Math.round(Math.max(0, Math.min(100,
-      100 - Math.min(65, Math.max(0, anchorFrequency - 1) * 7) -
-      Math.min(35, Math.max(0, saturation - 2) * 3))));
+
+    // This is lexical specificity inside the retrieved topic sample, not
+    // competition, market saturation, demand or predicted performance.
+    const anchorCoverage = topicRelevantDocuments.size
+      ? anchorTopicDocuments.length / topicRelevantDocuments.size
+      : 0;
+    const differentiation = anchorTopicDocuments.length
+      ? Math.round(100 * (1 - anchorCoverage))
+      : 0;
     const weighted = [
       { value: relevance, weight: 0.30 },
       { value: evidenceBreadth, weight: 0.30 },
@@ -780,13 +796,14 @@ export function createEditorialOpportunityScorer(
     const historicalPublisherItems = relevant.filter((item) => item.kind === 'history').length;
     const supportingContextItems = relevant.filter((item) => item.kind === 'context').length;
     const reason = [
-      relevance >= 65 ? 'strong topic/anchor alignment' : 'limited direct topic alignment',
-      publisherGroups.size ? publisherGroups.size + ' publisher group(s) across current and saved research' : 'no directly relevant publisher group',
+      anchorTopicDocuments.length + ' topic-matched record(s) specifically support this anchor',
+      publisherGroups.size ? publisherGroups.size + ' publisher group(s) across anchor-matched current and saved research' : 'no anchor-matched publisher group',
       currentPublisherItems + ' current and ' + historicalPublisherItems + ' historical publisher record(s) matched',
       supportingContextItems + ' supporting context record(s) matched',
-      videoChannels.size ? videoChannels.size + ' relevant YouTube channel(s)' : 'no relevant YouTube channel sample',
-      fresh ? fresh + ' fresh dated evidence record(s)' : 'no fresh dated evidence record',
-      'raw view counts are not treated as demand or growth indicators',
+      videoChannels.size ? videoChannels.size + ' anchor-matched YouTube channel(s)' : 'no anchor-matched YouTube channel sample',
+      fresh ? fresh + ' fresh dated anchor record(s)' : 'no fresh dated anchor record',
+      anchorTopicDocuments.length + ' of ' + topicRelevantDocuments.size + ' topic-matched record(s) contained this anchor in the retrieved sample',
+      'raw views are not treated as demand, growth or performance indicators',
     ].join('; ');
     return {
       score,

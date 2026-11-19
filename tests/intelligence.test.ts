@@ -171,6 +171,61 @@ void test('editorial opportunity score is explainable, bounded and honest about 
 });
 
 
+void test('editorial scoring counts only anchor-matched channels and requires specific phrase coverage', () => {
+  const input = {
+    topic: 'JWST exoplanet atmosphere',
+    now: Date.parse('2026-11-18T12:00:00Z'),
+    news: [
+      {
+        title: 'JWST exoplanet atmosphere methane spectroscopy measurement',
+        sourceName: 'NASA',
+        sourceId: 'nasa',
+        publishedAt: '2026-11-17T12:00:00Z',
+      },
+      {
+        title: 'JWST exoplanet atmosphere methane spectroscopy calibration',
+        sourceName: 'ESA',
+        sourceId: 'esa-science',
+        publishedAt: '2026-11-16T12:00:00Z',
+      },
+    ],
+    videos: [
+      { title: 'JWST exoplanet atmosphere methane spectroscopy explained', channel: 'MOCK Methane Channel', publishedAt: '2026-11-15T12:00:00Z', viewCount: 1000000 },
+      { title: 'JWST exoplanet atmosphere deep field imaging', channel: 'MOCK General Channel A', publishedAt: '2026-11-14T12:00:00Z', viewCount: 9000000 },
+      { title: 'JWST exoplanet atmosphere telescope mission update', channel: 'MOCK General Channel B', publishedAt: '2026-11-13T12:00:00Z', viewCount: 8000000 },
+    ],
+  };
+  const signal = createEditorialOpportunityScorer(input)('methane spectroscopy');
+  assert.match(signal.reason, /1 anchor-matched YouTube channel/);
+  assert.match(signal.reason, /2 publisher group\(s\)/);
+
+  const moreTopicOnlyVideos = [
+    ...input.videos,
+    ...Array.from({ length: 12 }, (_, index) => ({
+      title: 'JWST exoplanet atmosphere general telescope observation ' + index,
+      channel: 'MOCK Unrelated Topic Channel ' + index,
+      publishedAt: '2026-11-12T12:00:00Z',
+      viewCount: 50000000 + index,
+    })),
+  ];
+  const expanded = createEditorialOpportunityScorer({ ...input, videos: moreTopicOnlyVideos })('methane spectroscopy');
+  assert.match(expanded.reason, /1 anchor-matched YouTube channel/);
+  assert.equal(expanded.confidence, signal.confidence, 'topic-only channels must not inflate anchor confidence');
+
+  const weakPhrase = createEditorialOpportunityScorer({
+    ...input,
+    news: [{
+      title: 'JWST exoplanet atmosphere methane observation',
+      sourceName: 'NASA',
+      sourceId: 'nasa',
+      publishedAt: '2026-11-17T12:00:00Z',
+    }],
+    videos: [],
+  })('methane spectroscopy');
+  assert.match(weakPhrase.reason, /no anchor-matched publisher group/);
+  assert.equal(weakPhrase.components.evidenceBreadth, 0, 'one word of a two-word phrase is not sufficient evidence');
+});
+
 void test('prepared editorial scoring reuses a single evidence index and includes context plus every merged publisher family', () => {
   const input = {
     topic: 'JWST exoplanet atmosphere',
