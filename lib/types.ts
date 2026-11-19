@@ -86,6 +86,9 @@ export type Idea = {
   engineGenerated?: boolean;
   ideaCategory?: string;
   generationKey?: string;
+  /** Explainable local editorial-priority score (not a view or revenue forecast). */
+  engineScore?: number;
+  engineScoreReason?: string;
 };
 export type Report = {
   id: string;

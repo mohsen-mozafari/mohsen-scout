@@ -78,6 +78,8 @@ const schema = z.object({
       engineGenerated: z.boolean().optional(),
       ideaCategory: text.max(80).optional(),
       generationKey: text.max(1200).optional(),
+      engineScore: z.number().int().min(0).max(100).optional(),
+      engineScoreReason: text.max(600).optional(),
     }),
   ),
   links: z.array(

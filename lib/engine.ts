@@ -33,10 +33,10 @@ export type InternalResearchInput = {
   topic: string;
   news?: readonly EngineNewsItem[];
   wiki?: Pick<WikiSignal, 'articleTitle' | 'language' | 'monthlyViews'>;
-  videos?: readonly Pick<
+  videos?: readonly (Pick<
     YouTubeSampleVideo,
     'id' | 'title' | 'channel' | 'publishedAt' | 'viewCount' | 'likeCount'
-  >[];
+  > & Partial<Pick<YouTubeSampleVideo, 'description'>>)[];
   feedback?: ResearchFeedbackProfile;
   language?: 'fa' | 'en';
   priorMemory?: ResearchMemoryEntry;
@@ -88,6 +88,9 @@ export type InternalResearchResult = {
       staleNewsCount: number;
       youtubeSampleCount: number;
       matchedVideoCount: number;
+      allTimeMatchedVideoCount: number;
+      recentMatchedVideoCount: number;
+      outsideVideoWindowCount: number;
       recentVideoCandidateCount: number;
       excludedVideoCount: number;
       videoViewCountsAvailable: number;
@@ -173,7 +176,9 @@ export function buildInternalResearch(input: InternalResearchInput): InternalRes
       (b.item.publishedAt ? Date.parse(b.item.publishedAt) : 0) -
       (a.item.publishedAt ? Date.parse(a.item.publishedAt) : 0) || a.index - b.index);
   const matchedNews = rankedNews.filter((entry) => entry.score > 0);
-  const news = matchedNews.map((entry) => entry.item);
+  // Keep every de-duplicated publisher record in the evidence graph. Direct matches
+  // drive the topic-specific conclusion; unmatched records remain contextual/auditable.
+  const news = rankedNews.map((entry) => entry.item);
   const publisherNames = [...new Set(news.flatMap((item) =>
     item.sourceName.split('·').map((name) => name.trim()).filter(Boolean)))];
   const declaredPublisherCount = Math.max(0, ...news.map((item) => item.sourceCount ?? 0));
@@ -184,15 +189,19 @@ export function buildInternalResearch(input: InternalResearchInput): InternalRes
     const published = Date.parse(video.publishedAt);
     return Number.isFinite(published) && published >= videoWindowStart && published <= now + 86400000;
   });
-  const rankedVideos = recentVideoCandidates.map((video, index) => ({
-    video, index, score: topicRelevanceScore(topic, video.title),
+  // Analyze all retained YouTube records, not only recent title matches. Description matches
+  // are weaker context; the recent, directly matched subset remains a separate audit signal.
+  const rankedVideos = inputVideos.map((video, index) => ({
+    video, index, score: topicRelevanceScore(topic, video.title, video.description ?? ''),
   })).filter((entry) => entry.score > 0).sort((a, b) => b.score - a.score ||
     (b.video.viewCount ?? -1) - (a.video.viewCount ?? -1) ||
     (b.video.likeCount ?? -1) - (a.video.likeCount ?? -1) || a.index - b.index);
   const videos = rankedVideos.map((entry) => entry.video);
+  const recentVideoIds = new Set(recentVideoCandidates.map((video) => video.id));
+  const recentMatchedVideoCount = rankedVideos.filter((entry) => recentVideoIds.has(entry.video.id)).length;
   const entityDocuments = [
-    ...news.map((item) => ({ id: item.sourceUrl, text: item.title + ' ' + item.summary, sourceId: item.sourceId })),
-    ...videos.map((video) => ({ id: 'youtube:' + video.id, text: video.title, sourceId: 'youtube-sample' })),
+    ...allNews.map((item, index) => ({ id: item.sourceUrl || 'news:' + index, text: item.title + ' ' + item.summary, sourceId: item.sourceId })),
+    ...inputVideos.map((video) => ({ id: 'youtube:' + video.id, text: video.title + ' ' + (video.description ?? ''), sourceId: 'youtube-sample' })),
   ];
   const entityCandidates = extractResearchEntityCandidates(entityDocuments);
   const entityRelations = buildResearchEntityRelations(entityCandidates);
@@ -206,7 +215,7 @@ export function buildInternalResearch(input: InternalResearchInput): InternalRes
 
   const evidence: InternalEngineEvidence[] = [];
   if (news.length) {
-    const newest = [...news].sort((a, b) =>
+    const newest = [...matchedNews.map((entry) => entry.item)].sort((a, b) =>
       (b.publishedAt ? Date.parse(b.publishedAt) : 0) -
       (a.publishedAt ? Date.parse(a.publishedAt) : 0))[0];
     const publishers = publisherNames.length ? publisherNames.join(', ') : 'selected official feeds';
@@ -284,9 +293,9 @@ export function buildInternalResearch(input: InternalResearchInput): InternalRes
   }
 
   const topicTerms = new Set(tokenizeResearchText(topic));
-  const newsTerms = new Set(news.slice(0, 6).flatMap((item) => tokenizeResearchText(item.title)));
-  const topicalVideos = rankedVideos.filter((entry) => entry.score > 0);
-  const videoTerms = new Set(topicalVideos.slice(0, 12).flatMap((entry) => tokenizeResearchText(entry.video.title)));
+  const newsTerms = new Set(matchedNews.flatMap((entry) => tokenizeResearchText(entry.item.title + ' ' + entry.item.summary)));
+  const topicalVideos = rankedVideos;
+  const videoTerms = new Set(topicalVideos.flatMap((entry) => tokenizeResearchText(entry.video.title + ' ' + (entry.video.description ?? ''))));
   const sharedTerms = [...newsTerms].filter((term) => videoTerms.has(term) && !topicTerms.has(term)).slice(0, 6);
   if (sharedTerms.length) evidence.push({
     id: 'cross-source-overlap',
@@ -351,17 +360,17 @@ export function buildInternalResearch(input: InternalResearchInput): InternalRes
   const limitationsList = [
     ...(fa ? [
       'این موتور به‌صورت محلی و بر پایه شواهد بارگذاری‌شده در برنامه اجرا می‌شود و در این مرحله منبع تازه‌ای دریافت نمی‌کند.',
-      'فقط ویدئوهای تاریخ‌دار با تطبیق مستقیم عنوان در ' + videoWindowDays + ' روز اخیر وارد نمونه تحلیلی می‌شوند.',
+      'همه ویدئوهای نگهداری‌شده از نظر عنوان و توضیحات بررسی می‌شوند؛ فقط موارد تاریخ‌دار و هم‌موضوع در ' + videoWindowDays + ' روز اخیر به‌عنوان نمونه دوره فعلی شمرده می‌شوند و بقیه در زمینه تاریخی می‌مانند.',
       'زاویه‌های محتوایی فرضیه‌اند، نه یافته علمی و نه پیش‌بینی بازدید، رشد یا وایرال شدن.',
       'پوشش خبری ناشران، بازدید مقاله‌های ویکی‌مدیا و نمونه یوتیوب سیگنال‌های جداگانه‌اند و نباید در یک امتیاز ترکیبی ادغام شوند.',
     ] : [
       'This engine runs locally on evidence already loaded in the app; it does not fetch new sources.',
-      'Only videos with a direct title match and a valid publication date within the latest ' + videoWindowDays + ' days enter the analysis sample.',
+      'All retained video records are inspected for topic, title and description signals; only dated recent matches are counted as current-period examples, while older records remain historical context.',
       'Editorial angles are hypotheses, not scientific findings or predictions of views, growth or virality.',
       'Publisher feed coverage, Wikimedia article pageviews and YouTube samples are separate signals and must not be combined into a score.',
     ]),
     ...(matchedNews.length < allNews.length
-      ? [text('Unmatched publisher records were excluded from the primary evidence and reflected only in audit counts.', 'خبرهای بدون تطبیق مستقیم از شواهد اصلی حذف شدند و فقط در شمارنده ممیزی ثبت شدند.')]
+      ? [text('Unmatched publisher records remain in contextual evidence and source audits; they are not treated as direct support for the requested topic.', 'خبرهای بدون تطبیق مستقیم در شواهد زمینه‌ای و ممیزی منابع باقی می‌مانند، اما پشتیبانی مستقیم از موضوع محسوب نمی‌شوند.')]
       : []),
     ...(!news.length && !input.wiki && !videos.length
       ? [text('No source evidence was supplied. Treat all angles as starting questions only.', 'هیچ شاهد منبعی ارائه نشده است؛ همه زاویه‌ها را فقط پرسش‌های آغازین در نظر بگیر.')]
@@ -369,8 +378,8 @@ export function buildInternalResearch(input: InternalResearchInput): InternalRes
   ];
   const summaryParts: string[] = [];
   if (news.length) summaryParts.push(fa
-    ? news.length + ' گزارش ناشر بررسی شد؛ ' + matchedNews.length + ' مورد از نظر واژگان مستقیماً با موضوع تطبیق داشتند و در ' + publisherCount + ' خوراک منبع حضور داشتند.'
-    : news.length + ' publisher report(s) were inspected; ' + matchedNews.length + ' matched the topic wording directly across ' + publisherCount + ' selected feed source(s).');
+    ? news.length + ' گزارش یکتای همه خوراک‌ها بررسی شد؛ ' + matchedNews.length + ' مورد مستقیماً هم‌موضوع بود و سایر موارد برای زمینه، موجودیت‌ها و ممیزی منابع نگه داشته شدند. خوراک‌های حاضر: ' + publisherCount + '.'
+    : news.length + ' unique reports from all selected feeds were inspected; ' + matchedNews.length + ' directly matched the topic, while the rest were retained for context, entity analysis and source auditing. Feeds represented: ' + publisherCount + '.');
   if (input.wiki) {
     const latest = input.wiki.monthlyViews[input.wiki.monthlyViews.length - 1];
     summaryParts.push(latest
@@ -385,27 +394,28 @@ export function buildInternalResearch(input: InternalResearchInput): InternalRes
     ? (fa ? summaryParts.join(' ') + ' این سیگنال‌ها مشاهدات جداگانه‌اند؛ موتور امتیاز ترکیبی فرصت محاسبه نمی‌کند و عملکرد آینده را پیش‌بینی نمی‌کند.' : summaryParts.join(' ') + ' These signals remain separate observations; this engine does not calculate a composite opportunity score or predict performance.')
     : text('No source evidence was supplied. The local engine can prepare questions, but this topic is still exploratory until sources are checked.', 'هیچ شاهد منبعی ارائه نشده است. موتور محلی می‌تواند پرسش‌های تحقیق را آماده کند، اما تا بررسی منابع این موضوع اکتشافی باقی می‌ماند.');
 
-  const sourceQuality = analyzeSourceQuality(news, deduplicated.duplicatesMerged);
+  const sourceQuality = analyzeSourceQuality(news, deduplicated.duplicatesMerged, now);
+  const matchedSourceQuality = analyzeSourceQuality(matchedNews.map((entry) => entry.item), 0, now);
   const trend = analyzeMonthlyViews(input.wiki?.monthlyViews ?? []);
-  const evidenceTypes = Number(news.length > 0) + Number(Boolean(input.wiki)) + Number(videos.length > 0);
+  const evidenceTypes = Number(matchedNews.length > 0) + Number(Boolean(input.wiki)) + Number(recentMatchedVideoCount > 0);
   const confidence: InternalResearchResult['intelligence']['confidence'] =
-    evidenceTypes >= 3 && sourceQuality.independentPublishers >= 2 && trend.observations >= 4 && videos.length >= 3
+    evidenceTypes >= 3 && matchedSourceQuality.independentPublishers >= 2 && trend.observations >= 4 && recentMatchedVideoCount >= 3
       ? { level: 'high', reason: text('Several different evidence types are available, with multiple publisher families and a usable monthly series. This is still sample-scoped.', 'چند نوع شاهد، چند گروه مستقل ناشر و یک سری زمانی ماهانه قابل استفاده موجود است؛ بااین‌حال نتیجه همچنان محدود به همین نمونه است.') }
-      : evidenceTypes >= 2 && (sourceQuality.independentPublishers >= 2 || trend.observations >= 4 || videos.length >= 3)
+      : evidenceTypes >= 2 && (matchedSourceQuality.independentPublishers >= 2 || trend.observations >= 4 || recentMatchedVideoCount >= 3)
         ? { level: 'moderate', reason: text('More than one evidence type is available, but source independence, sample size or historical depth is incomplete.', 'بیش از یک نوع شاهد در دسترس است، اما استقلال منابع، اندازه نمونه یا عمق داده تاریخی هنوز کامل نیست.') }
         : { level: 'low', reason: text('The current evidence is limited in source diversity, sample size or historical depth.', 'شواهد فعلی از نظر تنوع منابع، اندازه نمونه یا عمق تاریخی محدود است.') };
   const gaps: string[] = [];
   if (!matchedNews.length) gaps.push(text('No direct publisher headline matched the requested topic.', 'هیچ تیتر مستقیمی از ناشران با موضوع درخواستی تطبیق نداشت.'));
-  if (sourceQuality.independentPublishers < 2) gaps.push(text('Independent publisher confirmation is limited.', 'تأیید از سوی ناشران مستقل محدود است.'));
+  if (matchedSourceQuality.independentPublishers < 2) gaps.push(text('Independent publisher confirmation among directly relevant records is limited.', 'تأیید از سوی ناشران مستقل در میان رکوردهای مستقیماً مرتبط محدود است.'));
   if (!input.wiki || trend.observations < 4) gaps.push(text('There is not enough monthly public-interest history to infer a reliable direction.', 'سابقه ماهانه توجه عمومی برای تشخیص جهت قابل اعتماد کافی نیست.'));
-  if (videos.length < 3) gaps.push(text('The recent, title-matched YouTube sample is too small for a robust comparison.', 'نمونه تازه و دارای تطبیق مستقیم عنوان در YouTube برای مقایسه قابل اتکا کوچک است.'));
+  if (recentMatchedVideoCount < 3) gaps.push(text('The recent, topic-matched YouTube sample is too small for a robust current-period comparison.', 'نمونه تازه و هم‌موضوع YouTube برای مقایسه قابل اتکای دوره فعلی کوچک است.'));
   if (inputVideos.length > recentVideoCandidates.length) gaps.push(text(
-    (inputVideos.length - recentVideoCandidates.length) + ' video(s) were outside the publication-date window or undated.',
-    (inputVideos.length - recentVideoCandidates.length) + ' ویدئو به‌دلیل قدیمی یا بی‌تاریخ بودن از پنجره زمانی کنار گذاشته شد.',
+    (inputVideos.length - recentVideoCandidates.length) + ' video(s) were retained as historical context but are outside the current publication-date window or undated.',
+    (inputVideos.length - recentVideoCandidates.length) + ' ویدئو به‌عنوان زمینه تاریخی نگه داشته شده‌اند، اما خارج از بازه انتشار فعلی یا بی‌تاریخ‌اند.',
   ));
-  if (recentVideoCandidates.length > videos.length) gaps.push(text(
-    (recentVideoCandidates.length - videos.length) + ' recent video(s) did not match the topic in their titles.',
-    (recentVideoCandidates.length - videos.length) + ' ویدئوی تازه در عنوان با موضوع تطبیق نداشت و کنار گذاشته شد.',
+  if (recentVideoCandidates.length > recentMatchedVideoCount) gaps.push(text(
+    (recentVideoCandidates.length - recentMatchedVideoCount) + ' recent video(s) did not match the topic in title or description.',
+    (recentVideoCandidates.length - recentMatchedVideoCount) + ' ویدئوی تازه در عنوان یا توضیحات با موضوع تطبیق نداشت.',
   ));
   if (sourceQuality.undatedItems > 0) gaps.push(text('Some source items have no publication date.', 'تاریخ انتشار بعضی منابع مشخص نیست.'));
   if (sourceQuality.staleItems > 0) gaps.push(text('Some source items are older than 90 days.', 'بعضی منابع بیش از ۹۰ روز قدمت دارند.'));
@@ -421,8 +431,8 @@ export function buildInternalResearch(input: InternalResearchInput): InternalRes
     ...(matchedNews.length ? [topic + ' methodology limitations'] : [topic + ' latest official research']),
   ]).slice(0, 4);
   const topicConceptTerms = new Set(tokenizeResearchText(topic));
-  const publisherConceptTerms = new Set(news.slice(0, 8).flatMap((item) => tokenizeResearchText(item.title)));
-  const videoConceptTerms = new Set(topicalVideos.slice(0, 12).flatMap((entry) => tokenizeResearchText(entry.video.title)));
+  const publisherConceptTerms = new Set(matchedNews.flatMap((entry) => tokenizeResearchText(entry.item.title + ' ' + entry.item.summary)));
+  const videoConceptTerms = new Set(topicalVideos.flatMap((entry) => tokenizeResearchText(entry.video.title + ' ' + (entry.video.description ?? ''))));
   const sharedConcepts = [...publisherConceptTerms]
     .filter((term) => videoConceptTerms.has(term) && !topicConceptTerms.has(term))
     .slice(0, 6);
@@ -474,7 +484,10 @@ export function buildInternalResearch(input: InternalResearchInput): InternalRes
     undatedNewsCount: sourceQuality.undatedItems,
     staleNewsCount: sourceQuality.staleItems,
     youtubeSampleCount: inputVideos.length,
-    matchedVideoCount: videos.length,
+    matchedVideoCount: recentMatchedVideoCount,
+    allTimeMatchedVideoCount: videos.length,
+    recentMatchedVideoCount,
+    outsideVideoWindowCount: Math.max(0, inputVideos.length - recentVideoCandidates.length),
     recentVideoCandidateCount: recentVideoCandidates.length,
     excludedVideoCount: Math.max(0, inputVideos.length - videos.length),
     videoViewCountsAvailable: views.length,

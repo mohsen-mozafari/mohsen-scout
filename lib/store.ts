@@ -14,7 +14,6 @@ import { readData, writeData } from './storage';
 import { getKey } from './vault';
 import { nextBudget, searchYouTube, type YouTubeQuotaKind, type YouTubeQuotaOrigin } from './api';
 import { generateEditorialIdeas } from './idea-generation';
-import { rankNewsForTopic } from './engine';
 import { attachReportToIdea as attachReport, attachVideoReferenceToIdea as attachVideoReference, getOrCreateSourceIdea, type SourceIdeaInput } from './idea-research';
 import { getCachedSpaceNews, hydrateSpaceNewsRegistry } from './space';
 type State = {
@@ -142,15 +141,11 @@ export const useScout = create<State>((set, get) => ({
         analyzed: true,
       };
       const currentData = get().data;
-      const matchedNews = rankNewsForTopic(
-        report.input.topic,
-        getCachedSpaceNews(currentData.feedRegistry, currentData.preferences.spaceNewsSources),
-        1000,
-      );
+      const availableNews = getCachedSpaceNews(currentData.feedRegistry, currentData.preferences.spaceNewsSources);
       const currentVideos = recentEngineVideos(result.videos);
       const generatedIdeas = generateEditorialIdeas({
         topic: report.input.topic,
-        news: matchedNews,
+        news: availableNews,
         videos: currentVideos.map((video) => ({
           id: video.id, title: video.title, description: video.description,
           channel: video.channel, publishedAt: video.publishedAt,
@@ -186,14 +181,10 @@ export const useScout = create<State>((set, get) => ({
     const report = get().data.reports.find((r) => r.id === id);
     if (!report || report.analyzed) return;
     const currentData = get().data;
-    const matchedNews = rankNewsForTopic(
-      report.input.topic,
-      getCachedSpaceNews(currentData.feedRegistry, currentData.preferences.spaceNewsSources),
-      12,
-    );
+    const availableNews = getCachedSpaceNews(currentData.feedRegistry, currentData.preferences.spaceNewsSources);
     const generatedIdeas = generateEditorialIdeas({
       topic: report.input.topic,
-      news: matchedNews,
+      news: availableNews,
       videos: recentEngineVideos(report.videos).map((video) => ({
         id: video.id, title: video.title, description: video.description,
         channel: video.channel, publishedAt: video.publishedAt,

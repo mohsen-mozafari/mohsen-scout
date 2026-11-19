@@ -12,6 +12,7 @@ import {
   normalizeResearchText,
   rankResearchEvidence,
   scoreResearchText,
+  scoreEditorialOpportunity,
   sortResearchVideos,
   extractResearchEntityCandidates,
   buildResearchEntityRelations,
@@ -124,6 +125,33 @@ void test('semantic aliases cover precise Persian space-science equivalents', ()
 });
 
 
+
+
+void test('editorial opportunity score is explainable, bounded and honest about missing metrics', () => {
+  const now = Date.parse('2026-11-18T12:00:00Z');
+  const strong = scoreEditorialOpportunity({
+    topic: 'JWST exoplanet atmosphere',
+    anchor: 'methane spectroscopy',
+    now,
+    news: [
+      { title: 'JWST methane spectroscopy on exoplanet atmosphere', sourceId: 'nasa', sourceName: 'NASA', publishedAt: '2026-11-17T12:00:00Z' },
+      { title: 'Methane spectroscopy findings in exoplanet atmosphere', sourceId: 'esa-science', sourceName: 'ESA', publishedAt: '2026-11-16T12:00:00Z' },
+    ],
+    videos: [
+      { title: 'Methane spectroscopy exoplanet atmosphere', channel: 'Science A', publishedAt: '2026-11-15T12:00:00Z', viewCount: 1200000 },
+      { title: 'How JWST measures methane on exoplanets', channel: 'Science B', publishedAt: '2026-11-14T12:00:00Z', viewCount: 800000 },
+    ],
+  });
+  const sparse = scoreEditorialOpportunity({
+    topic: 'JWST exoplanet atmosphere', anchor: 'methane spectroscopy', now,
+    news: [], videos: [{ title: 'Methane spectroscopy', publishedAt: '2026-08-01T12:00:00Z', viewCount: null }],
+  });
+  assert.ok(strong.score >= 0 && strong.score <= 100);
+  assert.ok(strong.score > sparse.score);
+  assert.ok(strong.reason.includes('independent publisher'));
+  assert.equal(sparse.components.audienceSignal, null);
+  assert.ok(['low', 'moderate', 'high'].includes(strong.confidence));
+});
 
 void test('publication freshness distinguishes recent, old, undated and future-dated reports', () => {
   const now = Date.parse('2026-11-16T12:00:00Z');

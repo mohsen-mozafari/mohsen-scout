@@ -584,6 +584,115 @@ export function buildResearchInterestProfile(
 }
 
 
+export type EditorialOpportunitySignals = {
+  score: number;
+  confidence: 'low' | 'moderate' | 'high';
+  components: {
+    relevance: number;
+    evidenceBreadth: number;
+    freshness: number;
+    audienceSignal: number | null;
+    differentiation: number;
+  };
+  reason: string;
+};
+
+/**
+ * Explainable editorial prioritization from the supplied research sample.
+ * This is a relative decision aid, never a prediction of views, revenue or virality.
+ * Missing signals are omitted and the remaining weights are normalized.
+ */
+export function scoreEditorialOpportunity(input: {
+  topic: string;
+  anchor: string;
+  news: readonly ResearchDocument[];
+  videos: readonly { title: string; description?: string; channel?: string; publishedAt?: string; viewCount?: number | null }[];
+  now?: number;
+}): EditorialOpportunitySignals {
+  const now = input.now ?? Date.now();
+  const anchorTokens = new Set(tokenizeResearchText(input.anchor));
+  const documents = [
+    ...input.news.map((item) => ({
+      text: item.title + ' ' + (item.summary ?? ''),
+      date: timestamp(item.publishedAt),
+      family: publisherFamily(item),
+      kind: 'news' as const,
+      views: null as number | null,
+      channel: '',
+    })),
+    ...input.videos.map((item) => ({
+      text: item.title + ' ' + (item.description ?? ''),
+      date: timestamp(item.publishedAt),
+      family: 'youtube',
+      kind: 'video' as const,
+      views: typeof item.viewCount === 'number' && Number.isFinite(item.viewCount) && item.viewCount > 0 ? item.viewCount : null,
+      channel: item.channel ?? '',
+    })),
+  ];
+  const relevant = documents.filter((document) => {
+    const tokens = new Set(tokenizeResearchText(document.text));
+    return anchorTokens.size > 0 && [...anchorTokens].some((token) => tokens.has(token)) ||
+      scoreResearchText(input.topic, document.text) > 0;
+  });
+  const overlap = anchorTokens.size
+    ? relevant.filter((document) => {
+        const tokens = new Set(tokenizeResearchText(document.text));
+        return [...anchorTokens].some((token) => tokens.has(token));
+      }).length / Math.max(1, relevant.length)
+    : 0;
+  const relevance = Math.round(Math.min(100, overlap * 70 + (relevant.length ? 30 : 0)));
+  const publisherFamilies = new Set(relevant.filter((item) => item.kind === 'news' && item.family !== 'unknown').map((item) => item.family));
+  const videoChannels = new Set(relevant.filter((item) => item.kind === 'video' && item.channel).map((item) => item.channel));
+  const kinds = new Set(relevant.map((item) => item.kind));
+  const evidenceBreadth = Math.round(Math.min(100,
+    publisherFamilies.size * 18 + videoChannels.size * 7 + kinds.size * 18));
+  const dated = relevant.filter((item) => item.date > 0);
+  const fresh = dated.filter((item) => now - item.date <= 30 * 86400000 && now >= item.date - 86400000).length;
+  const freshness = dated.length ? Math.round(100 * fresh / dated.length) : 35;
+  const observedViews = relevant.filter((item) => item.kind === 'video' && item.views !== null && item.date > 0);
+  const viewRates = observedViews.map((item) => (item.views ?? 0) / Math.max(1, (now - item.date) / 86400000));
+  const audienceSignal = viewRates.length
+    ? Math.round(Math.min(100, 25 + 25 * Math.log10(1 + viewRates.length) +
+      10 * Math.log10(1 + Math.max(...viewRates)) / 2))
+    : null;
+  const anchorFrequency = documents.filter((item) => {
+    const tokens = new Set(tokenizeResearchText(item.text));
+    return anchorTokens.size > 0 && [...anchorTokens].some((token) => tokens.has(token));
+  }).length;
+  const saturation = input.videos.filter((item) =>
+    scoreResearchText(input.topic, item.title, item.description ?? '') > 0).length;
+  const differentiation = Math.round(Math.max(0, Math.min(100,
+    100 - Math.min(65, Math.max(0, anchorFrequency - 1) * 7) -
+    Math.min(35, Math.max(0, saturation - 2) * 3))));
+  const weighted: { value: number; weight: number }[] = [
+    { value: relevance, weight: 0.25 },
+    { value: evidenceBreadth, weight: 0.22 },
+    { value: freshness, weight: 0.16 },
+    { value: differentiation, weight: 0.17 },
+    ...(audienceSignal === null ? [] : [{ value: audienceSignal, weight: 0.20 }]),
+  ];
+  const totalWeight = weighted.reduce((sum, part) => sum + part.weight, 0);
+  const score = Math.round(weighted.reduce((sum, part) => sum + part.value * part.weight, 0) / totalWeight);
+  const confidence: EditorialOpportunitySignals['confidence'] =
+    relevant.length >= 12 && publisherFamilies.size >= 3 && videoChannels.size >= 3 && observedViews.length >= 3
+      ? 'high'
+      : relevant.length >= 5 && (publisherFamilies.size >= 2 || videoChannels.size >= 2)
+        ? 'moderate' : 'low';
+  const reason = [
+    relevance >= 65 ? 'strong topic/anchor alignment' : 'limited direct topic alignment',
+    publisherFamilies.size ? publisherFamilies.size + ' independent publisher group(s)' : 'no directly relevant publisher group',
+    videoChannels.size ? videoChannels.size + ' relevant YouTube channel(s)' : 'no relevant YouTube channel sample',
+    observedViews.length ? observedViews.length + ' dated video view observations' : 'audience metrics unavailable',
+    saturation >= 8 ? 'crowded returned sample; differentiation is important' : 'returned sample leaves room to test a distinct angle',
+  ].join('; ');
+  return {
+    score,
+    confidence,
+    components: { relevance, evidenceBreadth, freshness, audienceSignal, differentiation },
+    reason,
+  };
+}
+
 export type PublicationFreshness = {
   status: 'fresh' | 'recent' | 'stale' | 'undated' | 'future-dated';
   ageDays: number | null;
