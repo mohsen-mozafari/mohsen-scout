@@ -182,12 +182,6 @@ void test('prepared editorial scoring reuses a single evidence index and include
       sourceIds: ['nasa', 'jpl', 'esa-science'],
       publishedAt: '2026-11-17T12:00:00Z',
     }],
-    historicalNews: [{
-      title: 'Earlier JWST methane spectroscopy measurement limits',
-      sourceName: 'NASA',
-      sourceId: 'nasa',
-      publishedAt: '2026-10-15T12:00:00Z',
-    }],
     context: [{
       title: 'Wikimedia methane spectroscopy article attention',
       summary: 'Historical monthly article pageviews provide a separate public-interest context.',
@@ -195,7 +189,6 @@ void test('prepared editorial scoring reuses a single evidence index and include
     }],
     videos: [
       { title: 'Methane spectroscopy on an exoplanet', channel: 'Science A', publishedAt: '2026-11-15T12:00:00Z', viewCount: 1200000 },
-      { title: 'How JWST measures methane', channel: 'Science B', publishedAt: '2026-11-14T12:00:00Z', viewCount: 800000 },
     ],
   };
   const prepared = createEditorialOpportunityScorer(input);
@@ -207,7 +200,11 @@ void test('prepared editorial scoring reuses a single evidence index and include
   assert.equal(indexed.components.audienceSignal, null);
 
   const withoutContext = createEditorialOpportunityScorer({ ...input, context: [] })('methane spectroscopy');
-  assert.ok(indexed.score > withoutContext.score, 'relevant context should increase evidence breadth without being counted as a publisher or audience forecast');
+  assert.ok(
+    indexed.components.evidenceBreadth > withoutContext.components.evidenceBreadth,
+    'relevant context should expand evidence breadth when the score is not already saturated',
+  );
+  assert.match(indexed.reason, /1 supporting context record\\(s\\) matched/);
 });
 
 

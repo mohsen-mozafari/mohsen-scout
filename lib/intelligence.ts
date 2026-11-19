@@ -643,7 +643,6 @@ export type EditorialOpportunityScorerInput = {
 };
 
 type IndexedEditorialDocument = {
-  tokens: ReadonlySet<string>;
   date: number;
   families: readonly string[];
   kind: 'news' | 'history' | 'video' | 'context';
@@ -706,7 +705,6 @@ export function createEditorialOpportunityScorer(
     const tokens = new Set(tokenizeResearchText(source.text));
     const index = documents.length;
     documents.push({
-      tokens,
       date: source.date,
       families: source.families,
       kind: source.kind,

@@ -346,6 +346,34 @@ void test('saved publisher memory contributes historical context without being m
   assert.match(generated[0].concept, /Confidence: low;/, 'old memory alone must not inflate current evidence confidence');
 });
 
+
+void test('Wikimedia and saved research notes are included in the prepared editorial evidence score', () => {
+  const generated = generateEditorialIdeas({
+    ...base,
+    news,
+    videos,
+    context: [{
+      title: 'MOCK: JWST methane spectroscopy and atmospheric calibration',
+      summary: 'MOCK: Wikimedia monthly article pageviews are a separate public-interest context, not YouTube demand.',
+      sourceName: 'Wikimedia Pageviews',
+    }],
+    priorMemory: {
+      topic: base.topic,
+      updatedAt: base.now,
+      sources: [],
+      keyFindings: ['MOCK: Earlier methane spectroscopy measurements leave calibration uncertainty.'],
+      unresolvedQuestions: ['Which calibration uncertainty remains unresolved?'],
+      contradictions: [],
+      confidence: 'moderate',
+      history: [],
+    },
+    limit: 25,
+  });
+  assert.ok(generated.length > 0);
+  assert.ok(generated.some((idea) => /supporting context record\\(s\\) matched/.test(idea.engineScoreReason ?? '')));
+  assert.ok(generated.every((idea) => idea.concept.includes('context source(s)')));
+});
+
 void test('saved positive and negative topic feedback adjusts matching editorial priorities transparently', () => {
   const neutral = generateEditorialIdeas({ ...base, news, videos, limit: 25 });
   assert.ok(neutral.length);
