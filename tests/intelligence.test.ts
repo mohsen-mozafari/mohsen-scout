@@ -204,7 +204,7 @@ void test('prepared editorial scoring reuses a single evidence index and include
     indexed.components.evidenceBreadth > withoutContext.components.evidenceBreadth,
     'relevant context should expand evidence breadth when the score is not already saturated',
   );
-  assert.match(indexed.reason, /1 supporting context record\\(s\\) matched/);
+  assert.ok(indexed.reason.includes('1 supporting context record(s) matched'));
 });
 
 

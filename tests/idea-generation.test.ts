@@ -370,7 +370,7 @@ void test('Wikimedia and saved research notes are included in the prepared edito
     limit: 25,
   });
   assert.ok(generated.length > 0);
-  assert.ok(generated.some((idea) => /supporting context record\\(s\\) matched/.test(idea.engineScoreReason ?? '')));
+  assert.ok(generated.some((idea) => (idea.engineScoreReason ?? '').includes('supporting context record(s) matched')));;
   assert.ok(generated.every((idea) => idea.concept.includes('context source(s)')));
 });
 
