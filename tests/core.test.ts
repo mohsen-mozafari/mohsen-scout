@@ -1129,7 +1129,7 @@ void test('Internal research engine joins publisher, Wikimedia and YouTube evide
   assert.equal(result.angles.length, 3);
   assert.ok(result.evidence.some((item) => item.id === 'publisher-news' && item.detail.includes('2 selected feed source(s)')));
   assert.ok(result.evidence.some((item) => item.id === 'wikimedia' && item.detail.includes('not search volume')));
-  assert.ok(result.evidence.some((item) => item.id === 'youtube-sample' && item.detail.includes('2 returned video example')));
+  assert.ok(result.evidence.some((item) => item.id === 'youtube-sample' && item.detail.includes('1 returned video example')));
   assert.ok(result.evidence.some((item) => item.id === 'youtube-sample' && item.detail.includes('median 1,000')));
   assert.ok(result.evidence.some((item) => item.id === 'youtube-sample' && item.detail.includes('median 50')));
   assert.equal(result.intelligence.sourceQuality.feedsRepresented, 2);
@@ -1168,8 +1168,8 @@ void test('Internal engine keeps historical context while separating recent, all
   assert.equal(audit.futureDatedVideoCount, 1);
   assert.equal(audit.excludedVideoCount, 2);
   assert.equal(audit.videoViewCountsAvailable, 2);
-  assert.ok(!result.evidence.some((item) => item.detail.includes('Artemis')));
-  assert.ok(result.evidence.some((item) => item.id === 'youtube-sample' && item.detail.includes('800')));
+  assert.ok(result.evidence.some((item) => item.id === 'retrieved-news-headlines' && item.detail.includes('Artemis')), 'unmatched publisher records remain visible in the contextual evidence audit');
+  assert.ok(result.evidence.some((item) => item.id === 'youtube-sample' && item.detail.includes('9,000')));
 });
 
 void test('Topic relevance ranks a direct publisher match above unrelated feed context', () => {
