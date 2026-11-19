@@ -8,6 +8,7 @@ import {
   styles,
   Choices,
   Field,
+  Fold,
   Empty,
   Action,
   ErrorBox,
@@ -208,34 +209,37 @@ export default function Opportunities() {
             </View>
             <View style={styles.panel}>
               <Field label="Search ideas" value={search} onChange={setSearch} placeholder="Topic or personal decision" />
-              <Choices
-                label="Sort by"
-                options={sortOptions}
-                selected={[selectedSort]}
-                onChange={(values) => {
-                  const index = sortOptions.indexOf(values[0]);
-                  setSort((['Newest', 'Oldest', 'A-Z', 'Z-A'] as const)[Math.max(0, index)] ?? 'Newest');
-                }}
-              />
-              <Choices
-                label="Status"
-                options={['All', ...statuses]}
-                selected={[status]}
-                onChange={(values) => setStatus(values[0])}
-              />
-              <Choices
-                label="Editorial angle"
-                options={categoryOptions}
-                selected={[category === 'All angles' ? allCategoryLabel : categoryLabel(category)]}
-                onChange={(values) => {
-                  const selectedIndex = categoryOptions.indexOf(values[0]);
-                  const selected = selectedIndex <= 0 ? 'All angles' : IDEA_GENERATION_CATEGORIES[selectedIndex - 1];
-                  setCategory(selected);
-                }}
-              />
-              <Action secondary icon={Archive} onPress={() => setArchive(!archive)}>
-                {archive ? 'Show active ideas' : 'Show archived ideas'}
-              </Action>
+              <Txt muted>{sortedFiltered.length} ideas in this view · {archive ? 'Archived' : 'Active'}</Txt>
+              <Fold title="Filter and sort ideas">
+                <Choices
+                  label="Sort by"
+                  options={sortOptions}
+                  selected={[selectedSort]}
+                  onChange={(values) => {
+                    const index = sortOptions.indexOf(values[0]);
+                    setSort((['Newest', 'Oldest', 'A-Z', 'Z-A'] as const)[Math.max(0, index)] ?? 'Newest');
+                  }}
+                />
+                <Choices
+                  label="Status"
+                  options={['All', ...statuses]}
+                  selected={[status]}
+                  onChange={(values) => setStatus(values[0])}
+                />
+                <Choices
+                  label="Editorial angle"
+                  options={categoryOptions}
+                  selected={[category === 'All angles' ? allCategoryLabel : categoryLabel(category)]}
+                  onChange={(values) => {
+                    const selectedIndex = categoryOptions.indexOf(values[0]);
+                    const selected = selectedIndex <= 0 ? 'All angles' : IDEA_GENERATION_CATEGORIES[selectedIndex - 1];
+                    setCategory(selected);
+                  }}
+                />
+                <Action secondary icon={Archive} onPress={() => setArchive(!archive)}>
+                  {archive ? 'Show active ideas' : 'Show archived ideas'}
+                </Action>
+              </Fold>
             </View>
             {generationMessage ? <Txt muted>{generationMessage}</Txt> : null}
             {draftOpen ? (
