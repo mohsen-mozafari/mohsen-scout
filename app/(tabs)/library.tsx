@@ -15,6 +15,7 @@ import {
   ErrorBox,
   useOperation,
   Txt,
+  Heading,
   ScreenIntro,
 } from '@/components/ScoutUI';
 import { useScout } from '@/lib/store';
@@ -174,9 +175,9 @@ export default function Library() {
                 <Action
                   busy={op.busy}
                   onPress={() => void op.run(async () => {
-                    await useScout.getState().commit((data) => ({
-                      ...data,
-                      links: data.links.map((link) => (link.id === editing.id ? editing : link)),
+                    await useScout.getState().commit((currentData) => ({
+                      ...currentData,
+                      links: currentData.links.map((link) => (link.id === editing.id ? editing : link)),
                     }));
                     setEditing(undefined);
                   })}

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View } from 'react-native';
+import { View, Text } from 'react-native';
 import { Bookmark, FileSearch, FileText, Lightbulb, Newspaper, Search, Telescope } from 'lucide-react-native';
 
 import { router } from 'expo-router';
@@ -8,6 +8,7 @@ import {
   SourceHeading, SourceText, BadgeText, ScreenIntro, QuickAction, MetricCard,
 } from '@/components/ScoutUI';
 import { useScout } from '@/lib/store';
+import { palette as p } from '@/lib/theme';
 import { useShallow } from 'zustand/react/shallow';
 import { uid } from '@/lib/types';
 import {
@@ -738,7 +739,7 @@ function DiscoveryDashboardReady() {
               <Txt>{nextGap ?? 'No additional gap was flagged in the current audit. Verify key claims against original sources before production.'}</Txt>
               {nextQuery ? (
                 <Action secondary onPress={() => router.push({ pathname: '/youtube', params: { topic: nextQuery } })}>
-                  Research: {nextQuery}
+                  {'Research: ' + nextQuery}
                 </Action>
               ) : null}
               <Action secondary onPress={() => router.push({ pathname: '/deep-research', params: { topic: deskTopic } })}>

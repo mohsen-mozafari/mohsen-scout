@@ -173,6 +173,7 @@ export const styles = StyleSheet.create({
     gap: 14,
     overflow: 'hidden',
   },
+  // eslint-disable-next-line react-native/no-unused-styles -- Exported shared style consumed by collection screens.
   listCard: {
     padding: 15,
     borderRadius: 20,
@@ -190,7 +191,9 @@ export const styles = StyleSheet.create({
     gap: 9,
   },
   row: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  // eslint-disable-next-line react-native/no-unused-styles -- Exported shared style consumed by dashboard screens.
   rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
+  // eslint-disable-next-line react-native/no-unused-styles -- Exported shared style consumed by app screens and diagnostics.
   rule: { borderBottomColor: p.border, borderBottomWidth: 1, paddingBottom: 16 },
   label: {
     color: p.muted,
@@ -415,7 +418,7 @@ function PageHeading({
       <Text style={[styles.title, { writingDirection: direction, textAlign: direction === 'rtl' ? 'right' : 'left' }]}>
         {translatedTitle}
       </Text>
-      {Boolean(translatedSubtitle) ? (
+      {translatedSubtitle ? (
         <Text style={[styles.introText, { writingDirection: resolveTextDirection(translatedSubtitle), textAlign: direction === 'rtl' ? 'right' : 'left' }]}>
           {translatedSubtitle}
         </Text>
@@ -449,7 +452,7 @@ export function ScreenIntro({
       ) : null}
       <Text style={[styles.eyebrow, { writingDirection: resolveTextDirection(translatedEyebrow) }]}>{translatedEyebrow}</Text>
       <Text style={[styles.title, { writingDirection: direction, textAlign: direction === 'rtl' ? 'right' : 'left' }]}>{translatedTitle}</Text>
-      {Boolean(translatedSubtitle) ? (
+      {translatedSubtitle ? (
         <Text style={[styles.introText, { writingDirection: resolveTextDirection(translatedSubtitle), textAlign: direction === 'rtl' ? 'right' : 'left' }]}>{translatedSubtitle}</Text>
       ) : null}
     </View>
@@ -531,7 +534,7 @@ export function Page({
     <>
       <AppHeader showBack={showBack} />
       {title ? <PageHeading title={title} eyebrow={eyebrow} subtitle={subtitle} /> : null}
-      {Boolean(error) ? (
+      {error ? (
         <PageError
           message={error}
           onRetry={() =>
@@ -560,7 +563,7 @@ export function Page({
       ) : (
         <View style={{ flex: 1 }}>
           <AppHeader showBack={showBack} />
-          {Boolean(error) ? (
+          {error ? (
             <PageError
               message={error}
               onRetry={() =>
@@ -709,7 +712,7 @@ export function Choices<T extends string>({
   const direction = resolveTextDirection(translatedLabel);
   return (
     <View style={{ gap: 9 }}>
-      {Boolean(label) ? (
+      {label ? (
         <Text style={[styles.label, { writingDirection: direction, textAlign: direction === 'rtl' ? 'right' : 'left' }]}>{translatedLabel}</Text>
       ) : null}
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7 }}>
@@ -765,7 +768,7 @@ export function MetricCard({
     <View style={[styles.metricCard, { backgroundColor: colors.soft, borderColor: colors.line }]}>
       <Text style={[styles.metricLabel, { color: colors.fill }]}>{title}</Text>
       <Text style={styles.metricValue}>{value}</Text>
-      {Boolean(description) ? <Text style={styles.muted}>{description}</Text> : null}
+      {description ? <Text style={styles.muted}>{description}</Text> : null}
     </View>
   );
 }

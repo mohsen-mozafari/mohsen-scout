@@ -9,7 +9,7 @@ import { translateText } from '@/lib/i18n';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { LucideIcon } from 'lucide-react-native';
 
-function TabGlyph({ Icon, focused, color }: { Icon: LucideIcon; focused: boolean; color: string }) {
+function TabGlyph({ Icon, focused, color }: { Icon: LucideIcon; focused: boolean; color: unknown }) {
   return (
     <View
       style={{
@@ -23,7 +23,7 @@ function TabGlyph({ Icon, focused, color }: { Icon: LucideIcon; focused: boolean
         borderColor: focused ? p.purpleLine : 'transparent',
       }}
     >
-      <Icon size={19} strokeWidth={focused ? 2.2 : 1.8} color={color} />
+      <Icon size={19} strokeWidth={focused ? 2.2 : 1.8} color={String(color)} />
     </View>
   );
 }

@@ -13,6 +13,7 @@ import {
   ErrorBox,
   useOperation,
   Txt,
+  Heading,
   SourceHeading,
   SourceText,
   BadgeText,
@@ -27,7 +28,6 @@ import { getTopicDossier } from '@/lib/topic-dossier';
 import { fetchSpaceNews, getCachedSpaceNews, SPACE_NICHES } from '@/lib/space';
 import { matchesSearchText, normalizeSearchText } from '@/lib/search';
 import { palette as p } from '@/lib/theme';
-import { translateText } from '@/lib/i18n';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 import { MediaPreview } from '@/components/MediaPreview';
 export default function Opportunities() {
