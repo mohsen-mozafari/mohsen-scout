@@ -254,7 +254,7 @@ export default function Detail() {
               ))}
             </Fold>
           )}
-          <Fold title="Observed evidence" open>
+          <Fold title="Observed evidence">
             {related.length ? (
               related.map((v) => <VideoRow key={v.id} video={v} topic={idea.topic} />)
             ) : (

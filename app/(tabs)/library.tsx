@@ -218,7 +218,7 @@ export default function Library() {
             <Animated.View
               entering={FadeIn.duration(160)}
               exiting={FadeOut.duration(100)}
-              style={[styles.rule, { gap: 12, marginBottom: 20 }]}
+              style={[styles.listCard, { gap: 12, marginBottom: 16 }]}
             >
               {Boolean(video?.thumbnail) && (
                 <MediaPreview uri={video?.thumbnail} aspectRatio={16 / 9} viewer alt={video?.title ?? 'Saved video'} />

@@ -11,7 +11,7 @@ export function VideoRow({ video, topic }: { video: Video; topic: string }) {
   const op = useOperation();
   const saved = useScout((s) => s.data.links.some((l) => l.id === video.id));
   return (
-    <View style={[styles.rule, { gap: 12 }]}>
+    <View style={[styles.listCard, { gap: 12 }]}>
       <Button
         variant="tertiary"
         onPress={() => router.push({ pathname: '/detail', params: { video: video.id } })}

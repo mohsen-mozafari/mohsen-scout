@@ -657,6 +657,17 @@ function DiscoveryDashboardReady() {
         ) : null}
 
         <Panel>
+          <BadgeText>{fa ? 'ابزارهای اصلی' : 'WORKSPACE TOOLS'}</BadgeText>
+          <Heading>{fa ? 'دسترسی به بخش‌های برنامه' : 'Open another workspace'}</Heading>
+          <View style={[styles.row, { flexWrap: 'wrap' }]}>
+            <Action secondary onPress={() => router.push('/deep-research')}>{fa ? 'تحقیق عمیق' : 'Deep Research'}</Action>
+            <Action secondary onPress={() => router.push('/trend-intelligence')}>{fa ? 'هوشمندی روند' : 'Trend Intelligence'}</Action>
+            <Action secondary onPress={() => router.push('/search-demand')}>{fa ? 'شاخص توجه ویکی‌مدیا' : 'Wikimedia attention'}</Action>
+            <Action secondary onPress={() => router.push('/notes')}>{fa ? 'یادداشت‌ها' : 'Notes'}</Action>
+          </View>
+        </Panel>
+
+        <Panel>
           <BadgeText>{fa ? 'میزکار تحقیق · تمرکز فعلی' : 'RESEARCH DESK · CURRENT FOCUS'}</BadgeText>
           <SourceHeading>{showYouTubeResearch ? latestReport!.input.topic : nicheTitle}</SourceHeading>
           <Txt muted>{latestReport
@@ -895,16 +906,7 @@ function DiscoveryDashboardReady() {
           </Fold>
         </Panel>
 
-        <Panel>
-          <BadgeText>{fa ? 'ابزارهای اصلی' : 'WORKSPACE TOOLS'}</BadgeText>
-          <Heading>{fa ? 'دسترسی به بخش‌های برنامه' : 'Open another workspace'}</Heading>
-          <View style={[styles.row, { flexWrap: 'wrap' }]}>
-            <Action secondary onPress={() => router.push('/deep-research')}>{fa ? 'تحقیق عمیق' : 'Deep Research'}</Action>
-            <Action secondary onPress={() => router.push('/trend-intelligence')}>{fa ? 'هوشمندی روند' : 'Trend Intelligence'}</Action>
-            <Action secondary onPress={() => router.push('/search-demand')}>{fa ? 'شاخص توجه ویکی‌مدیا' : 'Wikimedia attention'}</Action>
-            <Action secondary onPress={() => router.push('/notes')}>{fa ? 'یادداشت‌ها' : 'Notes'}</Action>
-          </View>
-        </Panel>
+
         {op.error ? <ErrorBox message={op.error} onRetry={op.clear} /> : null}
         {op.message ? <Txt muted>{op.message}</Txt> : null}
       </View>

@@ -58,7 +58,7 @@ export default function Notes() {
           <Animated.View
             entering={FadeIn.duration(160)}
             exiting={FadeOut.duration(100)}
-            style={[styles.rule, { marginBottom: 20 }]}
+            style={[styles.listCard, { marginBottom: 16 }]}
           >
             <Button
               variant="tertiary"

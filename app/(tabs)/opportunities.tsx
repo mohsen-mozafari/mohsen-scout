@@ -254,7 +254,7 @@ export default function Opportunities() {
           <Animated.View
             entering={FadeIn.duration(160)}
             exiting={FadeOut.duration(100)}
-            style={[styles.rule, { marginBottom: 18 }]}
+            style={[styles.listCard, { marginBottom: 16 }]}
           >
             {item.imageUrl ? <MediaPreview uri={item.imageUrl} aspectRatio={16 / 9} viewer alt={item.topic} /> : null}
             <Button

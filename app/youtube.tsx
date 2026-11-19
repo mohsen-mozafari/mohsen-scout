@@ -142,7 +142,7 @@ export default function Discover() {
           placeholder="e.g. Small-space home studios"
         />
         <Txt muted>Using Settings defaults: {region} · {selectedLanguages.map((code) => languages[code] || code).join(', ')}</Txt>
-        <Fold title="Research filters" open>
+        <Fold title="Research filters">
           <Choices
             label="Publication period"
             options={['Last 7 days', 'Last 30 days', 'Last 90 days', 'Any time']}
@@ -276,7 +276,7 @@ export default function Discover() {
             </Txt>
             <Txt muted>Queries: {report.queries.join(' · ')}</Txt>
           </Fold>
-          <Fold title="Emerging Topics" open>
+          <Fold title="Emerging Topics">
             <Txt muted>Recent examples, not proof of an emerging trend.</Txt>
             {[...report.videos].sort((a, b) => Date.parse(b.publishedAt) - Date.parse(a.publishedAt)).slice(0, 2).map((v) => (
               <View style={{ gap: 6 }} key={v.id}>
@@ -344,7 +344,7 @@ export default function Discover() {
                 ))}
             </View>
           )}
-          <Fold title="Relevant Videos" open>
+          <Fold title="Relevant Videos">
             {report.videos.length > 1 && (
               <Choices label="Sort this sample" options={RESEARCH_SORT_OPTIONS} selected={[sort]} onChange={(values) => { const value = values[0]; if (value && isResearchVideoSort(value)) setSort(value); }} />
             )}
