@@ -189,6 +189,7 @@ export function buildInternalResearch(input: InternalResearchInput): InternalRes
     const published = Date.parse(video.publishedAt);
     return Number.isFinite(published) && published >= videoWindowStart && published <= now + 86400000;
   });
+  // Historical records stay available for context; recency is scored separately, never used as a silent deletion rule.
   // Analyze all retained YouTube records, not only recent title matches. Description matches
   // are weaker context; the recent, directly matched subset remains a separate audit signal.
   const rankedVideos = inputVideos.map((video, index) => ({
