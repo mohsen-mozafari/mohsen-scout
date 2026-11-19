@@ -209,9 +209,9 @@ export function buildInternalResearch(input: InternalResearchInput): InternalRes
   const channelCount = new Set(videos.map((video) => video.channel)).size;
   const views = videos.map((video) => video.viewCount).filter((value): value is number => value != null);
   const likes = videos.map((video) => video.likeCount).filter((value): value is number => value != null);
-  const mostViewed = [...videos].filter((video) => video.viewCount != null)
+  const mostViewed = videos.filter((video) => video.viewCount != null)
     .sort((a, b) => (b.viewCount ?? 0) - (a.viewCount ?? 0))[0];
-  const mostLiked = [...videos].filter((video) => video.likeCount != null)
+  const mostLiked = videos.filter((video) => video.likeCount != null)
     .sort((a, b) => (b.likeCount ?? 0) - (a.likeCount ?? 0))[0];
 
   const evidence: InternalEngineEvidence[] = [];
