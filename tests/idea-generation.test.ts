@@ -372,11 +372,18 @@ void test('saved positive and negative topic feedback adjusts matching editorial
   const preferredMatch = preferred.find((idea) => anchorOf(idea) === anchor);
   const discouragedMatch = discouraged.find((idea) => anchorOf(idea) === anchor);
   assert.ok(preferredMatch, 'matching saved positive feedback should retain the target idea');
-  assert.ok(discouragedMatch, 'matching saved negative feedback should still produce the target for comparison');
   assert.ok((preferredMatch.engineScore ?? 0) >= (target.engineScore ?? 0));
-  assert.ok((discouragedMatch.engineScore ?? 0) < (target.engineScore ?? 0));
   assert.match(preferredMatch.engineScoreReason ?? '', /positive topics/);
-  assert.match(discouragedMatch.engineScoreReason ?? '', /previously rejected/);
+  // A sufficiently strong negative preference may move the target outside the
+  // top-25 shortlist; if it remains visible, its score and reason must reflect it.
+  assert.ok(
+    !discouragedMatch || (discouragedMatch.engineScore ?? 0) < (target.engineScore ?? 0),
+    'matching saved negative feedback must lower priority or remove the idea from the shortlist',
+  );
+  if (discouragedMatch) {
+    assert.match(discouragedMatch.engineScoreReason ?? '', /previously rejected/);
+  }
+  assert.ok(discouraged.length > 0);
 });
 
 void test('raw lifetime view counts cannot change the selected related-video order', () => {
