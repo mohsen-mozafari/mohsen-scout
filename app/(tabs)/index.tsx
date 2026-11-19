@@ -358,6 +358,7 @@ function DiscoveryDashboardReady() {
   const ideas = useScout((state) => state.data.ideas);
   const reports = useScout((state) => state.data.reports);
   const memoryCount = useScout((state) => state.data.researchMemory.length);
+  const researchMemory = useScout((state) => state.data.researchMemory);
   const youtubeBudget = useScout((state) => state.data.budget);
   const quotaDate = quotaDay();
   const quotaUsage = youtubeBudget.date === quotaDate
@@ -442,7 +443,8 @@ function DiscoveryDashboardReady() {
           region: currentData.preferences.region,
           languages: currentData.preferences.languages,
           language: currentData.preferences.uiLanguage ?? 'fa',
-          evidenceKey: 'rss:' + relevantNews.map((item) => item.url).sort().join('|'),
+          evidenceKey: 'rss:' + relevantNews.map((item) => item.url).sort().join('|') + '|memory:' + (priorMemory?.history?.[0]?.sourceFingerprint ?? String(priorMemory?.updatedAt ?? 0)),
+          priorMemory,
           skipExistingEvidence: true,
           limit: 5,
         });
@@ -544,11 +546,14 @@ function DiscoveryDashboardReady() {
           publishedAt: item.publishedAt,
           sourceId: item.sourceId,
         }));
+        const currentData = useScout.getState().data;
+        const priorMemory = currentData.researchMemory.find((entry) => normalizeResearchText(entry.topic) === normalizeResearchText(report.input.topic));
         const result = buildInternalResearch({
           topic: report.input.topic,
           videos,
           news: currentNews,
-          feedback: buildResearchInterestProfile(useScout.getState().data.ideas),
+          feedback: buildResearchInterestProfile(currentData.ideas),
+          priorMemory,
           language: preferences.uiLanguage ?? 'fa',
         });
         if (active) setReportAnalysisState({ id: report.id, result });
@@ -570,29 +575,34 @@ function DiscoveryDashboardReady() {
   const showYouTubeResearch = Boolean(latestReport && latestReport.videos.length > 0);
   const deskTopic = showYouTubeResearch ? latestReport!.input.topic : discoveryTopic;
   const deskAnalysis = showYouTubeResearch ? latestReportAnalysis : radarBrief;
-  const deskNews = useMemo(() => rankNewsForTopic(deskTopic, radarNews, 40), [deskTopic, radarNews]);
+  const deskMemory = useMemo(() => researchMemory.find((entry) => normalizeResearchText(entry.topic) === normalizeResearchText(deskTopic)), [researchMemory, deskTopic]);
+  const allDeskNews = useMemo(() => rankNewsForTopic(deskTopic, radarNews, Math.max(1, radarNews.length)), [deskTopic, radarNews]);
+  // Keep visualization payloads compact; generation and analysis still receive the full feed corpus.
+  const deskNews = useMemo(() => allDeskNews.slice(0, 40), [allDeskNews]);
   const deskVideos = useMemo(() => showYouTubeResearch
     ? latestReportVideos
       .filter((video) => scoreResearchText(deskTopic, video.title, video.description) > 0)
       .sort((a, b) => (b.viewCount ?? -1) - (a.viewCount ?? -1))
     : [], [showYouTubeResearch, latestReportVideos, deskTopic]);
-  const rssGenerationKey = 'rss:' + deskNews.map((item) => item.url).sort().join('|');
+  const rssGenerationKey = 'rss:' + allDeskNews.map((item) => item.url).sort().join('|');
   const deskIdeas = useMemo(() => rankDashboardIdeas(ideas.filter((idea) =>
     idea.engineGenerated && !idea.archived &&
-    (showYouTubeResearch ? idea.reportId === latestReport?.id : idea.generationKey === rssGenerationKey),
+    (showYouTubeResearch ? idea.reportId === latestReport?.id :
+      idea.generationKey === rssGenerationKey || Boolean(idea.generationKey?.startsWith(rssGenerationKey + '|memory:'))),
   )), [ideas, showYouTubeResearch, latestReport?.id, rssGenerationKey]);
   const bestIdea = deskIdeas[0];
   const recommendations = deskIdeas.slice(1, 4);
   const combinedEvidenceKey = fingerprintText(
-    deskTopic + '|' + deskNews.map((item) => item.url).sort().join('|') + '|' + deskVideos.map((video) => video.id).sort().join('|'),
+    deskTopic + '|' + radarNews.map((item) => item.url).sort().join('|') + '|' + deskVideos.map((video) => video.id).sort().join('|') + '|' + (deskMemory?.history?.[0]?.sourceFingerprint ?? String(deskMemory?.updatedAt ?? 0)),
   );
   useEffect(() => {
     if (!latestReport || (!deskNews.length && !deskVideos.length)) return;
     const current = useScout.getState().data;
     const generated = generateEditorialIdeas({
       topic: deskTopic,
-      news: deskNews,
+      news: radarNews,
       videos: deskVideos,
+      priorMemory: deskMemory,
       reportId: latestReport.id,
       existingIdeas: current.ideas,
       evidenceKey: 'combined:' + combinedEvidenceKey,
@@ -605,7 +615,7 @@ function DiscoveryDashboardReady() {
     if (generated.length) {
       void useScout.getState().commit((data) => ({ ...data, ideas: [...generated, ...data.ideas] })).catch(() => {});
     }
-  }, [latestReport, latestReport?.id, latestReportId, combinedEvidenceKey, deskTopic, deskNews, deskVideos, preferences.region, preferences.languages, preferences.uiLanguage]);
+  }, [latestReport, latestReport?.id, latestReportId, combinedEvidenceKey, deskTopic, radarNews, deskNews, deskVideos, deskMemory, preferences.region, preferences.languages, preferences.uiLanguage]);
 
   const nicheTerms = useMemo<string[]>(() => {
     if (preferences.selectedSpaceNiche === 'custom') {

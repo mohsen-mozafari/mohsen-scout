@@ -13,6 +13,7 @@ import {
   rankResearchEvidence,
   scoreResearchText,
   scoreEditorialOpportunity,
+  tokenizeResearchText,
   sortResearchVideos,
   extractResearchEntityCandidates,
   buildResearchEntityRelations,
@@ -148,8 +149,23 @@ void test('editorial opportunity score is explainable, bounded and honest about 
   });
   assert.ok(strong.score >= 0 && strong.score <= 100);
   assert.ok(strong.score > sparse.score);
-  assert.ok(strong.reason.includes('independent publisher'));
+  assert.ok(strong.reason.includes('publisher group'));
+  assert.equal(strong.components.audienceSignal, null);
   assert.equal(sparse.components.audienceSignal, null);
+  const differentRawViews = scoreEditorialOpportunity({
+    topic: 'JWST exoplanet atmosphere',
+    anchor: 'methane spectroscopy',
+    now,
+    news: [
+      { title: 'JWST methane spectroscopy on exoplanet atmosphere', sourceId: 'nasa', sourceName: 'NASA', publishedAt: '2026-11-17T12:00:00Z' },
+      { title: 'Methane spectroscopy findings in exoplanet atmosphere', sourceId: 'esa-science', sourceName: 'ESA', publishedAt: '2026-11-16T12:00:00Z' },
+    ],
+    videos: [
+      { title: 'Methane spectroscopy exoplanet atmosphere', channel: 'Science A', publishedAt: '2026-11-15T12:00:00Z', viewCount: 1 },
+      { title: 'How JWST measures methane on exoplanets', channel: 'Science B', publishedAt: '2026-11-14T12:00:00Z', viewCount: 2 },
+    ],
+  });
+  assert.equal(differentRawViews.score, strong.score, 'raw lifetime views must not change editorial priority');
   assert.ok(['low', 'moderate', 'high'].includes(strong.confidence));
 });
 
@@ -228,4 +244,10 @@ void test('fuzzy title de-duplication still merges reordered identical token set
 void test('multi-term matching preserves known concept aliases', () => {
   assert.equal(matchesAnyResearchTerms('JWST observed a distant exoplanet', ['James Webb Space Telescope', 'Mars rover']), true);
   assert.equal(matchesAnyResearchTerms('Artemis lunar mission', ['James Webb Space Telescope', 'NIRSpec']), false);
+});
+
+void test('tokenization uses a bounded reusable cache without exposing mutable cached arrays', () => {
+  const first = tokenizeResearchText('JWST methane spectroscopy');
+  first.push('caller-mutation');
+  assert.deepEqual(tokenizeResearchText('JWST methane spectroscopy'), ['jwst', 'methane', 'spectroscopy']);
 });

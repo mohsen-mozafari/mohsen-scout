@@ -20,7 +20,7 @@ import {
 import { useScout } from '@/lib/store';
 import { statuses } from '@/lib/types';
 import { getIdeaDisplayTitle, isIdeaDisplayable } from '@/lib/idea-research';
-import { createManualIdea, rankNewsForTopic } from '@/lib/engine';
+import { createManualIdea } from '@/lib/engine';
 import { deduplicateDisplayIdeas, generateEditorialIdeas, IDEA_GENERATION_CATEGORIES, type IdeaGenerationCategory } from '@/lib/idea-generation';
 import { getTopicDossier } from '@/lib/topic-dossier';
 import { fetchSpaceNews, getCachedSpaceNews, SPACE_NICHES } from '@/lib/space';
@@ -127,10 +127,12 @@ export default function Opportunities() {
     const mergedNews = new Map(
       [...(dossier?.news ?? []), ...cachedNews, ...refreshedNews.items].map((item) => [item.url, item]),
     );
-    const relevantNews = rankNewsForTopic(topic, [...mergedNews.values()], 40);
+    const allNews = [...mergedNews.values()];
+    const priorMemory = current.researchMemory.find((entry) => normalizeSearchText(entry.topic) === normalizeSearchText(topic));
     const generated = generateEditorialIdeas({
       topic,
-      news: relevantNews,
+      news: allNews,
+      priorMemory,
       videos,
       context: dossier?.wiki ? [{
         title: dossier.wiki.articleTitle,

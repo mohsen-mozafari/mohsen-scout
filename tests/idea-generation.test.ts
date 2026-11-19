@@ -5,6 +5,7 @@ import { createManualIdea } from '../lib/engine';
 import type { SpaceNewsItem } from '../lib/space';
 import { defaults } from '../lib/types';
 import { validateLocal } from '../lib/validation';
+import { tokenizeResearchText } from '../lib/intelligence';
 
 const news: SpaceNewsItem[] = [
   {
@@ -254,4 +255,145 @@ void test('video-only idea generation derives angles from the highest-ranked rel
   assert.ok(generated.some((idea) => /methane|spectroscopy/i.test(idea.topic)));
   assert.ok(generated.every((idea) => idea.videoIds.includes('dQw4w9WgXcQ')));
   assert.doesNotMatch(JSON.stringify(generated), /JWST exoplanet atmosphere methane spectroscopy/);
+});
+
+void test('semantic aliases are retained by the shared relevance matcher', () => {
+  const selected = selectIdeaGenerationVideos('JWST', [
+    { id: 'abcdefghijk', title: 'James Webb Space Telescope' },
+    { id: 'dQw4w9WgXcQ', title: 'Unrelated gaming highlights' },
+  ]);
+  assert.deepEqual(selected.map((video) => video.id), ['abcdefghijk']);
+});
+
+void test('idea evidence scope reports all received records separately from detailed topic matches', () => {
+  const unrelatedNews: SpaceNewsItem = {
+    id: 'unrelated-news',
+    sourceId: 'sky-telescope',
+    sourceName: 'Sky & Telescope',
+    title: 'MOCK: Lunar observation schedule published',
+    summary: 'MOCK: A separate lunar observing guide with no exoplanet or spectroscopy detail.',
+    url: 'https://skyandtelescope.org/mock-lunar-schedule',
+    publishedAt: '2026-11-10T12:00:00Z',
+  };
+  const generated = generateEditorialIdeas({
+    ...base,
+    news: [...news, unrelatedNews],
+    videos,
+    limit: 1,
+  });
+  assert.ok(generated.length > 0);
+  assert.match(generated[0].concept, /3 publisher item\(s\) received; 2 topic-matched/);
+  assert.match(generated[0].concept, /2 YouTube record\(s\) received; 2 relevant sample\(s\) selected for detailed analysis/);
+});
+
+
+void test('the local engine evaluates the complete retained YouTube sample without a fixed 100-record cutoff', () => {
+  const records = Array.from({ length: 125 }, (_, index) => ({
+    id: String(index).padStart(11, '0'),
+    title: 'JWST exoplanet atmosphere methane spectroscopy sample ' + index,
+    description: 'Measurement uncertainty and methane signatures.',
+    channel: 'Science channel ' + (index % 5),
+    publishedAt: '2026-11-15T12:00:00Z',
+    viewCount: index + 1,
+  }));
+  const selected = selectIdeaGenerationVideos(base.topic, records);
+  assert.equal(selected.length, records.length);
+  assert.equal(new Set(selected.map((video) => video.id)).size, records.length);
+});
+
+void test('saved publisher memory contributes historical context without being mistaken for current news', () => {
+  const priorMemory = {
+    topic: base.topic,
+    updatedAt: Date.parse('2026-11-16T12:00:00Z'),
+    sources: [{
+      sourceId: 'nasa',
+      sourceName: 'NASA',
+      title: 'MOCK: JWST methane spectroscopy reveals atmospheric measurement limits',
+      sourceUrl: 'https://science.nasa.gov/mock-historical-methane',
+      publishedAt: '2026-10-15T12:00:00Z',
+    }],
+    keyFindings: ['MOCK: Earlier measurements leave uncertainty about methane abundance.'],
+    unresolvedQuestions: ['Which calibration limits remain unresolved?'],
+    contradictions: [],
+    confidence: 'moderate' as const,
+    history: [{
+      capturedAt: Date.parse('2026-10-20T12:00:00Z'),
+      sourceFingerprint: 'historical-fingerprint',
+      sourceCount: 2,
+      newSourceCount: 1,
+      updatedSourceCount: 0,
+      keyFindings: ['MOCK: Earlier JWST spectroscopy measurements had calibration uncertainty.'],
+      unresolvedQuestions: ['How did later methane measurements address calibration uncertainty?'],
+      contradictions: [],
+      confidence: 'low' as const,
+      changes: ['A later source added a different calibration interpretation.'],
+    }],
+  };
+  const generated = generateEditorialIdeas({
+    ...base,
+    news: [],
+    videos: [],
+    priorMemory,
+    limit: 4,
+  });
+  assert.ok(generated.length > 0);
+  assert.ok(generated.every((idea) => idea.sourceUrl === priorMemory.sources[0].sourceUrl));
+  assert.match(generated[0].concept, /historical publisher record\(s\)/);
+  assert.match(generated[0].concept, /saved findings, open questions and discrepancies/);
+  assert.match(generated[0].concept, /1 historical research snapshots reviewed/);
+  assert.match(generated[0].concept, /Evidence base: saved historical publisher records and prior research notes/);
+  assert.doesNotMatch(generated[0].concept, /Wikimedia context/);
+  assert.match(generated[0].concept, /Confidence: low;/, 'old memory alone must not inflate current evidence confidence');
+});
+
+void test('saved positive and negative topic feedback adjusts matching editorial priorities transparently', () => {
+  const neutral = generateEditorialIdeas({ ...base, news, videos, limit: 25 });
+  assert.ok(neutral.length);
+  const target = neutral[0];
+  const anchor = target.concept.match(/understand [“"]([^”"]+)[”"]/i)?.[1] ?? '';
+  assert.ok(anchor, 'the generated idea should expose its editorial anchor');
+  const anchorTokens = tokenizeResearchText(anchor);
+  const unrelatedTokens = ['pulsar', 'quasar', 'nebula', 'orbit', 'calibration', 'plasma', 'gravity', 'mission'];
+  const extras = unrelatedTokens.filter((token) => !anchorTokens.includes(token)).slice(0, anchorTokens.length);
+  assert.equal(extras.length, anchorTokens.length);
+  // Exactly half the saved phrase overlaps this anchor: a deliberate partial-match case.
+  const savedPhrase = [...anchorTokens, ...extras].join(' ');
+  const preferred = generateEditorialIdeas({
+    ...base, news, videos,
+    feedback: { positiveTopics: [savedPhrase], negativeTopics: [] },
+    limit: 25,
+  });
+  const discouraged = generateEditorialIdeas({
+    ...base, news, videos,
+    feedback: { positiveTopics: [], negativeTopics: [savedPhrase] },
+    limit: 25,
+  });
+  const anchorOf = (idea: typeof target) => idea.concept.match(/understand [“"]([^”"]+)[”"]/i)?.[1] ?? '';
+  const preferredMatch = preferred.find((idea) => anchorOf(idea) === anchor);
+  const discouragedMatch = discouraged.find((idea) => anchorOf(idea) === anchor);
+  assert.ok(preferredMatch, 'matching saved positive feedback should retain the target idea');
+  assert.ok((preferredMatch.engineScore ?? 0) >= (target.engineScore ?? 0));
+  assert.match(preferredMatch.engineScoreReason ?? '', /positive topics/);
+  // A sufficiently strong negative preference may move the target outside the
+  // top-25 shortlist; if it remains visible, its score and reason must reflect it.
+  assert.ok(
+    !discouragedMatch || (discouragedMatch.engineScore ?? 0) < (target.engineScore ?? 0),
+    'matching saved negative feedback must lower priority or remove the idea from the shortlist',
+  );
+  if (discouragedMatch) {
+    assert.match(discouragedMatch.engineScoreReason ?? '', /previously rejected/);
+  }
+  assert.ok(discouraged.length > 0);
+});
+
+void test('raw lifetime view counts cannot change the selected related-video order', () => {
+  const sample = [
+    { id: 'abcdefghijk', title: 'JWST exoplanet atmosphere methane spectroscopy', description: 'Methane measurement uncertainty.', viewCount: 100 },
+    { id: 'lmnopqrstuv', title: 'JWST exoplanet atmosphere spectroscopy', description: 'Atmosphere calibration limits.', viewCount: 10 },
+  ];
+  const reversedViews = sample.map((video, index) => ({ ...video, viewCount: index === 0 ? 1 : 100000000 }));
+  assert.deepEqual(
+    selectIdeaGenerationVideos(base.topic, sample).map((video) => video.id),
+    selectIdeaGenerationVideos(base.topic, reversedViews).map((video) => video.id),
+  );
 });

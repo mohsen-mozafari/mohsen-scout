@@ -16,6 +16,7 @@ import { nextBudget, searchYouTube, type YouTubeQuotaKind, type YouTubeQuotaOrig
 import { generateEditorialIdeas } from './idea-generation';
 import { attachReportToIdea as attachReport, attachVideoReferenceToIdea as attachVideoReference, getOrCreateSourceIdea, type SourceIdeaInput } from './idea-research';
 import { getCachedSpaceNews, hydrateSpaceNewsRegistry } from './space';
+import { normalizeResearchText } from './intelligence';
 type State = {
   data: LocalData;
   ready: boolean;
@@ -142,10 +143,12 @@ export const useScout = create<State>((set, get) => ({
       };
       const currentData = get().data;
       const availableNews = getCachedSpaceNews(currentData.feedRegistry, currentData.preferences.spaceNewsSources);
+      const priorMemory = currentData.researchMemory.find((entry) => normalizeResearchText(entry.topic) === normalizeResearchText(report.input.topic));
       const currentVideos = recentEngineVideos(result.videos);
       const generatedIdeas = generateEditorialIdeas({
         topic: report.input.topic,
         news: availableNews,
+        priorMemory,
         videos: currentVideos.map((video) => ({
           id: video.id, title: video.title, description: video.description,
           channel: video.channel, publishedAt: video.publishedAt,
@@ -182,9 +185,11 @@ export const useScout = create<State>((set, get) => ({
     if (!report || report.analyzed) return;
     const currentData = get().data;
     const availableNews = getCachedSpaceNews(currentData.feedRegistry, currentData.preferences.spaceNewsSources);
+    const priorMemory = currentData.researchMemory.find((entry) => normalizeResearchText(entry.topic) === normalizeResearchText(report.input.topic));
     const generatedIdeas = generateEditorialIdeas({
       topic: report.input.topic,
       news: availableNews,
+      priorMemory,
       videos: recentEngineVideos(report.videos).map((video) => ({
         id: video.id, title: video.title, description: video.description,
         channel: video.channel, publishedAt: video.publishedAt,
