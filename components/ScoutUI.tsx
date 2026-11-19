@@ -369,9 +369,9 @@ export function AppHeader({ showBack = false }: { showBack?: boolean }) {
           <View style={styles.brandMark}>
             <Compass size={19} color={p.accent} strokeWidth={1.9} />
           </View>
-          <View>
-            <Text style={styles.brandName}>MOHSEN SCOUT</Text>
-            <Text style={styles.brandSubtitle}>SPACE INTELLIGENCE STUDIO</Text>
+          <View style={{ flexShrink: 1, minWidth: 0 }}>
+            <Text numberOfLines={1} style={styles.brandName}>MOHSEN SCOUT</Text>
+            {!canGoBack ? <Text numberOfLines={1} style={styles.brandSubtitle}>SPACE INTELLIGENCE STUDIO</Text> : null}
           </View>
         </View>
       </View>
@@ -642,7 +642,7 @@ export function Action({
       ) : Icon ? (
         <Icon size={17} color={danger ? p.danger : foreground} strokeWidth={2} />
       ) : null}
-      <Text numberOfLines={2} style={[styles.actionLabel, { color: danger ? p.danger : foreground, writingDirection: direction, textAlign: direction === 'rtl' ? 'right' : 'left', flex: 1 }]}>{busy ? translateText('Working…', language) : label}</Text>
+      <Text numberOfLines={2} style={[styles.actionLabel, { color: danger ? p.danger : foreground, writingDirection: direction, textAlign: Icon ? direction === 'rtl' ? 'right' : 'left' : 'center', flex: 1 }]}>{busy ? translateText('Working…', language) : label}</Text>
     </Pressable>
   );
 }
