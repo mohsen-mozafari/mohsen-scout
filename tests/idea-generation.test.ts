@@ -5,6 +5,7 @@ import { createManualIdea } from '../lib/engine';
 import type { SpaceNewsItem } from '../lib/space';
 import { defaults } from '../lib/types';
 import { validateLocal } from '../lib/validation';
+import { tokenizeResearchText } from '../lib/intelligence';
 
 const news: SpaceNewsItem[] = [
   {
@@ -345,23 +346,37 @@ void test('saved publisher memory contributes historical context without being m
   assert.match(generated[0].concept, /Confidence: low;/, 'old memory alone must not inflate current evidence confidence');
 });
 
-void test('saved positive and negative topic feedback adjusts editorial priority transparently', () => {
-  const neutral = generateEditorialIdeas({ ...base, news, videos, limit: 8 });
+void test('saved positive and negative topic feedback adjusts matching editorial priorities transparently', () => {
+  const neutral = generateEditorialIdeas({ ...base, news, videos, limit: 25 });
+  assert.ok(neutral.length);
+  const target = neutral[0];
+  const anchor = target.concept.match(/understand [“"]([^”"]+)[”"]/i)?.[1] ?? '';
+  assert.ok(anchor, 'the generated idea should expose its editorial anchor');
+  const anchorTokens = tokenizeResearchText(anchor);
+  const unrelatedTokens = ['pulsar', 'quasar', 'nebula', 'orbit', 'calibration', 'plasma', 'gravity', 'mission'];
+  const extras = unrelatedTokens.filter((token) => !anchorTokens.includes(token)).slice(0, anchorTokens.length);
+  assert.equal(extras.length, anchorTokens.length);
+  // Exactly half the saved phrase overlaps this anchor: a deliberate partial-match case.
+  const savedPhrase = [...anchorTokens, ...extras].join(' ');
   const preferred = generateEditorialIdeas({
     ...base, news, videos,
-    feedback: { positiveTopics: ['methane spectroscopy'], negativeTopics: [] },
-    limit: 8,
+    feedback: { positiveTopics: [savedPhrase], negativeTopics: [] },
+    limit: 25,
   });
   const discouraged = generateEditorialIdeas({
     ...base, news, videos,
-    feedback: { positiveTopics: [], negativeTopics: ['methane spectroscopy'] },
-    limit: 8,
+    feedback: { positiveTopics: [], negativeTopics: [savedPhrase] },
+    limit: 25,
   });
-  assert.ok(neutral.length && preferred.length && discouraged.length);
-  assert.ok((preferred[0].engineScore ?? 0) >= (neutral[0].engineScore ?? 0));
-  assert.ok((discouraged[0].engineScore ?? 0) <= (neutral[0].engineScore ?? 0));
-  assert.match(preferred[0].engineScoreReason ?? '', /positive topics/);
-  assert.match(discouraged[0].engineScoreReason ?? '', /previously rejected/);
+  const anchorOf = (idea: typeof target) => idea.concept.match(/understand [“"]([^”"]+)[”"]/i)?.[1] ?? '';
+  const preferredMatch = preferred.find((idea) => anchorOf(idea) === anchor);
+  const discouragedMatch = discouraged.find((idea) => anchorOf(idea) === anchor);
+  assert.ok(preferredMatch, 'matching saved positive feedback should retain the target idea');
+  assert.ok(discouragedMatch, 'matching saved negative feedback should still produce the target for comparison');
+  assert.ok((preferredMatch.engineScore ?? 0) >= (target.engineScore ?? 0));
+  assert.ok((discouragedMatch.engineScore ?? 0) < (target.engineScore ?? 0));
+  assert.match(preferredMatch.engineScoreReason ?? '', /positive topics/);
+  assert.match(discouragedMatch.engineScoreReason ?? '', /previously rejected/);
 });
 
 void test('raw lifetime view counts cannot change the selected related-video order', () => {
