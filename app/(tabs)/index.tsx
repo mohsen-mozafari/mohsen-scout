@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text } from 'react-native';
-import { Bookmark, FileSearch, FileText, Lightbulb, Newspaper, Search, Telescope } from 'lucide-react-native';
+import { FileSearch, Search, Telescope } from 'lucide-react-native';
 
 import { router } from 'expo-router';
 import {
   Page, Panel, Heading, Txt, Action, Fold, styles, ErrorBox, useOperation,
-  SourceHeading, SourceText, BadgeText, ScreenIntro, QuickAction, MetricCard,
+  SourceHeading, SourceText, BadgeText, MetricCard,
 } from '@/components/ScoutUI';
 import { useScout } from '@/lib/store';
 import { palette as p } from '@/lib/theme';
@@ -642,252 +642,256 @@ function DiscoveryDashboardReady() {
   return (
     <Page
       title="Space Radar"
-      eyebrow="MISSION CONTROL"
-      subtitle="Your local command center for publisher signals, YouTube samples and research ideas."
+      eyebrow="RESEARCH OVERVIEW"
+      subtitle="Your current focus, most useful evidence and next research action."
     >
-      <View style={{ gap: 17 }}>
+      <View style={{ gap: 14 }}>
         <Panel variant="hero">
-          <View style={styles.rowBetween}>
-            <BadgeText>YOUR CURRENT FOCUS</BadgeText>
-            <View style={{ paddingHorizontal: 9, paddingVertical: 5, borderRadius: 99, backgroundColor: 'rgba(97, 217, 231, 0.13)', borderWidth: 1, borderColor: 'rgba(97, 217, 231, 0.24)' }}>
-              <Txt muted>{scanning ? 'Refreshing sources' : 'On demand'}</Txt>
-            </View>
+          <View style={[styles.rowBetween, { flexWrap: 'wrap' }]}>
+            <BadgeText>ACTIVE RESEARCH FOCUS</BadgeText>
+            <Txt muted>{scanning ? 'Updating sources…' : 'On-demand sources'}</Txt>
           </View>
-          <Heading>{nicheTitle}</Heading>
+          <Heading>{latestReport ? latestReport.input.topic : nicheTitle}</Heading>
           <Txt muted>
             {latestReport
-              ? 'Last YouTube sample: ' + new Date(latestReport.createdAt).toLocaleString('en-US')
-              : 'Choose this focus to start a YouTube sample. Your evidence and saved research stay on this device.'}
+              ? 'Latest YouTube sample · ' + new Date(latestReport.createdAt).toLocaleString(preferences.uiLanguage === 'fa' ? 'fa-IR' : 'en-US')
+              : 'No YouTube sample has been saved for this focus yet. Start with a topic-specific search.'}
           </Txt>
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-            <MetricCard label="MATCHED NEWS" value={audit?.topicMatchedNewsCount ?? 0} tone="cyan" />
-            <MetricCard label="MATCHED VIDEOS" value={audit?.matchedVideoCount ?? 0} tone="violet" />
-            <MetricCard label="PUBLISHER GROUPS" value={deskAnalysis?.intelligence.sourceQuality.independentPublishers ?? 0} tone="mint" />
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7 }}>
+            <MetricCard label="MATCHED NEWS" value={audit?.topicMatchedNewsCount ?? 0} />
+            <MetricCard label="MATCHED VIDEOS" value={audit?.matchedVideoCount ?? 0} />
+            <MetricCard label="PUBLISHER GROUPS" value={deskAnalysis?.intelligence.sourceQuality.independentPublishers ?? 0} />
           </View>
           <Action icon={Search} onPress={() => router.push({ pathname: '/youtube', params: { topic: deskTopic } })}>
-            Open YouTube research
+            Start YouTube research
           </Action>
-          <Action secondary icon={FileSearch} onPress={() => router.push({ pathname: '/deep-research', params: { topic: deskTopic } })}>
-            Start deep research
-          </Action>
-        </Panel>
-
-        <ScreenIntro
-          eyebrow="YOUR WORKSPACES"
-          title="Pick up where you want to work"
-          subtitle="Your main tools are one tap away. Each workspace keeps its own filters and saved material."
-        />
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
-          <QuickAction title="Official news" description="NASA, JPL and ESA feeds" icon={Newspaper} tone="cyan" onPress={() => router.push('/news')} />
-          <QuickAction title="Idea studio" description="Develop and compare ideas" icon={Lightbulb} tone="violet" onPress={() => router.push('/opportunities')} />
-          <QuickAction title="Saved library" description="Your bookmarked video links" icon={Bookmark} tone="mint" onPress={() => router.push('/library')} />
-          <QuickAction title="Research notes" description="Your personal workbench" icon={FileText} tone="amber" onPress={() => router.push('/notes')} />
-        </View>
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-          <View style={{ flex: 1, minWidth: 145 }}>
-            <Action secondary icon={Telescope} onPress={() => router.push({ pathname: '/trend-intelligence', params: { topic: deskTopic } })}>Trend intelligence</Action>
-          </View>
-          <View style={{ flex: 1, minWidth: 145 }}>
-            <Action secondary icon={Search} onPress={() => router.push({ pathname: '/search-demand', params: { topic: deskTopic } })}>Public-interest data</Action>
-          </View>
-        </View>
-
-        {bestIdea ? (
-          <Panel>
-            <View style={styles.rowBetween}>
-              <BadgeText>EDITORIAL PICK</BadgeText>
-              <Text style={styles.badge}>Based on current evidence</Text>
+          <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Action secondary icon={FileSearch} onPress={() => router.push({ pathname: '/deep-research', params: { topic: deskTopic } })}>
+                Deep research
+              </Action>
             </View>
-            <Heading>{bestIdea.topic}</Heading>
-            <Txt>{bestIdea.concept.slice(0, 360)}</Txt>
-            <Txt muted>
-              {'Editorial priority: ' + (bestIdea.engineScore ?? 'unavailable') + '/100 · ' + (bestIdea.engineScoreReason ?? 'Insufficient scored evidence.')}
-            </Txt>
-            <Action secondary onPress={() => router.push({ pathname: '/detail', params: { idea: bestIdea.id } })}>
-              Review idea and evidence
-            </Action>
-          </Panel>
-        ) : null}
-
-        {deskAnalysis ? (
-          <Panel>
-            <View style={styles.rowBetween}>
-              <BadgeText>INTELLIGENCE BRIEF</BadgeText>
-              <View style={{ paddingHorizontal: 9, paddingVertical: 5, borderRadius: 99, backgroundColor: p.purpleSoft }}>
-                <Text style={styles.badge}>{deskAnalysis.intelligence.confidence.level.toUpperCase()} CONFIDENCE</Text>
-              </View>
-            </View>
-            <Heading>What the current evidence says</Heading>
-            <Txt>{deskAnalysis.summary}</Txt>
-            {sharedTerms.length ? (
-              <View style={styles.softCard}>
-                <Text style={styles.label}>SHARED WORDING</Text>
-                <SourceHeading>{sharedTerms.slice(0, 4).join(', ')}</SourceHeading>
-                <Txt muted>These terms recur in some returned headlines and video titles. This is wording overlap, not proof of demand or semantic agreement.</Txt>
-              </View>
-            ) : primaryNews ? (
-              <View style={styles.softCard}>
-                <Text style={styles.label}>MOST RELEVANT PUBLISHER ITEM</Text>
-                <SourceHeading>{primaryNews.title}</SourceHeading>
-                <Txt muted>{primaryNews.sourceName}{primaryNews.publishedAt ? ' · ' + new Date(primaryNews.publishedAt).toLocaleDateString('en-US') : ''}</Txt>
-              </View>
-            ) : (
-              <Txt muted>No shared wording was detected in the current sample. Do not generalize this absence to the whole topic.</Txt>
-            )}
-            <View style={{ gap: 6 }}>
-              <Text style={styles.label}>SUGGESTED NEXT STEP</Text>
-              <Txt>{nextGap ?? 'No additional gap was flagged in the current audit. Verify key claims against original sources before production.'}</Txt>
-              {nextQuery ? (
-                <Action secondary onPress={() => router.push({ pathname: '/youtube', params: { topic: nextQuery } })}>
-                  {'Research: ' + nextQuery}
+            {latestReport ? (
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Action secondary onPress={() => router.push({ pathname: '/youtube', params: { topic: latestReport.input.topic, report: latestReport.id } })}>
+                  Latest report
                 </Action>
-              ) : null}
-              <Action secondary onPress={() => router.push({ pathname: '/deep-research', params: { topic: deskTopic } })}>
-                Turn this lead into a research brief
+              </View>
+            ) : null}
+          </View>
+        </Panel>
+
+        <View style={{ gap: 8 }}>
+          <Heading>Research tools</Heading>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Action secondary icon={Telescope} onPress={() => router.push({ pathname: '/trend-intelligence', params: { topic: deskTopic } })}>
+                Trend intelligence
               </Action>
             </View>
-          </Panel>
-        ) : (
-          <Panel variant="soft">
-            <BadgeText>NO TOPIC-SPECIFIC BRIEF YET</BadgeText>
-            <Heading>Collect a real sample first</Heading>
-            <Txt muted>Publisher headlines and broad counts alone are not enough for a useful recommendation. Run a specific YouTube search to build a topic-linked sample.</Txt>
-            <Action onPress={() => router.push({ pathname: '/youtube', params: { topic: discoveryTopic } })}>
-              Research the selected topic
-            </Action>
-          </Panel>
-        )}
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Action secondary icon={Search} onPress={() => router.push({ pathname: '/search-demand', params: { topic: deskTopic } })}>
+                Public-interest data
+              </Action>
+            </View>
+          </View>
+        </View>
 
-        <Panel>
-          <Fold title="Evidence audit and full analysis">
-            {deskAnalysis ? (
-              <View style={{ gap: 13 }}>
-                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-                  <MetricCard label="UNIQUE STORIES" value={deskAnalysis.intelligence.sourceQuality.uniqueStories} tone="cyan" />
-                  <MetricCard label="FEEDS REPRESENTED" value={deskAnalysis.intelligence.sourceQuality.feedsRepresented} tone="violet" />
-                  <MetricCard label="STALE / UNDATED" value={deskAnalysis.intelligence.sourceQuality.staleItems + deskAnalysis.intelligence.sourceQuality.undatedItems} tone="amber" />
-                  <MetricCard label="WIKIMEDIA MONTHS" value={audit?.wikimediaMonthlyObservations ?? 0} tone="mint" />
+        <View style={{ gap: 10 }}>
+          <View style={[styles.rowBetween, { flexWrap: 'wrap' }]}>
+            <Heading>Latest evidence brief</Heading>
+            {deskAnalysis ? <BadgeText>{deskAnalysis.intelligence.confidence.level.toUpperCase()} CONFIDENCE</BadgeText> : null}
+          </View>
+          {deskAnalysis ? (
+            <Panel>
+              <Txt>{deskAnalysis.summary}</Txt>
+              {primaryNews ? (
+                <View style={styles.softCard}>
+                  <Text style={styles.label}>RELEVANT PUBLISHER ITEM</Text>
+                  <SourceHeading>{primaryNews.title}</SourceHeading>
+                  <Txt muted>
+                    {primaryNews.sourceName}
+                    {primaryNews.publishedAt ? ' · ' + new Date(primaryNews.publishedAt).toLocaleDateString(preferences.uiLanguage === 'fa' ? 'fa-IR' : 'en-US') : ''}
+                  </Txt>
                 </View>
-                {deskAnalysis.evidence
-                  .filter((item) => ['publisher-news', 'wikimedia', 'youtube-sample', 'cross-source-overlap'].includes(item.id))
-                  .map((item) => (
-                    <View key={item.id} style={{ gap: 5 }}>
-                      <BadgeText>{item.label}</BadgeText>
-                      <Txt muted>{item.detail}</Txt>
-                    </View>
-                  ))}
-                <AnalysisSignals result={deskAnalysis} />
-                <Fold title="Evidence relationship map">
-                  <ResearchKnowledgeGraph topic={deskTopic} news={deskNews} videos={deskVideos} analysis={deskAnalysis} language={preferences.uiLanguage ?? 'fa'} generatedIdeas={deskIdeas} />
-                </Fold>
-                <Fold title="Charts and available data">
-                  <ResearchOverviewChart analysis={deskAnalysis} ideas={deskIdeas} videoCount={deskVideos.length} language={preferences.uiLanguage ?? 'fa'} />
-                </Fold>
-                <Fold title="Editorial angles and verification">
-                  {deskAnalysis.angles.slice(0, 3).map((angle) => (
-                    <View key={angle.id} style={{ gap: 6 }}>
-                      <Heading>{angle.title}</Heading>
-                      <Txt>{angle.hook}</Txt>
-                      <Txt muted>{angle.approach}</Txt>
-                      <Txt muted>{'Verify: ' + angle.verification}</Txt>
-                    </View>
-                  ))}
-                </Fold>
+              ) : sharedTerms.length ? (
+                <View style={styles.softCard}>
+                  <Text style={styles.label}>RECURRING WORDING IN THIS SAMPLE</Text>
+                  <SourceHeading>{sharedTerms.slice(0, 4).join(', ')}</SourceHeading>
+                  <Txt muted>Repeated wording is not proof of demand, agreement or trend strength.</Txt>
+                </View>
+              ) : null}
+              {bestIdea ? (
+                <View style={{ gap: 6 }}>
+                  <Text style={styles.label}>EDITORIAL LEAD</Text>
+                  <SourceHeading>{bestIdea.topic}</SourceHeading>
+                  <Txt muted>{bestIdea.concept.slice(0, 220)}</Txt>
+                  <Action secondary onPress={() => router.push({ pathname: '/detail', params: { idea: bestIdea.id } })}>
+                    Review idea and evidence
+                  </Action>
+                </View>
+              ) : null}
+              <View style={{ gap: 6 }}>
+                <Text style={styles.label}>NEXT RESEARCH STEP</Text>
+                <Txt muted>{nextGap ?? 'No additional gap was flagged. Verify important claims against original sources before production.'}</Txt>
+                {nextQuery ? (
+                  <Action secondary onPress={() => router.push({ pathname: '/youtube', params: { topic: nextQuery } })}>
+                    Research suggested question
+                  </Action>
+                ) : null}
+                <Action onPress={() => router.push({ pathname: '/deep-research', params: { topic: deskTopic } })}>
+                  Build a research brief
+                </Action>
               </View>
-            ) : (
-              <Txt muted>Detailed analysis will appear here after a research sample is collected.</Txt>
-            )}
-          </Fold>
-        </Panel>
+            </Panel>
+          ) : (
+            <Panel>
+              <Heading>No topic-specific brief yet</Heading>
+              <Txt muted>Publisher headlines alone are not enough for a useful recommendation. Collect a real topic-linked sample first.</Txt>
+              <Action onPress={() => router.push({ pathname: '/youtube', params: { topic: discoveryTopic } })}>
+                Research the selected topic
+              </Action>
+            </Panel>
+          )}
+        </View>
+
+        <Fold title="Evidence quality and source audit">
+          {deskAnalysis ? (
+            <View style={{ gap: 12 }}>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7 }}>
+                <MetricCard label="UNIQUE STORIES" value={deskAnalysis.intelligence.sourceQuality.uniqueStories} />
+                <MetricCard label="FEEDS REPRESENTED" value={deskAnalysis.intelligence.sourceQuality.feedsRepresented} />
+                <MetricCard label="STALE / UNDATED" value={deskAnalysis.intelligence.sourceQuality.staleItems + deskAnalysis.intelligence.sourceQuality.undatedItems} />
+                <MetricCard label="WIKIMEDIA MONTHS" value={audit?.wikimediaMonthlyObservations ?? 0} />
+              </View>
+              {deskAnalysis.evidence
+                .filter((item) => ['publisher-news', 'wikimedia', 'youtube-sample', 'cross-source-overlap'].includes(item.id))
+                .map((item) => (
+                  <View key={item.id} style={{ gap: 4 }}>
+                    <BadgeText>{item.label}</BadgeText>
+                    <Txt muted>{item.detail}</Txt>
+                  </View>
+                ))}
+              <AnalysisSignals result={deskAnalysis} />
+            </View>
+          ) : (
+            <Txt muted>Source-quality details appear after a sample is available.</Txt>
+          )}
+        </Fold>
+
+        <Fold title="Evidence relationship map">
+          {deskAnalysis ? (
+            <ResearchKnowledgeGraph
+              topic={deskTopic}
+              news={deskNews}
+              videos={deskVideos}
+              analysis={deskAnalysis}
+              language={preferences.uiLanguage ?? 'fa'}
+              generatedIdeas={deskIdeas}
+            />
+          ) : <Txt muted>Collect topic-specific evidence to build the relationship map.</Txt>}
+        </Fold>
+
+        <Fold title="Charts and available data">
+          {deskAnalysis ? (
+            <ResearchOverviewChart analysis={deskAnalysis} ideas={deskIdeas} videoCount={deskVideos.length} language={preferences.uiLanguage ?? 'fa'} />
+          ) : <Txt muted>No chart is available until the first research sample is collected.</Txt>}
+        </Fold>
+
+        <Fold title="Editorial angles and verification">
+          {deskAnalysis ? deskAnalysis.angles.slice(0, 3).map((angle) => (
+            <View key={angle.id} style={{ gap: 5, paddingBottom: 10 }}>
+              <Heading>{angle.title}</Heading>
+              <Txt>{angle.hook}</Txt>
+              <Txt muted>{angle.approach}</Txt>
+              <Txt muted>{'Verify: ' + angle.verification}</Txt>
+            </View>
+          )) : <Txt muted>Research angles are generated from the available evidence.</Txt>}
+        </Fold>
 
         {deskAnalysis ? (
-          <Panel>
+          <Fold title="AI second opinion">
             <EngineAIReview topic={deskTopic} result={deskAnalysis} />
-          </Panel>
+          </Fold>
         ) : null}
 
-        <Panel>
-          <Fold title="Recent videos, ideas and research runs">
-            <View style={{ gap: 14 }}>
-              {feedVideos.length ? (
-                <View style={{ gap: 9 }}>
-                  <Heading>Related sample videos</Heading>
-                  {feedVideos.slice(0, 8).map((video) => <VideoRow key={video.id} video={video} topic={feedTopic} />)}
-                </View>
-              ) : (
-                <Txt muted>No saved video matched this topic, so unrelated results are not shown.</Txt>
-              )}
-              {recommendations.length ? (
-                <View style={{ gap: 9 }}>
-                  <Heading>Other editorial angles</Heading>
-                  {recommendations.slice(0, 3).map((idea) => (
-                    <View key={idea.id} style={styles.softCard}>
-                      <SourceHeading>{idea.topic}</SourceHeading>
-                      <Txt muted>{idea.concept.slice(0, 220)}</Txt>
-                      <Action secondary onPress={() => router.push({ pathname: '/detail', params: { idea: idea.id } })}>
-                        Review this idea
-                      </Action>
-                    </View>
-                  ))}
-                </View>
-              ) : null}
-              {reports.length ? (
-                <View style={{ gap: 8 }}>
-                  <Heading>Saved research runs</Heading>
-                  {reports.slice(0, 4).map((report) => (
-                    <Action key={report.id} secondary onPress={() => router.push({ pathname: '/youtube', params: { topic: report.input.topic, report: report.id } })}>
-                      {report.input.topic + ' · ' + new Date(report.createdAt).toLocaleDateString('en-US')}
+        <Fold title="Recent research and saved results">
+          <View style={{ gap: 12 }}>
+            {feedVideos.length ? (
+              <View style={{ gap: 8 }}>
+                <Heading>Related videos</Heading>
+                {feedVideos.slice(0, 5).map((video) => <VideoRow key={video.id} video={video} topic={feedTopic} />)}
+              </View>
+            ) : <Txt muted>No saved video matched this focus. Unrelated results are intentionally hidden.</Txt>}
+            {recommendations.length ? (
+              <View style={{ gap: 8 }}>
+                <Heading>Other editorial ideas</Heading>
+                {recommendations.slice(0, 3).map((idea) => (
+                  <View key={idea.id} style={styles.softCard}>
+                    <SourceHeading>{idea.topic}</SourceHeading>
+                    <Txt muted>{idea.concept.slice(0, 180)}</Txt>
+                    <Action secondary onPress={() => router.push({ pathname: '/detail', params: { idea: idea.id } })}>
+                      Open idea
                     </Action>
-                  ))}
-                </View>
-              ) : null}
-              <Action secondary onPress={() => router.push('/opportunities')}>Manage all ideas</Action>
-            </View>
-          </Fold>
-        </Panel>
+                  </View>
+                ))}
+              </View>
+            ) : null}
+            {reports.length ? (
+              <View style={{ gap: 7 }}>
+                <Heading>Saved research runs</Heading>
+                {reports.slice(0, 4).map((report) => (
+                  <Action key={report.id} secondary onPress={() => router.push({ pathname: '/youtube', params: { topic: report.input.topic, report: report.id } })}>
+                    {report.input.topic + ' · ' + new Date(report.createdAt).toLocaleDateString(preferences.uiLanguage === 'fa' ? 'fa-IR' : 'en-US')}
+                  </Action>
+                ))}
+              </View>
+            ) : null}
+            <Action secondary onPress={() => router.push('/opportunities')}>Open all ideas</Action>
+          </View>
+        </Fold>
 
-        <Panel>
-          <Fold title="Space Radar and source status">
-            <View style={{ gap: 11 }}>
-              <Heading>{nicheTitle}</Heading>
-              <Txt muted>{niche?.description ?? 'Selected publisher feeds are grouped by topic; headlines alone do not prove a trend or demand.'}</Txt>
-              <Action busy={scanning || op.busy} onPress={() => void op.run(
-                () => runScan(true),
-                'Publisher feed refresh completed.',
-              )}>
-                Refresh official feeds
-              </Action>
-              <Txt muted>
-                {lastScannedAt
-                  ? 'Last source update: ' + new Date(lastScannedAt).toLocaleString('en-US')
-                  : 'No source update timestamp is available in this session.'} · {radarNews.length} retrieved items
-              </Txt>
-              {scanning ? <Txt muted>Refresh is running; you can continue using other tabs.</Txt> : null}
-              {warnings.slice(0, 2).map((warning, i) => <Txt muted key={String(i) + warning}>{warning}</Txt>)}
-              {nicheSuggestions.length ? (
-                <View style={{ gap: 9 }}>
-                  <Heading>Related topics found in feeds</Heading>
-                  {nicheSuggestions.slice(0, 6).map((suggestion) => (
-                    <View key={suggestion.id} style={styles.softCard}>
-                      <SourceHeading>{suggestion.title}</SourceHeading>
-                      <Txt muted>{suggestion.description}</Txt>
-                      <Action secondary onPress={() => router.push({ pathname: '/youtube', params: { topic: suggestion.topic } })}>
-                        Research this topic
-                      </Action>
-                    </View>
-                  ))}
-                </View>
-              ) : null}
-              <Fold title="Technical details and quotas">
-                <Txt muted>{'YouTube quota: ' + quotaUsage.units + ' / ' + preferences.budget + ' units · ' + quotaUsage.requests + ' requests'}</Txt>
-                <Txt muted>{memoryCount + ' topics in local research memory · ' + reports.length + ' saved reports'}</Txt>
-                <Txt muted>{'AI second opinion: ' + (preferences.hybridIntelligence ? 'Automatic and enabled' : 'Manual only')}</Txt>
-                <Txt muted>{'YouTube schedule: ' + (preferences.schedule === 'Manual' ? 'Off' : preferences.paused ? 'Paused' : preferences.schedule)}</Txt>
-                <Action secondary onPress={() => router.push('/settings')}>Configure keys and preferences</Action>
-              </Fold>
+        <Fold title="Publisher feeds and usage">
+          <View style={{ gap: 10 }}>
+            <Heading>{nicheTitle}</Heading>
+            <Txt muted>{niche?.description ?? 'Publisher feeds provide source context; headlines alone do not establish a trend or audience demand.'}</Txt>
+            <Action busy={scanning || op.busy} onPress={() => void op.run(
+              () => runScan(true),
+              'Publisher feed refresh completed.',
+            )}>
+              Refresh official feeds
+            </Action>
+            <Txt muted>
+              {lastScannedAt
+                ? 'Last source update: ' + new Date(lastScannedAt).toLocaleString(preferences.uiLanguage === 'fa' ? 'fa-IR' : 'en-US')
+                : 'No source update timestamp is available in this session.'} · {radarNews.length} retrieved items
+            </Txt>
+            {scanning ? <Txt muted>Refresh is running; you can continue using other tabs.</Txt> : null}
+            {warnings.slice(0, 3).map((warning, i) => <Txt muted key={String(i) + warning}>{warning}</Txt>)}
+            {nicheSuggestions.length ? (
+              <View style={{ gap: 8 }}>
+                <Heading>Related topics in publisher feeds</Heading>
+                {nicheSuggestions.slice(0, 5).map((suggestion) => (
+                  <View key={suggestion.id} style={styles.softCard}>
+                    <SourceHeading>{suggestion.title}</SourceHeading>
+                    <Txt muted>{suggestion.description}</Txt>
+                    <Action secondary onPress={() => router.push({ pathname: '/youtube', params: { topic: suggestion.topic } })}>
+                      Research this topic
+                    </Action>
+                  </View>
+                ))}
+              </View>
+            ) : null}
+            <View style={{ borderTopWidth: 1, borderTopColor: p.border, paddingTop: 10, gap: 5 }}>
+              <Text style={styles.label}>LOCAL USAGE</Text>
+              <Txt muted>{'YouTube quota: ' + quotaUsage.units + ' / ' + preferences.budget + ' units · ' + quotaUsage.requests + ' requests'}</Txt>
+              <Txt muted>{memoryCount + ' topics in local research memory · ' + reports.length + ' saved reports'}</Txt>
+              <Txt muted>{'AI second opinion: ' + (preferences.hybridIntelligence ? 'Automatic and enabled' : 'Manual only')}</Txt>
+              <Txt muted>{'YouTube schedule: ' + (preferences.schedule === 'Manual' ? 'Off' : preferences.paused ? 'Paused' : preferences.schedule)}</Txt>
+              <Action secondary onPress={() => router.push('/settings')}>Open settings and preferences</Action>
             </View>
-          </Fold>
-        </Panel>
+          </View>
+        </Fold>
 
         {op.error ? <ErrorBox message={op.error} onRetry={op.clear} /> : null}
         {op.message ? <Txt muted>{op.message}</Txt> : null}
