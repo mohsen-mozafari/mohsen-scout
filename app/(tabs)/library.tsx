@@ -10,6 +10,7 @@ import {
   styles,
   Field,
   Choices,
+  Fold,
   Action,
   Empty,
   ErrorBox,
@@ -111,37 +112,39 @@ export default function Library() {
                 onChange={setSearch}
                 placeholder="Titles, personal notes or tags"
               />
-              <Choices
-                label="Sort"
-                options={['Newest', 'Oldest', 'Title']}
-                selected={[sort]}
-                onChange={(values) => setSort(values[0])}
-              />
-              <Choices
-                label="Folders"
-                options={['All', ...new Set(data.links.map((link) => link.folder).filter(Boolean))]}
-                selected={[folder]}
-                onChange={(values) => setFolder(values[0])}
-              />
-              <Choices
-                label="Tags"
-                options={['All tags', ...new Set(data.links.flatMap((link) => link.tags))]}
-                selected={[tag]}
-                onChange={(values) => setTag(values[0])}
-              />
+              <Txt muted>{filtered.length} saved references shown</Txt>
               <View style={{ flexDirection: 'row', gap: 8 }}>
-                <View style={{ flex: 1 }}>
-                  <Action icon={Plus} secondary onPress={() => setAddOpen((value) => !value)}>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Action icon={Plus} onPress={() => setAddOpen((value) => !value)}>
                     {addOpen ? 'Close add form' : 'Add a link'}
                   </Action>
                 </View>
-                <View style={{ flex: 1 }}>
-                  <Action secondary onPress={() => router.push('/notes')}>Open Notes</Action>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Action secondary icon={Download} busy={op.busy} onPress={() => void op.run(() => shareText(personalLinks(data), 'mohsen-scout-links.txt'))}>
+                    Export links
+                  </Action>
                 </View>
               </View>
-              <Action secondary icon={Download} busy={op.busy} onPress={() => void op.run(() => shareText(personalLinks(data), 'mohsen-scout-links.txt'))}>
-                Export personal links
-              </Action>
+              <Fold title="Filter and sort library">
+                <Choices
+                  label="Sort"
+                  options={['Newest', 'Oldest', 'Title']}
+                  selected={[sort]}
+                  onChange={(values) => setSort(values[0])}
+                />
+                <Choices
+                  label="Folders"
+                  options={['All', ...new Set(data.links.map((link) => link.folder).filter(Boolean))]}
+                  selected={[folder]}
+                  onChange={(values) => setFolder(values[0])}
+                />
+                <Choices
+                  label="Tags"
+                  options={['All tags', ...new Set(data.links.flatMap((link) => link.tags))]}
+                  selected={[tag]}
+                  onChange={(values) => setTag(values[0])}
+                />
+              </Fold>
             </View>
             {addOpen ? (
               <View style={styles.panel}>
