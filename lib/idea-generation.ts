@@ -251,7 +251,6 @@ export function selectIdeaGenerationVideos(
     if (!/^[\w-]{11}$/.test(video.id)) continue;
     const titleTokens = new Set(tokenizeResearchText(video.title));
     const descriptionTokens = new Set(tokenizeResearchText(video.description ?? ''));
-    const titleOverlap = [...topicTokens].filter((token) => titleTokens.has(token)).length;
     const totalOverlap = [...topicTokens].filter((token) => titleTokens.has(token) || descriptionTokens.has(token)).length;
     // Use the shared lexical-semantic matcher as the inclusion gate. Literal token
     // ratios alone incorrectly discard known aliases such as "JWST" / "James Webb".
