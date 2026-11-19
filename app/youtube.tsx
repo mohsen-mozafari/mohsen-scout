@@ -3,7 +3,6 @@ import { Text, View, Linking } from 'react-native';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { Button, Skeleton } from 'heroui-native';
 import { ArrowRight, SlidersHorizontal, Sparkles, KeyRound, Search } from 'lucide-react-native';
-import { LinearGradient } from '@/components/ui/primitives/LinearGradient';
 import {
   Page,
   Panel,
@@ -22,7 +21,7 @@ import { VideoRow } from '@/components/VideoRow';
 import { MediaPreview } from '@/components/MediaPreview';
 import { palette as p } from '@/lib/theme';
 import { useScout } from '@/lib/store';
-import { languages, type ResearchInput, type Report } from '@/lib/types';
+import { languages, regions, type ResearchInput, type Report } from '@/lib/types';
 import { relatedQueries } from '@/lib/api';
 import { limitations } from '@/lib/engine';
 import { sortResearchVideos, type ResearchVideoSort } from '@/lib/intelligence';
@@ -139,8 +138,23 @@ export default function Discover() {
           onChange={(value) => { setTopic(value); setReportId(''); }}
           placeholder="e.g. Small-space home studios"
         />
-        <Txt muted>Using Settings defaults: {region} · {selectedLanguages.map((code) => languages[code] || code).join(', ')}</Txt>
-        <Fold title="Research filters">
+        <Txt muted>
+          Current sample: {region} · {selectedLanguages.map((code) => languages[code] || code).join(', ')} · {period} · {maximum} max videos
+        </Txt>
+        <Fold title="Adjust search settings">
+          <Choices
+            label="Region"
+            options={regions}
+            selected={[region]}
+            onChange={(values) => { setRegion(values[0]); setReportId(''); }}
+          />
+          <Choices
+            label="Languages"
+            options={Object.keys(languages)}
+            selected={selectedLanguages}
+            multiple
+            onChange={(values) => { setLanguages(values); setReportId(''); }}
+          />
           <Choices
             label="Publication period"
             options={['Last 7 days', 'Last 30 days', 'Last 90 days', 'Any time']}
@@ -172,24 +186,13 @@ export default function Discover() {
             onChange={(v) => { setMaximum(v[0]); setReportId(''); }}
           />
         </Fold>
-        <View style={{ borderRadius: 16, overflow: 'hidden' }}>
-          <LinearGradient
-            colors={[p.violet, p.indigo]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={{ padding: 2 }}
-          >
-            <Button
-              className="rounded-2xl bg-transparent"
-              isDisabled={busy || !ready}
-              onPress={() => void run()}
-            >
-              <Search size={18} color={p.white} strokeWidth={1.8} />
-              <Button.Label>{busy ? 'Researching…' : 'START RESEARCH'}</Button.Label>
-              <ArrowRight size={18} color={p.white} strokeWidth={1.8} />
-            </Button>
-          </LinearGradient>
-        </View>
+        <Action
+          icon={Search}
+          disabled={busy || !ready || !topic.trim() || !selectedLanguages.length}
+          onPress={() => void run()}
+        >
+          {busy ? 'Researching…' : 'Start research'}
+        </Action>
       </Panel>
       {Boolean(topic.trim()) && !report && (
         <View style={{ gap: 12 }}>
@@ -200,7 +203,7 @@ export default function Discover() {
                 style={{
                   width: index ? 18 : 6,
                   height: index ? 1 : 6,
-                  backgroundColor: index ? p.border : p.purple,
+                  backgroundColor: index ? p.border : p.accent,
                   borderRadius: 3,
                 }}
               />
@@ -215,7 +218,7 @@ export default function Discover() {
           onPress={() => router.push('/settings')}
           className="h-auto justify-start px-0"
         >
-          <KeyRound size={18} color={p.purple} />
+          <KeyRound size={18} color={p.accent} />
           <Button.Label className="flex-1">Set up your YouTube API key</Button.Label>
           <ArrowRight size={16} color={p.muted} />
         </Button>
