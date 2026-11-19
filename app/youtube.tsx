@@ -169,7 +169,7 @@ export default function Discover() {
           />
           <Choices
             label="Maximum unique videos"
-            options={['10', '25', '50']}
+            options={['10', '25', '50', '100']}
             selected={[maximum]}
             onChange={(v) => { setMaximum(v[0]); setReportId(''); }}
           />

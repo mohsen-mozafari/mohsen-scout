@@ -19,7 +19,7 @@ import {
 import { useScout } from '@/lib/store';
 import { type Preferences, defaults, regions, languages } from '@/lib/types';
 import { getKey, setKey, deleteKey, credentialPersistence, type Credential } from '@/lib/vault';
-import { getFreeModels, testYouTube, testOpenRouter, quotaDay } from '@/lib/api';
+import { getFreeModels, getOpenRouterDailyQuota, testYouTube, testOpenRouter, quotaDay, localDateKey } from '@/lib/api';
 import { exportBackup, importBackup, restorePersonalData } from '@/lib/backup';
 import { shareText, readBackup, shareApk } from '@/lib/transfer';
 import { configureSchedule, enableNotifications, scheduleNotice } from '@/lib/scheduler';
@@ -158,6 +158,26 @@ export default function Settings() {
         setModelBusy(false);
       }
     }, 'Available free models refreshed.');
+  const refreshOpenRouterQuota = () =>
+    void op.run(async () => {
+      const key = await getKey('openrouter');
+      if (!key) throw new Error('Save your OpenRouter key in Settings first.');
+      const quota = await getOpenRouterDailyQuota(key);
+      if (!quota) throw new Error('OpenRouter did not return a readable free-model quota counter.');
+      const current = useScout.getState();
+      await current.commit((d) => ({
+        ...d,
+        preferences: {
+          ...d.preferences,
+          openRouterUsageDay: localDateKey(),
+          openRouterRequestsToday: quota.used,
+          openRouterDailyLimit: quota.limit,
+          openRouterDailyUsed: quota.used,
+          openRouterDailyRemaining: quota.remaining,
+          openRouterQuotaCheckedAt: Date.now(),
+        },
+      }));
+    }, 'OpenRouter daily quota refreshed.');
   return (
     <Page title="Your research desk">
       {!ready && <Skeleton className="h-32 rounded-2xl" />}
@@ -304,6 +324,13 @@ export default function Settings() {
         </Txt>
         <Action busy={op.busy} disabled={!ready} onPress={save}>Save AI automation</Action>
         <CredentialSection kind="openrouter" label="OpenRouter" />
+        <Txt>
+          Free-model requests today (UTC): {prefs.openRouterDailyUsed ?? prefs.openRouterRequestsToday ?? 0}
+          /{prefs.openRouterDailyLimit ?? 50} · Remaining: {prefs.openRouterDailyRemaining ?? 'not refreshed'}
+        </Txt>
+        <Action secondary busy={op.busy} onPress={refreshOpenRouterQuota}>
+          Refresh OpenRouter quota
+        </Action>
         <Txt muted>
           {prefs.uiLanguage === 'fa'
             ? 'مدل‌های رایگان به‌صورت زنده شناسایی می‌شوند و دسترسی ارائه‌دهندگان ممکن است تغییر کند. در حالت خودکار، تیترهای عمومی خبرها، عنوان ویدئوهای عمومی و آمار بازدید/پسند موجود همراه تحلیل پردازش‌شده ارسال می‌شوند؛ در حالت دستی فقط هنگام درخواست خودت ارسال انجام می‌شود.'
@@ -343,14 +370,15 @@ export default function Settings() {
           onChange={(v) => setPrefs({ ...prefs, budget: Number(v[0]) })}
         />
         <Txt muted>
-          Each search is estimated at 100 units; connection tests at 1. Retries are charged. This is
-          a conservative local counter, not Google&apos;s live quota. Other clients using this
-          project are not counted. Daily reset follows Pacific time.
+          Search.list uses its own 100-calls-per-day bucket (each call costs one quota).
+          Other read endpoints share the 10,000-unit daily bucket and use the local budget above.
+          These counters cover this app instance only; Google Cloud Console shows actual usage
+          across every app and API key in the project. Daily reset follows Pacific time.
         </Txt>
         <Txt muted>
-          {data.budget.date === quotaDay() && data.budget.exhausted
-            ? 'YouTube reported quota exhaustion. Automatic requests are stopped for this quota day.'
-            : 'Google may reject requests before this local budget is reached.'}
+          {data.budget.date === quotaDay() && (data.budget.searchExhausted || data.budget.otherExhausted)
+            ? 'YouTube reported quota exhaustion for one API bucket. The independent bucket remains available.'
+            : 'The local counter estimates only this app instance; Google Cloud Console is the authoritative project-wide view.'}
         </Txt>
         <Action busy={op.busy} onPress={save}>
           Save budget

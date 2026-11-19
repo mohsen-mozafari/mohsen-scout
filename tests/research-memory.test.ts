@@ -57,12 +57,15 @@ void test('research memory stores publisher-only evidence and creates a bounded 
   });
   assert.ok(changed);
   assert.equal(changed.history?.length, 2);
+  assert.equal(changed.sources.length, 2);
+  assert.ok(changed.sources.some((item) => item.sourceUrl.endsWith('/story-one')));
+  assert.ok(changed.sources.some((item) => item.sourceUrl.endsWith('/story-two')));
   assert.equal(changed.history?.[0].newSourceCount, 1);
   assert.equal(changed.history?.[0].confidence, 'high');
   assert.ok(changed.history?.[0].changes.length);
 });
 
-void test('research memory does not create an empty entry and caps snapshots at eight', () => {
+void test('research memory does not create empty entries and preserves long histories', () => {
   assert.equal(createResearchMemoryEntry({
     topic: 'No publisher evidence',
     news: [],
@@ -93,7 +96,7 @@ void test('research memory does not create an empty entry and caps snapshots at 
     previous: { ...base, history: oldHistory },
     now: 99,
   })!;
-  assert.equal(capped.history?.length, 8);
+  assert.equal(capped.history?.length, 9);
 });
 
 void test('legacy local data and backup memory remain readable with versioned history', () => {
@@ -114,4 +117,35 @@ void test('legacy local data and backup memory remain readable with versioned hi
   delete legacy.researchMemory[0].history;
   const restoredLegacy = importBackup(exportBackup(legacy));
   assert.equal(restoredLegacy.researchMemory[0].history?.length, 0);
+});
+
+
+void test('research memory source records and snapshots remain bounded across repeated scans', () => {
+  const first = createResearchMemoryEntry({
+    topic: 'JWST long-term research',
+    news: Array.from({ length: 150 }, (_, index) => ({
+      ...story(String(index), 'JWST report number ' + index),
+      publishedAt: new Date(Date.UTC(2026, 10, 19, 0, 0, index)).toISOString(),
+    })),
+    analysis: analysis(),
+    now: Date.parse('2026-11-19T12:00:00Z'),
+    language: 'en',
+  });
+  assert.ok(first);
+  assert.equal(first.sources.length, 120);
+  let current = first;
+  for (let index = 0; index < 45; index += 1) {
+    const next = createResearchMemoryEntry({
+      topic: 'JWST long-term research',
+      news: [story('later-' + index, 'JWST additional report ' + index)],
+      analysis: analysis(index % 2 ? 'moderate' : 'high'),
+      previous: current,
+      now: Date.parse('2026-11-19T12:00:00Z') + (index + 1) * 60000,
+      language: 'en',
+    });
+    assert.ok(next);
+    current = next;
+  }
+  assert.ok(current.sources.length <= 120);
+  assert.ok((current.history?.length ?? 0) <= 36);
 });

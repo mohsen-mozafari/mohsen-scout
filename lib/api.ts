@@ -130,6 +130,9 @@ export function quotaDay(now = new Date()) {
 export type YouTubeQuotaKind = 'search' | 'other';
 export type YouTubeQuotaOrigin = 'manual' | 'automatic' | 'reserve';
 
+export const YOUTUBE_DAILY_SEARCH_LIMIT = 100;
+export const YOUTUBE_DAILY_OTHER_UNIT_LIMIT = 10000;
+
 export function nextBudget(
   old: Budget,
   limit: number,
@@ -141,41 +144,52 @@ export function nextBudget(
   const date = quotaDay(now);
   const current: Budget = old.date === date ? old : {
     date, units: 0, requests: 0, exhausted: false,
+    searchExhausted: false, otherExhausted: false,
     searchManualRequests: 0, searchAutomaticRequests: 0, searchReserveRequests: 0,
     otherManualUnits: 0, otherAutomaticUnits: 0, otherReserveUnits: 0,
   };
   if (!Number.isFinite(units) || units <= 0 || !Number.isFinite(limit) || limit <= 0)
     throw new ApiError('The local YouTube quota request is invalid.', 'budget');
-  if (current.exhausted || current.units + units > limit)
-    throw new ApiError('Your local request budget is reached. Change it in Settings or wait for the next Pacific-time day.', 'budget');
-  const next = { ...current };
+
+  const next: Budget = { ...current, exhausted: false };
   if (kind === 'search') {
+    if (current.searchExhausted)
+      throw new ApiError('YouTube reported that the daily search.list quota is exhausted. Check Google Cloud quota status.', 'quota');
     const field = origin === 'manual' ? 'searchManualRequests' : origin === 'automatic' ? 'searchAutomaticRequests' : 'searchReserveRequests';
-    const used = current[field] ?? 0;
-    const ceiling = origin === 'manual' ? 60 : 20;
-    if (used + 1 > ceiling) throw new ApiError('The local ' + origin + ' YouTube search-call allowance is exhausted for this Pacific-time day.', 'budget');
-    next[field] = used + 1;
+    const used = (current.searchManualRequests ?? 0) +
+      (current.searchAutomaticRequests ?? 0) +
+      (current.searchReserveRequests ?? 0);
+    if (used + 1 > YOUTUBE_DAILY_SEARCH_LIMIT)
+      throw new ApiError('The daily YouTube search.list allowance of 100 calls has been reached. It resets at midnight Pacific Time.', 'budget');
+    next[field] = (current[field] ?? 0) + 1;
   } else {
+    if (current.otherExhausted)
+      throw new ApiError('YouTube reported that the daily non-search quota is exhausted. Check Google Cloud quota status.', 'quota');
     const field = origin === 'manual' ? 'otherManualUnits' : origin === 'automatic' ? 'otherAutomaticUnits' : 'otherReserveUnits';
-    const used = current[field] ?? 0;
-    const manualLimit = Math.floor(limit * 0.6);
-    const automaticLimit = Math.floor(limit * 0.2);
-    const reserveLimit = limit - manualLimit - automaticLimit;
-    const ceiling = origin === 'manual' ? manualLimit : origin === 'automatic' ? automaticLimit : reserveLimit;
-    if (used + units > ceiling) throw new ApiError('The local ' + origin + ' YouTube non-search unit allowance is exhausted.', 'budget');
-    next[field] = used + units;
+    const used = (current.otherManualUnits ?? 0) +
+      (current.otherAutomaticUnits ?? 0) +
+      (current.otherReserveUnits ?? 0);
+    const ceiling = Math.min(limit, YOUTUBE_DAILY_OTHER_UNIT_LIMIT);
+    if (used + units > ceiling)
+      throw new ApiError('The daily YouTube non-search allowance is reached. Increase the Settings budget or wait for the Pacific-time reset.', 'budget');
+    next[field] = (current[field] ?? 0) + units;
   }
-  return { ...next, units: current.units + units, requests: current.requests + 1 };
+  return {
+    ...next,
+    units: current.units + (kind === 'other' ? units : 0),
+    requests: current.requests + 1,
+  };
 }
 
-export const YOUTUBE_REFRESH_CYCLE_LIMIT = 3;
+/** Backward-compatible storage helper; full research cycles are not locally capped. */
 export const YOUTUBE_REFRESH_WINDOW_MS = 24 * 60 * 60 * 1000;
 export function reserveYoutubeRefreshCycle(previous: readonly number[] | undefined, now = Date.now()): number[] {
-  const recent = (previous ?? []).filter((timestamp) => Number.isFinite(timestamp) && timestamp <= now && now - timestamp < YOUTUBE_REFRESH_WINDOW_MS).sort((a, b) => a - b).slice(-YOUTUBE_REFRESH_CYCLE_LIMIT);
-  if (recent.length >= YOUTUBE_REFRESH_CYCLE_LIMIT)
-    throw new ApiError('The local limit of three full YouTube research cycles in a rolling 24-hour period has been reached.', 'budget');
-  return [...recent, now];
+  const recent = (previous ?? [])
+    .filter((timestamp) => Number.isFinite(timestamp) && timestamp <= now && now - timestamp < YOUTUBE_REFRESH_WINDOW_MS)
+    .sort((a, b) => a - b);
+  return [...recent.slice(-2), now];
 }
+
 const searchSchema = z.object({
   nextPageToken: z.string().optional(),
   items: z.array(
@@ -206,7 +220,7 @@ export type YouTubeOptions = {
   charge: (units: number, kind?: YouTubeQuotaKind, origin?: YouTubeQuotaOrigin) => Promise<void>;
   origin?: YouTubeQuotaOrigin;
   fetcher?: Fetcher;
-  onQuota?: () => Promise<void>;
+  onQuota?: (kind: YouTubeQuotaKind) => Promise<void>;
   /** Shared by one research run; counts actual search HTTP attempts, including retries. */
   searchAttemptBudget?: { used: number; limit: number };
 };
@@ -227,7 +241,7 @@ async function youtube(endpoint: string, params: Record<string, string>, options
   try {
     return await promise;
   } catch (error) {
-    if (error instanceof ApiError && error.code === 'quota') await options.onQuota?.();
+    if (error instanceof ApiError && error.code === 'quota') await options.onQuota?.(kind);
     throw error;
   } finally {
     inflight.delete(url);
@@ -297,7 +311,7 @@ export function rankYouTubeSearchResults<T extends { title: string; description?
 export async function searchYouTube(input: ResearchInput, options: YouTubeOptions, onProgress?: (text: string) => void) {
   const topic = input.topic.trim();
   if (!topic) throw new ApiError('Enter a topic before starting research.', 'input');
-  const resultLimit = Math.max(1, Math.min(50, Math.floor(input.maxResults) || 25));
+  const resultLimit = Math.max(1, Math.min(100, Math.floor(input.maxResults) || 25));
   const searches = buildYouTubeSearchPlan(topic, input.languages);
   if (!searches.length) throw new ApiError('Select at least one research language before starting YouTube search.', 'input');
   const warnings: string[] = [];
@@ -331,7 +345,7 @@ export async function searchYouTube(input: ResearchInput, options: YouTubeOption
     if (input.category) params.videoCategoryId = input.category;
     if (input.days) params.publishedAfter = new Date(Date.now() - input.days * 86400000).toISOString();
     try {
-      const raw = await youtube('search', params, researchOptions, 100);
+      const raw = await youtube('search', params, researchOptions, 1);
       const parsed = searchSchema.safeParse(raw);
       if (!parsed.success) throw new ApiError('YouTube returned an invalid search response.', 'invalid');
       for (const item of parsed.data.items) {
@@ -439,7 +453,11 @@ export async function getFreeModels(fetcher: Fetcher = fetch) {
   );
   if (!parsed.success) throw new ApiError('The model list could not be read.', 'invalid');
   return parsed.data.data.filter(
-    (m) => Boolean(m.id.trim()) && Number(m.pricing.prompt) === 0 && Number(m.pricing.completion) === 0,
+    (m) =>
+      Boolean(m.id.trim()) &&
+      m.id.trim().toLowerCase().endsWith(':free') &&
+      Number(m.pricing.prompt) === 0 &&
+      Number(m.pricing.completion) === 0,
   );
 }
 
@@ -603,7 +621,7 @@ export async function searchYouTubeSample(
       try {
         const params: Record<string, string> = { ...commonParams, order: pool.order, maxResults: String(poolSize) };
         if (pool.token) params.pageToken = pool.token;
-        const raw = await youtube('search', params, options, 100);
+        const raw = await youtube('search', params, options, 1);
         const parsed = spaceSearchSchema.safeParse(raw);
         if (!parsed.success) throw new ApiError('YouTube returned an invalid topic sample.', 'invalid');
         if (pool.name === 'relevance') relevanceNext = parsed.data.nextPageToken ?? '';
@@ -625,7 +643,7 @@ export async function searchYouTubeSample(
     try {
       const params: Record<string, string> = { ...commonParams, order };
       if (filters.pageToken) params.pageToken = filters.pageToken;
-      const raw = await youtube('search', params, options, 100);
+      const raw = await youtube('search', params, options, 1);
       const parsed = spaceSearchSchema.safeParse(raw);
       if (!parsed.success) throw new ApiError('YouTube returned an invalid topic sample.', 'invalid');
       for (const item of parsed.data.items) selectedById.set(item.id.videoId, item);
@@ -817,14 +835,67 @@ export function localDateKey(date = new Date()): string {
   return `${year}-${month}-${day}`;
 }
 
+export type OpenRouterDailyQuota = { used: number; limit: number; remaining: number };
+const openRouterQuotaSchema = z.object({
+  data: z.object({
+    free_model_daily_requests: z.object({
+      used: z.number().int().nonnegative(),
+      limit: z.number().int().positive(),
+      remaining: z.number().int().nonnegative(),
+    }),
+  }),
+});
+
+/** Reads the official free-model daily request counter for the supplied API key. */
+export async function getOpenRouterDailyQuota(
+  key: string,
+  fetcher: Fetcher = fetch,
+): Promise<OpenRouterDailyQuota | undefined> {
+  if (!key.trim()) throw new ApiError('Save your OpenRouter key in Settings first.', 'key');
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8000);
+  try {
+    const response = await fetcher('https://openrouter.ai/api/v1/key', {
+      headers: { Authorization: 'Bearer ' + key },
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      const code = response.status === 429 ? 'rate' : response.status === 401 ? 'key' : 'provider';
+      throw new ApiError(
+        response.status === 429
+          ? 'OpenRouter quota status is rate-limited. Try refreshing it later.'
+          : response.status === 401
+            ? 'The OpenRouter key was rejected. Check or replace it in Settings.'
+            : 'OpenRouter quota status could not be refreshed.',
+        code,
+      );
+    }
+    const raw: unknown = await response.json();
+    const parsed = openRouterQuotaSchema.safeParse(raw);
+    return parsed.success ? parsed.data.data.free_model_daily_requests : undefined;
+  } catch (error) {
+    if (error instanceof ApiError) throw error;
+    if (controller.signal.aborted)
+      throw new ApiError('OpenRouter quota status request timed out.', 'timeout');
+    throw new ApiError('Could not refresh OpenRouter quota status.', 'offline');
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 export function nextOpenRouterUsage(
   storedDay: string | undefined,
   storedCount: number | undefined,
   today: string,
+  dailyLimit = 10000,
+  serverUsed?: number,
 ): { openRouterUsageDay: string; openRouterRequestsToday: number } {
-  const count = storedDay === today ? Math.max(0, Math.trunc(storedCount ?? 0)) : 0;
-  if (count >= 30) throw new ApiError('The local OpenRouter limit of 30 requests for today has been reached.', 'budget');
-  return { openRouterUsageDay: today, openRouterRequestsToday: count + 1 };
+  const localCount = storedDay === today ? Math.max(0, Math.trunc(storedCount ?? 0)) : 0;
+  const used = Number.isFinite(serverUsed) && serverUsed! >= 0 ? Math.floor(serverUsed!) : localCount;
+  const limit = Number.isFinite(dailyLimit) && dailyLimit > 0 ? Math.floor(dailyLimit) : 10000;
+  if (used >= limit)
+    throw new ApiError('OpenRouter daily request limit is exhausted (' + used + '/' + limit + ' UTC).', 'budget');
+  return { openRouterUsageDay: today, openRouterRequestsToday: used + 1 };
 }
 
 function openRouterProviderError(raw: unknown): ApiError | undefined {
@@ -858,7 +929,7 @@ export async function getOpinion(
   key: string,
   model: string,
   prompt: string,
-  beforeRequest?: () => Promise<void>,
+  beforeRequest?: (quota?: OpenRouterDailyQuota) => Promise<void>,
   fetcher: Fetcher = fetch,
 ) {
   if (opinionRequestInFlight) throw new ApiError('Another OpenRouter analysis is already running. Wait for it to finish.', 'busy');

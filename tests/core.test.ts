@@ -1,3 +1,4 @@
+// Regression fixtures keep historical and unmatched evidence visible without treating it as current support.
 import { test } from 'node:test';
 import { scheduleChecks } from './schedule.cases';
 for (const [name, run] of scheduleChecks) void test(name, run);
@@ -27,6 +28,7 @@ import {
   requestJson,
   retryDelayMs,
   getFreeModels,
+  getOpenRouterDailyQuota,
   opinionPrompt,
   translateNewsToPersian,
   testYouTube,
@@ -112,16 +114,33 @@ void test('OpenRouter usage: stable local ISO date keys pass persisted-data vali
   }));
 });
 
-void test('OpenRouter usage: daily request count increments and resets on a new local day', () => {
+void test('OpenRouter usage follows the live free-model daily quota', () => {
   assert.deepEqual(
-    nextOpenRouterUsage('2026-11-17', 3, '2026-11-17'),
+    nextOpenRouterUsage(undefined, undefined, '2026-11-17', 50, 49),
+    { openRouterUsageDay: '2026-11-17', openRouterRequestsToday: 50 },
+  );
+  assert.deepEqual(
+    nextOpenRouterUsage('2026-11-17', 40, '2026-11-17', 50, 3),
     { openRouterUsageDay: '2026-11-17', openRouterRequestsToday: 4 },
   );
   assert.deepEqual(
-    nextOpenRouterUsage('2026-11-17', 29, '2026-11-18'),
+    nextOpenRouterUsage('2026-11-17', 9999, '2026-11-18'),
     { openRouterUsageDay: '2026-11-18', openRouterRequestsToday: 1 },
   );
-  assert.throws(() => nextOpenRouterUsage('2026-11-17', 30, '2026-11-17'));
+  assert.throws(() => nextOpenRouterUsage('2026-11-17', 50, '2026-11-17', 50, 50));
+});
+
+void test('OpenRouter daily quota reads the official account-key endpoint', async () => {
+  let endpoint = '';
+  let authorization = '';
+  const quota = await getOpenRouterDailyQuota('MOCK_OPENROUTER_KEY', async (url, init) => {
+    endpoint = typeof url === 'string' ? url : url instanceof URL ? url.href : url.url;
+    authorization = new Headers(init?.headers).get('Authorization') ?? '';
+    return response({ data: { free_model_daily_requests: { used: 17, limit: 50, remaining: 33 } } });
+  });
+  assert.equal(endpoint, 'https://openrouter.ai/api/v1/key');
+  assert.equal(authorization, 'Bearer MOCK_OPENROUTER_KEY');
+  assert.deepEqual(quota, { used: 17, limit: 50, remaining: 33 });
 });
 
 void test('YouTube trend sample uses official search and video statistics endpoints with bounded quota', async () => {
@@ -164,7 +183,7 @@ void test('YouTube trend sample uses official search and video statistics endpoi
   }, 12);
   assert.equal(searchCalls, 1);
   assert.equal(statisticsCalls, 1);
-  assert.equal(charges, 102);
+  assert.equal(charges, 3);
   assert.equal(result.videos[0].viewCount, 125000);
   assert.equal(result.videos[0].likeCount, 2500);
   assert.equal(result.videos[0].thumbnailUrl, 'https://example.com/high.jpg');
@@ -251,7 +270,7 @@ void test('YouTube likes sample merges relevance and view-count pools and uses a
   assert.equal(result.videos.length, 3);
   assert.equal(result.videos.find((item) => item.id === 'M7lc1UVf-VE')?.likeCount, 90);
   assert.equal(result.videos.find((item) => item.id === 'VYOjWnS4cMY')?.viewCount, 3000);
-  assert.equal(charges, 202);
+  assert.equal(charges, 4);
   assert.match(result.nextPageToken ?? '', /^mohsen-scout-likes-v1:/);
   assert.match(result.warning, /not a global like-count ranking/i);
 });
@@ -501,13 +520,15 @@ void test('Library: link export only includes personal fields', () => {
   assert(text.includes('Remember this'));
   assert(!text.includes(video.title));
 });
-void test('Quota: resets on Pacific day, counts retries, rejects exhausted/budget overflow', () => {
+void test('Quota: resets on Pacific day and keeps Search independent from non-search quota', () => {
   const date = quotaDay();
-  const current = { date, units: 100, requests: 1, exhausted: false };
+  const current = { date, units: 100, requests: 1, exhausted: false, otherManualUnits: 100 };
   assert.equal(nextBudget(current, 500, 100).units, 200);
   assert.throws(() => nextBudget(current, 150, 100), ApiError);
-  assert.throws(() => nextBudget({ ...current, exhausted: true }, 500, 1), ApiError);
-  assert.equal(nextBudget({ ...current, date: 'old', exhausted: true }, 500, 100).units, 100);
+  assert.throws(() => nextBudget({ ...current, otherExhausted: true }, 500, 1), ApiError);
+  const searchStillWorks = nextBudget({ ...current, otherExhausted: true }, 500, 1, new Date(), 'search');
+  assert.equal(searchStillWorks.searchManualRequests, 1);
+  assert.equal(nextBudget({ ...current, date: 'old', otherExhausted: true }, 500, 100).units, 100);
 });
 void test('Research: creates explicit related queries without inventing stats', () => {
   const queries = relatedQueries(input.topic);
@@ -531,7 +552,7 @@ void test('YouTube MOCK: official endpoint, independent region/language filters,
   assert.equal(result.videos[0].title, video.title);
   assert.equal(result.videos[0].viewCount, 1234);
   assert.equal(result.videos[0].likeCount, 56);
-  assert.equal(units, 401);
+  assert.equal(units, 5);
   const searchUrls = urls.filter((url) => new URL(url).pathname.endsWith('/search'));
   assert.equal(searchUrls.length, 4);
   assert.deepEqual(new Set(searchUrls.map((url) => new URL(url).searchParams.get('order'))), new Set(['relevance', 'viewCount', 'date']));
@@ -1119,7 +1140,7 @@ void test('Internal research engine joins publisher, Wikimedia and YouTube evide
   assert(!JSON.stringify(result).toLowerCase().includes('viral score'));
 });
 
-void test('Internal engine excludes unrelated headlines and uses only title-matched YouTube videos from the latest 30 days', () => {
+void test('Internal engine keeps historical context while separating recent, all-time and future-dated YouTube matches', () => {
   const fixedNow = Date.parse('2026-11-18T12:00:00.000Z');
   const result = buildInternalResearch({
     topic: 'Exoplanet atmospheres',
@@ -1142,10 +1163,14 @@ void test('Internal engine excludes unrelated headlines and uses only title-matc
   assert.equal(audit.youtubeSampleCount, 4);
   assert.equal(audit.recentVideoCandidateCount, 2);
   assert.equal(audit.matchedVideoCount, 1);
-  assert.equal(audit.excludedVideoCount, 3);
-  assert.equal(audit.videoViewCountsAvailable, 1);
-  assert.ok(!result.evidence.some((item) => item.detail.includes('Artemis')));
-  assert.ok(result.evidence.some((item) => item.id === 'youtube-sample' && item.detail.includes('800')));
+  assert.equal(audit.allTimeMatchedVideoCount, 2);
+  assert.equal(audit.recentMatchedVideoCount, 1);
+  assert.equal(audit.outsideVideoWindowCount, 2);
+  assert.equal(audit.futureDatedVideoCount, 1);
+  assert.equal(audit.excludedVideoCount, 2);
+  assert.equal(audit.videoViewCountsAvailable, 2);
+  assert.ok(result.evidence.some((item) => item.id === 'retrieved-news-headlines' && item.detail.includes('Artemis')), 'unmatched publisher records remain visible in the contextual evidence audit');
+  assert.ok(result.evidence.some((item) => item.id === 'youtube-sample' && item.detail.includes('9,000')));
 });
 
 void test('Topic relevance ranks a direct publisher match above unrelated feed context', () => {
@@ -1271,41 +1296,30 @@ void test('Manual YouTube result sorting changes order for date, views, likes an
   assert.deepEqual(sortResearchVideos(sample, 'Z-A').map((item) => item.id), ['a', 'c', 'd', 'b']);
 });
 
-void test('YouTube quota manager enforces manual, automatic and reserve Search and non-search buckets', () => {
+void test('YouTube Search and other API quotas are independent and use their correct daily units', () => {
   const now = new Date('2026-11-16T12:00:00.000Z');
   const date = quotaDay(now);
-  let manualSearch: Budget = { date, units: 0, requests: 0, exhausted: false };
-  for (let index = 0; index < 60; index += 1) manualSearch = nextBudget(manualSearch, 10000, 100, now, 'search', 'manual');
-  assert.equal(manualSearch.searchManualRequests, 60);
-  assert.throws(() => nextBudget(manualSearch, 10000, 100, now, 'search', 'manual'), /manual YouTube search-call allowance/);
+  let other: Budget = { date, units: 0, requests: 0, exhausted: false };
+  other = nextBudget(other, 10000, 10000, now, 'other', 'manual');
+  assert.equal(other.units, 10000);
+  assert.throws(() => nextBudget(other, 10000, 1, now, 'other', 'manual'), /non-search allowance/);
 
-  let automaticSearch: Budget = { date, units: 0, requests: 0, exhausted: false };
-  for (let index = 0; index < 20; index += 1) automaticSearch = nextBudget(automaticSearch, 10000, 100, now, 'search', 'automatic');
-  assert.equal(automaticSearch.searchAutomaticRequests, 20);
-  assert.throws(() => nextBudget(automaticSearch, 10000, 100, now, 'search', 'automatic'), /automatic YouTube search-call allowance/);
+  let search: Budget = { ...other, searchManualRequests: 0, searchAutomaticRequests: 0, searchReserveRequests: 0 };
+  for (let index = 0; index < 100; index += 1)
+    search = nextBudget(search, 10000, 1, now, 'search', 'manual');
+  assert.equal(search.searchManualRequests, 100);
+  assert.equal(search.units, 10000);
+  assert.throws(() => nextBudget(search, 10000, 1, now, 'search', 'manual'), /100 calls/);
 
-  let manualOther: Budget = { date, units: 0, requests: 0, exhausted: false };
-  for (let index = 0; index < 60; index += 1) manualOther = nextBudget(manualOther, 10000, 100, now, 'other', 'manual');
-  assert.equal(manualOther.otherManualUnits, 6000);
-  assert.throws(() => nextBudget(manualOther, 10000, 1, now, 'other', 'manual'), /manual YouTube non-search unit allowance/);
-
-  let automaticOther: Budget = { date, units: 0, requests: 0, exhausted: false };
-  for (let index = 0; index < 20; index += 1) automaticOther = nextBudget(automaticOther, 10000, 100, now, 'other', 'automatic');
-  assert.equal(automaticOther.otherAutomaticUnits, 2000);
-  assert.throws(() => nextBudget(automaticOther, 10000, 1, now, 'other', 'automatic'), /automatic YouTube non-search unit allowance/);
-
-  let reserve: Budget = { date, units: 0, requests: 0, exhausted: false };
-  for (let index = 0; index < 20; index += 1) reserve = nextBudget(reserve, 10000, 100, now, 'search', 'reserve');
-  assert.equal(reserve.searchReserveRequests, 20);
-  reserve = nextBudget(reserve, 10000, 100, now, 'other', 'reserve');
-  assert.equal(reserve.otherReserveUnits, 100);
+  const freshSearch = nextBudget(other, 10000, 1, now, 'search', 'manual');
+  assert.equal(freshSearch.searchManualRequests, 1);
 });
 
-void test('YouTube full-refresh limit is rolling 24 hours and expires old attempts', () => {
+void test('YouTube full-refresh helper no longer blocks after three cycles', () => {
   const now = Date.UTC(2026, 10, 16, 12, 0, 0);
   const threeRecent = [now - 23 * 60 * 60 * 1000, now - 12 * 60 * 60 * 1000, now - 60_000];
-  assert.throws(() => reserveYoutubeRefreshCycle(threeRecent, now), /three full YouTube research cycles/);
-  const next = reserveYoutubeRefreshCycle([now - 25 * 60 * 60 * 1000, now - 23 * 60 * 60 * 1000], now);
-  assert.deepEqual(next, [now - 23 * 60 * 60 * 1000, now]);
+  const next = reserveYoutubeRefreshCycle(threeRecent, now);
+  assert.ok(next.includes(now));
+  assert.equal(next.length, 3);
+  assert.doesNotThrow(() => reserveYoutubeRefreshCycle(next, now + 1));
 });
-

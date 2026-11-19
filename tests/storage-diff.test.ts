@@ -12,8 +12,18 @@ void test('saving an AI opinion writes only the opinion domain, not large news/v
   assert.deepEqual(changedLocalDataEntries(next, previous).map((entry) => entry.key), ['opinions']);
 });
 
-void test('unchanged local data does not trigger a SQLite write', () => {
+void test('unchanged local data does not trigger a SQLite write or deep comparison', () => {
   const data = defaults();
+  data.videos = Array.from({ length: 1500 }, (_, index) => ({
+    id: 'video-' + index,
+    title: 'A large unchanged video record ' + index,
+    description: 'A long description '.repeat(20),
+    channel: 'Channel ' + index,
+    thumbnail: 'https://example.com/' + index + '.jpg',
+    publishedAt: '2026-11-17T12:00:00.000Z',
+    fetchedAt: 1,
+    query: 'unchanged',
+  }));
   assert.deepEqual(changedLocalDataEntries(data, data), []);
 });
 

@@ -36,8 +36,12 @@ const schema = z.object({
     model: text,
     hybridIntelligence: z.boolean().optional().default(false),
     openRouterUsageDay: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-    openRouterRequestsToday: z.number().int().min(0).max(30).optional(),
-    youtubeRefreshTimestamps: z.array(time).max(3).optional().default([]),
+    openRouterRequestsToday: z.number().int().min(0).max(10000).optional(),
+    openRouterDailyLimit: z.number().int().min(0).max(10000).optional(),
+    openRouterDailyUsed: z.number().int().min(0).max(10000).optional(),
+    openRouterDailyRemaining: z.number().int().min(0).max(10000).optional(),
+    openRouterQuotaCheckedAt: time.optional(),
+    youtubeRefreshTimestamps: z.array(time).max(5000).optional().default([]),
     schedule: z.enum(['Manual', 'Every 12 hours', 'Daily', 'Weekly']),
     paused: z.boolean(),
     lastInput: inputSchema.optional(),
@@ -74,6 +78,8 @@ const schema = z.object({
       engineGenerated: z.boolean().optional(),
       ideaCategory: text.max(80).optional(),
       generationKey: text.max(1200).optional(),
+      engineScore: z.number().int().min(0).max(100).optional(),
+      engineScoreReason: text.max(600).optional(),
     }),
   ),
   links: z.array(
@@ -160,7 +166,7 @@ const schema = z.object({
       title: text.max(500),
       sourceUrl: text.url().or(z.literal('')),
       publishedAt: z.string().datetime().nullable(),
-    })).max(12),
+    })),
     keyFindings: z.array(text.max(2000)).max(12),
     unresolvedQuestions: z.array(text.max(500)).max(12),
     contradictions: z.array(text.max(500)).max(8),
@@ -168,21 +174,23 @@ const schema = z.object({
     history: z.array(z.object({
       capturedAt: time,
       sourceFingerprint: text.max(64),
-      sourceCount: z.number().int().min(0).max(12),
-      newSourceCount: z.number().int().min(0).max(12),
-      updatedSourceCount: z.number().int().min(0).max(12),
+      sourceCount: z.number().int().min(0),
+      newSourceCount: z.number().int().min(0),
+      updatedSourceCount: z.number().int().min(0),
       keyFindings: z.array(text.max(2000)).max(8),
       unresolvedQuestions: z.array(text.max(500)).max(12),
       contradictions: z.array(text.max(500)).max(8),
       confidence: z.enum(['low', 'moderate', 'high']),
       changes: z.array(text.max(300)).max(4),
-    })).max(8).optional().default([]),
-  })).max(40).optional().default([]),
+    })).optional().default([]),
+  })).optional().default([]),
   budget: z.object({
     date: text, units: z.number().nonnegative(), requests: z.number().int().nonnegative(), exhausted: z.boolean(),
     searchManualRequests: z.number().int().min(0).optional().default(0),
     searchAutomaticRequests: z.number().int().min(0).optional().default(0),
     searchReserveRequests: z.number().int().min(0).optional().default(0),
+    searchExhausted: z.boolean().optional().default(false),
+    otherExhausted: z.boolean().optional().default(false),
     otherManualUnits: z.number().nonnegative().optional().default(0),
     otherAutomaticUnits: z.number().nonnegative().optional().default(0),
     otherReserveUnits: z.number().nonnegative().optional().default(0),
@@ -192,4 +200,10 @@ export function validateLocal(raw: unknown): LocalData {
   const parsed = schema.safeParse(raw);
   if (!parsed.success) throw new Error('Saved data is unreadable. Import a valid personal backup.');
   return parsed.data;
+}
+
+export function validateLocalEntry<K extends keyof LocalData>(key: K, value: unknown): LocalData[K] {
+  const parsed = schema.shape[key].safeParse(value);
+  if (!parsed.success) throw new Error('Saved ' + String(key) + ' data is unreadable. Retry the last change.');
+  return parsed.data as LocalData[K];
 }

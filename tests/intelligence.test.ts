@@ -8,9 +8,11 @@ import {
   canonicalizeResearchUrl,
   deduplicateResearchEvidence,
   matchesResearchTerms,
+  matchesAnyResearchTerms,
   normalizeResearchText,
   rankResearchEvidence,
   scoreResearchText,
+  scoreEditorialOpportunity,
   sortResearchVideos,
   extractResearchEntityCandidates,
   buildResearchEntityRelations,
@@ -124,6 +126,33 @@ void test('semantic aliases cover precise Persian space-science equivalents', ()
 
 
 
+
+void test('editorial opportunity score is explainable, bounded and honest about missing metrics', () => {
+  const now = Date.parse('2026-11-18T12:00:00Z');
+  const strong = scoreEditorialOpportunity({
+    topic: 'JWST exoplanet atmosphere',
+    anchor: 'methane spectroscopy',
+    now,
+    news: [
+      { title: 'JWST methane spectroscopy on exoplanet atmosphere', sourceId: 'nasa', sourceName: 'NASA', publishedAt: '2026-11-17T12:00:00Z' },
+      { title: 'Methane spectroscopy findings in exoplanet atmosphere', sourceId: 'esa-science', sourceName: 'ESA', publishedAt: '2026-11-16T12:00:00Z' },
+    ],
+    videos: [
+      { title: 'Methane spectroscopy exoplanet atmosphere', channel: 'Science A', publishedAt: '2026-11-15T12:00:00Z', viewCount: 1200000 },
+      { title: 'How JWST measures methane on exoplanets', channel: 'Science B', publishedAt: '2026-11-14T12:00:00Z', viewCount: 800000 },
+    ],
+  });
+  const sparse = scoreEditorialOpportunity({
+    topic: 'JWST exoplanet atmosphere', anchor: 'methane spectroscopy', now,
+    news: [], videos: [{ title: 'Methane spectroscopy', publishedAt: '2026-08-01T12:00:00Z', viewCount: null }],
+  });
+  assert.ok(strong.score >= 0 && strong.score <= 100);
+  assert.ok(strong.score > sparse.score);
+  assert.ok(strong.reason.includes('independent publisher'));
+  assert.equal(sparse.components.audienceSignal, null);
+  assert.ok(['low', 'moderate', 'high'].includes(strong.confidence));
+});
+
 void test('publication freshness distinguishes recent, old, undated and future-dated reports', () => {
   const now = Date.parse('2026-11-16T12:00:00Z');
   assert.equal(classifyPublicationFreshness('2026-11-15T12:00:00Z', now).status, 'fresh');
@@ -168,3 +197,35 @@ void test('entity relationships are evidence-backed co-mentions and never labell
   ), false);
 });
 
+
+
+void test('bulk evidence de-duplication keeps publisher provenance across a large feed sample', () => {
+  const items = Array.from({ length: 150 }, (_, index) => {
+    const title = 'Webb telescope reports methane evidence in exoplanet atmosphere record' + String(index).padStart(3, '0');
+    return [
+      { title, summary: 'MOCK source report', sourceName: 'NASA', sourceId: 'nasa', sourceUrl: 'https://nasa.gov/story/' + index + '?utm_source=rss' },
+      { title, summary: 'MOCK syndicated report', sourceName: 'JPL', sourceId: 'jpl', sourceUrl: 'https://jpl.nasa.gov/story/' + index },
+      { title, summary: 'MOCK syndicated report', sourceName: 'ESA', sourceId: 'esa-space', sourceUrl: 'https://esa.int/story/' + index },
+    ];
+  }).flat();
+  const result = deduplicateResearchEvidence(items);
+  assert.equal(result.items.length, 150);
+  assert.equal(result.duplicatesMerged, 300);
+  assert.equal(result.items[149].sourceCount, 3);
+  assert.deepEqual(result.items[149].sourceIds, ['nasa', 'jpl', 'esa-space']);
+});
+
+void test('fuzzy title de-duplication still merges reordered identical token sets', () => {
+  const result = deduplicateResearchEvidence([
+    { title: 'Webb telescope reports methane evidence in exoplanet atmosphere', sourceName: 'NASA', sourceId: 'nasa', sourceUrl: 'https://nasa.gov/a' },
+    { title: 'Atmosphere exoplanet in evidence methane reports telescope Webb', sourceName: 'ESA', sourceId: 'esa-space', sourceUrl: 'https://esa.int/b' },
+  ]);
+  assert.equal(result.items.length, 1);
+  assert.equal(result.duplicatesMerged, 1);
+  assert.equal(result.items[0].sourceCount, 2);
+});
+
+void test('multi-term matching preserves known concept aliases', () => {
+  assert.equal(matchesAnyResearchTerms('JWST observed a distant exoplanet', ['James Webb Space Telescope', 'Mars rover']), true);
+  assert.equal(matchesAnyResearchTerms('Artemis lunar mission', ['James Webb Space Telescope', 'NIRSpec']), false);
+});

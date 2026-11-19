@@ -24,9 +24,9 @@ import { rememberTopicDossier } from '@/lib/topic-dossier';
 import { createResearchMemoryEntry } from '@/lib/research-memory';
 import { ResearchKnowledgeGraph } from '@/components/ResearchKnowledgeGraph';
 import { VideoRow } from '@/components/VideoRow';
-import { chooseBestIdea, engineReviewCacheKey, findCachedEngineReview, runSingleFlight, selectDashboardVideos } from '@/lib/dashboard';
+import { engineReviewCacheKey, findCachedEngineReview, rankDashboardIdeas, runSingleFlight, selectDashboardVideos } from '@/lib/dashboard';
 import { generateEditorialIdeas } from '@/lib/idea-generation';
-import { fingerprintText, getFreeModels, getOpinion, internalEngineReviewPrompt, localDateKey, nextOpenRouterUsage, quotaDay, selectFreeModel, type YouTubeSampleVideo } from '@/lib/api';
+import { fingerprintText, getFreeModels, getOpenRouterDailyQuota, getOpinion, internalEngineReviewPrompt, localDateKey, nextOpenRouterUsage, quotaDay, selectFreeModel, type YouTubeSampleVideo } from '@/lib/api';
 import { getKey } from '@/lib/vault';
 import { ResearchOverviewChart } from '@/components/ResearchOverviewChart';
 
@@ -48,8 +48,8 @@ function AnalysisSignals({ result }: { result: InternalResearchResult }) {
       <Txt muted>{result.intelligence.confidence.reason}</Txt>
       <Heading>{fa ? 'تطبیق نمونه با موضوع' : 'Topic match in the sample'}</Heading>
       <Txt muted>{fa
-        ? 'خبر هم‌موضوع: ' + audit.topicMatchedNewsCount + ' از ' + audit.uniqueNewsCount + ' · ویدئوی تازه با عنوان هم‌موضوع: ' + audit.matchedVideoCount + ' از ' + audit.youtubeSampleCount + ' · بازه: ' + audit.videoWindowDays + ' روز · دارای آمار بازدید: ' + audit.videoViewCountsAvailable
-        : 'Topic-matched news: ' + audit.topicMatchedNewsCount + '/' + audit.uniqueNewsCount + ' · Recent title-matched videos: ' + audit.matchedVideoCount + '/' + audit.youtubeSampleCount + ' · Window: ' + audit.videoWindowDays + ' days · With view counts: ' + audit.videoViewCountsAvailable}</Txt>
+        ? 'خبر هم‌موضوع: ' + audit.topicMatchedNewsCount + ' از ' + audit.uniqueNewsCount + ' · ویدئوی هم‌موضوع در کل نمونه: ' + audit.allTimeMatchedVideoCount + ' · ویدئوی تازه هم‌موضوع: ' + audit.recentMatchedVideoCount + ' از ' + audit.recentVideoCandidateCount + ' · زمینه تاریخی/بی‌تاریخ: ' + audit.outsideVideoWindowCount + ' · تاریخ آینده: ' + audit.futureDatedVideoCount + ' · بازه: ' + audit.videoWindowDays + ' روز · دارای آمار بازدید: ' + audit.videoViewCountsAvailable
+        : 'Topic-matched news: ' + audit.topicMatchedNewsCount + '/' + audit.uniqueNewsCount + ' · All-time matched videos: ' + audit.allTimeMatchedVideoCount + ' · Recent matched videos: ' + audit.recentMatchedVideoCount + '/' + audit.recentVideoCandidateCount + ' · Historical/undated context: ' + audit.outsideVideoWindowCount + ' · Future-dated: ' + audit.futureDatedVideoCount + ' · Window: ' + audit.videoWindowDays + ' days · With view counts: ' + audit.videoViewCountsAvailable}</Txt>
       <Txt muted>{fa
         ? 'خوراک‌های حاضر: ' + result.intelligence.sourceQuality.feedsRepresented +
           ' · گروه‌های مستقل ناشر: ' + result.intelligence.sourceQuality.independentPublishers +
@@ -132,8 +132,9 @@ function EngineAIReview({ topic, result }: { topic: string; result: InternalRese
     evidence: [
       { label: 'Input news / unique news', detail: audit.inputNewsCount + ' / ' + audit.uniqueNewsCount },
       { label: 'Topic-matched / excluded news', detail: audit.topicMatchedNewsCount + ' / ' + audit.unmatchedNewsCount },
-      { label: 'YouTube input / title-matched recent', detail: audit.youtubeSampleCount + ' / ' + audit.matchedVideoCount },
-      { label: 'Recent candidates / excluded videos', detail: audit.recentVideoCandidateCount + ' / ' + audit.excludedVideoCount },
+      { label: 'YouTube input / all-time matched / recent matched', detail: audit.youtubeSampleCount + ' / ' + audit.allTimeMatchedVideoCount + ' / ' + audit.recentMatchedVideoCount },
+      { label: 'Historical / undated / future-dated context', detail: audit.outsideVideoWindowCount + ' / ' + audit.futureDatedVideoCount },
+      { label: 'Recent candidates / unmatched videos', detail: audit.recentVideoCandidateCount + ' / ' + audit.excludedVideoCount },
       { label: 'Matched videos with raw view counts', detail: String(audit.videoViewCountsAvailable) },
       { label: 'Publication window (days)', detail: String(audit.videoWindowDays) },
       { label: 'Independent publisher groups', detail: String(quality.independentPublishers) },
@@ -145,6 +146,14 @@ function EngineAIReview({ topic, result }: { topic: string; result: InternalRese
       { label: 'Editorial angles generated', detail: String(result.angles.length) },
       { label: 'Verification questions', detail: String(result.verificationQuestions.length) },
       { label: 'Known entity candidates', detail: String(result.entityCandidates.length) },
+      { label: 'Evidence relationship count', detail: String(result.entityRelations.length) },
+      { label: 'Open research questions', detail: String(audit.openResearchQuestionCount) },
+      { label: 'Wikimedia pageview observations', detail: String(result.intelligence.trend.observations) },
+      { label: 'Wikimedia pageview direction (attention proxy only)', detail: result.intelligence.trend.direction },
+      { label: 'Wikimedia pageview change (not search demand)', detail: result.intelligence.trend.changePercent == null ? 'insufficient data' : String(result.intelligence.trend.changePercent) + '%' },
+      { label: 'Latest Wikimedia month and article pageviews', detail: result.intelligence.trend.latestMonth ? result.intelligence.trend.latestMonth + ' / ' + String(result.intelligence.trend.latestViews ?? 'unavailable') : 'unavailable' },
+      { label: 'Wikimedia pageview anomaly label', detail: result.intelligence.trend.anomaly ?? 'none' },
+      { label: 'Local processing time in milliseconds', detail: String(audit.processingMs) },
     ],
     gaps: result.intelligence.gaps,
     discrepancies: result.intelligence.potentialContradictions,
@@ -222,24 +231,42 @@ function EngineAIReview({ topic, result }: { topic: string; result: InternalRese
         return;
       }
 
-      // Generation POST is called once; requestJson does not auto-retry POST requests.
+      // Refresh the free-model daily counter separately from the generation request.
+      const quota = model.toLowerCase().endsWith(':free')
+        ? await getOpenRouterDailyQuota(key).catch(() => undefined)
+        : undefined;
+      if (quota && quota.remaining <= 0)
+        throw new Error('OpenRouter free-model daily quota is exhausted (' + quota.used + '/' + quota.limit + ' UTC).');
+      // The generation POST remains a single request; quota status is a separate GET.
       const response = await getOpinion(key, model, prompt, async () => {
         const currentPreferences = useScout.getState().data.preferences;
         const usage = nextOpenRouterUsage(
           currentPreferences.openRouterUsageDay,
           currentPreferences.openRouterRequestsToday,
           localDateKey(),
+          quota?.limit ?? (model.toLowerCase().endsWith(':free') ? 50 : 10000),
+          quota?.used,
         );
         await useScout.getState().commit((data) => ({
           ...data,
-          preferences: { ...data.preferences, model, ...usage },
+          preferences: {
+            ...data.preferences,
+            model,
+            ...usage,
+            ...(quota ? {
+              openRouterDailyLimit: quota.limit,
+              openRouterDailyUsed: quota.used + 1,
+              openRouterDailyRemaining: Math.max(0, quota.remaining - 1),
+              openRouterQuotaCheckedAt: Date.now(),
+            } : {}),
+          },
         }));
       });
       const opinion = { id: uid(), ideaId: cacheKey, text: response, model, createdAt: Date.now() };
       setReviewState({ key: cacheKey, text: response });
       await useScout.getState().commit((data) => ({
         ...data,
-        opinions: [opinion, ...data.opinions].slice(0, 100),
+        opinions: [opinion, ...data.opinions],
       }));
       reviewSucceeded = true;
       setReviewMessage(fa ? 'نظر دوم ذخیره شد.' : 'Second opinion saved.');
@@ -390,7 +417,7 @@ function DiscoveryDashboardReady() {
           feedback: buildResearchInterestProfile(currentData.ideas),
           priorMemory,
           language: currentData.preferences.uiLanguage ?? 'fa',
-          news: relevantNews.slice(0, 60).map((item) => ({
+          news: relevantNews.map((item) => ({
             title: item.title,
             summary: item.summary,
             sourceName: item.sourceName,
@@ -546,23 +573,16 @@ function DiscoveryDashboardReady() {
   const deskNews = useMemo(() => rankNewsForTopic(deskTopic, radarNews, 40), [deskTopic, radarNews]);
   const deskVideos = useMemo(() => showYouTubeResearch
     ? latestReportVideos
-      .filter((video) => {
-        const published = Date.parse(video.publishedAt);
-        const age = dashboardNow - published;
-        return Number.isFinite(published) && age >= 0 && age <= 30 * 24 * 60 * 60 * 1000 && scoreResearchText(deskTopic, video.title) > 0;
-      })
+      .filter((video) => scoreResearchText(deskTopic, video.title, video.description) > 0)
       .sort((a, b) => (b.viewCount ?? -1) - (a.viewCount ?? -1))
-      .slice(0, 24)
-    : [], [showYouTubeResearch, latestReportVideos, deskTopic, dashboardNow]);
+    : [], [showYouTubeResearch, latestReportVideos, deskTopic]);
   const rssGenerationKey = 'rss:' + deskNews.map((item) => item.url).sort().join('|');
-  const deskIdeas = ideas.filter((idea) =>
+  const deskIdeas = useMemo(() => rankDashboardIdeas(ideas.filter((idea) =>
     idea.engineGenerated && !idea.archived &&
     (showYouTubeResearch ? idea.reportId === latestReport?.id : idea.generationKey === rssGenerationKey),
-  ).slice(0, 3);
-  const bestIdea = useMemo(() => chooseBestIdea(deskIdeas), [deskIdeas]);
-  const recommendations = deskIdeas
-    .filter((idea) => idea.id !== bestIdea?.id)
-    .slice(0, 3);
+  )), [ideas, showYouTubeResearch, latestReport?.id, rssGenerationKey]);
+  const bestIdea = deskIdeas[0];
+  const recommendations = deskIdeas.slice(1, 4);
   const combinedEvidenceKey = fingerprintText(
     deskTopic + '|' + deskNews.map((item) => item.url).sort().join('|') + '|' + deskVideos.map((video) => video.id).sort().join('|'),
   );
@@ -610,6 +630,22 @@ function DiscoveryDashboardReady() {
   return (
     <Page title="MOHSEN SCOUT">
       <View style={{ gap: 12 }}>
+        {bestIdea ? (
+          <Panel>
+            <BadgeText>{fa ? 'نامزد برتر موتور · ابتدا اعتبارسنجی کن' : 'TOP ENGINE-RANKED IDEA · VALIDATE FIRST'}</BadgeText>
+            <Heading>{fa ? 'بهترین ایده بر اساس شواهد فعلی' : 'Best idea from current evidence'}</Heading>
+            <SourceHeading>{bestIdea.topic}</SourceHeading>
+            <Txt>{bestIdea.concept.slice(0, 420)}</Txt>
+            <Txt muted>{fa
+              ? 'امتیاز اولویت تحریری: ' + (bestIdea.engineScore ?? 'نامشخص') + '/100 · ' + (bestIdea.engineScoreReason ?? 'شواهد امتیازدهی‌شده کافی نیست.')
+              : 'Editorial priority: ' + (bestIdea.engineScore ?? 'unavailable') + '/100 · ' + (bestIdea.engineScoreReason ?? 'Insufficient scored evidence.')}</Txt>
+            <Txt muted>{bestIdea.note.slice(0, 220)}</Txt>
+            <Action onPress={() => router.push({ pathname: '/detail', params: { idea: bestIdea.id } })}>
+              {fa ? 'تکمیل ایده و بررسی شواهد' : 'Develop idea and inspect evidence'}
+            </Action>
+          </Panel>
+        ) : null}
+
         <Panel>
           <BadgeText>{fa ? 'میزکار تحقیق · تمرکز فعلی' : 'RESEARCH DESK · CURRENT FOCUS'}</BadgeText>
           <SourceHeading>{showYouTubeResearch ? latestReport!.input.topic : nicheTitle}</SourceHeading>
@@ -708,18 +744,7 @@ function DiscoveryDashboardReady() {
           </Panel>
         )}
 
-        {bestIdea ? (
-          <Panel>
-            <BadgeText>{fa ? 'نامزد محتوایی · ابتدا اعتبارسنجی کن' : 'EDITORIAL CANDIDATE · VALIDATE FIRST'}</BadgeText>
-            <Heading>{fa ? 'یک زاویه برای تبدیل به ویدئو' : 'A video angle to develop'}</Heading>
-            <SourceHeading>{bestIdea.topic}</SourceHeading>
-            <Txt>{bestIdea.concept.slice(0, 420)}</Txt>
-            <Txt muted>{bestIdea.note.slice(0, 220)}</Txt>
-            <Action onPress={() => router.push({ pathname: '/detail', params: { idea: bestIdea.id } })}>
-              {fa ? 'تکمیل ایده و بررسی شواهد' : 'Develop idea and inspect evidence'}
-            </Action>
-          </Panel>
-        ) : null}
+
 
         <Panel>
           <Fold title={fa ? 'ممیزی شواهد و تحلیل کامل' : 'Evidence audit and full analysis'}>

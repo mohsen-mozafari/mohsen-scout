@@ -45,6 +45,30 @@ void test('internal engine evaluates more than twelve matching news records with
   assert.equal(result.intelligence.sourceQuality.uniqueStories, 24);
 });
 
+
+void test('internal engine retains unmatched and historical evidence as context while separating current matches', () => {
+  const now = Date.parse('2026-11-18T12:00:00Z');
+  const result = buildInternalResearch({
+    topic: 'Mars exploration',
+    now,
+    news: [
+      { title: 'Mars rover mission science update', summary: 'A rover measures a mineral sample.', sourceName: 'NASA', sourceId: 'nasa', sourceUrl: 'https://nasa.gov/mars', publishedAt: '2026-11-17T12:00:00Z' },
+      { title: 'Artemis lunar launch update', summary: 'A separate lunar programme report.', sourceName: 'ESA', sourceId: 'esa-space', sourceUrl: 'https://esa.int/moon', publishedAt: '2026-11-16T12:00:00Z' },
+    ],
+    videos: [
+      { id: 'dQw4w9WgXcQ', title: 'Mars rover sample analysis', description: 'Recent rover science.', channel: 'Mars Lab', publishedAt: '2026-11-15T12:00:00Z', viewCount: 100000, likeCount: 3000 },
+      { id: '9bZkp7q19f0', title: 'Mars exploration documentary', description: 'Historical rover mission archive.', channel: 'Space History', publishedAt: '2025-11-15T12:00:00Z', viewCount: 900000, likeCount: 20000 },
+    ],
+  });
+  assert.equal(result.intelligence.selfEvaluation.uniqueNewsCount, 2);
+  assert.equal(result.intelligence.selfEvaluation.topicMatchedNewsCount, 1);
+  assert.equal(result.intelligence.sourceQuality.uniqueStories, 2);
+  assert.equal(result.intelligence.selfEvaluation.allTimeMatchedVideoCount, 2);
+  assert.equal(result.intelligence.selfEvaluation.recentMatchedVideoCount, 1);
+  assert.equal(result.intelligence.selfEvaluation.outsideVideoWindowCount, 1);
+  assert.ok(result.entityCandidates.length >= 1);
+});
+
 void test('OpenRouter usage counter increments and resets on a new local day', () => {
   assert.deepEqual(nextOpenRouterUsage('2026-11-16', 6, '2026-11-16'), {
     openRouterUsageDay: '2026-11-16',
@@ -55,8 +79,8 @@ void test('OpenRouter usage counter increments and resets on a new local day', (
     openRouterRequestsToday: 1,
   });
   assert.throws(
-    () => nextOpenRouterUsage('2026-11-16', 30, '2026-11-16'),
-    /30 requests for today/,
+    () => nextOpenRouterUsage('2026-11-16', 50, '2026-11-16', 50, 50),
+    /daily request limit is exhausted/,
   );
 });
 

@@ -1,6 +1,6 @@
 import * as SQLite from 'expo-sqlite';
 import { defaults, purgeExpired, type LocalData } from './types';
-import { validateLocal } from './validation';
+import { validateLocal, validateLocalEntry } from './validation';
 import { changedLocalDataEntries } from './storage-diff';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -56,29 +56,29 @@ export async function readData(): Promise<LocalData> {
       Object.assign(persisted, { [row.key]: value });
     }
   }
-  const clean = purgeExpired(validateLocal(data));
-  // Persist only migrated/expired domains. This avoids rewriting large tables at every cold start.
-  await writeData(clean, persisted);
+  const purged = purgeExpired(data);
+  const clean = validateLocal(purged);
+  await writeData(purged, persisted);
   return clean;
 }
 export async function writeData(data: LocalData, previousData?: Partial<Record<keyof LocalData, unknown>>): Promise<void> {
-  const connection = await db();
-  const clean = purgeExpired(validateLocal(data));
-  const changedEntries = changedLocalDataEntries(clean, previousData);
+  const changedEntries = changedLocalDataEntries(data, previousData);
   if (!changedEntries.length) return;
+
+  // Validate and serialize only domains changed by an immutable update. A small
+  // opinion save must not parse the complete, potentially large video database.
+  const validatedEntries = changedEntries.map(({ key, value }) => ({
+    key,
+    value: validateLocalEntry(key, value),
+  }));
+  const connection = await db();
   await connection.withExclusiveTransactionAsync(async (tx) => {
-    for (const { key, value } of changedEntries) {
+    for (const { key, value } of validatedEntries) {
       const table = key === 'videos' || key === 'reports' ? 'youtube' : 'personal';
-      await tx.runAsync(
-        `INSERT OR REPLACE INTO ${table} (key,value) VALUES (?,?)`,
-        key,
-        JSON.stringify(value),
-      );
+      await tx.runAsync(`INSERT OR REPLACE INTO ${table} (key,value) VALUES (?,?)`, key, JSON.stringify(value));
     }
   });
-  try {
-    await connection.execAsync('PRAGMA wal_checkpoint(TRUNCATE);');
-  } catch {
-    // A busy checkpoint is deferred; committed data remains safe.
-  }
+  // SQLite's wal_autocheckpoint performs periodic maintenance. A TRUNCATE
+  // checkpoint after every small edit adds synchronous I/O and can contend
+  // with readers as the local research database grows.
 }

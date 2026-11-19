@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { deduplicateDisplayIdeas, generateEditorialIdeas, selectIdeaGenerationVideos } from '../lib/idea-generation';
 import { createManualIdea } from '../lib/engine';
 import type { SpaceNewsItem } from '../lib/space';
+import { defaults } from '../lib/types';
+import { validateLocal } from '../lib/validation';
 
 const news: SpaceNewsItem[] = [
   {
@@ -59,6 +61,27 @@ void test('idea generation works with official news only and links its original 
   assert.ok(ideas.every((idea) => idea.sourceUrl?.startsWith('https://')));
   assert.ok(ideas.every((idea) => idea.videoIds.length === 0));
   assert.ok(ideas.every((idea) => idea.concept.includes('Central question:')));
+  assert.ok(ideas.every((idea) => typeof idea.engineScore === 'number' && idea.engineScore >= 0 && idea.engineScore <= 100));
+  assert.ok(ideas.every((idea) => Boolean(idea.engineScoreReason)));
+  assert.deepEqual(
+    ideas.map((idea) => idea.engineScore),
+    [...ideas].map((idea) => idea.engineScore).sort((a, b) => (b ?? 0) - (a ?? 0)),
+  );
+});
+
+void test('editorial priority survives the validated local SQLite data shape', () => {
+  const generated = generateEditorialIdeas({ ...base, news, videos, limit: 2 });
+  const data = defaults();
+  data.ideas = generated;
+  const restored = validateLocal(data);
+  assert.deepEqual(
+    restored.ideas.map((idea) => idea.engineScore),
+    generated.map((idea) => idea.engineScore),
+  );
+  assert.deepEqual(
+    restored.ideas.map((idea) => idea.engineScoreReason),
+    generated.map((idea) => idea.engineScoreReason),
+  );
 });
 
 void test('idea generation works with YouTube only without persisting raw video metadata', () => {
@@ -123,7 +146,7 @@ void test('automatic ingestion does not create duplicate ideas for unchanged evi
 });
 
 
-void test('idea generation ranks relevant videos by observed views and excludes unrelated or unmeasured items', () => {
+void test('idea generation uses title and description relevance without discarding missing view metrics', () => {
   const selected = selectIdeaGenerationVideos('JWST exoplanet atmosphere', [
     { id: 'dQw4w9WgXcQ', title: 'Unrelated gaming highlights', viewCount: 99000000 },
     { id: 'abc123XYZ_1', title: 'Daily unrelated roundup', description: 'JWST exoplanet atmosphere discovery details', viewCount: 199000000 },
@@ -131,7 +154,9 @@ void test('idea generation ranks relevant videos by observed views and excludes 
     { id: '3JZ_D3ELwOQ', title: 'Exoplanet atmosphere explained', viewCount: 8500000 },
     { id: 'L_jWHffIx5E', title: 'Exoplanet atmosphere discussion', viewCount: null },
   ]);
-  assert.deepEqual(selected.map((video) => video.id), ['3JZ_D3ELwOQ', '9bZkp7q19f0']);
+  assert.ok(selected.some((video) => video.id === 'abc123XYZ_1'), 'description-only relevant evidence is retained');
+  assert.ok(selected.some((video) => video.id === 'L_jWHffIx5E'), 'missing view metrics do not erase relevant evidence');
+  assert.ok(!selected.some((video) => video.id === 'dQw4w9WgXcQ'), 'unrelated records remain excluded from topic-specific idea generation');
 });
 
 void test('repeated engine-generated cards collapse in the Ideas list without merging personal ideas or stored data', () => {
@@ -147,12 +172,14 @@ void test('repeated engine-generated cards collapse in the Ideas list without me
   assert.equal(stored.length, 3);
 });
 
-void test('video-only ideas are not generated when view statistics are unavailable', () => {
+void test('video-only idea hypotheses can use relevant videos even when view statistics are unavailable', () => {
   const generated = generateEditorialIdeas({
     ...base, news: [],
     videos: [{ id: 'dQw4w9WgXcQ', title: 'Exoplanet atmosphere', viewCount: null }],
   });
-  assert.equal(generated.length, 0);
+  assert.ok(generated.length > 0);
+  assert.ok(generated.every((idea) => idea.engineScore !== undefined));
+  assert.ok(generated.every((idea) => idea.engineScoreReason));
 });
 
 const batchAnchors = Array.from({ length: 30 }, (_, index) =>
@@ -163,16 +190,16 @@ const batchNews: SpaceNewsItem[] = Array.from({ length: 12 }, (_, index) => ({
   id: 'batch-news-' + index,
   sourceId: index % 2 ? 'esa-science' : 'nasa',
   sourceName: index % 2 ? 'ESA' : 'NASA',
-  title: 'MOCK: ' + batchAnchorText + ' mission observation record' + index,
-  summary: 'MOCK: ' + batchAnchorText + ' measurement calibration uncertainty instrument response analysis',
+  title: 'MOCK: JWST exoplanet atmosphere ' + batchAnchorText + ' mission observation record' + index,
+  summary: 'MOCK: JWST exoplanet atmosphere ' + batchAnchorText + ' measurement calibration uncertainty instrument response analysis',
   url: 'https://' + (index % 2 ? 'esa.int' : 'nasa.gov') + '/mock-batch-' + index,
   publishedAt: new Date(Date.UTC(2026, 10, 15 - index)).toISOString(),
 }));
 
 const batchVideos = Array.from({ length: 6 }, (_, index) => ({
   id: ['dQw4w9WgXcQ', '9bZkp7q19f0', '3JZ_D3ELwOQ', 'L_jWHffIx5E', 'kJQP7kiw5Fk', 'fJ9rUzIMcZQ'][index],
-  title: 'MOCK: exoplanet spectroscopy sample ' + index,
-  description: 'MOCK: ' + batchAnchorText + ' uncertainty measurement',
+  title: 'MOCK: JWST exoplanet atmosphere spectroscopy sample ' + index,
+  description: 'MOCK: JWST exoplanet atmosphere ' + batchAnchorText + ' uncertainty measurement',
   channel: 'MOCK channel ' + index,
   publishedAt: new Date(Date.UTC(2026, 10, 10 - index)).toISOString(),
   viewCount: 1800000 - index * 25000,
@@ -186,7 +213,7 @@ void test('one batch can return more than eight ideas without duplicate IDs or t
   assert.equal(new Set(generated.map((idea) => idea.topic)).size, generated.length);
 });
 
-void test('repeated generation exhausts unique evidence anchors instead of recycling them across category templates', () => {
+void test('repeated generation uses additional unique evidence anchors without recycling existing ideas', () => {
   const first = generateEditorialIdeas({
     ...base, news: batchNews, videos: batchVideos, limit: 25,
     evidenceKey: 'mock-five-batch-evidence-v1',
@@ -199,7 +226,9 @@ void test('repeated generation exhausts unique evidence anchors instead of recyc
   assert.ok(first.length <= 25);
   assert.equal(new Set(first.map((idea) => idea.id)).size, first.length);
   assert.equal(new Set(first.map((idea) => idea.topic)).size, first.length);
-  assert.equal(second.length, 0, 'unchanged evidence must not be rewrapped as fresh ideas under different categories');
+  const firstTitles = new Set(first.map((idea) => idea.topic));
+  assert.ok(second.every((idea) => !firstTitles.has(idea.topic)), 'later batches must not recycle an existing idea title');
+  assert.ok(second.length <= 25);
 });
 
 void test('distinct evidence anchors in the same category are not incorrectly collapsed as semantic duplicates', () => {

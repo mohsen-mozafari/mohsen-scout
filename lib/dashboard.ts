@@ -26,6 +26,7 @@ export function rankDashboardIdeas(ideas: readonly Idea[]): Idea[] {
     )
     .slice()
     .sort((a, b) =>
+      (b.engineScore ?? -1) - (a.engineScore ?? -1) ||
       assessmentOrder[b.assessment] - assessmentOrder[a.assessment] ||
       evidenceWeight(b) - evidenceWeight(a) ||
       b.createdAt - a.createdAt,
