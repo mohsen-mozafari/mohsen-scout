@@ -1,3 +1,4 @@
+// Regression fixtures keep historical and unmatched evidence visible without treating it as current support.
 import { test } from 'node:test';
 import { scheduleChecks } from './schedule.cases';
 for (const [name, run] of scheduleChecks) void test(name, run);
