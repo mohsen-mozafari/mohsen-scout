@@ -644,33 +644,33 @@ export async function runDiagnostics(): Promise<TestResult[]> {
     [
       'MOCK report formatter includes totals and failure details',
       () => {
-        const report = formatDiagnosticReport([
+        const allReport = formatDiagnosticReport([
           { name: 'Synthetic success', passed: true },
           { name: 'Synthetic failure', passed: false, detail: 'Controlled mismatch' },
         ]);
-        check(report.includes('1 passed · 1 failed · 2 total'));
-        check(report.includes('PASS | Synthetic success'));
-        check(report.includes('FAIL | Synthetic failure'));
-        check(report.includes('Controlled mismatch'));
+        check(allReport.includes('1 passed · 1 failed · 2 total'));
+        check(allReport.includes('PASS | Synthetic success'));
+        check(allReport.includes('FAIL | Synthetic failure'));
+        check(allReport.includes('Controlled mismatch'));
       },
     ],
     [
       'MOCK failure report contains only failed checks',
       () => {
-        const report = formatDiagnosticReport([
+        const failureReport = formatDiagnosticReport([
           { name: 'Synthetic success', passed: true },
           { name: 'Synthetic failure', passed: false, detail: 'Controlled mismatch' },
         ], true);
-        check(report.includes('Synthetic failure'));
-        check(!report.includes('Synthetic success'));
-        check(report.includes('failed checks only'));
+        check(failureReport.includes('Synthetic failure'));
+        check(!failureReport.includes('Synthetic success'));
+        check(failureReport.includes('failed checks only'));
       },
     ],
     [
       'MOCK empty report clearly reports that no checks were run',
       () => {
-        const report = formatDiagnosticReport([]);
-        check(report.includes('No mock tests have been run'));
+        const emptyReport = formatDiagnosticReport([]);
+        check(emptyReport.includes('No mock tests have been run'));
       },
     ],
     [
