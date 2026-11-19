@@ -483,7 +483,6 @@ const fa: Record<string, string> = {
   'Ready to test this build': 'آماده آزمودن این نسخه',
   'Synthetic responses only. No real API keys, network requests to providers or changes to your saved research are made by these checks.': 'فقط از پاسخ‌های مصنوعی استفاده می‌شود. این آزمون‌ها از کلید واقعی API استفاده نمی‌کنند، به سرویس‌ها درخواست شبکه نمی‌فرستند و پژوهش ذخیره‌شده را تغییر نمی‌دهند.',
   'Rerun all mock tests': 'اجرای دوباره همه آزمون‌های شبیه‌سازی',
-  'Run mock tests': 'اجرای آزمون‌های شبیه‌سازی',
   'PASSED': 'موفق',
   'FAILED': 'ناموفق',
   'TOTAL': 'مجموع',
