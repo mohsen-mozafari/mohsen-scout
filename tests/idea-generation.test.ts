@@ -255,3 +255,32 @@ void test('video-only idea generation derives angles from the highest-ranked rel
   assert.ok(generated.every((idea) => idea.videoIds.includes('dQw4w9WgXcQ')));
   assert.doesNotMatch(JSON.stringify(generated), /JWST exoplanet atmosphere methane spectroscopy/);
 });
+
+void test('semantic aliases are retained by the shared relevance matcher', () => {
+  const selected = selectIdeaGenerationVideos('JWST', [
+    { id: 'abcdefghijk', title: 'James Webb Space Telescope' },
+    { id: 'dQw4w9WgXcQ', title: 'Unrelated gaming highlights' },
+  ]);
+  assert.deepEqual(selected.map((video) => video.id), ['abcdefghijk']);
+});
+
+void test('idea evidence scope reports all received records separately from detailed topic matches', () => {
+  const unrelatedNews: SpaceNewsItem = {
+    id: 'unrelated-news',
+    sourceId: 'sky-telescope',
+    sourceName: 'Sky & Telescope',
+    title: 'MOCK: Lunar observation schedule published',
+    summary: 'MOCK: A separate lunar observing guide with no exoplanet or spectroscopy detail.',
+    url: 'https://skyandtelescope.org/mock-lunar-schedule',
+    publishedAt: '2026-11-10T12:00:00Z',
+  };
+  const generated = generateEditorialIdeas({
+    ...base,
+    news: [...news, unrelatedNews],
+    videos,
+    limit: 1,
+  });
+  assert.ok(generated.length > 0);
+  assert.match(generated[0].concept, /3 publisher item\(s\) received; 2 topic-matched/);
+  assert.match(generated[0].concept, /2 YouTube record\(s\) received; 2 relevant sample\(s\) selected for detailed analysis/);
+});

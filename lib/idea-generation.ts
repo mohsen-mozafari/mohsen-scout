@@ -253,8 +253,10 @@ export function selectIdeaGenerationVideos(
     const descriptionTokens = new Set(tokenizeResearchText(video.description ?? ''));
     const titleOverlap = [...topicTokens].filter((token) => titleTokens.has(token)).length;
     const totalOverlap = [...topicTokens].filter((token) => titleTokens.has(token) || descriptionTokens.has(token)).length;
-    if (titleOverlap / topicTokens.size < 0.30 && totalOverlap / topicTokens.size < 0.45) continue;
+    // Use the shared lexical-semantic matcher as the inclusion gate. Literal token
+    // ratios alone incorrectly discard known aliases such as "JWST" / "James Webb".
     const relevance = scoreResearchText(topic, video.title, video.description ?? '');
+    if (relevance <= 0) continue;
     const previous = unique.get(video.id);
     const views = typeof video.viewCount === 'number' && Number.isFinite(video.viewCount) ? video.viewCount : -1;
     const previousViews = typeof previous?.video.viewCount === 'number' ? previous.video.viewCount : -1;
@@ -347,7 +349,8 @@ export function generateEditorialIdeas(input: GenerateEditorialIdeasInput): Idea
   if (!topic) return [];
 
   const news = [...(input.news ?? [])];
-  const videos = selectIdeaGenerationVideos(topic, input.videos ?? [], 100);
+  const allVideos = input.videos ?? [];
+  const videos = selectIdeaGenerationVideos(topic, allVideos, 100);
   const context = [...(input.context ?? [])];
   const documents: Document[] = [
     ...news.map((item) => ({
@@ -492,7 +495,9 @@ export function generateEditorialIdeas(input: GenerateEditorialIdeasInput): Idea
     const opportunity = scoreEditorialOpportunity({
       topic,
       anchor,
-      news: topicRelevantNews.map((item) => ({ title: item.title, summary: item.summary, sourceName: item.sourceName, sourceId: item.sourceId, sourceUrl: item.url, publishedAt: item.publishedAt })),
+      // Let anchor-level matching inspect the complete publisher input, not only
+      // items that matched the broad topic before candidate anchors were known.
+      news: news.map((item) => ({ title: item.title, summary: item.summary, sourceName: item.sourceName, sourceId: item.sourceId, sourceUrl: item.url, publishedAt: item.publishedAt })),
       videos: videos.map((video) => ({ title: video.title, description: video.description, channel: video.channel, publishedAt: video.publishedAt, viewCount: video.viewCount })),
       now: input.now,
     });
@@ -541,8 +546,12 @@ export function generateEditorialIdeas(input: GenerateEditorialIdeasInput): Idea
       .slice(0, 12)
       .map((video) => video.id);
     const evidenceScope = [
-      topicRelevantNews.length ? (language === 'fa' ? topicRelevantNews.length + ' گزارش خبری رسمی هم‌موضوع' : topicRelevantNews.length + ' topic-relevant official news item(s)') : '',
-      videos.length ? (language === 'fa' ? videos.length + ' نمونه موقت YouTube' : videos.length + ' temporary YouTube sample(s)') : '',
+      news.length ? (language === 'fa'
+        ? news.length + ' خبر دریافتی؛ ' + topicRelevantNews.length + ' مورد هم‌موضوع'
+        : news.length + ' publisher item(s) received; ' + topicRelevantNews.length + ' topic-matched') : '',
+      allVideos.length ? (language === 'fa'
+        ? allVideos.length + ' رکورد ویدئویی دریافتی؛ ' + videos.length + ' نمونه مرتبط برای تحلیل تفصیلی'
+        : allVideos.length + ' YouTube record(s) received; ' + videos.length + ' relevant sample(s) selected for detailed analysis') : '',
       context.length ? (language === 'fa' ? context.length + ' منبع زمینه‌ای' : context.length + ' context source(s)') : '',
     ].filter(Boolean).join(language === 'fa' ? ' و ' : ' and ');
     const concept = language === 'fa'
