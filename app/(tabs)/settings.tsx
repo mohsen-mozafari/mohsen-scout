@@ -291,7 +291,7 @@ export default function Settings() {
         />
         <Action busy={op.busy} disabled={!ready} onPress={save}>Save discovery preferences</Action>
       </Fold>
-      <Fold title="YouTube API" open>
+      <Fold title="YouTube API">
         <CredentialSection kind="youtube" label="YouTube Data API v3" />
         <Txt muted>
           Enable YouTube Data API v3 in Google Cloud, create a key, and restrict it to that API.

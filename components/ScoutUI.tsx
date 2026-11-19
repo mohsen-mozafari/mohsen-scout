@@ -9,25 +9,106 @@ import { useScout } from '@/lib/store';
 export const styles = StyleSheet.create({
   page: { flex: 1, backgroundColor: p.background },
   content: {
-    padding: 18,
+    paddingHorizontal: 16,
+    paddingTop: 16,
     paddingBottom: 28,
-    gap: 18,
+    gap: 16,
     width: '100%',
-    maxWidth: 720,
+    maxWidth: 760,
     alignSelf: 'center',
   },
-  title: { fontFamily: 'Inter_700Bold', fontSize: 28, lineHeight: 34, color: p.text, letterSpacing: -0.8 },
-  heading: { fontFamily: 'Inter_600SemiBold', fontSize: 16, lineHeight: 22, color: p.text, letterSpacing: -0.2, flexShrink: 1, minWidth: 0 },
-  text: { fontFamily: 'Inter_400Regular', fontSize: 14, lineHeight: 22, color: p.text, flexShrink: 1, minWidth: 0 },
-  muted: { fontFamily: 'Inter_400Regular', fontSize: 12, lineHeight: 18, color: p.muted, flexShrink: 1, minWidth: 0 },
-  panel: { paddingHorizontal: 18, paddingVertical: 18, borderRadius: 22, backgroundColor: p.surface, borderColor: p.border, borderWidth: 1, gap: 14 },
+  title: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 26,
+    lineHeight: 33,
+    color: p.text,
+    letterSpacing: -0.65,
+  },
+  heading: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 16,
+    lineHeight: 22,
+    color: p.text,
+    letterSpacing: -0.25,
+    flexShrink: 1,
+    minWidth: 0,
+  },
+  text: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 14,
+    lineHeight: 21,
+    color: p.text,
+    flexShrink: 1,
+    minWidth: 0,
+  },
+  muted: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 12,
+    lineHeight: 18,
+    color: p.muted,
+    flexShrink: 1,
+    minWidth: 0,
+  },
+  panel: {
+    paddingHorizontal: 17,
+    paddingVertical: 17,
+    borderRadius: 26,
+    backgroundColor: p.surface,
+    borderColor: p.border,
+    borderWidth: 1,
+    gap: 14,
+    shadowColor: p.violet,
+    shadowOpacity: 0.11,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 7 },
+    elevation: 2,
+  },
+  listCard: {
+    padding: 14,
+    borderRadius: 23,
+    backgroundColor: 'rgba(25, 22, 43, 0.82)',
+    borderColor: p.border,
+    borderWidth: 1,
+    shadowColor: p.violet,
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 5 },
+    elevation: 1,
+  },
+  fold: {
+    gap: 10,
+    padding: 10,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.025)',
+    borderColor: p.border,
+    borderWidth: 1,
+  },
+  foldContent: { gap: 12, paddingHorizontal: 4, paddingBottom: 4 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   // eslint-disable-next-line react-native/no-unused-styles -- Exported shared style used by screens and VideoRow; the rule only checks this file.
   rule: { borderBottomColor: p.border, borderBottomWidth: 1, paddingBottom: 18 },
-  label: { fontFamily: 'Inter_500Medium', fontSize: 13, color: p.muted },
+  label: {
+    fontFamily: 'Inter_500Medium',
+    fontSize: 12,
+    lineHeight: 17,
+    color: p.muted,
+  },
   // eslint-disable-next-line react-native/no-unused-styles -- Exported shared style used by screens and VideoRow; the rule only checks this file.
-  badge: { fontFamily: 'Inter_500Medium', fontSize: 11, color: p.purple },
-  input: { fontFamily: 'Inter_400Regular' },
+  badge: { fontFamily: 'Inter_500Medium', fontSize: 11, lineHeight: 16, color: p.purple },
+  actionLabel: { fontFamily: 'Inter_600SemiBold', fontSize: 13, lineHeight: 19 },
+  choiceLabel: { fontFamily: 'Inter_500Medium', fontSize: 12, lineHeight: 17 },
+  foldLabel: { fontFamily: 'Inter_600SemiBold', fontSize: 14, lineHeight: 20 },
+  input: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 14,
+    color: p.text,
+    backgroundColor: 'rgba(255, 255, 255, 0.035)',
+    borderColor: p.border,
+    borderWidth: 1,
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    minHeight: 48,
+  },
 });
 export function Txt({ children, muted = false }: { children: ReactNode; muted?: boolean }) {
   const language = useScout((s) => s.data.preferences.uiLanguage ?? 'fa');
@@ -137,11 +218,11 @@ export function Action({
       onPress={onPress}
       variant={secondary ? 'secondary' : 'primary'}
       isDisabled={disabled || busy}
-      className="min-h-11 rounded-2xl px-4"
+      className="min-h-12 rounded-2xl px-4 py-3"
       accessibilityLabel={label}
     >
       {Icon && <Icon size={18} color={secondary ? p.purple : p.white} strokeWidth={1.8} />}
-      <Button.Label numberOfLines={2} style={{ writingDirection: labelDirection, textAlign: labelDirection === 'rtl' ? 'right' : 'left' }}>{displayLabel}</Button.Label>
+      <Button.Label numberOfLines={2} style={[styles.actionLabel, { writingDirection: labelDirection, textAlign: labelDirection === 'rtl' ? 'right' : 'left' }]}>{displayLabel}</Button.Label>
     </Button>
   );
 }
@@ -175,7 +256,7 @@ export function Field({
           value={value}
           onChangeText={onChange}
           placeholder={translatedPlaceholder}
-          style={[styles.input, { writingDirection: direction, textAlign: direction === 'rtl' ? 'right' : 'left' }]}
+          style={[styles.input, { minHeight: 112, paddingTop: 12, textAlignVertical: 'top', writingDirection: direction, textAlign: direction === 'rtl' ? 'right' : 'left' }]}
         />
       ) : (
         <Input
@@ -226,10 +307,10 @@ export function Choices<T extends string>({
             }}
             variant={selected.includes(option) ? 'primary' : 'secondary'}
             size="sm"
-            className="rounded-full px-4"
+            className="min-h-10 rounded-full px-4 py-2"
             accessibilityState={{ selected: selected.includes(option) }}
           >
-            <Button.Label numberOfLines={2} style={{ writingDirection: resolveTextDirection(translateText(option, language)), textAlign: resolveTextDirection(translateText(option, language)) === 'rtl' ? 'right' : 'left' }}>{translateText(option, language)}</Button.Label>
+            <Button.Label numberOfLines={2} style={[styles.choiceLabel, { writingDirection: resolveTextDirection(translateText(option, language)), textAlign: resolveTextDirection(translateText(option, language)) === 'rtl' ? 'right' : 'left' }]}>{translateText(option, language)}</Button.Label>
           </Button>
         ))}
       </View>
@@ -248,8 +329,10 @@ export function Empty({
   icon?: LucideIcon;
 }) {
   return (
-    <View style={{ alignItems: 'center', paddingVertical: 32, gap: 18 }}>
-      <Icon size={36} color={p.purple} strokeWidth={1.8} />
+    <View style={{ alignItems: 'center', paddingVertical: 28, paddingHorizontal: 16, gap: 16 }}>
+      <View style={{ padding: 14, borderRadius: 22, backgroundColor: 'rgba(150, 121, 255, 0.12)', borderWidth: 1, borderColor: p.border }}>
+        <Icon size={32} color={p.purple} strokeWidth={1.8} />
+      </View>
       <Txt muted>{title}</Txt>
       <Action secondary onPress={onPress}>
         {action}
@@ -287,20 +370,21 @@ export function Fold({
   const translatedTitle = translateText(title, language);
   const titleDirection = resolveTextDirection(translatedTitle);
   return (
-    <View style={{ gap: 16 }}>
+    <View style={styles.fold}>
       <Button
         variant="tertiary"
         onPress={() => setExpanded(!expanded)}
-        className="min-h-11 h-auto justify-start rounded-xl bg-transparent px-1"
+        className="min-h-11 h-auto w-full justify-between rounded-2xl bg-transparent px-3 py-2"
+        accessibilityState={{ expanded }}
       >
-        <Button.Label className="flex-1 flex-shrink" style={{ writingDirection: titleDirection, textAlign: titleDirection === 'rtl' ? 'right' : 'left' }}>{translatedTitle}</Button.Label>
+        <Button.Label className="flex-1 flex-shrink" style={[styles.foldLabel, { writingDirection: titleDirection, textAlign: titleDirection === 'rtl' ? 'right' : 'left' }]}>{translatedTitle}</Button.Label>
         {expanded ? (
-          <ChevronUp size={18} color={p.muted} />
+          <ChevronUp size={18} color={p.purple} />
         ) : (
           <ChevronDown size={18} color={p.muted} />
         )}
       </Button>
-      {expanded && children}
+      {expanded ? <View style={styles.foldContent}>{children}</View> : null}
     </View>
   );
 }

@@ -1,4 +1,6 @@
 import { Compass, Telescope, Library, Settings, Newspaper } from 'lucide-react-native';
+import { BlurView } from 'expo-blur';
+import { StyleSheet } from 'react-native';
 import { Tabs } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as Haptics from 'expo-haptics';
@@ -15,26 +17,35 @@ export default function TabLayout() {
       <StatusBar style="light" />
       <Tabs
         screenOptions={{
-          headerStyle: { backgroundColor: p.background },
-          headerTintColor: p.text,
-          headerTitleStyle: { fontFamily: 'Inter_600SemiBold', fontSize: 15 },
-          headerShadowVisible: false,
+          headerShown: false,
           sceneStyle: { backgroundColor: p.background, direction: language === 'fa' ? 'rtl' : 'ltr' },
+          tabBarBackground: () => (
+            <BlurView
+              intensity={38}
+              tint="dark"
+              style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(14, 12, 28, 0.62)' }]}
+            />
+          ),
           tabBarStyle: {
             direction: language === 'fa' ? 'rtl' : 'ltr',
-            backgroundColor: p.background,
+            backgroundColor: 'rgba(14, 12, 28, 0.76)',
             borderTopColor: p.border,
-            shadowColor: p.background,
-            shadowOpacity: 0,
-            shadowRadius: 0,
-            elevation: 0,
-            height: 66 + insets.bottom,
+            borderTopWidth: 1,
+            borderTopLeftRadius: 24,
+            borderTopRightRadius: 24,
+            shadowColor: p.violet,
+            shadowOpacity: 0.16,
+            shadowRadius: 18,
+            shadowOffset: { width: 0, height: -4 },
+            elevation: 12,
+            height: 72 + insets.bottom,
             paddingTop: 8,
             paddingBottom: 8 + insets.bottom,
           },
           tabBarActiveTintColor: p.purple,
           tabBarInactiveTintColor: p.muted,
-          tabBarLabelStyle: { fontFamily: 'Inter_500Medium', fontSize: 11 },
+          tabBarLabelStyle: { fontFamily: 'Inter_600SemiBold', fontSize: 11 },
+          tabBarHideOnKeyboard: true,
         }}
         screenListeners={({ navigation, route }) => ({
           tabPress: () => {
