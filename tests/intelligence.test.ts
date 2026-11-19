@@ -13,6 +13,7 @@ import {
   rankResearchEvidence,
   scoreResearchText,
   scoreEditorialOpportunity,
+  createEditorialOpportunityScorer,
   tokenizeResearchText,
   sortResearchVideos,
   extractResearchEntityCandidates,
@@ -168,6 +169,47 @@ void test('editorial opportunity score is explainable, bounded and honest about 
   assert.equal(differentRawViews.score, strong.score, 'raw lifetime views must not change editorial priority');
   assert.ok(['low', 'moderate', 'high'].includes(strong.confidence));
 });
+
+
+void test('prepared editorial scoring reuses a single evidence index and includes context plus every merged publisher family', () => {
+  const input = {
+    topic: 'JWST exoplanet atmosphere',
+    now: Date.parse('2026-11-18T12:00:00Z'),
+    news: [{
+      title: 'JWST methane spectroscopy on an exoplanet atmosphere',
+      sourceName: 'NASA · JPL · ESA',
+      sourceId: 'nasa',
+      sourceIds: ['nasa', 'jpl', 'esa-science'],
+      publishedAt: '2026-11-17T12:00:00Z',
+    }],
+    historicalNews: [{
+      title: 'Earlier JWST methane spectroscopy measurement limits',
+      sourceName: 'NASA',
+      sourceId: 'nasa',
+      publishedAt: '2026-10-15T12:00:00Z',
+    }],
+    context: [{
+      title: 'Wikimedia methane spectroscopy article attention',
+      summary: 'Historical monthly article pageviews provide a separate public-interest context.',
+      sourceName: 'Wikimedia Pageviews',
+    }],
+    videos: [
+      { title: 'Methane spectroscopy on an exoplanet', channel: 'Science A', publishedAt: '2026-11-15T12:00:00Z', viewCount: 1200000 },
+      { title: 'How JWST measures methane', channel: 'Science B', publishedAt: '2026-11-14T12:00:00Z', viewCount: 800000 },
+    ],
+  };
+  const prepared = createEditorialOpportunityScorer(input);
+  const indexed = prepared('methane spectroscopy');
+  const direct = scoreEditorialOpportunity({ ...input, anchor: 'methane spectroscopy' });
+  assert.deepEqual(indexed, direct);
+  assert.match(indexed.reason, /2 publisher group\(s\)/);
+  assert.match(indexed.reason, /1 supporting context record\(s\) matched/);
+  assert.equal(indexed.components.audienceSignal, null);
+
+  const withoutContext = createEditorialOpportunityScorer({ ...input, context: [] })('methane spectroscopy');
+  assert.ok(indexed.score > withoutContext.score, 'relevant context should increase evidence breadth without being counted as a publisher or audience forecast');
+});
+
 
 void test('publication freshness distinguishes recent, old, undated and future-dated reports', () => {
   const now = Date.parse('2026-11-16T12:00:00Z');
