@@ -8,6 +8,7 @@ import {
   quotaDay,
   relatedQueries,
   searchYouTube,
+  searchYouTubeSample,
   testYouTube,
   getFreeModels,
   requestJson,
@@ -18,6 +19,27 @@ import {
 import { buildIdeas } from './engine';
 import { scheduleChecks } from '../tests/schedule.cases';
 export type TestResult = { name: string; passed: boolean; detail?: string };
+
+export function formatDiagnosticReport(results: readonly TestResult[], failuresOnly = false): string {
+  if (!results.length) {
+    return 'MOHSEN SCOUT — MOCK REGRESSION REPORT\nNo mock tests have been run.';
+  }
+  const passed = results.filter((result) => result.passed).length;
+  const failed = results.length - passed;
+  const selected = failuresOnly ? results.filter((result) => !result.passed) : results;
+  const lines = [
+    'MOHSEN SCOUT — MOCK REGRESSION REPORT',
+    `Summary: ${passed} passed · ${failed} failed · ${results.length} total`,
+    failuresOnly ? 'View: failed checks only' : 'View: all checks',
+    '',
+    ...selected.flatMap((result) => [
+      `${result.passed ? 'PASS' : 'FAIL'} | ${result.name}`,
+      ...(result.detail ? [`  ${result.detail}`] : []),
+    ]),
+  ];
+  if (failuresOnly && failed === 0) lines.push('No failed checks.');
+  return lines.join('\n');
+}
 const check = (value: unknown, message = 'Assertion failed') => {
   if (!value) throw new Error(message);
 };
@@ -349,24 +371,37 @@ export async function runDiagnostics(): Promise<TestResult[]> {
       },
     ],
     [
-      'MOCK official endpoint & region/language',
+      'MOCK official endpoint & scoped global/local search settings',
       async () => {
         let calls = 0;
+        const searchUrls: URL[] = [];
         const data = await searchYouTube(input, {
           key: 'MOCK_BROWSER',
           charge: async () => {},
           fetcher: fetcher((url) => {
             calls++;
             check(url.hostname === 'www.googleapis.com');
-            check(url.searchParams.get('regionCode') === 'IR');
-            check(url.searchParams.get('relevanceLanguage') === 'en');
-            check(url.searchParams.get('videoDuration') === 'short');
-            return mock({ items: [item, item] });
+            if (url.pathname.endsWith('/search')) {
+              searchUrls.push(url);
+              return mock({ items: [item, item] });
+            }
+            if (url.pathname.endsWith('/videos')) {
+              return mock({ items: [{ id: video.id, statistics: { viewCount: '101', likeCount: '6' } }] });
+            }
+            return mock({ items: [] });
           }),
         });
         check(data.videos.length === 1);
         check(data.videos[0].title === video.title);
-        check(calls === 5);
+        check(calls === 5 && searchUrls.length === 4);
+        check(searchUrls[0].searchParams.get('order') === 'viewCount');
+        check(!searchUrls[0].searchParams.has('regionCode'));
+        check(!searchUrls[0].searchParams.has('relevanceLanguage'));
+        for (const url of searchUrls.slice(1)) {
+          check(url.searchParams.get('regionCode') === 'IR');
+          check(url.searchParams.get('relevanceLanguage') === 'en');
+          check(url.searchParams.get('videoDuration') === 'short');
+        }
       },
     ],
     [
@@ -605,6 +640,171 @@ export async function runDiagnostics(): Promise<TestResult[]> {
       },
     ],
   ];
+  cases.push(
+    [
+      'MOCK report formatter includes totals and failure details',
+      () => {
+        const report = formatDiagnosticReport([
+          { name: 'Synthetic success', passed: true },
+          { name: 'Synthetic failure', passed: false, detail: 'Controlled mismatch' },
+        ]);
+        check(report.includes('1 passed · 1 failed · 2 total'));
+        check(report.includes('PASS | Synthetic success'));
+        check(report.includes('FAIL | Synthetic failure'));
+        check(report.includes('Controlled mismatch'));
+      },
+    ],
+    [
+      'MOCK failure report contains only failed checks',
+      () => {
+        const report = formatDiagnosticReport([
+          { name: 'Synthetic success', passed: true },
+          { name: 'Synthetic failure', passed: false, detail: 'Controlled mismatch' },
+        ], true);
+        check(report.includes('Synthetic failure'));
+        check(!report.includes('Synthetic success'));
+        check(report.includes('failed checks only'));
+      },
+    ],
+    [
+      'MOCK empty report clearly reports that no checks were run',
+      () => {
+        const report = formatDiagnosticReport([]);
+        check(report.includes('No mock tests have been run'));
+      },
+    ],
+    [
+      'MOCK unreadable successful JSON is rejected as an invalid response',
+      async () => {
+        await rejects(
+          () => requestJson('https://example.com/mock', {}, async () => new Response('not-json', { status: 200 })),
+          'invalid',
+        );
+      },
+    ],
+    [
+      'MOCK empty YouTube sample returns an explicit empty state',
+      async () => {
+        let calls = 0;
+        const result = await searchYouTubeSample('Synthetic space topic', {
+          key: 'MOCK_EMPTY',
+          charge: async () => {},
+          fetcher: fetcher((url) => {
+            calls++;
+            check(url.pathname.endsWith('/search'));
+            return mock({ items: [] });
+          }),
+        }, 10, { order: 'date', days: 30, region: 'Iran', language: 'en' });
+        check(result.videos.length === 0);
+        check(result.warning.toLowerCase().includes('no matching videos'));
+        check(calls === 1);
+      },
+    ],
+    [
+      'MOCK dual YouTube discovery pools deduplicate repeated video IDs',
+      async () => {
+        const sampleItem = {
+          id: { videoId: 'AbCdEfGhI12' },
+          snippet: {
+            title: 'MOCK exoplanet atmosphere sample',
+            description: 'Synthetic test description',
+            channelTitle: 'MOCK research channel',
+            channelId: 'MOCK_CHANNEL_01',
+            publishedAt: '2026-11-15T12:00:00Z',
+            thumbnails: { medium: { url: 'https://example.com/mock.jpg' } },
+          },
+        };
+        let searchCalls = 0;
+        const result = await searchYouTubeSample('exoplanet atmosphere', {
+          key: 'MOCK_DUAL_POOL',
+          charge: async () => {},
+          fetcher: fetcher((url) => {
+            if (url.pathname.endsWith('/search')) {
+              searchCalls++;
+              return mock({ items: [sampleItem, sampleItem], nextPageToken: 'MOCK_NEXT_' + url.searchParams.get('order') });
+            }
+            if (url.pathname.endsWith('/videos')) {
+              return mock({ items: [{ id: 'AbCdEfGhI12', statistics: { viewCount: '1234', likeCount: '56' } }] });
+            }
+            if (url.pathname.endsWith('/channels')) {
+              return mock({ items: [{ id: 'MOCK_CHANNEL_01', statistics: { subscriberCount: '789', videoCount: '42' } }] });
+            }
+            throw new Error('Unexpected synthetic endpoint');
+          }),
+        }, 10, { order: 'relevance', days: 30, region: 'Iran', language: 'en' });
+        check(searchCalls === 2);
+        check(result.videos.length === 1);
+        check(result.videos[0].id === 'AbCdEfGhI12');
+        check(result.videos[0].viewCount === 1234 && result.videos[0].likeCount === 56);
+        check(result.videos[0].channelSubscriberCount === 789 && result.videos[0].channelVideoCount === 42);
+        check(Boolean(result.nextPageToken));
+      },
+    ],
+    [
+      'MOCK malformed saved sample cursor is rejected before network access',
+      async () => {
+        let calls = 0;
+        await rejects(
+          () => searchYouTubeSample('Synthetic topic', {
+            key: 'MOCK_BAD_CURSOR',
+            charge: async () => {},
+            fetcher: fetcher(() => {
+              calls++;
+              return mock({ items: [] });
+            }),
+          }, 10, { order: 'relevance', pageToken: 'mohsen-scout-likes-v1:%zz' }),
+          'invalid',
+        );
+        check(calls === 0);
+      },
+    ],
+    [
+      'MOCK unavailable YouTube statistics stay null instead of being estimated',
+      async () => {
+        const sampleItem = {
+          id: { videoId: 'AbCdEfGhI12' },
+          snippet: {
+            title: 'MOCK video with unavailable counters',
+            description: 'Synthetic description',
+            channelTitle: 'MOCK channel',
+            channelId: 'MOCK_CHANNEL_02',
+            publishedAt: '2026-11-15T12:00:00Z',
+            thumbnails: { default: { url: 'https://example.com/mock.jpg' } },
+          },
+        };
+        const result = await searchYouTubeSample('Synthetic topic', {
+          key: 'MOCK_MISSING_STATS',
+          charge: async () => {},
+          fetcher: fetcher((url) => {
+            if (url.pathname.endsWith('/search')) return mock({ items: [sampleItem] });
+            if (url.pathname.endsWith('/videos') || url.pathname.endsWith('/channels')) return mock({ items: [] });
+            throw new Error('Unexpected synthetic endpoint');
+          }),
+        }, 5, { order: 'date', days: 30 });
+        check(result.videos.length === 1);
+        check(result.videos[0].viewCount === null && result.videos[0].likeCount === null);
+        check(result.videos[0].channelSubscriberCount === null && result.videos[0].channelVideoCount === null);
+      },
+    ],
+    [
+      'MOCK rejected YouTube keys never appear in error text',
+      async () => {
+        const secret = 'MOCK_PRIVATE_KEY_NEVER_EXPOSE';
+        let message = '';
+        try {
+          await requestJson(
+            'https://www.googleapis.com/youtube/v3/videos?key=' + secret,
+            {},
+            fetcher(() => mock({}, 401)),
+          );
+        } catch (error) {
+          check(error instanceof ApiError && error.code === 'key');
+          message = error instanceof Error ? error.message : String(error);
+        }
+        check(Boolean(message) && !message.includes(secret));
+      },
+    ],
+  );
   cases.push(...scheduleChecks);
   return Promise.all(
     cases.map(async ([name, run]) => {
