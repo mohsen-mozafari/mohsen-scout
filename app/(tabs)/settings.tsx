@@ -2,7 +2,7 @@ import * as Haptics from 'expo-haptics';
 import { useEffect, useState } from 'react';
 import { Text, View, Linking } from 'react-native';
 import { Button, Skeleton } from 'heroui-native';
-import { ShieldCheck, KeyRound, Download, Upload, Bell, Trash2 } from 'lucide-react-native';
+import { ShieldCheck, KeyRound, Download, Upload, Bell, Trash2, Bug } from 'lucide-react-native';
 import {
   Page,
   Panel,
@@ -183,12 +183,22 @@ export default function Settings() {
       {!ready && <Skeleton className="h-32 rounded-2xl" />}
       <Panel>
         <View style={styles.row}>
-          <ShieldCheck size={22} strokeWidth={1.8} color={p.purple} />
+          <ShieldCheck size={22} strokeWidth={1.8} color={p.accent} />
           <Heading>Local by default</Heading>
         </View>
         <Txt muted>
           No account, no required AI, no paid server. API keys are excluded from backups.
         </Txt>
+      </Panel>
+      <Panel>
+        <View style={styles.row}>
+          <Bug size={19} strokeWidth={1.9} color={p.text} />
+          <Heading>Developer tools</Heading>
+        </View>
+        <Txt muted>Run isolated Mock regression checks, inspect failures and copy the report without using live provider APIs.</Txt>
+        <Action secondary icon={Bug} onPress={() => router.push('/diagnostics?run=1')}>
+          Open mock regression console
+        </Action>
       </Panel>
       <Fold title="Profile & defaults">
         <Field
@@ -572,14 +582,11 @@ export default function Settings() {
       </Fold>
       <Fold title="App info">
         <Heading>MOHSEN SCOUT</Heading>
-        <Txt>Version 1.5.4 · Personal research assistant</Txt>
+        <Txt>Version 1.5.5 · Personal research assistant</Txt>
         <Txt muted>
           YouTube is a trademark of Google LLC. This app is not affiliated with YouTube. No
           comprehensive trend coverage or guaranteed results.
         </Txt>
-        <Action secondary onPress={() => router.push('/diagnostics?run=1')}>
-          Open mock regression console
-        </Action>
       </Fold>
       {Boolean(op.error) && <ErrorBox message={op.error} onRetry={op.clear} />}
       {Boolean(op.message) && <Txt muted>{op.message}</Txt>}
