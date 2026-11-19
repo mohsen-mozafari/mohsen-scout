@@ -126,14 +126,12 @@ export default function Discover() {
     if (result) setReportId(result.id);
   };
   return (
-    <Page>
-      <View style={{ gap: 10, paddingVertical: 4 }}>
-        <Text style={[styles.title, { fontSize: 32, lineHeight: 38 }]}>
-          Find your{'\n'}
-          <Text style={{ color: p.purple }}>next angle.</Text>
-        </Text>
-        <Txt muted>A research desk for your next YouTube idea.</Txt>
-      </View>
+    <Page
+      title="YouTube Research"
+      eyebrow="OFFICIAL DATA API"
+      showBack
+      subtitle="Build a bounded sample with your own topic, filters and saved reports. No scraping and no automatic background searches."
+    >
       <Panel>
         <Field
           label="What are you exploring?"

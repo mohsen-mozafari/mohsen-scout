@@ -4,7 +4,7 @@ import { Button } from 'heroui-native';
 import { router } from 'expo-router';
 import { NotebookPen, Plus, ArrowUpRight } from 'lucide-react-native';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
-import { Page, styles, Field, Choices, Action, Empty, Txt } from '@/components/ScoutUI';
+import { Page, styles, Field, Choices, Action, Empty, Txt, ScreenIntro } from '@/components/ScoutUI';
 import { useScout } from '@/lib/store';
 import { matchesSearchText } from '@/lib/search';
 import { palette as p } from '@/lib/theme';
@@ -34,25 +34,31 @@ export default function Notes() {
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
         ListHeaderComponent={
-          <View style={{ gap: 18, marginBottom: 24 }}>
-            <Text style={styles.title}>{translateText("Room to think.", language)}</Text>
-            <Field label="Search pages" value={search} onChange={setSearch} />
-            <Choices
-              label="Folders"
-              options={['All', ...new Set(notes.map((n) => n.folder).filter(Boolean))]}
-              selected={[folder]}
-              onChange={(v) => setFolder(v[0])}
+          <View style={{ gap: 15, marginBottom: 18 }}>
+            <ScreenIntro
+              eyebrow="PERSONAL WORKSPACE"
+              title="Notes and field journal"
+              subtitle="Your research pages, source references, checklists and decisions stay on this device."
+              icon={NotebookPen}
             />
-            <Choices
-              label="Tags"
-              options={['All tags', ...new Set(notes.flatMap((n) => n.tags))]}
-              selected={[tag]}
-              onChange={(v) => setTag(v[0])}
-            />
-            <Action icon={Plus} onPress={() => router.push('/note')}>
-              New page
-            </Action>
+            <View style={styles.panel}>
+              <Field label="Search pages" value={search} onChange={setSearch} placeholder="Search titles, notes and tags" />
+              <Choices
+                label="Folders"
+                options={['All', ...new Set(notes.map((note) => note.folder).filter(Boolean))]}
+                selected={[folder]}
+                onChange={(values) => setFolder(values[0])}
+              />
+              <Choices
+                label="Tags"
+                options={['All tags', ...new Set(notes.flatMap((note) => note.tags))]}
+                selected={[tag]}
+                onChange={(values) => setTag(values[0])}
+              />
+              <Action icon={Plus} onPress={() => router.push('/note')}>Create a new page</Action>
+            </View>
           </View>
+
         }
         renderItem={({ item }) => (
           <Animated.View

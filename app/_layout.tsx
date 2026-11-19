@@ -148,6 +148,7 @@ export default function RootLayout() {
       <HeroUINativeProvider>
         <Stack
           screenOptions={{
+            headerShown: false,
             headerStyle: { backgroundColor: palette.background },
             headerTintColor: palette.text,
             headerTitleStyle: { fontFamily: 'Inter_600SemiBold' },

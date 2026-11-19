@@ -88,7 +88,7 @@ export default function SearchDemand() {
   trendsParams.set('date', periods[period] ?? 'today 12-m');
   const trendsUrl = 'https://trends.google.com/trends/explore?' + trendsParams.toString();
   return (
-    <Page title="SEARCH DEMAND & TRENDS">
+    <Page title="Public-interest Signals" eyebrow="WIKIMEDIA PAGEVIEWS" showBack subtitle="Compare article attention in a Wikipedia language edition. These observations are not search volume, unique people or YouTube views.">
       <Txt muted>Compare public interest signals for up to three space topics. Search demand, YouTube views and news coverage remain separate measurements.</Txt>
       {linkedIdea ? <Txt muted>Connected idea: {linkedIdea.topic}. Save the comparison below to keep its source links and monthly pageview observations with this idea.</Txt> : null}
       <Panel>

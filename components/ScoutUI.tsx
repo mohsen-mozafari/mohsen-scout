@@ -1,182 +1,567 @@
 import { type ReactNode, useState } from 'react';
-import { resolveNodeDirection, resolveTextDirection, translateNode, translateText } from '@/lib/i18n';
-import { View, Text, ScrollView, KeyboardAvoidingView, Platform, StyleSheet } from 'react-native';
-import { Button, Input, TextField, TextArea } from 'heroui-native';
-import { Search, CircleAlert, ChevronDown, ChevronUp, type LucideIcon } from 'lucide-react-native';
+import {
+  resolveNodeDirection,
+  resolveTextDirection,
+  translateNode,
+  translateText,
+} from '@/lib/i18n';
+import {
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { router } from 'expo-router';
+import {
+  AlertCircle,
+  ArrowLeft,
+  ArrowUpRight,
+  Check,
+  ChevronDown,
+  ChevronUp,
+  Compass,
+  Search,
+  type LucideIcon,
+} from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { palette as p } from '@/lib/theme';
 import { useScout } from '@/lib/store';
+
+type Tone = 'violet' | 'cyan' | 'mint' | 'amber';
+
+const toneColors: Record<Tone, { fill: string; soft: string; line: string }> = {
+  violet: { fill: p.purple, soft: p.purpleSoft, line: p.purpleLine },
+  cyan: { fill: p.cyan, soft: p.cyanSoft, line: p.cyanLine },
+  mint: { fill: p.success, soft: p.successSoft, line: p.successLine },
+  amber: { fill: p.warning, soft: p.warningSoft, line: p.warningLine },
+};
+
 export const styles = StyleSheet.create({
   page: { flex: 1, backgroundColor: p.background },
   content: {
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 28,
-    gap: 16,
+    paddingHorizontal: 18,
+    paddingTop: 10,
+    paddingBottom: 34,
+    gap: 15,
     width: '100%',
     maxWidth: 760,
     alignSelf: 'center',
   },
-  title: {
-    fontFamily: 'Inter_700Bold',
-    fontSize: 26,
-    lineHeight: 33,
+  brandBar: {
+    minHeight: 54,
+    paddingHorizontal: 18,
+    paddingBottom: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  brandLockup: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  brandMark: {
+    width: 38,
+    height: 38,
+    borderRadius: 13,
+    backgroundColor: p.purpleSoft,
+    borderWidth: 1,
+    borderColor: p.purpleLine,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  brandName: {
     color: p.text,
-    letterSpacing: -0.65,
+    fontFamily: 'Inter_700Bold',
+    fontSize: 13,
+    letterSpacing: 1.25,
+  },
+  brandSubtitle: {
+    color: p.muted,
+    fontFamily: 'Inter_500Medium',
+    fontSize: 9,
+    letterSpacing: 1.45,
+    marginTop: 2,
+  },
+  localPill: {
+    minHeight: 28,
+    paddingHorizontal: 10,
+    borderRadius: 99,
+    borderWidth: 1,
+    borderColor: p.successLine,
+    backgroundColor: p.successSoft,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  localDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: p.success },
+  localText: {
+    color: p.success,
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 9,
+    letterSpacing: 0.9,
+  },
+  intro: { gap: 7, paddingTop: 7, paddingBottom: 5 },
+  eyebrow: {
+    color: p.cyan,
+    fontFamily: 'Inter_700Bold',
+    fontSize: 10,
+    letterSpacing: 1.65,
+    lineHeight: 15,
+  },
+  title: {
+    color: p.text,
+    fontFamily: 'Inter_700Bold',
+    fontSize: 29,
+    lineHeight: 35,
+    letterSpacing: -0.8,
+  },
+  introText: {
+    color: p.muted,
+    fontFamily: 'Inter_400Regular',
+    fontSize: 13,
+    lineHeight: 20,
   },
   heading: {
-    fontFamily: 'Inter_600SemiBold',
+    color: p.text,
+    fontFamily: 'Inter_700Bold',
     fontSize: 16,
     lineHeight: 22,
-    color: p.text,
     letterSpacing: -0.25,
     flexShrink: 1,
     minWidth: 0,
   },
   text: {
+    color: p.text,
     fontFamily: 'Inter_400Regular',
     fontSize: 14,
     lineHeight: 21,
-    color: p.text,
     flexShrink: 1,
     minWidth: 0,
   },
   muted: {
+    color: p.muted,
     fontFamily: 'Inter_400Regular',
     fontSize: 12,
     lineHeight: 18,
-    color: p.muted,
     flexShrink: 1,
     minWidth: 0,
   },
+  badge: {
+    color: p.cyan,
+    fontFamily: 'Inter_700Bold',
+    fontSize: 10,
+    lineHeight: 15,
+    letterSpacing: 0.8,
+  },
   panel: {
-    paddingHorizontal: 17,
-    paddingVertical: 17,
-    borderRadius: 26,
+    padding: 17,
+    borderRadius: 23,
     backgroundColor: p.surface,
     borderColor: p.border,
     borderWidth: 1,
+    gap: 13,
+  },
+  heroPanel: {
+    padding: 19,
+    borderRadius: 26,
+    borderWidth: 1,
+    borderColor: 'rgba(174, 160, 255, 0.32)',
     gap: 14,
-    shadowColor: p.violet,
-    shadowOpacity: 0.11,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 7 },
-    elevation: 2,
+    overflow: 'hidden',
   },
   listCard: {
-    padding: 14,
-    borderRadius: 23,
-    backgroundColor: 'rgba(25, 22, 43, 0.82)',
-    borderColor: p.border,
-    borderWidth: 1,
-    shadowColor: p.violet,
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 5 },
-    elevation: 1,
-  },
-  fold: {
-    gap: 10,
-    padding: 10,
+    padding: 15,
     borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.025)',
+    backgroundColor: p.surface,
     borderColor: p.border,
     borderWidth: 1,
+    gap: 11,
   },
-  foldContent: { gap: 12, paddingHorizontal: 4, paddingBottom: 4 },
+  softCard: {
+    padding: 14,
+    borderRadius: 18,
+    backgroundColor: p.surfaceAlt,
+    borderColor: p.borderSoft,
+    borderWidth: 1,
+    gap: 9,
+  },
   row: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  // eslint-disable-next-line react-native/no-unused-styles -- Exported shared style used by screens and VideoRow; the rule only checks this file.
-  rule: { borderBottomColor: p.border, borderBottomWidth: 1, paddingBottom: 18 },
+  rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
+  rule: { borderBottomColor: p.border, borderBottomWidth: 1, paddingBottom: 16 },
   label: {
-    fontFamily: 'Inter_500Medium',
-    fontSize: 12,
-    lineHeight: 17,
     color: p.muted,
+    fontFamily: 'Inter_700Bold',
+    fontSize: 10,
+    lineHeight: 15,
+    letterSpacing: 1.05,
   },
-  // eslint-disable-next-line react-native/no-unused-styles -- Exported shared style used by screens and VideoRow; the rule only checks this file.
-  badge: { fontFamily: 'Inter_500Medium', fontSize: 11, lineHeight: 16, color: p.purple },
-  actionLabel: { fontFamily: 'Inter_600SemiBold', fontSize: 13, lineHeight: 19 },
-  choiceLabel: { fontFamily: 'Inter_500Medium', fontSize: 12, lineHeight: 17 },
-  foldLabel: { fontFamily: 'Inter_600SemiBold', fontSize: 14, lineHeight: 20 },
-  input: {
+  action: {
+    minHeight: 48,
+    paddingHorizontal: 15,
+    paddingVertical: 11,
+    borderRadius: 15,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 9,
+  },
+  actionPrimary: {
+    backgroundColor: p.purpleBright,
+    borderWidth: 1,
+    borderColor: p.purpleBright,
+  },
+  actionSecondary: {
+    backgroundColor: p.surfaceAlt,
+    borderWidth: 1,
+    borderColor: p.border,
+  },
+  actionDanger: {
+    backgroundColor: p.dangerSoft,
+    borderWidth: 1,
+    borderColor: p.dangerLine,
+  },
+  actionPressed: { opacity: 0.82, transform: [{ scale: 0.985 }] },
+  actionDisabled: { opacity: 0.42 },
+  actionLabel: { fontFamily: 'Inter_700Bold', fontSize: 13, lineHeight: 18 },
+  choice: {
+    minHeight: 36,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: p.border,
+    backgroundColor: p.surfaceAlt,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  choiceSelected: { backgroundColor: p.cyan, borderColor: p.cyan },
+  choicePressed: { opacity: 0.75 },
+  choiceLabel: { fontFamily: 'Inter_600SemiBold', fontSize: 11, lineHeight: 16 },
+  errorAction: {
+    minHeight: 34,
+    justifyContent: 'center',
+    alignSelf: 'flex-start',
+    paddingHorizontal: 10,
+    borderRadius: 10,
+    backgroundColor: p.dangerLine,
+  },
+  errorActionText: { color: p.danger, fontFamily: 'Inter_700Bold', fontSize: 11 },
+  foldTrigger: { minHeight: 46, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  foldIcon: {
+    width: 30,
+    height: 30,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: p.raised,
+  },
+  foldLabel: { color: p.text, fontFamily: 'Inter_600SemiBold', fontSize: 13, lineHeight: 19 },
+  fold: {
+    borderRadius: 18,
+    backgroundColor: p.surfaceAlt,
+    borderColor: p.borderSoft,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    gap: 10,
+  },
+  foldContent: { paddingHorizontal: 3, paddingBottom: 9, gap: 12 },
+  fieldBox: {
+    minHeight: 49,
+    borderRadius: 15,
+    backgroundColor: p.input,
+    borderColor: p.border,
+    borderWidth: 1,
+    justifyContent: 'center',
+    paddingHorizontal: 13,
+  },
+  inputText: {
+    minHeight: 44,
+    paddingVertical: 10,
+    color: p.text,
     fontFamily: 'Inter_400Regular',
     fontSize: 14,
-    color: p.text,
-    backgroundColor: 'rgba(255, 255, 255, 0.035)',
-    borderColor: p.border,
+    lineHeight: 20,
+    textAlignVertical: 'center',
+  },
+  multilineText: { minHeight: 112, textAlignVertical: 'top', paddingTop: 12 },
+  metricValue: { color: p.text, fontFamily: 'Inter_700Bold', fontSize: 23, lineHeight: 28 },
+  metricLabel: {
+    color: p.muted,
+    fontFamily: 'Inter_700Bold',
+    fontSize: 9,
+    lineHeight: 14,
+    letterSpacing: 0.8,
+  },
+  metricCard: {
+    flex: 1,
+    minWidth: 102,
+    padding: 12,
+    borderRadius: 17,
     borderWidth: 1,
-    borderRadius: 16,
-    paddingHorizontal: 14,
-    minHeight: 48,
+    gap: 6,
+  },
+  shortcutCard: {
+    flex: 1,
+    minWidth: 142,
+    minHeight: 122,
+    padding: 14,
+    borderRadius: 20,
+    borderWidth: 1,
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  shortcutIcon: {
+    width: 37,
+    height: 37,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyWrap: {
+    alignItems: 'center',
+    paddingVertical: 28,
+    paddingHorizontal: 18,
+    gap: 12,
+  },
+  emptyIcon: {
+    width: 62,
+    height: 62,
+    borderRadius: 21,
+    backgroundColor: p.purpleSoft,
+    borderWidth: 1,
+    borderColor: p.purpleLine,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  errorBox: {
+    borderRadius: 17,
+    borderWidth: 1,
+    borderColor: p.dangerLine,
+    backgroundColor: p.dangerSoft,
+    padding: 14,
+    gap: 10,
   },
 });
+
+export function AppHeader({ showBack = false }: { showBack?: boolean }) {
+  const ready = useScout((s) => s.ready);
+  const canGoBack = showBack && router.canGoBack();
+  return (
+    <View style={styles.brandBar}>
+      <View style={styles.brandLockup}>
+        {canGoBack ? (
+          <Pressable
+            onPress={() => router.back()}
+            accessibilityRole="button"
+            accessibilityLabel="Go back"
+            hitSlop={8}
+            style={({ pressed }) => [{
+              width: 34,
+              height: 34,
+              borderRadius: 12,
+              backgroundColor: p.surfaceAlt,
+              borderWidth: 1,
+              borderColor: p.border,
+              alignItems: 'center',
+              justifyContent: 'center',
+            }, pressed ? { opacity: 0.7 } : null]}
+          >
+            <ArrowLeft size={17} color={p.text} />
+          </Pressable>
+        ) : null}
+        <View style={styles.brandLockup}>
+          <View style={styles.brandMark}>
+            <Compass size={21} color={p.purple} strokeWidth={2.1} />
+          </View>
+          <View>
+            <Text style={styles.brandName}>MOHSEN SCOUT</Text>
+            <Text style={styles.brandSubtitle}>SPACE INTELLIGENCE STUDIO</Text>
+          </View>
+        </View>
+      </View>
+      <View style={styles.localPill}>
+        <View style={[styles.localDot, { opacity: ready ? 1 : 0.42 }]} />
+        <Text style={styles.localText}>{ready ? 'ON DEVICE' : 'STARTING'}</Text>
+      </View>
+    </View>
+  );
+}
+
+function PageHeading({
+  title,
+  eyebrow,
+  subtitle,
+}: {
+  title: string;
+  eyebrow?: string;
+  subtitle?: string;
+}) {
+  const language = useScout((s) => s.data.preferences.uiLanguage ?? 'fa');
+  const translatedTitle = translateText(title, language);
+  const translatedEyebrow = eyebrow ? translateText(eyebrow, language) : 'WORKSPACE';
+  const translatedSubtitle = subtitle ? translateText(subtitle, language) : '';
+  const direction = resolveTextDirection(translatedTitle);
+  return (
+    <View style={styles.intro}>
+      <Text style={[styles.eyebrow, { writingDirection: resolveTextDirection(translatedEyebrow) }]}>
+        {translatedEyebrow}
+      </Text>
+      <Text style={[styles.title, { writingDirection: direction, textAlign: direction === 'rtl' ? 'right' : 'left' }]}>
+        {translatedTitle}
+      </Text>
+      {Boolean(translatedSubtitle) ? (
+        <Text style={[styles.introText, { writingDirection: resolveTextDirection(translatedSubtitle), textAlign: direction === 'rtl' ? 'right' : 'left' }]}>
+          {translatedSubtitle}
+        </Text>
+      ) : null}
+    </View>
+  );
+}
+
+export function ScreenIntro({
+  eyebrow,
+  title,
+  subtitle,
+  icon: Icon,
+}: {
+  eyebrow: string;
+  title: string;
+  subtitle?: string;
+  icon?: LucideIcon;
+}) {
+  const language = useScout((s) => s.data.preferences.uiLanguage ?? 'fa');
+  const translatedTitle = translateText(title, language);
+  const translatedEyebrow = translateText(eyebrow, language);
+  const translatedSubtitle = subtitle ? translateText(subtitle, language) : '';
+  const direction = resolveTextDirection(translatedTitle);
+  return (
+    <View style={styles.intro}>
+      {Icon ? (
+        <View style={[styles.shortcutIcon, { backgroundColor: p.purpleSoft, borderWidth: 1, borderColor: p.purpleLine }]}>
+          <Icon color={p.purple} size={19} strokeWidth={1.9} />
+        </View>
+      ) : null}
+      <Text style={[styles.eyebrow, { writingDirection: resolveTextDirection(translatedEyebrow) }]}>{translatedEyebrow}</Text>
+      <Text style={[styles.title, { writingDirection: direction, textAlign: direction === 'rtl' ? 'right' : 'left' }]}>{translatedTitle}</Text>
+      {Boolean(translatedSubtitle) ? (
+        <Text style={[styles.introText, { writingDirection: resolveTextDirection(translatedSubtitle), textAlign: direction === 'rtl' ? 'right' : 'left' }]}>{translatedSubtitle}</Text>
+      ) : null}
+    </View>
+  );
+}
+
 export function Txt({ children, muted = false }: { children: ReactNode; muted?: boolean }) {
   const language = useScout((s) => s.data.preferences.uiLanguage ?? 'fa');
   const content = translateNode(children, language);
   const direction = resolveNodeDirection(content);
   return <Text style={[muted ? styles.muted : styles.text, { writingDirection: direction, textAlign: direction === 'rtl' ? 'right' : 'left' }]}>{content}</Text>;
 }
+
 export function Heading({ children }: { children: ReactNode }) {
   const language = useScout((s) => s.data.preferences.uiLanguage ?? 'fa');
   const content = translateNode(children, language);
   const direction = resolveNodeDirection(content);
   return <Text style={[styles.heading, { writingDirection: direction, textAlign: direction === 'rtl' ? 'right' : 'left' }]}>{content}</Text>;
 }
+
 export function SourceText({ children, muted = false, numberOfLines }: { children: ReactNode; muted?: boolean; numberOfLines?: number }) {
   const direction = resolveNodeDirection(children);
   return <Text numberOfLines={numberOfLines} style={[muted ? styles.muted : styles.text, { writingDirection: direction, textAlign: direction === 'rtl' ? 'right' : 'left' }]}>{children}</Text>;
 }
+
 export function SourceHeading({ children }: { children: ReactNode }) {
   const direction = resolveNodeDirection(children);
   return <Text style={[styles.heading, { writingDirection: direction, textAlign: direction === 'rtl' ? 'right' : 'left' }]}>{children}</Text>;
 }
+
 export function SourceTitle({ children }: { children: ReactNode }) {
   const direction = resolveNodeDirection(children);
   return <Text style={[styles.title, { writingDirection: direction, textAlign: direction === 'rtl' ? 'right' : 'left' }]}>{children}</Text>;
 }
+
 export function BadgeText({ children }: { children: string }) {
   const language = useScout((s) => s.data.preferences.uiLanguage ?? 'fa');
   const content = translateText(children, language);
   const direction = resolveTextDirection(content);
   return <Text style={[styles.badge, { writingDirection: direction, textAlign: direction === 'rtl' ? 'right' : 'left' }]}>{content}</Text>;
 }
+
+function PageError({ message, onRetry }: { message: string; onRetry: () => void }) {
+  const language = useScout((s) => s.data.preferences.uiLanguage ?? 'fa');
+  const translatedMessage = translateText(message, language);
+  const direction = resolveTextDirection(translatedMessage);
+  return (
+    <View style={styles.errorBox}>
+      <View style={styles.row}>
+        <AlertCircle size={19} color={p.danger} />
+        <Text style={[styles.text, { flex: 1, color: p.danger, writingDirection: direction, textAlign: direction === 'rtl' ? 'right' : 'left' }]}>{translatedMessage}</Text>
+      </View>
+      <Pressable onPress={onRetry} accessibilityRole="button" style={styles.errorAction}>
+        <Text style={styles.errorActionText}>Retry / dismiss</Text>
+      </Pressable>
+    </View>
+  );
+}
+
 export function Page({
   children,
   title,
+  eyebrow,
+  subtitle,
   scroll = true,
+  showBack = false,
 }: {
   children: ReactNode;
   title?: string;
+  eyebrow?: string;
+  subtitle?: string;
   scroll?: boolean;
+  showBack?: boolean;
 }) {
   const error = useScout((s) => s.error);
   const language = useScout((s) => s.data.preferences.uiLanguage ?? 'fa');
-  const pageTitle = title ? translateText(title, language) : '';
-  const pageTitleDirection = resolveTextDirection(pageTitle);
+  const insets = useSafeAreaInsets();
+  const content = (
+    <>
+      <AppHeader showBack={showBack} />
+      {title ? <PageHeading title={title} eyebrow={eyebrow} subtitle={subtitle} /> : null}
+      {Boolean(error) ? (
+        <PageError
+          message={error}
+          onRetry={() =>
+            useScout.getState().ready
+              ? useScout.getState().clearError()
+              : void useScout.getState().boot()
+          }
+        />
+      ) : null}
+      {translateNode(children, language)}
+    </>
+  );
   return (
     <KeyboardAvoidingView
-      style={[styles.page, { direction: language === 'fa' ? 'rtl' : 'ltr' }]}
+      style={[styles.page, { direction: language === 'fa' ? 'rtl' : 'ltr', paddingTop: Math.max(6, insets.top) }]}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       {scroll ? (
-        <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={[styles.content, { direction: language === 'fa' ? 'rtl' : 'ltr' }]}>
-          {title ? <Text style={[styles.title, { writingDirection: pageTitleDirection, textAlign: pageTitleDirection === 'rtl' ? 'right' : 'left' }]}>{pageTitle}</Text> : null}
-          {Boolean(error) && (
-            <ErrorBox
-              message={error}
-              onRetry={() =>
-                useScout.getState().ready
-                  ? useScout.getState().clearError()
-                  : void useScout.getState().boot()
-              }
-            />
-          )}
-          {translateNode(children, language)}
+        <ScrollView
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={[styles.content, { direction: language === 'fa' ? 'rtl' : 'ltr' }]}
+          showsVerticalScrollIndicator={false}
+        >
+          {content}
         </ScrollView>
       ) : (
-        <>
-          {Boolean(error) && (
-            <ErrorBox
+        <View style={{ flex: 1 }}>
+          <AppHeader showBack={showBack} />
+          {Boolean(error) ? (
+            <PageError
               message={error}
               onRetry={() =>
                 useScout.getState().ready
@@ -184,16 +569,36 @@ export function Page({
                   : void useScout.getState().boot()
               }
             />
-          )}
+          ) : null}
           {translateNode(children, language)}
-        </>
+        </View>
       )}
     </KeyboardAvoidingView>
   );
 }
-export function Panel({ children }: { children: ReactNode }) {
-  return <View style={styles.panel}>{children}</View>;
+
+export function Panel({
+  children,
+  variant = 'default',
+}: {
+  children: ReactNode;
+  variant?: 'default' | 'hero' | 'soft';
+}) {
+  if (variant === 'hero') {
+    return (
+      <LinearGradient
+        colors={['#22204A', '#182C45', '#123640']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.heroPanel}
+      >
+        {children}
+      </LinearGradient>
+    );
+  }
+  return <View style={variant === 'soft' ? styles.softCard : styles.panel}>{children}</View>;
 }
+
 export function Action({
   children,
   onPress,
@@ -201,6 +606,7 @@ export function Action({
   disabled = false,
   busy = false,
   icon: Icon,
+  danger = false,
 }: {
   children: string;
   onPress: () => void;
@@ -208,24 +614,40 @@ export function Action({
   disabled?: boolean;
   busy?: boolean;
   icon?: LucideIcon;
+  danger?: boolean;
 }) {
   const language = useScout((s) => s.data.preferences.uiLanguage ?? 'fa');
   const label = translateText(children, language);
-  const displayLabel = busy ? translateText('Working…', language) : label;
-  const labelDirection = resolveTextDirection(displayLabel);
+  const direction = resolveTextDirection(label);
+  const foreground = secondary ? p.cyan : p.background;
   return (
-    <Button
-      onPress={onPress}
-      variant={secondary ? 'secondary' : 'primary'}
-      isDisabled={disabled || busy}
-      className="min-h-12 rounded-2xl px-4 py-3"
+    <Pressable
+      onPress={() => {
+        if (!disabled && !busy) void Haptics.selectionAsync();
+        if (!disabled && !busy) onPress();
+      }}
+      disabled={disabled || busy}
+      accessibilityRole="button"
       accessibilityLabel={label}
+      accessibilityState={{ disabled: disabled || busy, busy }}
+      style={({ pressed }) => [
+        styles.action,
+        secondary ? styles.actionSecondary : danger ? styles.actionDanger : styles.actionPrimary,
+        pressed && !disabled && !busy ? styles.actionPressed : null,
+        disabled || busy ? styles.actionDisabled : null,
+      ]}
     >
-      {Icon && <Icon size={18} color={secondary ? p.purple : p.white} strokeWidth={1.8} />}
-      <Button.Label numberOfLines={2} style={[styles.actionLabel, { writingDirection: labelDirection, textAlign: labelDirection === 'rtl' ? 'right' : 'left' }]}>{displayLabel}</Button.Label>
-    </Button>
+      {busy ? (
+        <ActivityIndicator size="small" color={secondary ? p.cyan : p.background} />
+      ) : Icon ? (
+        <Icon size={17} color={danger ? p.danger : foreground} strokeWidth={2} />
+      ) : null}
+      <Text numberOfLines={2} style={[styles.actionLabel, { color: danger ? p.danger : foreground, writingDirection: direction, textAlign: direction === 'rtl' ? 'right' : 'left', flex: 1 }]}>{busy ? translateText('Working…', language) : label}</Text>
+      {!secondary && !danger ? <ArrowUpRight size={15} color={p.background} /> : null}
+    </Pressable>
   );
 }
+
 export function Field({
   label,
   value,
@@ -236,7 +658,7 @@ export function Field({
 }: {
   label: string;
   value: string;
-  onChange: (s: string) => void;
+  onChange: (value: string) => void;
   placeholder?: string;
   multiline?: boolean;
   secret?: boolean;
@@ -244,34 +666,31 @@ export function Field({
   const language = useScout((s) => s.data.preferences.uiLanguage ?? 'fa');
   const translatedLabel = translateText(label, language);
   const translatedPlaceholder = placeholder ? translateText(placeholder, language) : undefined;
-  const directionSeed = value.trim() || translatedPlaceholder?.trim() || translatedLabel;
-  const direction = directionSeed.trim()
-    ? resolveTextDirection(directionSeed)
-    : language === 'fa' ? 'rtl' : 'ltr';
+  const seed = value.trim() || translatedPlaceholder?.trim() || translatedLabel;
+  const direction = seed ? resolveTextDirection(seed) : language === 'fa' ? 'rtl' : 'ltr';
+  const labelDirection = resolveTextDirection(translatedLabel);
   return (
-    <TextField>
-      <Text style={[styles.label, { writingDirection: resolveTextDirection(translatedLabel), textAlign: resolveTextDirection(translatedLabel) === 'rtl' ? 'right' : 'left' }]}>{translatedLabel}</Text>
-      {multiline ? (
-        <TextArea
+    <View style={{ gap: 7, width: '100%' }}>
+      <Text style={[styles.label, { textAlign: labelDirection === 'rtl' ? 'right' : 'left', writingDirection: labelDirection }]}>{translatedLabel}</Text>
+      <View style={styles.fieldBox}>
+        <TextInput
           value={value}
           onChangeText={onChange}
           placeholder={translatedPlaceholder}
-          style={[styles.input, { minHeight: 112, paddingTop: 12, textAlignVertical: 'top', writingDirection: direction, textAlign: direction === 'rtl' ? 'right' : 'left' }]}
-        />
-      ) : (
-        <Input
-          value={value}
-          onChangeText={onChange}
-          placeholder={translatedPlaceholder}
+          placeholderTextColor={p.placeholder}
           secureTextEntry={secret}
           autoCapitalize={secret ? 'none' : 'sentences'}
           autoCorrect={!secret}
-          style={[styles.input, { writingDirection: direction, textAlign: direction === 'rtl' ? 'right' : 'left' }]}
+          multiline={multiline}
+          selectionColor={p.cyan}
+          underlineColorAndroid="transparent"
+          style={[styles.inputText, multiline ? styles.multilineText : null, { writingDirection: direction, textAlign: direction === 'rtl' ? 'right' : 'left' }]}
         />
-      )}
-    </TextField>
+      </View>
+    </View>
   );
 }
+
 export function Choices<T extends string>({
   label,
   options,
@@ -287,36 +706,105 @@ export function Choices<T extends string>({
 }) {
   const language = useScout((s) => s.data.preferences.uiLanguage ?? 'fa');
   const translatedLabel = label ? translateText(label, language) : '';
-  const labelDirection = resolveTextDirection(translatedLabel);
+  const direction = resolveTextDirection(translatedLabel);
   return (
-    <View style={{ gap: 10 }}>
-      {Boolean(label) && <Text style={[styles.label, { writingDirection: labelDirection, textAlign: labelDirection === 'rtl' ? 'right' : 'left' }]}>{translatedLabel}</Text>}
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-        {options.map((option) => (
-          <Button
-            key={option}
-            onPress={() => {
-              void Haptics.selectionAsync();
-              onChange(
-                multiple
-                  ? selected.includes(option)
-                    ? selected.filter((s) => s !== option)
-                    : [...selected, option]
-                  : [option],
-              );
-            }}
-            variant={selected.includes(option) ? 'primary' : 'secondary'}
-            size="sm"
-            className="min-h-10 rounded-full px-4 py-2"
-            accessibilityState={{ selected: selected.includes(option) }}
-          >
-            <Button.Label numberOfLines={2} style={[styles.choiceLabel, { writingDirection: resolveTextDirection(translateText(option, language)), textAlign: resolveTextDirection(translateText(option, language)) === 'rtl' ? 'right' : 'left' }]}>{translateText(option, language)}</Button.Label>
-          </Button>
-        ))}
+    <View style={{ gap: 9 }}>
+      {Boolean(label) ? (
+        <Text style={[styles.label, { writingDirection: direction, textAlign: direction === 'rtl' ? 'right' : 'left' }]}>{translatedLabel}</Text>
+      ) : null}
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7 }}>
+        {options.map((option) => {
+          const active = selected.includes(option);
+          const title = translateText(option, language);
+          const itemDirection = resolveTextDirection(title);
+          return (
+            <Pressable
+              key={option}
+              onPress={() => {
+                void Haptics.selectionAsync();
+                onChange(
+                  multiple
+                    ? active ? selected.filter((item) => item !== option) : [...selected, option]
+                    : [option],
+                );
+              }}
+              accessibilityRole="button"
+              accessibilityState={{ selected: active }}
+              style={({ pressed }) => [
+                styles.choice,
+                active ? styles.choiceSelected : null,
+                pressed ? styles.choicePressed : null,
+              ]}
+            >
+              {active ? <Check size={13} color={p.background} strokeWidth={2.6} /> : null}
+              <Text style={[styles.choiceLabel, { color: active ? p.background : p.text, writingDirection: itemDirection, textAlign: itemDirection === 'rtl' ? 'right' : 'left' }]}>{title}</Text>
+            </Pressable>
+          );
+        })}
       </View>
     </View>
   );
 }
+
+export function MetricCard({
+  label,
+  value,
+  hint,
+  tone = 'violet',
+}: {
+  label: string;
+  value: string | number;
+  hint?: string;
+  tone?: Tone;
+}) {
+  const colors = toneColors[tone];
+  const language = useScout((s) => s.data.preferences.uiLanguage ?? 'fa');
+  const title = translateText(label, language);
+  const description = hint ? translateText(hint, language) : '';
+  return (
+    <View style={[styles.metricCard, { backgroundColor: colors.soft, borderColor: colors.line }]}>
+      <Text style={[styles.metricLabel, { color: colors.fill }]}>{title}</Text>
+      <Text style={styles.metricValue}>{value}</Text>
+      {Boolean(description) ? <Text style={styles.muted}>{description}</Text> : null}
+    </View>
+  );
+}
+
+export function QuickAction({
+  title,
+  description,
+  icon: Icon,
+  onPress,
+  tone = 'violet',
+}: {
+  title: string;
+  description: string;
+  icon: LucideIcon;
+  onPress: () => void;
+  tone?: Tone;
+}) {
+  const colors = toneColors[tone];
+  const language = useScout((s) => s.data.preferences.uiLanguage ?? 'fa');
+  const name = translateText(title, language);
+  const detail = translateText(description, language);
+  return (
+    <Pressable
+      onPress={() => { void Haptics.selectionAsync(); onPress(); }}
+      accessibilityRole="button"
+      style={({ pressed }) => [styles.shortcutCard, { backgroundColor: colors.soft, borderColor: colors.line }, pressed ? styles.actionPressed : null]}
+    >
+      <View style={[styles.shortcutIcon, { backgroundColor: colors.line }]}>
+        <Icon size={19} color={colors.fill} strokeWidth={1.9} />
+      </View>
+      <View style={{ gap: 3, flex: 1 }}>
+        <Text style={styles.heading}>{name}</Text>
+        <Text style={styles.muted}>{detail}</Text>
+      </View>
+      <ArrowUpRight size={15} color={colors.fill} />
+    </Pressable>
+  );
+}
+
 export function Empty({
   title,
   action,
@@ -329,33 +817,28 @@ export function Empty({
   icon?: LucideIcon;
 }) {
   return (
-    <View style={{ alignItems: 'center', paddingVertical: 28, paddingHorizontal: 16, gap: 16 }}>
-      <View style={{ padding: 14, borderRadius: 22, backgroundColor: 'rgba(150, 121, 255, 0.12)', borderWidth: 1, borderColor: p.border }}>
-        <Icon size={32} color={p.purple} strokeWidth={1.8} />
+    <View style={styles.emptyWrap}>
+      <View style={styles.emptyIcon}>
+        <Icon size={27} color={p.purple} strokeWidth={1.9} />
       </View>
       <Txt muted>{title}</Txt>
-      <Action secondary onPress={onPress}>
-        {action}
-      </Action>
+      <Action secondary onPress={onPress}>{action}</Action>
     </View>
   );
 }
+
 export function ErrorBox({ message, onRetry }: { message: string; onRetry: () => void }) {
-  const language = useScout((s) => s.data.preferences.uiLanguage ?? 'fa');
-  const translatedMessage = translateText(message, language);
-  const messageDirection = resolveTextDirection(translatedMessage);
   return (
-    <Panel>
+    <View style={styles.errorBox}>
       <View style={styles.row}>
-        <CircleAlert size={20} color={p.danger} />
-        <Text style={[styles.text, { flex: 1, color: p.danger, writingDirection: messageDirection, textAlign: messageDirection === 'rtl' ? 'right' : 'left' }]}>{translatedMessage}</Text>
+        <AlertCircle size={18} color={p.danger} />
+        <Txt>{message}</Txt>
       </View>
-      <Action secondary onPress={onRetry}>
-        Retry / dismiss
-      </Action>
-    </Panel>
+      <Action danger secondary onPress={onRetry}>Retry / dismiss</Action>
+    </View>
   );
 }
+
 export function Fold({
   title,
   children,
@@ -368,26 +851,25 @@ export function Fold({
   const [expanded, setExpanded] = useState(open);
   const language = useScout((s) => s.data.preferences.uiLanguage ?? 'fa');
   const translatedTitle = translateText(title, language);
-  const titleDirection = resolveTextDirection(translatedTitle);
+  const direction = resolveTextDirection(translatedTitle);
   return (
     <View style={styles.fold}>
-      <Button
-        variant="tertiary"
-        onPress={() => setExpanded(!expanded)}
-        className="min-h-11 h-auto w-full justify-between rounded-2xl bg-transparent px-3 py-2"
+      <Pressable
+        onPress={() => { void Haptics.selectionAsync(); setExpanded((current) => !current); }}
+        accessibilityRole="button"
         accessibilityState={{ expanded }}
+        style={({ pressed }) => [styles.foldTrigger, pressed ? { opacity: 0.72 } : null]}
       >
-        <Button.Label className="flex-1 flex-shrink" style={[styles.foldLabel, { writingDirection: titleDirection, textAlign: titleDirection === 'rtl' ? 'right' : 'left' }]}>{translatedTitle}</Button.Label>
-        {expanded ? (
-          <ChevronUp size={18} color={p.purple} />
-        ) : (
-          <ChevronDown size={18} color={p.muted} />
-        )}
-      </Button>
+        <Text style={[styles.foldLabel, { writingDirection: direction, textAlign: direction === 'rtl' ? 'right' : 'left', flex: 1 }]}>{translatedTitle}</Text>
+        <View style={styles.foldIcon}>
+          {expanded ? <ChevronUp size={16} color={p.cyan} /> : <ChevronDown size={16} color={p.muted} />}
+        </View>
+      </Pressable>
       {expanded ? <View style={styles.foldContent}>{children}</View> : null}
     </View>
   );
 }
+
 export function useOperation() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');

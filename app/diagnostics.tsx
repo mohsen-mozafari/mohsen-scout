@@ -24,7 +24,7 @@ export default function Diagnostics() {
   }, [run]);
   const passed = results.filter((r) => r.passed).length;
   return (
-    <Page title="Mock regression checks">
+    <Page title="Mock regression checks" showBack>
       <Link href="/settings" style={styles.badge}>
         Back to Settings
       </Link>

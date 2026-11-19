@@ -264,7 +264,7 @@ export default function DeepResearch() {
     await useScout.getState().commit((data) => ({ ...data, notes: [note, ...data.notes] }));
   }, 'Research brief saved to Notes.');
   return (
-    <Page title="DEEP RESEARCH">
+    <Page title="Deep Research" eyebrow="SOURCE-LED WORKSPACE" showBack subtitle="Bring official publisher sources, public-interest context and a bounded YouTube sample together in one reviewable brief.">
       <Txt muted>Choose a topic. The app combines selected official news, a clearly labelled public-interest proxy and an optional YouTube sample, then prepares a research structure with source links. The final topic choice and research start stay under your control.</Txt>
       {linkedIdea ? <Action secondary onPress={() => router.push({ pathname: '/detail', params: { idea: linkedIdea.id } })}>{'Research linked to: ' + linkedIdea.topic + ' · Open idea'}</Action> : null}
       <Panel>

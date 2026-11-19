@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { View, Text, Linking, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import { Button, Skeleton } from 'heroui-native';
 import { router, useLocalSearchParams, Link } from 'expo-router';
-import { Plus, Trash2, ChevronUp, ChevronDown } from 'lucide-react-native';
+import { Plus, Trash2, ChevronUp, ChevronDown, NotebookPen } from 'lucide-react-native';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 import {
   Page,
@@ -14,6 +14,8 @@ import {
   Txt,
   ErrorBox,
   useOperation,
+  AppHeader,
+  ScreenIntro,
 } from '@/components/ScoutUI';
 import { moveNoteBlock } from '@/lib/utils';
 import { useScout } from '@/lib/store';
@@ -72,13 +74,13 @@ export default function NoteEditor() {
     });
   if (!ready)
     return (
-      <Page>
+      <Page showBack>
         <Skeleton className="h-44 rounded-2xl" />
       </Page>
     );
   if (id && !existing)
     return (
-      <Page>
+      <Page showBack>
         <Empty
           title="This page no longer exists."
           action="Go to Notes"
@@ -88,10 +90,21 @@ export default function NoteEditor() {
     );
   return (
     <KeyboardAvoidingView
-      style={styles.page}
+      style={[styles.page, { paddingTop: Math.max(6, insets.top) }]}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.content}>
+      <AppHeader showBack />
+      <ScrollView
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={[styles.content, { paddingTop: 12, paddingBottom: 28 }]}
+        showsVerticalScrollIndicator={false}
+      >
+        <ScreenIntro
+          eyebrow={existing ? 'PERSONAL ARCHIVE' : 'NEW RESEARCH PAGE'}
+          title={existing ? 'Edit your research note' : 'Capture a research note'}
+          subtitle="Keep ideas, source links, checklists and decisions organized in your personal workspace."
+          icon={NotebookPen}
+        />
         {!router.canGoBack() && (
           <Link href="/notes" style={styles.badge}>
             Back to Notes
