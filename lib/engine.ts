@@ -216,7 +216,7 @@ export function buildInternalResearch(input: InternalResearchInput): InternalRes
 
   const evidence: InternalEngineEvidence[] = [];
   if (news.length) {
-    const newest = [...matchedNews.map((entry) => entry.item)].sort((a, b) =>
+    const newest = matchedNews.map((entry) => entry.item).sort((a, b) =>
       (b.publishedAt ? Date.parse(b.publishedAt) : 0) -
       (a.publishedAt ? Date.parse(a.publishedAt) : 0))[0];
     const publishers = publisherNames.length ? publisherNames.join(', ') : 'selected official feeds';
