@@ -506,6 +506,8 @@ const fa: Record<string, string> = {
   'API response validation, retry and quota boundaries, result deduplication, empty and malformed samples, local backup integrity, retention rules, note block behavior, scheduler transitions and notification routing.': 'اعتبارسنجی پاسخ API، مرزهای تلاش مجدد و سهمیه، حذف نتایج تکراری، نمونه‌های خالی و ناقص، سلامت نسخه پشتیبان محلی، قواعد نگهداری، رفتار بلوک‌های یادداشت، تغییر وضعیت زمان‌بندی و مسیریابی اعلان‌ها.',
   'Run the suite to see each case separately. You can rerun it at any time and copy either the complete report or only failing cases.': 'مجموعه را اجرا کن تا هر مورد را جداگانه ببینی. هر زمان می‌توانی دوباره اجرا کنی و گزارش کامل یا فقط موارد ناموفق را کپی کنی.',
   'Open mock regression console': 'بازکردن کنسول آزمون‌های شبیه‌سازی',
+  'Developer tools': 'ابزارهای توسعه',
+  'Run isolated Mock regression checks, inspect failures and copy the report without using live provider APIs.': 'آزمون‌های بازگشت Mock را به‌صورت ایزوله اجرا کن، خطاها را ببین و بدون استفاده از API زنده گزارش را کپی کن.',
   'Start research': 'شروع پژوهش',
   'Current sample:': 'نمونه فعلی:',
   'Region': 'منطقه',
