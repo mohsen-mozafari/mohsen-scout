@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { FlatList, View, Text } from 'react-native';
 import { router } from 'expo-router';
 import { Button } from 'heroui-native';
-import { ArrowUpRight, Plus, Archive } from 'lucide-react-native';
+import { ArrowUpRight, Plus, Archive, Lightbulb } from 'lucide-react-native';
 import {
   Page,
   styles,
@@ -13,9 +13,11 @@ import {
   ErrorBox,
   useOperation,
   Txt,
+  Heading,
   SourceHeading,
   SourceText,
   BadgeText,
+  ScreenIntro,
 } from '@/components/ScoutUI';
 import { useScout } from '@/lib/store';
 import { statuses } from '@/lib/types';
@@ -26,7 +28,6 @@ import { getTopicDossier } from '@/lib/topic-dossier';
 import { fetchSpaceNews, getCachedSpaceNews, SPACE_NICHES } from '@/lib/space';
 import { matchesSearchText, normalizeSearchText } from '@/lib/search';
 import { palette as p } from '@/lib/theme';
-import { translateText } from '@/lib/i18n';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 import { MediaPreview } from '@/components/MediaPreview';
 export default function Opportunities() {
@@ -188,67 +189,78 @@ export default function Opportunities() {
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
         ListHeaderComponent={
-          <View style={{ gap: 18, marginBottom: 20 }}>
-            <Text style={styles.title}>{translateText("Your next move.", preferences.uiLanguage ?? "fa")}</Text>
-            <Field
-              label="Search ideas"
-              value={search}
-              onChange={setSearch}
-              placeholder="Topic or personal decision"
+          <View style={{ gap: 16, marginBottom: 18 }}>
+            <ScreenIntro
+              eyebrow="IDEA WORKSPACE"
+              title="Turn research into next steps"
+              subtitle="Capture your own concepts or generate new editorial angles from the evidence already collected."
+              icon={Lightbulb}
             />
-            <Choices
-              label={fa ? 'مرتب‌سازی' : 'Sort by'}
-              options={sortOptions}
-              selected={[selectedSort]}
-              onChange={(values) => {
-                const index = sortOptions.indexOf(values[0]);
-                setSort((['Newest', 'Oldest', 'A-Z', 'Z-A'] as const)[Math.max(0, index)] ?? 'Newest');
-              }}
-            />
-            <Choices
-              options={['All', ...statuses]}
-              selected={[status]}
-              onChange={(v) => setStatus(v[0])}
-            />
-            <Choices
-              label={fa ? 'فیلتر بر اساس زاویه' : 'Filter by angle'}
-              options={categoryOptions}
-              selected={[category === 'All angles' ? allCategoryLabel : categoryLabel(category)]}
-              onChange={(values) => {
-                const selectedIndex = categoryOptions.indexOf(values[0]);
-                const selected = selectedIndex <= 0 ? 'All angles' : IDEA_GENERATION_CATEGORIES[selectedIndex - 1];
-                setCategory(selected);
-              }}
-            />
-            <Action busy={op.busy} onPress={() => generate(selectedGenerationCategory())}>
-              {fa ? 'تولید ایده‌های تازه (حداکثر ۸ مورد مستقل)' : 'Generate fresh ideas (up to 8 distinct concepts)'}
-            </Action>
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <View style={{ flex: 1 }}>
+                <Action icon={Plus} busy={op.busy} onPress={openCreate}>New idea</Action>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Action secondary busy={op.busy} onPress={() => generate(selectedGenerationCategory())}>
+                  Generate ideas
+                </Action>
+              </View>
+            </View>
+            <View style={styles.panel}>
+              <Field label="Search ideas" value={search} onChange={setSearch} placeholder="Topic or personal decision" />
+              <Choices
+                label="Sort by"
+                options={sortOptions}
+                selected={[selectedSort]}
+                onChange={(values) => {
+                  const index = sortOptions.indexOf(values[0]);
+                  setSort((['Newest', 'Oldest', 'A-Z', 'Z-A'] as const)[Math.max(0, index)] ?? 'Newest');
+                }}
+              />
+              <Choices
+                label="Status"
+                options={['All', ...statuses]}
+                selected={[status]}
+                onChange={(values) => setStatus(values[0])}
+              />
+              <Choices
+                label="Editorial angle"
+                options={categoryOptions}
+                selected={[category === 'All angles' ? allCategoryLabel : categoryLabel(category)]}
+                onChange={(values) => {
+                  const selectedIndex = categoryOptions.indexOf(values[0]);
+                  const selected = selectedIndex <= 0 ? 'All angles' : IDEA_GENERATION_CATEGORIES[selectedIndex - 1];
+                  setCategory(selected);
+                }}
+              />
+              <Action secondary icon={Archive} onPress={() => setArchive(!archive)}>
+                {archive ? 'Show active ideas' : 'Show archived ideas'}
+              </Action>
+            </View>
             {generationMessage ? <Txt muted>{generationMessage}</Txt> : null}
-            {draftOpen && (
-              <View style={[styles.panel, { gap: 12 }]}>
-                <Text style={styles.heading}>{translateText("Create a complete idea", preferences.uiLanguage ?? "fa")}</Text>
+            {draftOpen ? (
+              <View style={styles.panel}>
+                <View style={styles.rowBetween}>
+                  <Heading>Create a complete idea</Heading>
+                  <Text style={styles.badge}>PERSONAL DRAFT</Text>
+                </View>
                 <Field label="Topic / working title" value={draftTopic} onChange={setDraftTopic} placeholder="e.g. What JWST reveals about exoplanet atmospheres" />
                 <Field label="Video concept" value={draftConcept} onChange={setDraftConcept} multiline placeholder="What is the central question, what will the viewer learn, and what makes your explanation useful?" />
                 <Field label="Your initial decision (optional)" value={draftDecision} onChange={setDraftDecision} multiline placeholder="What would make this worth producing?" />
                 <Txt muted>Ideas are saved only after you provide a real topic and a concept. This prevents empty records from reaching AI Second Opinion.</Txt>
-                <Action busy={op.busy} disabled={!draftTopic.trim() || !draftConcept.trim()} onPress={create}>Save idea</Action>
-                <Action secondary disabled={op.busy} onPress={() => setDraftOpen(false)}>Cancel</Action>
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  <View style={{ flex: 1 }}>
+                    <Action busy={op.busy} disabled={!draftTopic.trim() || !draftConcept.trim()} onPress={create}>Save idea</Action>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Action secondary disabled={op.busy} onPress={() => setDraftOpen(false)}>Cancel</Action>
+                  </View>
+                </View>
               </View>
-            )}
-            <View style={{ flexDirection: 'row', gap: 10 }}>
-              <View style={{ flex: 1 }}>
-                <Action icon={Plus} busy={op.busy} onPress={openCreate}>
-                  New idea
-                </Action>
-              </View>
-              <View style={{ flex: 1 }}>
-                <Action secondary icon={Archive} onPress={() => setArchive(!archive)}>
-                  {archive ? 'Active ideas' : 'Archived'}
-                </Action>
-              </View>
-            </View>
+            ) : null}
             {Boolean(op.error) && <ErrorBox message={op.error} onRetry={op.clear} />}
           </View>
+
         }
         renderItem={({ item }) => (
           <Animated.View

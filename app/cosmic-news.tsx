@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
+import { Newspaper } from 'lucide-react-native';
 import { Linking, View, Text, FlatList } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { Button } from 'heroui-native';
-import { Page, Panel, Heading, Txt, Action, Choices, styles, ErrorBox, useOperation } from '@/components/ScoutUI';
+import { Page, Panel, Heading, Txt, Action, Choices, styles, ErrorBox, useOperation, ScreenIntro } from '@/components/ScoutUI';
 import { useScout } from '@/lib/store';
 import { SPACE_NICHES, SPACE_NEWS_SOURCES, fetchSpaceNews, getCachedSpaceNews, newsForNiche, type SpaceNewsItem } from '@/lib/space';
 import { uid } from '@/lib/types';
@@ -102,10 +103,18 @@ export default function CosmicNews() {
         removeClippedSubviews
         ListHeaderComponent={
           <View style={{ gap: 16, marginBottom: 18 }}>
-            <Text style={styles.title}>COSMIC NEWS</Text>
-            <Txt muted>Official NASA, JPL and ESA headlines. Each item keeps its publisher, publication date and original source link; a headline is not independent scientific verification.</Txt>
-            <Panel>
-              <Heading>News feed status</Heading>
+            <ScreenIntro
+              eyebrow="OFFICIAL PUBLISHER FEEDS"
+              title="Cosmic News"
+              subtitle="NASA, JPL and ESA headlines with the publisher, publication date and original source link kept attached."
+              icon={Newspaper}
+            />
+            <Txt muted>A headline is a source lead, not independent scientific verification. Check the original release or paper before relying on a claim.</Txt>
+            <Panel variant="soft">
+              <View style={styles.rowBetween}>
+                <Heading>Feed controls</Heading>
+                <Text style={styles.badge}>{items.length} STORIES</Text>
+              </View>
               <Txt muted>Saved headlines appear immediately. Selected feeds refresh in the background when the short cache expires; use Refresh for a deliberate update.</Txt>
               <Choices label="Show stories" options={['All selected feeds', 'Selected niche']} selected={[scope]} onChange={(values) => { setScope(values[0]); setVisibleCount(15); }} />
               <Txt muted>{niche?.title ?? (nicheId === 'custom' ? 'Custom niche: ' + preferences.customSpaceNiche : 'All space topics')}</Txt>

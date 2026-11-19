@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View } from 'react-native';
+import { View, Text } from 'react-native';
+import { Bookmark, FileSearch, FileText, Lightbulb, Newspaper, Search, Telescope } from 'lucide-react-native';
 
 import { router } from 'expo-router';
 import {
   Page, Panel, Heading, Txt, Action, Fold, styles, ErrorBox, useOperation,
-  SourceHeading, SourceText, BadgeText,
+  SourceHeading, SourceText, BadgeText, ScreenIntro, QuickAction, MetricCard,
 } from '@/components/ScoutUI';
 import { useScout } from '@/lib/store';
+import { palette as p } from '@/lib/theme';
 import { useShallow } from 'zustand/react/shallow';
 import { uid } from '@/lib/types';
 import {
@@ -333,7 +335,7 @@ export default function DiscoveryDashboard() {
   const ready = useScout((state) => state.ready);
   if (!ready) {
     return (
-      <Page title="MOHSEN SCOUT">
+      <Page title="Space Radar" eyebrow="MISSION CONTROL">
         <Txt muted>Loading your local research workspace…</Txt>
       </Page>
     );
@@ -638,139 +640,134 @@ function DiscoveryDashboardReady() {
   const primaryNews = deskNews[0];
 
   return (
-    <Page title="MOHSEN SCOUT">
-      <View style={{ gap: 12 }}>
+    <Page
+      title="Space Radar"
+      eyebrow="MISSION CONTROL"
+      subtitle="Your local command center for publisher signals, YouTube samples and research ideas."
+    >
+      <View style={{ gap: 17 }}>
+        <Panel variant="hero">
+          <View style={styles.rowBetween}>
+            <BadgeText>YOUR CURRENT FOCUS</BadgeText>
+            <View style={{ paddingHorizontal: 9, paddingVertical: 5, borderRadius: 99, backgroundColor: 'rgba(97, 217, 231, 0.13)', borderWidth: 1, borderColor: 'rgba(97, 217, 231, 0.24)' }}>
+              <Txt muted>{scanning ? 'Refreshing sources' : 'On demand'}</Txt>
+            </View>
+          </View>
+          <Heading>{nicheTitle}</Heading>
+          <Txt muted>
+            {latestReport
+              ? 'Last YouTube sample: ' + new Date(latestReport.createdAt).toLocaleString('en-US')
+              : 'Choose this focus to start a YouTube sample. Your evidence and saved research stay on this device.'}
+          </Txt>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+            <MetricCard label="MATCHED NEWS" value={audit?.topicMatchedNewsCount ?? 0} tone="cyan" />
+            <MetricCard label="MATCHED VIDEOS" value={audit?.matchedVideoCount ?? 0} tone="violet" />
+            <MetricCard label="PUBLISHER GROUPS" value={deskAnalysis?.intelligence.sourceQuality.independentPublishers ?? 0} tone="mint" />
+          </View>
+          <Action icon={Search} onPress={() => router.push({ pathname: '/youtube', params: { topic: deskTopic } })}>
+            Open YouTube research
+          </Action>
+          <Action secondary icon={FileSearch} onPress={() => router.push({ pathname: '/deep-research', params: { topic: deskTopic } })}>
+            Start deep research
+          </Action>
+        </Panel>
+
+        <ScreenIntro
+          eyebrow="YOUR WORKSPACES"
+          title="Pick up where you want to work"
+          subtitle="Your main tools are one tap away. Each workspace keeps its own filters and saved material."
+        />
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
+          <QuickAction title="Official news" description="NASA, JPL and ESA feeds" icon={Newspaper} tone="cyan" onPress={() => router.push('/news')} />
+          <QuickAction title="Idea studio" description="Develop and compare ideas" icon={Lightbulb} tone="violet" onPress={() => router.push('/opportunities')} />
+          <QuickAction title="Saved library" description="Your bookmarked video links" icon={Bookmark} tone="mint" onPress={() => router.push('/library')} />
+          <QuickAction title="Research notes" description="Your personal workbench" icon={FileText} tone="amber" onPress={() => router.push('/notes')} />
+        </View>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+          <View style={{ flex: 1, minWidth: 145 }}>
+            <Action secondary icon={Telescope} onPress={() => router.push({ pathname: '/trend-intelligence', params: { topic: deskTopic } })}>Trend intelligence</Action>
+          </View>
+          <View style={{ flex: 1, minWidth: 145 }}>
+            <Action secondary icon={Search} onPress={() => router.push({ pathname: '/search-demand', params: { topic: deskTopic } })}>Public-interest data</Action>
+          </View>
+        </View>
+
         {bestIdea ? (
           <Panel>
-            <BadgeText>{fa ? 'نامزد برتر موتور · ابتدا اعتبارسنجی کن' : 'TOP ENGINE-RANKED IDEA · VALIDATE FIRST'}</BadgeText>
-            <Heading>{fa ? 'بهترین ایده بر اساس شواهد فعلی' : 'Best idea from current evidence'}</Heading>
-            <SourceHeading>{bestIdea.topic}</SourceHeading>
-            <Txt>{bestIdea.concept.slice(0, 420)}</Txt>
-            <Txt muted>{fa
-              ? 'امتیاز اولویت تحریری: ' + (bestIdea.engineScore ?? 'نامشخص') + '/100 · ' + (bestIdea.engineScoreReason ?? 'شواهد امتیازدهی‌شده کافی نیست.')
-              : 'Editorial priority: ' + (bestIdea.engineScore ?? 'unavailable') + '/100 · ' + (bestIdea.engineScoreReason ?? 'Insufficient scored evidence.')}</Txt>
-            <Txt muted>{bestIdea.note.slice(0, 220)}</Txt>
-            <Action onPress={() => router.push({ pathname: '/detail', params: { idea: bestIdea.id } })}>
-              {fa ? 'تکمیل ایده و بررسی شواهد' : 'Develop idea and inspect evidence'}
+            <View style={styles.rowBetween}>
+              <BadgeText>EDITORIAL PICK</BadgeText>
+              <Text style={styles.badge}>Based on current evidence</Text>
+            </View>
+            <Heading>{bestIdea.topic}</Heading>
+            <Txt>{bestIdea.concept.slice(0, 360)}</Txt>
+            <Txt muted>
+              {'Editorial priority: ' + (bestIdea.engineScore ?? 'unavailable') + '/100 · ' + (bestIdea.engineScoreReason ?? 'Insufficient scored evidence.')}
+            </Txt>
+            <Action secondary onPress={() => router.push({ pathname: '/detail', params: { idea: bestIdea.id } })}>
+              Review idea and evidence
             </Action>
           </Panel>
         ) : null}
 
-        <Panel>
-          <BadgeText>{fa ? 'ابزارهای اصلی' : 'WORKSPACE TOOLS'}</BadgeText>
-          <Heading>{fa ? 'دسترسی به بخش‌های برنامه' : 'Open another workspace'}</Heading>
-          <View style={[styles.row, { flexWrap: 'wrap' }]}>
-            <Action secondary onPress={() => router.push('/deep-research')}>{fa ? 'تحقیق عمیق' : 'Deep Research'}</Action>
-            <Action secondary onPress={() => router.push('/trend-intelligence')}>{fa ? 'هوشمندی روند' : 'Trend Intelligence'}</Action>
-            <Action secondary onPress={() => router.push('/search-demand')}>{fa ? 'شاخص توجه ویکی‌مدیا' : 'Wikimedia attention'}</Action>
-            <Action secondary onPress={() => router.push('/notes')}>{fa ? 'یادداشت‌ها' : 'Notes'}</Action>
-          </View>
-        </Panel>
-
-        <Panel>
-          <BadgeText>{fa ? 'میزکار تحقیق · تمرکز فعلی' : 'RESEARCH DESK · CURRENT FOCUS'}</BadgeText>
-          <SourceHeading>{showYouTubeResearch ? latestReport!.input.topic : nicheTitle}</SourceHeading>
-          <Txt muted>{latestReport
-            ? (fa ? 'آخرین جست‌وجوی YouTube: ' : 'Latest YouTube research: ') + new Date(latestReport.createdAt).toLocaleString()
-            : (fa ? 'هنوز گزارش YouTube ذخیره نشده؛ موضوع را انتخاب و اولین جست‌وجو را اجرا کن.' : 'No YouTube report is saved yet. Choose a topic and run your first search.')}</Txt>
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-            <View style={{ flexGrow: 1, flexBasis: 92, gap: 3 }}>
-              <BadgeText>{fa ? 'خبر هم‌موضوع' : 'MATCHED NEWS'}</BadgeText>
-              <Heading>{String(audit?.topicMatchedNewsCount ?? 0)}</Heading>
-            </View>
-            <View style={{ flexGrow: 1, flexBasis: 92, gap: 3 }}>
-              <BadgeText>{fa ? 'ویدئوی هم‌موضوع' : 'MATCHED VIDEOS'}</BadgeText>
-              <Heading>{String(audit?.matchedVideoCount ?? 0)}</Heading>
-            </View>
-            <View style={{ flexGrow: 1, flexBasis: 92, gap: 3 }}>
-              <BadgeText>{fa ? 'گروه ناشر مستقل' : 'PUBLISHER GROUPS'}</BadgeText>
-              <Heading>{String(deskAnalysis?.intelligence.sourceQuality.independentPublishers ?? 0)}</Heading>
-            </View>
-            <View style={{ flexGrow: 1, flexBasis: 92, gap: 3 }}>
-              <BadgeText>{fa ? 'خبرهای یکتا' : 'UNIQUE STORIES'}</BadgeText>
-              <Heading>{String(deskAnalysis?.intelligence.sourceQuality.uniqueStories ?? 0)}</Heading>
-            </View>
-            <View style={{ flexGrow: 1, flexBasis: 92, gap: 3 }}>
-              <BadgeText>{fa ? 'خوراک‌های حاضر در تحلیل' : 'FEEDS REPRESENTED'}</BadgeText>
-              <Heading>{String(deskAnalysis?.intelligence.sourceQuality.feedsRepresented ?? 0)}</Heading>
-            </View>
-            <View style={{ flexGrow: 1, flexBasis: 92, gap: 3 }}>
-              <BadgeText>{fa ? 'قدیمی یا بی‌تاریخ' : 'STALE / UNDATED'}</BadgeText>
-              <Heading>{String((deskAnalysis?.intelligence.sourceQuality.staleItems ?? 0) + (deskAnalysis?.intelligence.sourceQuality.undatedItems ?? 0))}</Heading>
-            </View>
-            <View style={{ flexGrow: 1, flexBasis: 92, gap: 3 }}>
-              <BadgeText>{fa ? 'مشاهدات ماهانه ویکی‌مدیا' : 'WIKIMEDIA MONTHS'}</BadgeText>
-              <Heading>{String(audit?.wikimediaMonthlyObservations ?? 0)}</Heading>
-            </View>
-          </View>
-          <Action onPress={() => router.push({ pathname: '/youtube', params: { topic: deskTopic } })}>
-            {fa ? 'شروع یا ادامه تحقیق در YouTube' : 'Start or continue YouTube research'}
-          </Action>
-          {latestReport ? (
-            <Action secondary onPress={() => router.push({ pathname: '/youtube', params: { topic: latestReport.input.topic, report: latestReport.id } })}>
-              {fa ? 'باز کردن گزارش کامل' : 'Open full report'}
-            </Action>
-          ) : null}
-        </Panel>
-
         {deskAnalysis ? (
           <Panel>
-            <BadgeText>{fa ? 'خلاصه هوشمند · بر پایه شواهد موجود' : 'INTELLIGENCE BRIEF · EVIDENCE-BASED'}</BadgeText>
-            <Heading>{fa ? 'مهم‌ترین چیزی که فعلاً می‌دانیم' : 'What the current evidence tells us'}</Heading>
+            <View style={styles.rowBetween}>
+              <BadgeText>INTELLIGENCE BRIEF</BadgeText>
+              <View style={{ paddingHorizontal: 9, paddingVertical: 5, borderRadius: 99, backgroundColor: p.purpleSoft }}>
+                <Text style={styles.badge}>{deskAnalysis.intelligence.confidence.level.toUpperCase()} CONFIDENCE</Text>
+              </View>
+            </View>
+            <Heading>What the current evidence says</Heading>
             <Txt>{deskAnalysis.summary}</Txt>
             {sharedTerms.length ? (
-              <View style={{ gap: 5 }}>
-                <Heading>{fa ? 'هم‌پوشانی متن خبر و YouTube' : 'News and YouTube wording overlap'}</Heading>
-                <SourceHeading>{sharedTerms.slice(0, 4).join(fa ? '، ' : ', ')}</SourceHeading>
-                <Txt muted>{fa
-                  ? 'این واژه‌ها در عنوان بعضی خبرها و ویدئوهای همین نمونه تکرار شده‌اند؛ این فقط هم‌پوشانی متن است، نه اثبات تقاضا یا توافق معنایی.'
-                  : 'These words recur in some headlines and video titles in this sample. This is wording overlap, not proof of demand or semantic agreement.'}</Txt>
+              <View style={styles.softCard}>
+                <Text style={styles.label}>SHARED WORDING</Text>
+                <SourceHeading>{sharedTerms.slice(0, 4).join(', ')}</SourceHeading>
+                <Txt muted>These terms recur in some returned headlines and video titles. This is wording overlap, not proof of demand or semantic agreement.</Txt>
               </View>
             ) : primaryNews ? (
-              <View style={{ gap: 4 }}>
-                <Heading>{fa ? 'مرتبط‌ترین خبر دریافت‌شده' : 'Most relevant retrieved publisher item'}</Heading>
+              <View style={styles.softCard}>
+                <Text style={styles.label}>MOST RELEVANT PUBLISHER ITEM</Text>
                 <SourceHeading>{primaryNews.title}</SourceHeading>
-                <Txt muted>{primaryNews.sourceName}{primaryNews.publishedAt ? ' · ' + new Date(primaryNews.publishedAt).toLocaleDateString() : ''}</Txt>
+                <Txt muted>{primaryNews.sourceName}{primaryNews.publishedAt ? ' · ' + new Date(primaryNews.publishedAt).toLocaleDateString('en-US') : ''}</Txt>
               </View>
             ) : (
-              <Txt muted>{fa
-                ? 'در نمونه فعلی هم‌پوشانی واژگانی قابل نمایش میان خبر و ویدئو وجود ندارد؛ نتیجه را به کل موضوع تعمیم نده.'
-                : 'No shared wording was detected between the current news and video sample. Do not generalize this absence to the whole topic.'}</Txt>
+              <Txt muted>No shared wording was detected in the current sample. Do not generalize this absence to the whole topic.</Txt>
             )}
-            <View style={{ gap: 5 }}>
-              <Heading>{fa ? 'اقدام بعدی پیشنهادی' : 'Recommended next action'}</Heading>
-              <Txt>{nextGap ?? (fa
-                ? 'خلأ آشکاری در ممیزی خودکار این نمونه ثبت نشده است؛ پیش از تولید، ادعاهای اصلی را در منبع اولیه بررسی کن.'
-                : 'No additional gap was flagged by the current audit. Verify key claims against the original sources.')}</Txt>
+            <View style={{ gap: 6 }}>
+              <Text style={styles.label}>SUGGESTED NEXT STEP</Text>
+              <Txt>{nextGap ?? 'No additional gap was flagged in the current audit. Verify key claims against original sources before production.'}</Txt>
               {nextQuery ? (
                 <Action secondary onPress={() => router.push({ pathname: '/youtube', params: { topic: nextQuery } })}>
-                  {fa ? 'بررسی عبارت تکمیلی: ' + nextQuery : 'Research next: ' + nextQuery}
+                  {'Research: ' + nextQuery}
                 </Action>
               ) : null}
               <Action secondary onPress={() => router.push({ pathname: '/deep-research', params: { topic: deskTopic } })}>
-                {fa ? 'تبدیل این سرنخ به تحقیق عمیق' : 'Turn this lead into deep research'}
+                Turn this lead into a research brief
               </Action>
             </View>
           </Panel>
         ) : (
-          <Panel>
-            <BadgeText>{fa ? 'هنوز تحلیل اختصاصی ساخته نشده' : 'NO TOPIC-SPECIFIC BRIEF YET'}</BadgeText>
-            <Heading>{fa ? 'اول یک نمونه واقعی جمع‌آوری کن' : 'Collect a real sample first'}</Heading>
-            <Txt muted>{fa
-              ? 'خبرهای عمومی یا آمار کلی به‌تنهایی برای پیشنهاد محتوای قابل اتکا کافی نیستند. یک موضوع مشخص را در YouTube جست‌وجو کن تا گزارش، ویدئوها و خلأهای تحقیق در همین صفحه خلاصه شوند.'
-              : 'General news and broad statistics are not enough for a useful recommendation. Search one specific YouTube topic so its sample, videos and research gaps can be summarized here.'}</Txt>
+          <Panel variant="soft">
+            <BadgeText>NO TOPIC-SPECIFIC BRIEF YET</BadgeText>
+            <Heading>Collect a real sample first</Heading>
+            <Txt muted>Publisher headlines and broad counts alone are not enough for a useful recommendation. Run a specific YouTube search to build a topic-linked sample.</Txt>
             <Action onPress={() => router.push({ pathname: '/youtube', params: { topic: discoveryTopic } })}>
-              {fa ? 'جست‌وجوی موضوع انتخاب‌شده' : 'Research the selected topic'}
+              Research the selected topic
             </Action>
           </Panel>
         )}
 
-
-
         <Panel>
-          <Fold title={fa ? 'ممیزی شواهد و تحلیل کامل' : 'Evidence audit and full analysis'}>
+          <Fold title="Evidence audit and full analysis">
             {deskAnalysis ? (
-              <View style={{ gap: 12 }}>
+              <View style={{ gap: 13 }}>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                  <MetricCard label="UNIQUE STORIES" value={deskAnalysis.intelligence.sourceQuality.uniqueStories} tone="cyan" />
+                  <MetricCard label="FEEDS REPRESENTED" value={deskAnalysis.intelligence.sourceQuality.feedsRepresented} tone="violet" />
+                  <MetricCard label="STALE / UNDATED" value={deskAnalysis.intelligence.sourceQuality.staleItems + deskAnalysis.intelligence.sourceQuality.undatedItems} tone="amber" />
+                  <MetricCard label="WIKIMEDIA MONTHS" value={audit?.wikimediaMonthlyObservations ?? 0} tone="mint" />
+                </View>
                 {deskAnalysis.evidence
                   .filter((item) => ['publisher-news', 'wikimedia', 'youtube-sample', 'cross-source-overlap'].includes(item.id))
                   .map((item) => (
@@ -780,25 +777,25 @@ function DiscoveryDashboardReady() {
                     </View>
                   ))}
                 <AnalysisSignals result={deskAnalysis} />
-                <Fold title={fa ? 'نقشه ارتباط شواهد' : 'Evidence relationship map'}>
+                <Fold title="Evidence relationship map">
                   <ResearchKnowledgeGraph topic={deskTopic} news={deskNews} videos={deskVideos} analysis={deskAnalysis} language={preferences.uiLanguage ?? 'fa'} generatedIdeas={deskIdeas} />
                 </Fold>
-                <Fold title={fa ? 'نمودار و روند داده موجود' : 'Charts and available data'}>
+                <Fold title="Charts and available data">
                   <ResearchOverviewChart analysis={deskAnalysis} ideas={deskIdeas} videoCount={deskVideos.length} language={preferences.uiLanguage ?? 'fa'} />
                 </Fold>
-                <Fold title={fa ? 'زاویه‌های محتوا و راستی‌آزمایی' : 'Editorial angles and verification'}>
+                <Fold title="Editorial angles and verification">
                   {deskAnalysis.angles.slice(0, 3).map((angle) => (
-                    <View key={angle.id} style={{ gap: 5 }}>
+                    <View key={angle.id} style={{ gap: 6 }}>
                       <Heading>{angle.title}</Heading>
                       <Txt>{angle.hook}</Txt>
                       <Txt muted>{angle.approach}</Txt>
-                      <Txt muted>{(fa ? 'راستی‌آزمایی: ' : 'Verify: ') + angle.verification}</Txt>
+                      <Txt muted>{'Verify: ' + angle.verification}</Txt>
                     </View>
                   ))}
                 </Fold>
               </View>
             ) : (
-              <Txt muted>{fa ? 'پس از جمع‌آوری نمونه، جزئیات تحلیل اینجا نمایش داده می‌شود.' : 'Detailed analysis will appear here after a research sample is collected.'}</Txt>
+              <Txt muted>Detailed analysis will appear here after a research sample is collected.</Txt>
             )}
           </Fold>
         </Panel>
@@ -810,102 +807,87 @@ function DiscoveryDashboardReady() {
         ) : null}
 
         <Panel>
-          <Fold title={fa ? 'ویدئوها، ایده‌ها و گزارش‌های اخیر' : 'Videos, ideas and recent reports'}>
-            <View style={{ gap: 12 }}>
+          <Fold title="Recent videos, ideas and research runs">
+            <View style={{ gap: 14 }}>
               {feedVideos.length ? (
-                <View style={{ gap: 8 }}>
-                  <Heading>{fa ? 'ویدئوهای نمونه مرتبط' : 'Related sample videos'}</Heading>
+                <View style={{ gap: 9 }}>
+                  <Heading>Related sample videos</Heading>
                   {feedVideos.slice(0, 8).map((video) => <VideoRow key={video.id} video={video} topic={feedTopic} />)}
                 </View>
               ) : (
-                <Txt muted>{fa
-                  ? 'ویدئوی ذخیره‌شده و منطبق با موضوع پیدا نشد؛ برای جلوگیری از نمایش نتایج نامرتبط، فهرست خالی است.'
-                  : 'No saved video matched this topic, so unrelated results are not shown.'}</Txt>
+                <Txt muted>No saved video matched this topic, so unrelated results are not shown.</Txt>
               )}
               {recommendations.length ? (
-                <View style={{ gap: 8 }}>
-                  <Heading>{fa ? 'زاویه‌های محتوایی دیگر' : 'Other editorial angles'}</Heading>
+                <View style={{ gap: 9 }}>
+                  <Heading>Other editorial angles</Heading>
                   {recommendations.slice(0, 3).map((idea) => (
-                    <View key={idea.id} style={{ gap: 5 }}>
+                    <View key={idea.id} style={styles.softCard}>
                       <SourceHeading>{idea.topic}</SourceHeading>
                       <Txt muted>{idea.concept.slice(0, 220)}</Txt>
                       <Action secondary onPress={() => router.push({ pathname: '/detail', params: { idea: idea.id } })}>
-                        {fa ? 'بررسی این ایده' : 'Review this idea'}
+                        Review this idea
                       </Action>
                     </View>
                   ))}
                 </View>
               ) : null}
               {reports.length ? (
-                <View style={{ gap: 7 }}>
-                  <Heading>{fa ? 'جست‌وجوهای ذخیره‌شده' : 'Saved research runs'}</Heading>
+                <View style={{ gap: 8 }}>
+                  <Heading>Saved research runs</Heading>
                   {reports.slice(0, 4).map((report) => (
                     <Action key={report.id} secondary onPress={() => router.push({ pathname: '/youtube', params: { topic: report.input.topic, report: report.id } })}>
-                      {report.input.topic + ' · ' + new Date(report.createdAt).toLocaleDateString()}
+                      {report.input.topic + ' · ' + new Date(report.createdAt).toLocaleDateString('en-US')}
                     </Action>
                   ))}
                 </View>
               ) : null}
-              <Action secondary onPress={() => router.push('/opportunities')}>
-                {fa ? 'مدیریت همه ایده‌ها' : 'Manage all ideas'}
-              </Action>
+              <Action secondary onPress={() => router.push('/opportunities')}>Manage all ideas</Action>
             </View>
           </Fold>
         </Panel>
 
         <Panel>
-          <Fold title={fa ? 'Space Radar و وضعیت منابع' : 'Space Radar and source status'}>
-            <View style={{ gap: 10 }}>
+          <Fold title="Space Radar and source status">
+            <View style={{ gap: 11 }}>
               <Heading>{nicheTitle}</Heading>
-              <Txt muted>{niche?.description ?? (fa
-                ? 'خوراک‌های رسمی ناشرها برای این موضوع گردآوری می‌شوند؛ خبر به‌تنهایی اثبات ترند یا تقاضا نیست.'
-                : 'Selected publisher feeds are grouped by topic; headlines alone do not prove a trend or demand.')}</Txt>
-              <View style={[styles.row, { flexWrap: 'wrap' }]}>
-                <View style={{ flex: 1, minWidth: 130 }}>
-                  <Action busy={scanning || op.busy} onPress={() => void op.run(
-                    () => runScan(true),
-                    fa ? 'به‌روزرسانی خبرخوان کامل شد.' : 'Publisher feed refresh completed.',
-                  )}>
-                    {fa ? 'به‌روزرسانی خبرخوان' : 'Refresh publisher feeds'}
-                  </Action>
-                </View>
-              </View>
-              <Txt muted>{lastScannedAt
-                ? (fa ? 'آخرین بررسی: ' : 'Last source update: ') + new Date(lastScannedAt).toLocaleString()
-                : (fa ? 'هنوز زمان به‌روزرسانی این نشست ثبت نشده است.' : 'No source update timestamp is available in this session.') + ' · ' + radarNews.length + (fa ? ' خبر دریافت‌شده' : ' retrieved items')}</Txt>
-              {scanning ? <Txt muted>{fa ? 'به‌روزرسانی ادامه دارد؛ می‌توانی به تب‌های دیگر بروی.' : 'Refresh is running; you can continue using other tabs.'}</Txt> : null}
+              <Txt muted>{niche?.description ?? 'Selected publisher feeds are grouped by topic; headlines alone do not prove a trend or demand.'}</Txt>
+              <Action busy={scanning || op.busy} onPress={() => void op.run(
+                () => runScan(true),
+                'Publisher feed refresh completed.',
+              )}>
+                Refresh official feeds
+              </Action>
+              <Txt muted>
+                {lastScannedAt
+                  ? 'Last source update: ' + new Date(lastScannedAt).toLocaleString('en-US')
+                  : 'No source update timestamp is available in this session.'} · {radarNews.length} retrieved items
+              </Txt>
+              {scanning ? <Txt muted>Refresh is running; you can continue using other tabs.</Txt> : null}
               {warnings.slice(0, 2).map((warning, i) => <Txt muted key={String(i) + warning}>{warning}</Txt>)}
               {nicheSuggestions.length ? (
-                <View style={{ gap: 7 }}>
-                  <Heading>{fa ? 'موضوعات مرتبط کشف‌شده در خوراک‌ها' : 'Related topics found in feeds'}</Heading>
+                <View style={{ gap: 9 }}>
+                  <Heading>Related topics found in feeds</Heading>
                   {nicheSuggestions.slice(0, 6).map((suggestion) => (
-                    <View key={suggestion.id} style={{ gap: 4 }}>
+                    <View key={suggestion.id} style={styles.softCard}>
                       <SourceHeading>{suggestion.title}</SourceHeading>
                       <Txt muted>{suggestion.description}</Txt>
                       <Action secondary onPress={() => router.push({ pathname: '/youtube', params: { topic: suggestion.topic } })}>
-                        {fa ? 'تحقیق درباره موضوع' : 'Research this topic'}
+                        Research this topic
                       </Action>
                     </View>
                   ))}
                 </View>
               ) : null}
-              <Fold title={fa ? 'اطلاعات فنی و سهمیه‌ها' : 'Technical details and quotas'}>
+              <Fold title="Technical details and quotas">
                 <Txt muted>{'YouTube quota: ' + quotaUsage.units + ' / ' + preferences.budget + ' units · ' + quotaUsage.requests + ' requests'}</Txt>
-                <Txt muted>{memoryCount + (fa ? ' موضوع در حافظه تحقیق محلی' : ' topics in local research memory') + ' · ' + reports.length + ' saved reports'}</Txt>
-                <Txt muted>{fa
-                  ? 'نظر دوم AI: ' + (preferences.hybridIntelligence ? 'خودکار و روشن' : 'فقط دستی')
-                  : 'AI second opinion: ' + (preferences.hybridIntelligence ? 'Automatic and enabled' : 'Manual only')}</Txt>
-                <Txt muted>{fa
-                  ? 'زمان‌بندی YouTube: ' + (preferences.schedule === 'Manual' ? 'خاموش' : preferences.paused ? 'متوقف' : preferences.schedule)
-                  : 'YouTube schedule: ' + (preferences.schedule === 'Manual' ? 'Off' : preferences.paused ? 'Paused' : preferences.schedule)}</Txt>
-                <Action secondary onPress={() => router.push('/settings')}>
-                  {fa ? 'تنظیم کلیدها و ترجیحات' : 'Configure keys and preferences'}
-                </Action>
+                <Txt muted>{memoryCount + ' topics in local research memory · ' + reports.length + ' saved reports'}</Txt>
+                <Txt muted>{'AI second opinion: ' + (preferences.hybridIntelligence ? 'Automatic and enabled' : 'Manual only')}</Txt>
+                <Txt muted>{'YouTube schedule: ' + (preferences.schedule === 'Manual' ? 'Off' : preferences.paused ? 'Paused' : preferences.schedule)}</Txt>
+                <Action secondary onPress={() => router.push('/settings')}>Configure keys and preferences</Action>
               </Fold>
             </View>
           </Fold>
         </Panel>
-
 
         {op.error ? <ErrorBox message={op.error} onRetry={op.clear} /> : null}
         {op.message ? <Txt muted>{op.message}</Txt> : null}

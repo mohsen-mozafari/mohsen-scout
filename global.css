@@ -1,75 +1,41 @@
 @import 'tailwindcss';
 @import 'uniwind';
-
 @import 'heroui-native/styles';
-
-/*
- * HeroUI Native + Uniwind tokens
- *
- * HeroUI component variants compile to semantic utilities such as bg-accent,
- * text-accent-foreground, bg-default, and text-foreground. The imported
- * heroui-native/styles package defines the default semantic theme and maps it
- * to --color-* Tailwind utilities.
- *
- * When changing brand colors, override semantic tokens inside Uniwind theme
- * variants. Do not put --accent only in a plain :root block: web may look
- * correct through CSS cascade order while Expo Go/native keeps HeroUI's
- * default blue from the active light/dark theme table.
- *
- * Example:
- *
- * @layer theme {
- *   :root {
- *     @variant light {
- *       --accent: oklch(0.63 0.18 148);
- *       --accent-foreground: oklch(0.99 0 0);
- *       --focus: var(--accent);
- *     }
- *
- *     @variant dark {
- *       --accent: oklch(0.63 0.18 148);
- *       --accent-foreground: oklch(0.99 0 0);
- *       --focus: var(--accent);
- *     }
- *   }
- * }
- */
 
 @source './node_modules/heroui-native/lib';
 
-/* Calculated HeroUI color tokens are registered for web in lib/registerColorTokens.ts. */
 @layer theme {
   :root {
     @variant light {
-      --background: oklch(0 0 0);
-      --foreground: oklch(0.97 0.01 290);
-      --surface: oklch(0.18 0.01 290);
-      --surface-foreground: oklch(0.97 0.01 290);
-      --accent: oklch(0.56 0.25 295);
-      --accent-foreground: oklch(1 0 0);
-      --muted: oklch(0.74 0.03 290);
-      --default: oklch(0.23 0.02 290);
-      --default-foreground: oklch(0.97 0.01 290);
-      --field-background: oklch(0.2 0.01 290);
-      --field-foreground: oklch(0.97 0.01 290);
-      --field-placeholder: oklch(0.74 0.03 290);
-      --border: oklch(0.29 0.02 290);
+      --background: oklch(0.12 0.025 263);
+      --foreground: oklch(0.97 0.01 265);
+      --surface: oklch(0.18 0.03 263);
+      --surface-foreground: oklch(0.97 0.01 265);
+      --accent: oklch(0.69 0.19 285);
+      --accent-foreground: oklch(0.15 0.025 263);
+      --muted: oklch(0.72 0.035 260);
+      --default: oklch(0.23 0.035 260);
+      --default-foreground: oklch(0.97 0.01 265);
+      --field-background: oklch(0.15 0.025 263);
+      --field-foreground: oklch(0.97 0.01 265);
+      --field-placeholder: oklch(0.62 0.035 260);
+      --border: oklch(0.30 0.04 260);
       --focus: var(--accent);
     }
     @variant dark {
-      --background: oklch(0 0 0);
-      --foreground: oklch(0.97 0.01 290);
-      --surface: oklch(0.18 0.01 290);
-      --surface-foreground: oklch(0.97 0.01 290);
-      --accent: oklch(0.56 0.25 295);
-      --accent-foreground: oklch(1 0 0);
-      --muted: oklch(0.74 0.03 290);
-      --default: oklch(0.23 0.02 290);
-      --default-foreground: oklch(0.97 0.01 290);
-      --field-background: oklch(0.2 0.01 290);
-      --field-foreground: oklch(0.97 0.01 290);
-      --field-placeholder: oklch(0.74 0.03 290);
-      --border: oklch(0.29 0.02 290);
+      --background: oklch(0.12 0.025 263);
+      --foreground: oklch(0.97 0.01 265);
+      --surface: oklch(0.18 0.03 263);
+      --surface-foreground: oklch(0.97 0.01 265);
+      --accent: oklch(0.69 0.19 285);
+      --accent-foreground: oklch(0.15 0.025 263);
+      --muted: oklch(0.72 0.035 260);
+      --default: oklch(0.23 0.035 260);
+      --default-foreground: oklch(0.97 0.01 265);
+      --field-background: oklch(0.15 0.025 263);
+      --field-foreground: oklch(0.97 0.01 265);
+      --field-placeholder: oklch(0.62 0.035 260);
+      --border: oklch(0.30 0.04 260);
       --focus: var(--accent);
     }
   }

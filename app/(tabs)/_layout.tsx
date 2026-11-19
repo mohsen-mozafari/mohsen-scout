@@ -1,6 +1,5 @@
-import { Compass, Telescope, Library, Settings, Newspaper } from 'lucide-react-native';
-import { BlurView } from 'expo-blur';
-import { StyleSheet } from 'react-native';
+import { Bookmark, Compass, Lightbulb, Newspaper, Settings } from 'lucide-react-native';
+import { View } from 'react-native';
 import { Tabs } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as Haptics from 'expo-haptics';
@@ -8,6 +7,27 @@ import { palette as p } from '@/lib/theme';
 import { useScout } from '@/lib/store';
 import { translateText } from '@/lib/i18n';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import type { LucideIcon } from 'lucide-react-native';
+
+function TabGlyph({ Icon, focused, color }: { Icon: LucideIcon; focused: boolean; color: unknown }) {
+  return (
+    <View
+      style={{
+        width: 40,
+        height: 31,
+        borderRadius: 12,
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: focused ? p.purpleSoft : 'transparent',
+        borderWidth: focused ? 1 : 0,
+        borderColor: focused ? p.purpleLine : 'transparent',
+      }}
+    >
+      <Icon size={19} strokeWidth={focused ? 2.2 : 1.8} color={String(color)} />
+    </View>
+  );
+}
+
 export default function TabLayout() {
   const insets = useSafeAreaInsets();
   const language = useScout((state) => state.data.preferences.uiLanguage ?? 'fa');
@@ -18,33 +38,34 @@ export default function TabLayout() {
       <Tabs
         screenOptions={{
           headerShown: false,
-          sceneStyle: { backgroundColor: p.background, direction: language === 'fa' ? 'rtl' : 'ltr' },
-          tabBarBackground: () => (
-            <BlurView
-              intensity={38}
-              tint="dark"
-              style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(14, 12, 28, 0.62)' }]}
-            />
-          ),
+          sceneStyle: {
+            backgroundColor: p.background,
+            direction: language === 'fa' ? 'rtl' : 'ltr',
+          },
           tabBarStyle: {
             direction: language === 'fa' ? 'rtl' : 'ltr',
-            backgroundColor: 'rgba(14, 12, 28, 0.76)',
+            backgroundColor: p.nav,
             borderTopColor: p.border,
             borderTopWidth: 1,
-            borderTopLeftRadius: 24,
-            borderTopRightRadius: 24,
-            shadowColor: p.violet,
-            shadowOpacity: 0.16,
-            shadowRadius: 18,
-            shadowOffset: { width: 0, height: -4 },
+            height: 70 + insets.bottom,
+            paddingTop: 7,
+            paddingBottom: 5 + insets.bottom,
             elevation: 12,
-            height: 72 + insets.bottom,
-            paddingTop: 8,
-            paddingBottom: 8 + insets.bottom,
+            shadowColor: '#000000',
+            shadowOpacity: 0.24,
+            shadowRadius: 18,
+            shadowOffset: { width: 0, height: -5 },
           },
           tabBarActiveTintColor: p.purple,
           tabBarInactiveTintColor: p.muted,
-          tabBarLabelStyle: { fontFamily: 'Inter_600SemiBold', fontSize: 11 },
+          tabBarLabelStyle: {
+            fontFamily: 'Inter_600SemiBold',
+            fontSize: 9,
+            letterSpacing: 0.45,
+            marginTop: 1,
+          },
+          tabBarItemStyle: { paddingHorizontal: 2 },
+          tabBarIconStyle: { marginTop: 0 },
           tabBarHideOnKeyboard: true,
         }}
         screenListeners={({ navigation, route }) => ({
@@ -58,8 +79,8 @@ export default function TabLayout() {
           name="index"
           options={{
             title: translateText('MOHSEN SCOUT', language),
-            tabBarLabel: translateText('Space Radar', language),
-            tabBarIcon: ({ color }) => <Compass size={22} strokeWidth={1.8} color={color} />,
+            tabBarLabel: translateText('Radar', language),
+            tabBarIcon: ({ color, focused }) => <TabGlyph Icon={Compass} focused={focused} color={color} />,
           }}
         />
         <Tabs.Screen
@@ -67,7 +88,7 @@ export default function TabLayout() {
           options={{
             title: translateText('Cosmic News', language),
             tabBarLabel: translateText('News', language),
-            tabBarIcon: ({ color }) => <Newspaper size={22} strokeWidth={1.8} color={color} />,
+            tabBarIcon: ({ color, focused }) => <TabGlyph Icon={Newspaper} focused={focused} color={color} />,
           }}
         />
         <Tabs.Screen
@@ -75,7 +96,7 @@ export default function TabLayout() {
           options={{
             title: translateText('Opportunities', language),
             tabBarLabel: translateText('Ideas', language),
-            tabBarIcon: ({ color }) => <Telescope size={22} strokeWidth={1.8} color={color} />,
+            tabBarIcon: ({ color, focused }) => <TabGlyph Icon={Lightbulb} focused={focused} color={color} />,
           }}
         />
         <Tabs.Screen
@@ -83,7 +104,7 @@ export default function TabLayout() {
           options={{
             title: translateText('My Library', language),
             tabBarLabel: translateText('Library', language),
-            tabBarIcon: ({ color }) => <Library size={22} strokeWidth={1.8} color={color} />,
+            tabBarIcon: ({ color, focused }) => <TabGlyph Icon={Bookmark} focused={focused} color={color} />,
           }}
         />
         <Tabs.Screen name="notes" options={{ href: null, title: translateText('Notes', language) }} />
@@ -91,7 +112,8 @@ export default function TabLayout() {
           name="settings"
           options={{
             title: translateText('Settings', language),
-            tabBarIcon: ({ color }) => <Settings size={22} strokeWidth={1.8} color={color} />,
+            tabBarLabel: translateText('Settings', language),
+            tabBarIcon: ({ color, focused }) => <TabGlyph Icon={Settings} focused={focused} color={color} />,
           }}
         />
       </Tabs>

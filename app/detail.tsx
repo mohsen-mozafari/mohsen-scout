@@ -142,13 +142,13 @@ export default function Detail() {
     });
   if (!ready)
     return (
-      <Page>
+      <Page title="Research details" eyebrow="PERSONAL RESEARCH" showBack>
         <Skeleton className="h-44 rounded-2xl" />
       </Page>
     );
   if (!idea && !video && !savedLink)
     return (
-      <Page>
+      <Page title="Research details" eyebrow="PERSONAL RESEARCH" showBack>
         <Empty
           title="This item is missing or its YouTube metadata expired."
           action="Go to library"
@@ -157,7 +157,12 @@ export default function Detail() {
       </Page>
     );
   return (
-    <Page>
+    <Page
+      title={idea ? "Idea workspace" : "Saved video reference"}
+      eyebrow="RESEARCH DETAIL"
+      subtitle={idea ? "Review the concept, local evidence, linked references and optional second opinion." : "Open the saved source, see its research context and connect it to a personal idea."}
+      showBack
+    >
       {!router.canGoBack() && (
         <Link href={idea ? '/opportunities' : '/library'} style={styles.badge}>
           Back to {idea ? 'Opportunities' : 'My Library'}

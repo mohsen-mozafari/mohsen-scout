@@ -94,7 +94,7 @@ export default function TrendIntelligence() {
   const channels = new Set(videos.map((video) => video.channelId)).size;
 
   return (
-    <Page title="TREND INTELLIGENCE">
+    <Page title="YouTube Trend Sample" eyebrow="BOUNDED API SAMPLE" showBack subtitle="Inspect a paginated sample from YouTube's official API. This is not a global market ranking or a demand forecast.">
       <Txt muted>Measure YouTube separately from search interest and publisher news. This view uses the official YouTube Data API, not scraping.</Txt>
       {linkedIdea ? <Txt muted>Research context: {linkedIdea.topic}. Only video links you explicitly save below become durable personal references.</Txt> : null}
       <Panel>
