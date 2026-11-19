@@ -577,8 +577,8 @@ export default function Settings() {
           YouTube is a trademark of Google LLC. This app is not affiliated with YouTube. No
           comprehensive trend coverage or guaranteed results.
         </Txt>
-        <Action secondary onPress={() => router.push('/diagnostics')}>
-          Run mock regression checks
+        <Action secondary onPress={() => router.push('/diagnostics?run=1')}>
+          Open mock regression console
         </Action>
       </Fold>
       {Boolean(op.error) && <ErrorBox message={op.error} onRetry={op.clear} />}
