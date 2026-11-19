@@ -16,8 +16,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
-import { router } from 'expo-router';
+import { router, usePathname } from 'expo-router';
 import {
   AlertCircle,
   ArrowLeft,
@@ -27,6 +26,7 @@ import {
   ChevronUp,
   Compass,
   Search,
+  Settings as SettingsIcon,
   type LucideIcon,
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
@@ -37,87 +37,88 @@ import { useScout } from '@/lib/store';
 type Tone = 'violet' | 'cyan' | 'mint' | 'amber';
 
 const toneColors: Record<Tone, { fill: string; soft: string; line: string }> = {
-  violet: { fill: p.purple, soft: p.purpleSoft, line: p.purpleLine },
-  cyan: { fill: p.cyan, soft: p.cyanSoft, line: p.cyanLine },
-  mint: { fill: p.success, soft: p.successSoft, line: p.successLine },
-  amber: { fill: p.warning, soft: p.warningSoft, line: p.warningLine },
+  violet: { fill: p.accent, soft: p.surfaceAlt, line: p.border },
+  cyan: { fill: p.muted, soft: p.surfaceAlt, line: p.border },
+  mint: { fill: p.success, soft: p.surfaceAlt, line: p.border },
+  amber: { fill: p.warning, soft: p.surfaceAlt, line: p.border },
 };
 
 export const styles = StyleSheet.create({
   page: { flex: 1, backgroundColor: p.background },
   content: {
     paddingHorizontal: 18,
-    paddingTop: 10,
-    paddingBottom: 34,
-    gap: 15,
+    paddingTop: 8,
+    paddingBottom: 30,
+    gap: 13,
     width: '100%',
-    maxWidth: 760,
+    maxWidth: 720,
     alignSelf: 'center',
   },
   brandBar: {
-    minHeight: 54,
+    minHeight: 52,
     paddingHorizontal: 18,
-    paddingBottom: 10,
+    paddingBottom: 8,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    gap: 10,
   },
-  brandLockup: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  brandLockup: { flexDirection: 'row', alignItems: 'center', gap: 9 },
   brandMark: {
-    width: 38,
-    height: 38,
-    borderRadius: 13,
-    backgroundColor: p.purpleSoft,
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    backgroundColor: p.surfaceAlt,
     borderWidth: 1,
-    borderColor: p.purpleLine,
+    borderColor: p.border,
     alignItems: 'center',
     justifyContent: 'center',
   },
   brandName: {
     color: p.text,
     fontFamily: 'Inter_700Bold',
-    fontSize: 13,
-    letterSpacing: 1.25,
+    fontSize: 12,
+    letterSpacing: 1.05,
   },
   brandSubtitle: {
     color: p.muted,
     fontFamily: 'Inter_500Medium',
     fontSize: 9,
-    letterSpacing: 1.45,
+    letterSpacing: 1.1,
     marginTop: 2,
   },
   localPill: {
     minHeight: 28,
-    paddingHorizontal: 10,
-    borderRadius: 99,
+    paddingHorizontal: 9,
+    borderRadius: 9,
     borderWidth: 1,
-    borderColor: p.successLine,
-    backgroundColor: p.successSoft,
+    borderColor: p.border,
+    backgroundColor: p.surfaceAlt,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
   },
-  localDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: p.success },
+  localDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: p.accent },
   localText: {
-    color: p.success,
+    color: p.muted,
     fontFamily: 'Inter_600SemiBold',
     fontSize: 9,
-    letterSpacing: 0.9,
+    letterSpacing: 0.8,
   },
-  intro: { gap: 7, paddingTop: 7, paddingBottom: 5 },
+  intro: { gap: 7, paddingTop: 6, paddingBottom: 4 },
   eyebrow: {
-    color: p.cyan,
+    color: p.muted,
     fontFamily: 'Inter_700Bold',
     fontSize: 10,
-    letterSpacing: 1.65,
+    letterSpacing: 1.2,
     lineHeight: 15,
   },
   title: {
     color: p.text,
     fontFamily: 'Inter_700Bold',
-    fontSize: 29,
-    lineHeight: 35,
-    letterSpacing: -0.8,
+    fontSize: 27,
+    lineHeight: 33,
+    letterSpacing: -0.55,
   },
   introText: {
     color: p.muted,
@@ -130,7 +131,7 @@ export const styles = StyleSheet.create({
     fontFamily: 'Inter_700Bold',
     fontSize: 16,
     lineHeight: 22,
-    letterSpacing: -0.25,
+    letterSpacing: -0.2,
     flexShrink: 1,
     minWidth: 0,
   },
@@ -151,71 +152,72 @@ export const styles = StyleSheet.create({
     minWidth: 0,
   },
   badge: {
-    color: p.cyan,
+    color: p.accent,
     fontFamily: 'Inter_700Bold',
     fontSize: 10,
     lineHeight: 15,
-    letterSpacing: 0.8,
+    letterSpacing: 0.7,
   },
   panel: {
-    padding: 17,
-    borderRadius: 23,
+    padding: 16,
+    borderRadius: 16,
     backgroundColor: p.surface,
     borderColor: p.border,
     borderWidth: 1,
-    gap: 13,
+    gap: 12,
   },
   heroPanel: {
-    padding: 19,
-    borderRadius: 26,
+    padding: 16,
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: 'rgba(174, 160, 255, 0.32)',
-    gap: 14,
+    borderColor: p.border,
+    gap: 12,
     overflow: 'hidden',
+    backgroundColor: p.surface,
   },
-  // eslint-disable-next-line react-native/no-unused-styles -- Exported shared style consumed by collection screens.
+  // eslint-disable-next-line react-native/no-unused-styles -- Shared list surface consumed by collection screens.
   listCard: {
-    padding: 15,
-    borderRadius: 20,
+    padding: 14,
+    borderRadius: 14,
     backgroundColor: p.surface,
     borderColor: p.border,
     borderWidth: 1,
-    gap: 11,
+    gap: 10,
   },
   softCard: {
-    padding: 14,
-    borderRadius: 18,
+    padding: 13,
+    borderRadius: 13,
     backgroundColor: p.surfaceAlt,
     borderColor: p.borderSoft,
     borderWidth: 1,
-    gap: 9,
+    gap: 8,
   },
-  row: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  // eslint-disable-next-line react-native/no-unused-styles -- Exported shared style consumed by dashboard screens.
+  row: { flexDirection: 'row', alignItems: 'center', gap: 10, minWidth: 0 },
+  // eslint-disable-next-line react-native/no-unused-styles -- Shared dashboard layout style.
   rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
-  // eslint-disable-next-line react-native/no-unused-styles -- Exported shared style consumed by app screens and diagnostics.
-  rule: { borderBottomColor: p.border, borderBottomWidth: 1, paddingBottom: 16 },
+  // eslint-disable-next-line react-native/no-unused-styles -- Shared list and diagnostics separator.
+  rule: { borderBottomColor: p.border, borderBottomWidth: 1, paddingBottom: 12 },
   label: {
     color: p.muted,
     fontFamily: 'Inter_700Bold',
     fontSize: 10,
     lineHeight: 15,
-    letterSpacing: 1.05,
+    letterSpacing: 0.9,
   },
   action: {
-    minHeight: 48,
-    paddingHorizontal: 15,
-    paddingVertical: 11,
-    borderRadius: 15,
+    minHeight: 46,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 12,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 9,
   },
   actionPrimary: {
-    backgroundColor: p.purpleBright,
+    backgroundColor: p.accentStrong,
     borderWidth: 1,
-    borderColor: p.purpleBright,
+    borderColor: p.accentStrong,
   },
   actionSecondary: {
     backgroundColor: p.surfaceAlt,
@@ -227,14 +229,14 @@ export const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: p.dangerLine,
   },
-  actionPressed: { opacity: 0.82, transform: [{ scale: 0.985 }] },
+  actionPressed: { opacity: 0.82 },
   actionDisabled: { opacity: 0.42 },
-  actionLabel: { fontFamily: 'Inter_700Bold', fontSize: 13, lineHeight: 18 },
+  actionLabel: { fontFamily: 'Inter_600SemiBold', fontSize: 13, lineHeight: 18, flexShrink: 1, minWidth: 0 },
   choice: {
     minHeight: 36,
     paddingHorizontal: 12,
     paddingVertical: 8,
-    borderRadius: 12,
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: p.border,
     backgroundColor: p.surfaceAlt,
@@ -242,7 +244,7 @@ export const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 5,
   },
-  choiceSelected: { backgroundColor: p.cyan, borderColor: p.cyan },
+  choiceSelected: { backgroundColor: p.accentSoft, borderColor: p.accentLine },
   choicePressed: { opacity: 0.75 },
   choiceLabel: { fontFamily: 'Inter_600SemiBold', fontSize: 11, lineHeight: 16 },
   errorAction: {
@@ -254,29 +256,29 @@ export const styles = StyleSheet.create({
     backgroundColor: p.dangerLine,
   },
   errorActionText: { color: p.danger, fontFamily: 'Inter_700Bold', fontSize: 11 },
-  foldTrigger: { minHeight: 46, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  foldTrigger: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 10 },
   foldIcon: {
     width: 30,
     height: 30,
-    borderRadius: 10,
+    borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: p.raised,
+    backgroundColor: 'transparent',
   },
-  foldLabel: { color: p.text, fontFamily: 'Inter_600SemiBold', fontSize: 13, lineHeight: 19 },
+  foldLabel: { color: p.text, fontFamily: 'Inter_600SemiBold', fontSize: 14, lineHeight: 20 },
   fold: {
-    borderRadius: 18,
-    backgroundColor: p.surfaceAlt,
+    borderRadius: 0,
+    backgroundColor: 'transparent',
     borderColor: p.borderSoft,
-    borderWidth: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    gap: 10,
+    borderBottomWidth: 1,
+    paddingHorizontal: 0,
+    paddingVertical: 3,
+    gap: 8,
   },
-  foldContent: { paddingHorizontal: 3, paddingBottom: 9, gap: 12 },
+  foldContent: { paddingHorizontal: 0, paddingBottom: 10, gap: 12 },
   fieldBox: {
-    minHeight: 49,
-    borderRadius: 15,
+    minHeight: 48,
+    borderRadius: 12,
     backgroundColor: p.input,
     borderColor: p.border,
     borderWidth: 1,
@@ -293,36 +295,36 @@ export const styles = StyleSheet.create({
     textAlignVertical: 'center',
   },
   multilineText: { minHeight: 112, textAlignVertical: 'top', paddingTop: 12 },
-  metricValue: { color: p.text, fontFamily: 'Inter_700Bold', fontSize: 23, lineHeight: 28 },
+  metricValue: { color: p.text, fontFamily: 'Inter_700Bold', fontSize: 22, lineHeight: 27 },
   metricLabel: {
     color: p.muted,
     fontFamily: 'Inter_700Bold',
     fontSize: 9,
     lineHeight: 14,
-    letterSpacing: 0.8,
+    letterSpacing: 0.65,
   },
   metricCard: {
     flex: 1,
-    minWidth: 102,
-    padding: 12,
-    borderRadius: 17,
+    minWidth: 88,
+    padding: 11,
+    borderRadius: 12,
     borderWidth: 1,
-    gap: 6,
+    gap: 5,
   },
   shortcutCard: {
-    flex: 1,
-    minWidth: 142,
-    minHeight: 122,
-    padding: 14,
-    borderRadius: 20,
+    width: '100%',
+    minHeight: 68,
+    padding: 12,
+    borderRadius: 12,
     borderWidth: 1,
-    justifyContent: 'space-between',
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 12,
   },
   shortcutIcon: {
-    width: 37,
-    height: 37,
-    borderRadius: 13,
+    width: 34,
+    height: 34,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -333,28 +335,32 @@ export const styles = StyleSheet.create({
     gap: 12,
   },
   emptyIcon: {
-    width: 62,
-    height: 62,
-    borderRadius: 21,
-    backgroundColor: p.purpleSoft,
+    width: 58,
+    height: 58,
+    borderRadius: 16,
+    backgroundColor: p.surfaceAlt,
     borderWidth: 1,
-    borderColor: p.purpleLine,
+    borderColor: p.border,
     alignItems: 'center',
     justifyContent: 'center',
   },
   errorBox: {
-    borderRadius: 17,
+    borderRadius: 13,
     borderWidth: 1,
     borderColor: p.dangerLine,
     backgroundColor: p.dangerSoft,
-    padding: 14,
+    padding: 13,
     gap: 10,
   },
 });
 
 export function AppHeader({ showBack = false }: { showBack?: boolean }) {
   const ready = useScout((s) => s.ready);
+  const pathname = usePathname();
+  const language = useScout((s) => s.data.preferences.uiLanguage ?? 'fa');
   const canGoBack = showBack && router.canGoBack();
+  const settingsLabel = translateText('Settings', language);
+  const onSettings = pathname === '/settings';
   return (
     <View style={styles.brandBar}>
       <View style={styles.brandLockup}>
@@ -380,7 +386,7 @@ export function AppHeader({ showBack = false }: { showBack?: boolean }) {
         ) : null}
         <View style={styles.brandLockup}>
           <View style={styles.brandMark}>
-            <Compass size={21} color={p.purple} strokeWidth={2.1} />
+            <Compass size={19} color={p.accent} strokeWidth={1.9} />
           </View>
           <View>
             <Text style={styles.brandName}>MOHSEN SCOUT</Text>
@@ -388,10 +394,29 @@ export function AppHeader({ showBack = false }: { showBack?: boolean }) {
           </View>
         </View>
       </View>
-      <View style={styles.localPill}>
-        <View style={[styles.localDot, { opacity: ready ? 1 : 0.42 }]} />
-        <Text style={styles.localText}>{ready ? 'ON DEVICE' : 'STARTING'}</Text>
-      </View>
+      <Pressable
+        onPress={() => { if (!onSettings) router.push('/settings'); }}
+        disabled={onSettings}
+        accessibilityRole="button"
+        accessibilityLabel={settingsLabel}
+        accessibilityState={{ disabled: onSettings }}
+        style={({ pressed }) => [{
+          minHeight: 38,
+          paddingHorizontal: 10,
+          borderRadius: 10,
+          borderWidth: 1,
+          borderColor: p.border,
+          backgroundColor: onSettings ? p.surface : p.surfaceAlt,
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 7,
+          opacity: pressed ? 0.72 : 1,
+        }]}
+      >
+        <SettingsIcon size={16} color={onSettings ? p.muted : p.text} />
+        <Text style={{ color: onSettings ? p.muted : p.text, fontFamily: 'Inter_600SemiBold', fontSize: 12 }}>{settingsLabel}</Text>
+      </Pressable>
     </View>
   );
 }
@@ -588,16 +613,7 @@ export function Panel({
   variant?: 'default' | 'hero' | 'soft';
 }) {
   if (variant === 'hero') {
-    return (
-      <LinearGradient
-        colors={['#22204A', '#182C45', '#123640']}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={styles.heroPanel}
-      >
-        {children}
-      </LinearGradient>
-    );
+    return <View style={[styles.panel, styles.heroPanel]}>{children}</View>;
   }
   return <View style={variant === 'soft' ? styles.softCard : styles.panel}>{children}</View>;
 }
@@ -622,7 +638,7 @@ export function Action({
   const language = useScout((s) => s.data.preferences.uiLanguage ?? 'fa');
   const label = translateText(children, language);
   const direction = resolveTextDirection(label);
-  const foreground = secondary ? p.cyan : p.background;
+  const foreground = secondary ? p.text : p.background;
   return (
     <Pressable
       onPress={() => {
@@ -646,7 +662,6 @@ export function Action({
         <Icon size={17} color={danger ? p.danger : foreground} strokeWidth={2} />
       ) : null}
       <Text numberOfLines={2} style={[styles.actionLabel, { color: danger ? p.danger : foreground, writingDirection: direction, textAlign: direction === 'rtl' ? 'right' : 'left', flex: 1 }]}>{busy ? translateText('Working…', language) : label}</Text>
-      {!secondary && !danger ? <ArrowUpRight size={15} color={p.background} /> : null}
     </Pressable>
   );
 }
@@ -685,7 +700,7 @@ export function Field({
           autoCapitalize={secret ? 'none' : 'sentences'}
           autoCorrect={!secret}
           multiline={multiline}
-          selectionColor={p.cyan}
+          selectionColor={p.accent}
           underlineColorAndroid="transparent"
           style={[styles.inputText, multiline ? styles.multilineText : null, { writingDirection: direction, textAlign: direction === 'rtl' ? 'right' : 'left' }]}
         />
@@ -739,8 +754,8 @@ export function Choices<T extends string>({
                 pressed ? styles.choicePressed : null,
               ]}
             >
-              {active ? <Check size={13} color={p.background} strokeWidth={2.6} /> : null}
-              <Text style={[styles.choiceLabel, { color: active ? p.background : p.text, writingDirection: itemDirection, textAlign: itemDirection === 'rtl' ? 'right' : 'left' }]}>{title}</Text>
+              {active ? <Check size={13} color={p.accent} strokeWidth={2.6} /> : null}
+              <Text style={[styles.choiceLabel, { color: active ? p.accentStrong : p.text, writingDirection: itemDirection, textAlign: itemDirection === 'rtl' ? 'right' : 'left' }]}>{title}</Text>
             </Pressable>
           );
         })}
@@ -822,7 +837,7 @@ export function Empty({
   return (
     <View style={styles.emptyWrap}>
       <View style={styles.emptyIcon}>
-        <Icon size={27} color={p.purple} strokeWidth={1.9} />
+        <Icon size={25} color={p.accent} strokeWidth={1.9} />
       </View>
       <Txt muted>{title}</Txt>
       <Action secondary onPress={onPress}>{action}</Action>
@@ -865,7 +880,7 @@ export function Fold({
       >
         <Text style={[styles.foldLabel, { writingDirection: direction, textAlign: direction === 'rtl' ? 'right' : 'left', flex: 1 }]}>{translatedTitle}</Text>
         <View style={styles.foldIcon}>
-          {expanded ? <ChevronUp size={16} color={p.cyan} /> : <ChevronDown size={16} color={p.muted} />}
+          {expanded ? <ChevronUp size={16} color={p.accent} /> : <ChevronDown size={16} color={p.muted} />}
         </View>
       </Pressable>
       {expanded ? <View style={styles.foldContent}>{children}</View> : null}
