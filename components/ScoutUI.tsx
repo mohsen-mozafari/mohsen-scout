@@ -87,24 +87,6 @@ export const styles = StyleSheet.create({
     letterSpacing: 1.1,
     marginTop: 2,
   },
-  localPill: {
-    minHeight: 28,
-    paddingHorizontal: 9,
-    borderRadius: 9,
-    borderWidth: 1,
-    borderColor: p.border,
-    backgroundColor: p.surfaceAlt,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  localDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: p.accent },
-  localText: {
-    color: p.muted,
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 9,
-    letterSpacing: 0.8,
-  },
   intro: { gap: 7, paddingTop: 6, paddingBottom: 4 },
   eyebrow: {
     color: p.muted,
@@ -355,12 +337,11 @@ export const styles = StyleSheet.create({
 });
 
 export function AppHeader({ showBack = false }: { showBack?: boolean }) {
-  const ready = useScout((s) => s.ready);
   const pathname = usePathname();
   const language = useScout((s) => s.data.preferences.uiLanguage ?? 'fa');
   const canGoBack = showBack && router.canGoBack();
   const settingsLabel = translateText('Settings', language);
-  const onSettings = pathname === '/settings';
+  const onSettings = pathname.endsWith('/settings');
   return (
     <View style={styles.brandBar}>
       <View style={styles.brandLockup}>
