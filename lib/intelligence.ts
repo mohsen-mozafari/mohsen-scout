@@ -142,6 +142,8 @@ const CONCEPT_ALIASES: readonly (readonly string[])[] = [
 
 const NORMALIZED_TEXT_CACHE_LIMIT = 4096;
 const normalizedTextCache = new Map<string, string>();
+const tokenizedTextCache = new Map<string, readonly string[]>();
+const TOKENIZED_TEXT_CACHE_LIMIT = 4096;
 const expandedTokenCache = new Map<string, ReadonlySet<string>>();
 const EXPANDED_TOKEN_CACHE_LIMIT = 2048;
 
@@ -178,7 +180,16 @@ export function normalizeResearchText(value: string): string {
 }
 
 export function tokenizeResearchText(value: string): string[] {
-  return normalizeResearchText(value)
+  const normalized = normalizeResearchText(value);
+  if (normalized.length <= 4096) {
+    const cached = tokenizedTextCache.get(normalized);
+    if (cached) {
+      tokenizedTextCache.delete(normalized);
+      tokenizedTextCache.set(normalized, cached);
+      return [...cached];
+    }
+  }
+  const tokens = normalized
     .split(' ')
     .filter((token) => token.length > 1 && !STOP_WORDS.has(token))
     .map((token) => {
@@ -188,6 +199,15 @@ export function tokenizeResearchText(value: string): string[] {
       }
       return token;
     });
+  if (normalized.length <= 4096) {
+    tokenizedTextCache.set(normalized, tokens);
+    if (tokenizedTextCache.size > TOKENIZED_TEXT_CACHE_LIMIT) {
+      const oldest = tokenizedTextCache.keys().next().value;
+      if (oldest !== undefined) tokenizedTextCache.delete(oldest);
+    }
+  }
+  // A caller may sort or mutate its returned list; do not expose the cached array.
+  return [...tokens];
 }
 
 function conceptIndexes(value: string): number[] {
@@ -591,7 +611,8 @@ export type EditorialOpportunitySignals = {
     relevance: number;
     evidenceBreadth: number;
     freshness: number;
-    audienceSignal: number | null;
+    /** Always null: raw lifetime views are not converted into demand or growth estimates. */
+    audienceSignal: null;
     differentiation: number;
   };
   reason: string;
@@ -599,13 +620,15 @@ export type EditorialOpportunitySignals = {
 
 /**
  * Explainable editorial prioritization from the supplied research sample.
- * This is a relative decision aid, never a prediction of views, revenue or virality.
- * Missing signals are omitted and the remaining weights are normalized.
+ * This is a relative editorial decision aid, never a prediction of views,
+ * revenue, audience demand, growth or virality. Raw view counts are deliberately
+ * excluded from the calculation; missing evidence is not fabricated.
  */
 export function scoreEditorialOpportunity(input: {
   topic: string;
   anchor: string;
   news: readonly ResearchDocument[];
+  historicalNews?: readonly ResearchDocument[];
   videos: readonly { title: string; description?: string; channel?: string; publishedAt?: string; viewCount?: number | null }[];
   now?: number;
 }): EditorialOpportunitySignals {
@@ -617,7 +640,13 @@ export function scoreEditorialOpportunity(input: {
       date: timestamp(item.publishedAt),
       family: publisherFamily(item),
       kind: 'news' as const,
-      views: null as number | null,
+      channel: '',
+    })),
+    ...(input.historicalNews ?? []).map((item) => ({
+      text: item.title + ' ' + (item.summary ?? ''),
+      date: timestamp(item.publishedAt),
+      family: publisherFamily(item),
+      kind: 'history' as const,
       channel: '',
     })),
     ...input.videos.map((item) => ({
@@ -625,13 +654,12 @@ export function scoreEditorialOpportunity(input: {
       date: timestamp(item.publishedAt),
       family: 'youtube',
       kind: 'video' as const,
-      views: typeof item.viewCount === 'number' && Number.isFinite(item.viewCount) && item.viewCount > 0 ? item.viewCount : null,
       channel: item.channel ?? '',
     })),
   ];
   const relevant = documents.filter((document) => {
     const tokens = new Set(tokenizeResearchText(document.text));
-    return anchorTokens.size > 0 && [...anchorTokens].some((token) => tokens.has(token)) ||
+    return (anchorTokens.size > 0 && [...anchorTokens].some((token) => tokens.has(token))) ||
       scoreResearchText(input.topic, document.text) > 0;
   });
   const overlap = anchorTokens.size
@@ -641,7 +669,9 @@ export function scoreEditorialOpportunity(input: {
       }).length / Math.max(1, relevant.length)
     : 0;
   const relevance = Math.round(Math.min(100, overlap * 70 + (relevant.length ? 30 : 0)));
-  const publisherFamilies = new Set(relevant.filter((item) => item.kind === 'news' && item.family !== 'unknown').map((item) => item.family));
+  const publisherFamilies = new Set(
+    relevant.filter((item) => item.kind !== 'video' && item.family !== 'unknown').map((item) => item.family),
+  );
   const videoChannels = new Set(relevant.filter((item) => item.kind === 'video' && item.channel).map((item) => item.channel));
   const kinds = new Set(relevant.map((item) => item.kind));
   const evidenceBreadth = Math.round(Math.min(100,
@@ -649,12 +679,7 @@ export function scoreEditorialOpportunity(input: {
   const dated = relevant.filter((item) => item.date > 0);
   const fresh = dated.filter((item) => now - item.date <= 30 * 86400000 && now >= item.date - 86400000).length;
   const freshness = dated.length ? Math.round(100 * fresh / dated.length) : 35;
-  const observedViews = relevant.filter((item) => item.kind === 'video' && item.views !== null && item.date > 0);
-  const viewRates = observedViews.map((item) => (item.views ?? 0) / Math.max(1, (now - item.date) / 86400000));
-  const audienceSignal = viewRates.length
-    ? Math.round(Math.min(100, 25 + 25 * Math.log10(1 + viewRates.length) +
-      10 * Math.log10(1 + Math.max(...viewRates)) / 2))
-    : null;
+  const audienceSignal = null;
   const anchorFrequency = documents.filter((item) => {
     const tokens = new Set(tokenizeResearchText(item.text));
     return anchorTokens.size > 0 && [...anchorTokens].some((token) => tokens.has(token));
@@ -664,26 +689,28 @@ export function scoreEditorialOpportunity(input: {
   const differentiation = Math.round(Math.max(0, Math.min(100,
     100 - Math.min(65, Math.max(0, anchorFrequency - 1) * 7) -
     Math.min(35, Math.max(0, saturation - 2) * 3))));
-  const weighted: { value: number; weight: number }[] = [
-    { value: relevance, weight: 0.25 },
-    { value: evidenceBreadth, weight: 0.22 },
-    { value: freshness, weight: 0.16 },
-    { value: differentiation, weight: 0.17 },
-    ...(audienceSignal === null ? [] : [{ value: audienceSignal, weight: 0.20 }]),
+  const weighted = [
+    { value: relevance, weight: 0.30 },
+    { value: evidenceBreadth, weight: 0.30 },
+    { value: freshness, weight: 0.20 },
+    { value: differentiation, weight: 0.20 },
   ];
-  const totalWeight = weighted.reduce((sum, part) => sum + part.weight, 0);
-  const score = Math.round(weighted.reduce((sum, part) => sum + part.value * part.weight, 0) / totalWeight);
+  const score = Math.round(weighted.reduce((sum, part) => sum + part.value * part.weight, 0));
+  const freshnessRatio = dated.length ? fresh / dated.length : 0;
   const confidence: EditorialOpportunitySignals['confidence'] =
-    relevant.length >= 12 && publisherFamilies.size >= 3 && videoChannels.size >= 3 && observedViews.length >= 3
+    relevant.length >= 12 && publisherFamilies.size >= 3 && videoChannels.size >= 3 && fresh >= 3 && freshnessRatio >= 0.25
       ? 'high'
-      : relevant.length >= 5 && (publisherFamilies.size >= 2 || videoChannels.size >= 2)
+      : relevant.length >= 5 && (publisherFamilies.size >= 2 || videoChannels.size >= 2) && (fresh >= 1 || dated.length === 0)
         ? 'moderate' : 'low';
+  const currentPublisherItems = relevant.filter((item) => item.kind === 'news').length;
+  const historicalPublisherItems = relevant.filter((item) => item.kind === 'history').length;
   const reason = [
     relevance >= 65 ? 'strong topic/anchor alignment' : 'limited direct topic alignment',
-    publisherFamilies.size ? publisherFamilies.size + ' independent publisher group(s)' : 'no directly relevant publisher group',
+    publisherFamilies.size ? publisherFamilies.size + ' publisher group(s) across current and saved research' : 'no directly relevant publisher group',
+    currentPublisherItems + ' current and ' + historicalPublisherItems + ' historical publisher record(s) matched',
     videoChannels.size ? videoChannels.size + ' relevant YouTube channel(s)' : 'no relevant YouTube channel sample',
-    observedViews.length ? observedViews.length + ' dated video view observations' : 'audience metrics unavailable',
-    saturation >= 8 ? 'crowded returned sample; differentiation is important' : 'returned sample leaves room to test a distinct angle',
+    fresh ? fresh + ' fresh dated evidence record(s)' : 'no fresh dated evidence record',
+    'raw view counts are not treated as demand or growth indicators',
   ].join('; ');
   return {
     score,

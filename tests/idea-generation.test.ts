@@ -284,3 +284,94 @@ void test('idea evidence scope reports all received records separately from deta
   assert.match(generated[0].concept, /3 publisher item\(s\) received; 2 topic-matched/);
   assert.match(generated[0].concept, /2 YouTube record\(s\) received; 2 relevant sample\(s\) selected for detailed analysis/);
 });
+
+
+void test('the local engine evaluates the complete retained YouTube sample without a fixed 100-record cutoff', () => {
+  const records = Array.from({ length: 125 }, (_, index) => ({
+    id: String(index).padStart(11, '0'),
+    title: 'JWST exoplanet atmosphere methane spectroscopy sample ' + index,
+    description: 'Measurement uncertainty and methane signatures.',
+    channel: 'Science channel ' + (index % 5),
+    publishedAt: '2026-11-15T12:00:00Z',
+    viewCount: index + 1,
+  }));
+  const selected = selectIdeaGenerationVideos(base.topic, records);
+  assert.equal(selected.length, records.length);
+  assert.equal(new Set(selected.map((video) => video.id)).size, records.length);
+});
+
+void test('saved publisher memory contributes historical context without being mistaken for current news', () => {
+  const priorMemory = {
+    topic: base.topic,
+    updatedAt: Date.parse('2026-11-16T12:00:00Z'),
+    sources: [{
+      sourceId: 'nasa',
+      sourceName: 'NASA',
+      title: 'MOCK: JWST methane spectroscopy reveals atmospheric measurement limits',
+      sourceUrl: 'https://science.nasa.gov/mock-historical-methane',
+      publishedAt: '2026-10-15T12:00:00Z',
+    }],
+    keyFindings: ['MOCK: Earlier measurements leave uncertainty about methane abundance.'],
+    unresolvedQuestions: ['Which calibration limits remain unresolved?'],
+    contradictions: [],
+    confidence: 'moderate' as const,
+    history: [{
+      capturedAt: Date.parse('2026-10-20T12:00:00Z'),
+      sourceFingerprint: 'historical-fingerprint',
+      sourceCount: 2,
+      newSourceCount: 1,
+      updatedSourceCount: 0,
+      keyFindings: ['MOCK: Earlier JWST spectroscopy measurements had calibration uncertainty.'],
+      unresolvedQuestions: ['How did later methane measurements address calibration uncertainty?'],
+      contradictions: [],
+      confidence: 'low' as const,
+      changes: ['A later source added a different calibration interpretation.'],
+    }],
+  };
+  const generated = generateEditorialIdeas({
+    ...base,
+    news: [],
+    videos: [],
+    priorMemory,
+    limit: 4,
+  });
+  assert.ok(generated.length > 0);
+  assert.ok(generated.every((idea) => idea.sourceUrl === priorMemory.sources[0].sourceUrl));
+  assert.match(generated[0].concept, /historical publisher record\(s\)/);
+  assert.match(generated[0].concept, /saved findings, open questions and discrepancies/);
+  assert.match(generated[0].concept, /1 historical research snapshots reviewed/);
+  assert.match(generated[0].concept, /Evidence base: saved historical publisher records and prior research notes/);
+  assert.doesNotMatch(generated[0].concept, /Wikimedia context/);
+  assert.match(generated[0].concept, /Confidence: low;/, 'old memory alone must not inflate current evidence confidence');
+});
+
+void test('saved positive and negative topic feedback adjusts editorial priority transparently', () => {
+  const neutral = generateEditorialIdeas({ ...base, news, videos, limit: 8 });
+  const preferred = generateEditorialIdeas({
+    ...base, news, videos,
+    feedback: { positiveTopics: ['methane spectroscopy'], negativeTopics: [] },
+    limit: 8,
+  });
+  const discouraged = generateEditorialIdeas({
+    ...base, news, videos,
+    feedback: { positiveTopics: [], negativeTopics: ['methane spectroscopy'] },
+    limit: 8,
+  });
+  assert.ok(neutral.length && preferred.length && discouraged.length);
+  assert.ok((preferred[0].engineScore ?? 0) >= (neutral[0].engineScore ?? 0));
+  assert.ok((discouraged[0].engineScore ?? 0) <= (neutral[0].engineScore ?? 0));
+  assert.match(preferred[0].engineScoreReason ?? '', /positive topics/);
+  assert.match(discouraged[0].engineScoreReason ?? '', /previously rejected/);
+});
+
+void test('raw lifetime view counts cannot change the selected related-video order', () => {
+  const sample = [
+    { id: 'abcdefghijk', title: 'JWST exoplanet atmosphere methane spectroscopy', description: 'Methane measurement uncertainty.', viewCount: 100 },
+    { id: 'lmnopqrstuv', title: 'JWST exoplanet atmosphere spectroscopy', description: 'Atmosphere calibration limits.', viewCount: 10 },
+  ];
+  const reversedViews = sample.map((video, index) => ({ ...video, viewCount: index === 0 ? 1 : 100000000 }));
+  assert.deepEqual(
+    selectIdeaGenerationVideos(base.topic, sample).map((video) => video.id),
+    selectIdeaGenerationVideos(base.topic, reversedViews).map((video) => video.id),
+  );
+});
