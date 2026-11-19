@@ -1,4 +1,4 @@
-import { buildResearchInterestProfile, canonicalizeResearchUrl, matchesAnyResearchTerms, matchesResearchTerms, normalizeResearchText, scoreEditorialOpportunity, scoreResearchText, tokenizeResearchText, type ResearchFeedbackProfile } from './intelligence';
+import { buildResearchInterestProfile, canonicalizeResearchUrl, createEditorialOpportunityScorer, matchesAnyResearchTerms, matchesResearchTerms, normalizeResearchText, scoreResearchText, tokenizeResearchText, type ResearchFeedbackProfile } from './intelligence';
 import type { ResearchMemoryEntry } from './types';
 import type { SpaceNewsItem } from './space';
 import { uid, type Idea, type Region } from './types';
@@ -470,6 +470,47 @@ export function generateEditorialIdeas(input: GenerateEditorialIdeasInput): Idea
   const topicRelevantNews = news.filter((item) => scoreResearchText(topic, item.title, item.summary) > 0);
   const topicRelevantHistory = historyDocuments.filter((item) => scoreResearchText(topic, item.title, item.text) > 0);
   const feedback = input.feedback ?? buildResearchInterestProfile(input.existingIdeas ?? []);
+  const opportunityScorer = createEditorialOpportunityScorer({
+    topic,
+    news: news.map((item) => ({
+      title: item.title,
+      summary: item.summary,
+      sourceName: item.sourceName,
+      sourceId: item.sourceId,
+      sourceUrl: item.url,
+      publishedAt: item.publishedAt,
+    })),
+    historicalNews: historicalSources.map((item) => ({
+      title: item.title,
+      sourceName: item.sourceName,
+      sourceId: item.sourceId,
+      sourceUrl: item.sourceUrl,
+      publishedAt: item.publishedAt,
+    })),
+    context: [
+      ...context.map((item) => ({
+        title: item.title,
+        summary: item.summary,
+        sourceName: item.sourceName,
+        sourceUrl: item.sourceUrl,
+      })),
+      ...historyDocuments
+        .filter((item) => item.id.startsWith('memory-'))
+        .map((item) => ({
+          title: item.title,
+          summary: item.text,
+          sourceName: 'Saved research memory',
+        })),
+    ],
+    videos: videos.map((video) => ({
+      title: video.title,
+      description: video.description,
+      channel: video.channel,
+      publishedAt: video.publishedAt,
+      viewCount: video.viewCount,
+    })),
+    now: input.now,
+  });
   for (const document of topicRelevantDocuments) {
     const frequencies = new Map<string, number>();
     for (const term of tokenizeResearchText(document.text)) {
@@ -593,16 +634,7 @@ export function generateEditorialIdeas(input: GenerateEditorialIdeasInput): Idea
     const anchor = categoryAnchors[index];
     if (!category || !eligible.includes(category) || !anchor) continue;
     const candidate = buildCandidate(category, topic, anchor, input.language === 'fa', mode);
-    const opportunity = scoreEditorialOpportunity({
-      topic,
-      anchor,
-      // Let anchor-level matching inspect the complete publisher input, not only
-      // items that matched the broad topic before candidate anchors were known.
-      news: news.map((item) => ({ title: item.title, summary: item.summary, sourceName: item.sourceName, sourceId: item.sourceId, sourceUrl: item.url, publishedAt: item.publishedAt })),
-      historicalNews: historicalSources.map((item) => ({ title: item.title, sourceName: item.sourceName, sourceId: item.sourceId, sourceUrl: item.sourceUrl, publishedAt: item.publishedAt })),
-      videos: videos.map((video) => ({ title: video.title, description: video.description, channel: video.channel, publishedAt: video.publishedAt, viewCount: video.viewCount })),
-      now: input.now,
-    });
+    const opportunity = opportunityScorer(candidate.anchor);
     const positivePreference = matchesSavedTopicPreference(candidate.anchor, feedback.positiveTopics);
     const negativePreference = matchesSavedTopicPreference(candidate.anchor, feedback.negativeTopics);
     candidate.opportunityScore = Math.max(0, Math.min(100,
