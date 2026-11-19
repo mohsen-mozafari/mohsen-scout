@@ -91,6 +91,7 @@ export type InternalResearchResult = {
       allTimeMatchedVideoCount: number;
       recentMatchedVideoCount: number;
       outsideVideoWindowCount: number;
+      futureDatedVideoCount: number;
       recentVideoCandidateCount: number;
       excludedVideoCount: number;
       videoViewCountsAvailable: number;
@@ -189,12 +190,11 @@ export function buildInternalResearch(input: InternalResearchInput): InternalRes
     const published = Date.parse(video.publishedAt);
     return Number.isFinite(published) && published >= videoWindowStart && published <= now + 86400000;
   });
-  // Historical records stay available for context; recency is scored separately, never used as a silent deletion rule.
   // Analyze all retained YouTube records, not only recent title matches. Description matches
   // are weaker context; the recent, directly matched subset remains a separate audit signal.
   const rankedVideos = inputVideos.map((video, index) => ({
     video, index, score: topicRelevanceScore(topic, video.title, video.description ?? ''),
-  })).filter((entry) => entry.score > 0).sort((a, b) => b.score - a.score ||
+  })).filter((entry) => entry.score > 0 && Date.parse(entry.video.publishedAt) <= now + 86400000).sort((a, b) => b.score - a.score ||
     (b.video.viewCount ?? -1) - (a.video.viewCount ?? -1) ||
     (b.video.likeCount ?? -1) - (a.video.likeCount ?? -1) || a.index - b.index);
   const videos = rankedVideos.map((entry) => entry.video);
@@ -489,6 +489,7 @@ export function buildInternalResearch(input: InternalResearchInput): InternalRes
     allTimeMatchedVideoCount: videos.length,
     recentMatchedVideoCount,
     outsideVideoWindowCount: Math.max(0, inputVideos.length - recentVideoCandidates.length),
+    futureDatedVideoCount: inputVideos.filter((video) => Date.parse(video.publishedAt) > now + 86400000).length,
     recentVideoCandidateCount: recentVideoCandidates.length,
     excludedVideoCount: Math.max(0, inputVideos.length - videos.length),
     videoViewCountsAvailable: views.length,

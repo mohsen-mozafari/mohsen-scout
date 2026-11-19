@@ -1129,7 +1129,7 @@ void test('Internal research engine joins publisher, Wikimedia and YouTube evide
   assert.equal(result.angles.length, 3);
   assert.ok(result.evidence.some((item) => item.id === 'publisher-news' && item.detail.includes('2 selected feed source(s)')));
   assert.ok(result.evidence.some((item) => item.id === 'wikimedia' && item.detail.includes('not search volume')));
-  assert.ok(result.evidence.some((item) => item.id === 'youtube-sample' && item.detail.includes('1 returned video example')));
+  assert.ok(result.evidence.some((item) => item.id === 'youtube-sample' && item.detail.includes('2 returned video example')));
   assert.ok(result.evidence.some((item) => item.id === 'youtube-sample' && item.detail.includes('median 1,000')));
   assert.ok(result.evidence.some((item) => item.id === 'youtube-sample' && item.detail.includes('median 50')));
   assert.equal(result.intelligence.sourceQuality.feedsRepresented, 2);
@@ -1139,7 +1139,7 @@ void test('Internal research engine joins publisher, Wikimedia and YouTube evide
   assert(!JSON.stringify(result).toLowerCase().includes('viral score'));
 });
 
-void test('Internal engine excludes unrelated headlines and uses only title-matched YouTube videos from the latest 30 days', () => {
+void test('Internal engine keeps historical context while separating recent, all-time and future-dated YouTube matches', () => {
   const fixedNow = Date.parse('2026-11-18T12:00:00.000Z');
   const result = buildInternalResearch({
     topic: 'Exoplanet atmospheres',
@@ -1162,8 +1162,12 @@ void test('Internal engine excludes unrelated headlines and uses only title-matc
   assert.equal(audit.youtubeSampleCount, 4);
   assert.equal(audit.recentVideoCandidateCount, 2);
   assert.equal(audit.matchedVideoCount, 1);
-  assert.equal(audit.excludedVideoCount, 3);
-  assert.equal(audit.videoViewCountsAvailable, 1);
+  assert.equal(audit.allTimeMatchedVideoCount, 2);
+  assert.equal(audit.recentMatchedVideoCount, 1);
+  assert.equal(audit.outsideVideoWindowCount, 2);
+  assert.equal(audit.futureDatedVideoCount, 1);
+  assert.equal(audit.excludedVideoCount, 2);
+  assert.equal(audit.videoViewCountsAvailable, 2);
   assert.ok(!result.evidence.some((item) => item.detail.includes('Artemis')));
   assert.ok(result.evidence.some((item) => item.id === 'youtube-sample' && item.detail.includes('800')));
 });
