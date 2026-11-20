@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Linking, Pressable, Text, View, useWindowDimensions, type StyleProp, type TextStyle } from 'react-native';
-import Svg, { Circle, Line, Text as SvgText } from 'react-native-svg';
+import Svg, { Circle, Line, Path, Text as SvgText } from 'react-native-svg';
 import { router } from 'expo-router';
 import { resolveTextDirection } from '@/lib/i18n';
 import { palette as p } from '@/lib/theme';
@@ -93,7 +93,38 @@ export function ResearchKnowledgeGraph({
     moderate: groupedIdeas.filter((idea) => getEditorialPriorityBand(idea.engineScore ?? 0) === 'moderate').length,
     weak: groupedIdeas.filter((idea) => getEditorialPriorityBand(idea.engineScore ?? 0) === 'weak').length,
   }), [groupedIdeas]);
-  const graphWidth = Math.max(248, Math.min(344, viewportWidth - 68));
+  const graphWidth = Math.max(260, Math.min(720, viewportWidth - 64));
+  const monthlyChart = useMemo(() => {
+    const series = (wiki?.monthlyViews ?? [])
+      .filter((point) => Number.isFinite(point.views) && point.views >= 0 && /^\d{4}-\d{2}$/.test(point.month))
+      .slice(-18);
+    if (!series.length) return undefined;
+    const left = 42;
+    const right = 12;
+    const top = 14;
+    const bottom = 92;
+    const maxValue = Math.max(1, ...series.map((point) => point.views));
+    const points = series.map((point, index) => ({
+      ...point,
+      x: left + (series.length === 1 ? 0 : index / (series.length - 1)) * (graphWidth - left - right),
+      y: bottom - (point.views / maxValue) * (bottom - top),
+    }));
+    return {
+      points,
+      maxValue,
+      path: points.map((point, index) => (index ? 'L ' : 'M ') + point.x.toFixed(2) + ' ' + point.y.toFixed(2)).join(' '),
+      tickIndexes: [...new Set([0, Math.floor((points.length - 1) / 2), points.length - 1])],
+    };
+  }, [wiki, graphWidth]);
+  const topVideoSamples = useMemo(
+    () => videos
+      .filter((video) => typeof video.viewCount === 'number' && Number.isFinite(video.viewCount) && video.viewCount >= 0)
+      .slice()
+      .sort((a, b) => (b.viewCount ?? -1) - (a.viewCount ?? -1) || a.id.localeCompare(b.id))
+      .slice(0, 6),
+    [videos],
+  );
+  const maxVideoViews = Math.max(1, ...topVideoSamples.map((video) => video.viewCount ?? 0));
 
   // The graph is deliberately bounded and its rebuild is debounced. Positions are
   // calculated once per input change; there is no physics loop or animated layout.
@@ -377,6 +408,55 @@ export function ResearchKnowledgeGraph({
             ))}
             <DirectionalText value={label('Lines = shared evidence / graph relation', 'خطوط = شاهد مشترک یا رابطه ثبت‌شده در گراف')} style={{ color: p.muted, fontSize: 10 }} />
           </View>
+          {monthlyChart ? (
+            <View style={{ gap: 7, borderTopWidth: 1, borderTopColor: p.borderSoft, paddingTop: 12 }}>
+              <DirectionalText value={label('Wikimedia monthly article pageviews', 'بازدید ماهانه مقاله در ویکی‌مدیا')} style={{ fontSize: 14, fontWeight: '700' }} />
+              <DirectionalText value={label('Raw observations from this language edition · zero-based vertical scale · no forecast', 'مشاهدات خام همین نسخه زبانی · محور عمودی از صفر · بدون پیش‌بینی')} style={{ color: p.muted, fontSize: 10 }} />
+              <View style={{ alignItems: 'center' }}>
+                <Svg width={graphWidth} height={112}>
+                  {[0, 0.5, 1].map((fraction) => {
+                    const y = 92 - fraction * 78;
+                    return <Line key={'monthly-grid-' + fraction} x1={42} y1={y} x2={graphWidth - 12} y2={y} stroke={p.borderSoft} strokeWidth={0.8} strokeDasharray="3 5" />;
+                  })}
+                  <Path d={monthlyChart.path} fill="none" stroke={p.cyan} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" />
+                  {monthlyChart.points.map((point) => (
+                    <Circle key={point.month} cx={point.x} cy={point.y} r={3.3} fill={p.cyan} />
+                  ))}
+                  <SvgText x={36} y={16} fill={p.muted} fontSize={8} textAnchor="end">{number(monthlyChart.maxValue)}</SvgText>
+                  <SvgText x={36} y={95} fill={p.muted} fontSize={8} textAnchor="end">0</SvgText>
+                  {monthlyChart.tickIndexes.map((index) => {
+                    const point = monthlyChart.points[index];
+                    return <SvgText key={point.month} x={point.x} y={108} fill={p.muted} fontSize={8} textAnchor="middle">{point.month.slice(2)}</SvgText>;
+                  })}
+                </Svg>
+              </View>
+              <DirectionalText
+                value={label(
+                  'Latest observed month: ' + monthlyChart.points[monthlyChart.points.length - 1].month + ' · ' + number(monthlyChart.points[monthlyChart.points.length - 1].views) + ' article pageviews',
+                  'آخرین ماه مشاهده‌شده: ' + monthlyChart.points[monthlyChart.points.length - 1].month + ' · ' + number(monthlyChart.points[monthlyChart.points.length - 1].views) + ' بازدید مقاله',
+                )}
+                style={{ color: p.muted, fontSize: 10 }}
+              />
+            </View>
+          ) : null}
+          {topVideoSamples.length ? (
+            <View style={{ gap: 8, borderTopWidth: 1, borderTopColor: p.borderSoft, paddingTop: 12 }}>
+              <DirectionalText value={label('Highest raw-view counts in the retained YouTube sample', 'بیشترین تعداد خام بازدید در نمونه نگهداری‌شده YouTube')} style={{ fontSize: 14, fontWeight: '700' }} />
+              <DirectionalText value={label('Each bar is scaled against the largest returned sample count; this is not a views-per-hour or growth metric.', 'طول هر میله نسبت به بیشترین عدد نمونه دریافت‌شده مقیاس شده است؛ این سنجه بازدید ساعتی یا رشد نیست.')} style={{ color: p.muted, fontSize: 10 }} />
+              {topVideoSamples.map((video) => {
+                const views = video.viewCount ?? 0;
+                return (
+                  <View key={video.id} style={{ gap: 4 }}>
+                    <DirectionalText value={video.title} style={{ fontSize: 11, fontWeight: '600' }} />
+                    <View style={{ height: 8, borderRadius: 5, backgroundColor: p.surfaceAlt, overflow: 'hidden' }}>
+                      <View style={{ height: 8, width: Math.max(2, views / maxVideoViews * 100) + '%', borderRadius: 5, backgroundColor: p.accent }} />
+                    </View>
+                    <DirectionalText value={number(views) + ' ' + label('views', 'بازدید') + (video.channel ? ' · ' + video.channel : '')} style={{ color: p.muted, fontSize: 10 }} />
+                  </View>
+                );
+              })}
+            </View>
+          ) : null}
           {groupedIdeas.length ? (
             <View style={{ borderRadius: 12, borderWidth: 1, borderColor: p.border, backgroundColor: p.surface, padding: 11, gap: 7 }}>
               <DirectionalText

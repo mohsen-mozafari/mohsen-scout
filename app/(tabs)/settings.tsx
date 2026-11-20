@@ -615,9 +615,9 @@ export default function Settings() {
           OpenRouter privacy
         </Action>
       </Fold>
-      <Fold title="App info" summary="Version 1.5.7 · local-first">
+      <Fold title="App info" summary="Version 1.5.9 · local-first">
         <Heading>MOHSEN SCOUT</Heading>
-        <Txt>Version 1.5.7</Txt>
+        <Txt>Version 1.5.9</Txt>
       </Fold>
       {Boolean(op.error) && <ErrorBox message={op.error} onRetry={op.clear} />}
       {Boolean(op.message) && <Txt muted>{op.message}</Txt>}
