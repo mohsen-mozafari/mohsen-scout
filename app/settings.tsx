@@ -223,15 +223,6 @@ export default function Settings() {
   return (
     <Page showBack title="Settings" eyebrow="DEVICE & PROVIDERS" subtitle="Control your local profile, provider access, quotas, privacy and backups.">
       {!ready && <Skeleton className="h-32 rounded-2xl" />}
-      <Panel>
-        <View style={styles.row}>
-          <Bug size={19} strokeWidth={1.9} color={p.text} />
-          <Heading>Developer tools</Heading>
-        </View>
-        <Action secondary icon={Bug} onPress={() => router.push('/diagnostics')}>
-          Run mock regression checks
-        </Action>
-      </Panel>
       <Fold title="Profile & defaults" summary={prefs.region + ' · ' + (prefs.languages?.length ?? 0) + ' language(s)'}>
         <Field
           label="Name (optional)"
@@ -612,9 +603,13 @@ export default function Settings() {
           OpenRouter privacy
         </Action>
       </Fold>
-      <Fold title="App info" summary="Version 1.5.9 · local-first">
+      <Fold title="App info & mock diagnostics" summary="Version 1.5.9 · local-first · isolated test runner">
         <Heading>MOHSEN SCOUT</Heading>
         <Txt>Version 1.5.9</Txt>
+        <Txt muted>Run synthetic regression checks using mocked responses. Tests do not call YouTube or OpenRouter, use saved API keys, or change your research workspace.</Txt>
+        <Action secondary icon={Bug} onPress={() => router.push('/diagnostics?run=1')}>
+          Run mock regression checks
+        </Action>
       </Fold>
       {Boolean(op.error) && <ErrorBox message={op.error} onRetry={op.clear} />}
       {Boolean(op.message) && <Txt muted>{op.message}</Txt>}

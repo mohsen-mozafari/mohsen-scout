@@ -7,6 +7,7 @@ import {
   engineReviewCacheKey,
   findCachedEngineReview,
   rankDashboardIdeas,
+  selectDashboardIdeas,
   runSingleFlight,
   selectDashboardVideos,
 } from '../lib/dashboard';
@@ -56,6 +57,37 @@ void test('dashboard chooses the strongest active idea and excludes archived, re
   const newestStrong = idea('newest-strong', 'Strong Opportunity', { sourceUrl: 'https://example.com/source', createdAt: now });
   assert.equal(chooseBestIdea([completed, rejected, archived, promising, strong, newestStrong])?.id, 'newest-strong');
   assert.deepEqual(rankDashboardIdeas([completed, rejected, archived]).map((item) => item.id), []);
+});
+
+void test('dashboard idea selection recovers source-linked radar ideas without requiring a report ID', () => {
+  const fromRadar = idea('radar-idea', 'Strong Opportunity', {
+    engineGenerated: true,
+    sourceUrl: 'https://example.com/publisher-story',
+    engineScore: 91,
+  });
+  const fromReport = idea('report-idea', 'Promising', {
+    engineGenerated: true,
+    reportId: 'report-2',
+    videoIds: ['video-2'],
+    engineScore: 74,
+  });
+  const unrelated = idea('manual-idea', 'Strong Opportunity', { engineScore: 99 });
+  const bySource = selectDashboardIdeas([unrelated, fromRadar], {
+    sourceUrls: new Set(['https://example.com/publisher-story']),
+    topic: 'Mars exploration',
+  });
+  assert.deepEqual(bySource.map((item) => item.id), ['radar-idea']);
+
+  const byReport = selectDashboardIdeas([fromRadar, fromReport], {
+    reportId: 'report-2',
+    videoIds: new Set(['video-2']),
+    topic: 'Mars',
+  });
+  assert.deepEqual(byReport.map((item) => item.id), ['report-idea']);
+
+  const legacyFallback = selectDashboardIdeas([unrelated, fromRadar], { topic: 'unmatched topic' });
+  assert.deepEqual(legacyFallback.map((item) => item.id), ['radar-idea']);
+  assert.deepEqual(selectDashboardIdeas([unrelated], { topic: 'Mars' }), []);
 });
 
 void test('internal engine evidence merges retained report and global videos, deduplicates, expires and caps input', () => {

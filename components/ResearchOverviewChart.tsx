@@ -1,7 +1,8 @@
 import { memo, useMemo } from 'react';
+import type { ReactNode } from 'react';
 import { View, Text } from 'react-native';
 import { router } from 'expo-router';
-import { Panel, Heading, Txt, Action, BadgeText } from '@/components/ScoutUI';
+import { Panel, Heading, Txt, Action, Fold, BadgeText } from '@/components/ScoutUI';
 import { ResearchKnowledgeGraph } from '@/components/ResearchKnowledgeGraph';
 import { palette as p } from '@/lib/theme';
 import { rankDashboardIdeas } from '@/lib/dashboard';
@@ -21,6 +22,7 @@ export const ResearchOverviewChart = memo(function ResearchOverviewChart({
   videos,
   language,
   selectedIdeaId,
+  secondOpinion,
 }: {
   analysis?: InternalResearchResult;
   ideas: readonly Idea[];
@@ -30,11 +32,16 @@ export const ResearchOverviewChart = memo(function ResearchOverviewChart({
   videos: readonly YouTubeSampleVideo[];
   language: 'fa' | 'en';
   selectedIdeaId?: string;
+  secondOpinion?: ReactNode;
 }) {
   const fa = language === 'fa';
   const label = (english: string, persian: string) => fa ? persian : english;
   const sharedSelectedIdeaId = useSelectedIdeaId();
   const ranked = useMemo(() => rankDashboardIdeas(ideas), [ideas]);
+  const topRecommendations = useMemo(
+    () => ranked.filter((idea) => Number.isFinite(idea.engineScore)).slice(0, 3),
+    [ranked],
+  );
   const prioritySummary = useMemo(() => summarizeEditorialPriority(ideas), [ideas]);
   const activeIdeaId = selectedIdeaId ?? sharedSelectedIdeaId;
   const number = (value: number) => new Intl.NumberFormat(fa ? 'fa-IR' : 'en-US').format(value);
@@ -50,6 +57,46 @@ export const ResearchOverviewChart = memo(function ResearchOverviewChart({
           )}
         </Txt>
       </View>
+      {topRecommendations.length ? (
+        <View style={{ gap: 7 }}>
+          <Heading>{label('Top evidence-backed ideas', 'ایده‌های برتر بر پایه شواهد')}</Heading>
+          <View style={{ borderRadius: 11, borderWidth: 1, borderColor: p.accent, backgroundColor: p.surface, padding: 11, gap: 5 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 }}>
+              <BadgeText>{label('TOP EDITORIAL PICK', 'اولویت نخست تحریری')}</BadgeText>
+              <Text style={{ color: p.accent, fontSize: 11, fontWeight: '800' }}>
+                {number(topRecommendations[0].engineScore ?? 0) + '/100 · ' + label('editorial priority', 'اولویت تحریری')}
+              </Text>
+            </View>
+            <Text style={{ color: p.text, fontSize: 14, fontWeight: '800' }}>{topRecommendations[0].topic}</Text>
+            <Txt muted>{topRecommendations[0].concept}</Txt>
+            {topRecommendations[0].engineScoreReason
+              ? <Txt muted>{topRecommendations[0].engineScoreReason.split(';').slice(0, 2).join(' · ')}</Txt>
+              : null}
+            <Action secondary onPress={() => router.push({ pathname: '/detail', params: { idea: topRecommendations[0].id } })}>
+              {label('Review idea and evidence', 'بررسی ایده و شواهد')}
+            </Action>
+          </View>
+          {topRecommendations.length > 1 ? (
+            <Fold title={label('More ranked ideas', 'ایده‌های رتبه‌بندی‌شده بیشتر')} summary={number(topRecommendations.length - 1) + ' ' + label('additional picks', 'پیشنهاد دیگر')}>
+              {topRecommendations.slice(1).map((idea, index) => (
+                <View key={idea.id} style={{ borderBottomWidth: index === topRecommendations.length - 2 ? 0 : 1, borderBottomColor: p.borderSoft, paddingVertical: 8, gap: 4 }}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', flexWrap: 'wrap', gap: 5 }}>
+                    <BadgeText>{label('PICK', 'اولویت') + ' #' + (index + 2)}</BadgeText>
+                    <Text style={{ color: p.muted, fontSize: 10, fontWeight: '700' }}>{number(idea.engineScore ?? 0) + '/100'}</Text>
+                  </View>
+                  <Text style={{ color: p.text, fontSize: 12, fontWeight: '700' }}>{idea.topic}</Text>
+                  <Txt muted>{idea.concept}</Txt>
+                  <Action secondary onPress={() => router.push({ pathname: '/detail', params: { idea: idea.id } })}>
+                    {label('Open idea', 'مشاهده ایده')}
+                  </Action>
+                </View>
+              ))}
+            </Fold>
+          ) : null}
+        </View>
+      ) : (
+        <Txt muted>{label('No scored engine-generated idea is available yet. Run or complete a research pass to create evidence-backed picks.', 'هنوز ایده امتیازدار تولیدشده توسط موتور وجود ندارد. یک مرحله تحقیق را اجرا یا تکمیل کن تا پیشنهادهای مستند ساخته شوند.')}</Txt>
+      )}
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7 }}>
         <View style={{ flexGrow: 1, minWidth: 72, borderRadius: 10, borderWidth: 1, borderColor: p.border, backgroundColor: p.surface, paddingHorizontal: 11, paddingVertical: 10 }}>
           <Text style={{ color: p.text, fontSize: 23, fontWeight: '800' }}>{number(prioritySummary.scored)}</Text>
@@ -101,6 +148,11 @@ export const ResearchOverviewChart = memo(function ResearchOverviewChart({
       ) : (
         <Txt muted>{label('The visual evidence map fills in as topic-linked analysis becomes available. Source and output counts above remain visible while it loads.', 'نقشه بصری با آماده‌شدن تحلیل موضوع‌محور تکمیل می‌شود؛ شمارنده‌های منابع و خروجی‌ها تا آن زمان هم قابل مشاهده‌اند.')}</Txt>
       )}
+      {secondOpinion ? (
+        <View style={{ gap: 8, borderTopWidth: 1, borderTopColor: p.borderSoft, paddingTop: 12 }}>
+          {secondOpinion}
+        </View>
+      ) : null}
       <Action secondary onPress={() => router.push('/opportunities')}>
         {label('Open all ideas', 'مشاهده همه ایده‌ها')}
       </Action>

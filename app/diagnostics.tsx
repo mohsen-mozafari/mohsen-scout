@@ -18,11 +18,12 @@ import {
 import { useScout } from '@/lib/store';
 import { runDiagnostics, formatDiagnosticReport, type TestResult } from '@/lib/diagnostics';
 import { palette as p } from '@/lib/theme';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams } from 'expo-router';
 
 type CheckFilter = 'All checks' | 'Failed only';
 
 export default function Diagnostics() {
+  const params = useLocalSearchParams<{ run?: string }>();
   const language = useScout((state) => state.data.preferences.uiLanguage ?? 'fa');
   const [results, setResults] = useState<TestResult[]>([]);
   const [busy, setBusy] = useState(false);
@@ -33,6 +34,7 @@ export default function Diagnostics() {
   const [copyError, setCopyError] = useState('');
   const [lastRunAt, setLastRunAt] = useState<number | null>(null);
   const executionInFlight = useRef(false);
+  const settingsAutoRunHandled = useRef(false);
 
   const execute = useCallback(async () => {
     if (executionInFlight.current) return;
@@ -54,9 +56,18 @@ export default function Diagnostics() {
   }, []);
 
   useFocusEffect(useCallback(() => {
-    void execute();
-    return undefined;
-  }, [execute]));
+    if (params.run === '1') {
+      if (!settingsAutoRunHandled.current) {
+        settingsAutoRunHandled.current = true;
+        void execute();
+      }
+    } else {
+      void execute();
+    }
+    return () => {
+      settingsAutoRunHandled.current = false;
+    };
+  }, [execute, params.run]));
 
   const passed = results.filter((result) => result.passed).length;
   const failed = results.length - passed;

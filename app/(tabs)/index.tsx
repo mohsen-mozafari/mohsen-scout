@@ -1,33 +1,24 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, Pressable } from 'react-native';
 import { Search } from 'lucide-react-native';
 
 import { router } from 'expo-router';
 import {
-  Page, Panel, Heading, Txt, Action, Fold, Field, styles, ErrorBox, useOperation,
+  Page, Panel, Heading, Txt, Action, Fold, Field, styles, ErrorBox,
   SourceHeading, SourceText, BadgeText, MetricCard,
 } from '@/components/ScoutUI';
 import { useScout } from '@/lib/store';
 import { palette as p } from '@/lib/theme';
 import { useShallow } from 'zustand/react/shallow';
-import { uid } from '@/lib/types';
+import { uid, type Idea } from '@/lib/types';
 import {
   SPACE_NICHES,
-  buildNicheSuggestions,
-  fetchSpaceNews,
-  getWikipediaSignal,
-  type SpaceNicheSuggestion,
-  newsForNiche,
   getCachedSpaceNews,
-  type SpaceNewsItem,
-  type WikiSignal,
 } from '@/lib/space';
 import { buildInternalResearch, rankNewsForTopic, type InternalResearchResult } from '@/lib/engine';
 import { buildResearchInterestProfile, normalizeResearchText, scoreResearchText } from '@/lib/intelligence';
-import { rememberTopicDossier } from '@/lib/topic-dossier';
-import { createResearchMemoryEntry } from '@/lib/research-memory';
-import { collectEngineVideoEvidence, engineReviewCacheKey, findCachedEngineReview, rankDashboardIdeas, runSingleFlight } from '@/lib/dashboard';
-import { deduplicateDisplayIdeas, generateEditorialIdeas } from '@/lib/idea-generation';
+import { getTopicDossier } from '@/lib/topic-dossier';
+import { collectEngineVideoEvidence, engineReviewCacheKey, findCachedEngineReview, selectDashboardIdeas } from '@/lib/dashboard';
 import { fingerprintText, getFreeModels, getOpenRouterDailyQuota, getOpinion, internalEngineReviewPrompt, localDateKey, nextOpenRouterUsage, quotaDay, selectFreeModel, type YouTubeSampleVideo } from '@/lib/api';
 import { getKey } from '@/lib/vault';
 import { ResearchOverviewChart } from '@/components/ResearchOverviewChart';
@@ -120,7 +111,7 @@ function AnalysisSignals({ result }: { result: InternalResearchResult }) {
   );
 }
 
-function EngineAIReview({ topic, result }: { topic: string; result: InternalResearchResult }) {
+function EngineAIReview({ topic, result, idea }: { topic: string; result: InternalResearchResult; idea?: Idea }) {
   const preferences = useScout(useShallow((state) => ({
     model: state.data.preferences.model,
     hybridIntelligence: state.data.preferences.hybridIntelligence,
@@ -133,6 +124,7 @@ function EngineAIReview({ topic, result }: { topic: string; result: InternalRese
   const prompt = internalEngineReviewPrompt({
     topic,
     summary: result.summary,
+    ...(idea ? { recommendation: { topic: idea.topic, concept: idea.concept } } : {}),
     evidence: [
       { label: 'Input news / unique news', detail: audit.inputNewsCount + ' / ' + audit.uniqueNewsCount },
       { label: 'Topic-matched / excluded news', detail: audit.topicMatchedNewsCount + ' / ' + audit.unmatchedNewsCount },
@@ -317,8 +309,8 @@ function EngineAIReview({ topic, result }: { topic: string; result: InternalRese
       <BadgeText>{review ? 'SECOND OPINION · SAVED' : 'SECOND OPINION · OPTIONAL'}</BadgeText>
       <Heading>{fa ? 'بازبینی مستقل با AI' : 'Independent AI review'}</Heading>
       <Txt muted>{fa
-        ? 'مدل فقط موضوع و شاخص‌های تجمیعی را می‌بیند؛ تیتر خبرها، عنوان ویدئوها، پیوندها و آمار تک‌تک موارد ارسال نمی‌شوند. دریافت پاسخ در پس‌زمینه انجام می‌شود و جابه‌جایی میان بخش‌های برنامه را قفل نمی‌کند.'
-        : 'The model receives only the topic and aggregate indicators — never raw headlines, video titles, links or per-item statistics. The reply is fetched asynchronously and does not lock navigation.'}</Txt>
+        ? 'مدل فقط موضوع، مفهوم ایده پیشنهادی و شاخص‌های تجمیعی را می‌بیند؛ تیتر خام، پیوند و آمار تک‌تک خبرها و ویدئوها ارسال نمی‌شوند. پاسخ مستقل است و جابه‌جایی میان بخش‌های برنامه را قفل نمی‌کند.'
+        : 'The model receives the topic, proposed concept and aggregate indicators — never raw headlines, links or per-item video statistics. Its critique is independent and does not lock navigation.'}</Txt>
       {savedReview ? <Txt muted>{'Model: ' + savedReview.model + ' · ' + new Date(savedReview.createdAt).toLocaleString()}</Txt> : null}
       <Txt muted>{reviewBusy
         ? (fa ? 'در حال دریافت نظر دوم؛ می‌توانی هم‌زمان در بخش‌های دیگر کار کنی.' : 'Getting the second opinion. You can keep using other sections.')
@@ -344,7 +336,7 @@ export default function DiscoveryDashboard() {
   const ready = useScout((state) => state.ready);
   if (!ready) {
     return (
-      <Page title="Space Radar" eyebrow="MISSION CONTROL">
+      <Page title="YouTube Trend Scout" eyebrow="YOUTUBE INTELLIGENCE">
         <Txt muted>Loading your local research workspace…</Txt>
       </Page>
     );
@@ -358,10 +350,7 @@ function DiscoveryDashboardReady() {
     lastInput: state.data.preferences.lastInput,
     selectedSpaceNiche: state.data.preferences.selectedSpaceNiche,
     customSpaceNiche: state.data.preferences.customSpaceNiche,
-    spaceInterestLanguage: state.data.preferences.spaceInterestLanguage ?? 'en',
     spaceNewsSources: state.data.preferences.spaceNewsSources,
-    region: state.data.preferences.region,
-    languages: state.data.preferences.languages,
     schedule: state.data.preferences.schedule,
     paused: state.data.preferences.paused,
     hybridIntelligence: state.data.preferences.hybridIntelligence,
@@ -394,172 +383,23 @@ function DiscoveryDashboardReady() {
   }), [feedRegistry]);
   const fa = preferences.uiLanguage === 'fa';
   const [warnings, setWarnings] = useState<string[]>([]);
-  const [lastScannedAt, setLastScannedAt] = useState<number | null>(null);
-  const [nicheSuggestions, setNicheSuggestions] = useState<SpaceNicheSuggestion[]>([]);
-
-  const [radarNews, setRadarNews] = useState<SpaceNewsItem[]>([]);
-  const [engineNews, setEngineNews] = useState<SpaceNewsItem[]>([]);
-  const [radarWiki, setRadarWiki] = useState<WikiSignal>();
-  const [radarAnalysisState, setRadarAnalysisState] = useState<{ topic: string; result: InternalResearchResult }>();
-  const [scanning, setScanning] = useState(false);
   const [reportAnalysisState, setReportAnalysisState] = useState<{ id: string; result: InternalResearchResult }>();
-  const scanInFlightRef = useRef<Promise<void> | null>(null);
-  const op = useOperation();
-
-  const niche = SPACE_NICHES.find((item) => item.id === preferences.selectedSpaceNiche);
   const discoveryTopic = preferences.selectedSpaceNiche === 'all'
     ? 'Space science and exploration'
     : preferences.selectedSpaceNiche === 'custom'
       ? preferences.customSpaceNiche
-      : niche?.topic ?? 'Space science and exploration';
-
-  const runScan = useCallback((force = false): Promise<void> =>
-    runSingleFlight(scanInFlightRef, async () => {
-      setScanning(true);
-      recordRuntimeStart('Sources');
-      let sourcesRecorded = false;
-      let engineStarted = false;
-      let engineRecorded = false;
-      try {
-        // Fetch this free attention proxy alongside RSS, but never delay the fresh feed preview.
-        recordRuntimeStart('Wikimedia');
-        const wikiPromise = getWikipediaSignal(discoveryTopic, preferences.spaceInterestLanguage ?? 'en')
-          .then((value) => {
-            recordRuntimeFinish('Wikimedia', value ? 'success' : 'partial');
-            return value;
-          })
-          .catch((error) => {
-            recordRuntimeFinish('Wikimedia', 'error', error instanceof Error ? error.message : String(error));
-            return undefined;
-          });
-        const result = await fetchSpaceNews(preferences.spaceNewsSources, fetch, force);
-        recordRuntimeFinish('Sources', result.warnings.length ? 'partial' : 'success');
-        sourcesRecorded = true;
-        const relevantNews = preferences.selectedSpaceNiche === 'all'
-          ? result.items
-          : newsForNiche(result.items, preferences.selectedSpaceNiche, preferences.customSpaceNiche);
-        const engineNewsByUrl = new Map<string, SpaceNewsItem>();
-        for (const item of [...getCachedSpaceNews(result.registry, preferences.spaceNewsSources), ...result.items]) {
-          engineNewsByUrl.set(item.url, item);
-        }
-        const allEngineNews = [...engineNewsByUrl.values()].sort(
-          (a, b) => (Date.parse(b.publishedAt ?? '') || 0) - (Date.parse(a.publishedAt ?? '') || 0),
-        );
-
-        // Show the latest feed preview first and defer CPU-heavy local analysis until
-        // gestures/navigation settle, so scroll and tab changes remain responsive.
-        setRadarNews(relevantNews);
-        setEngineNews(allEngineNews);
-        setWarnings(result.warnings);
-        setLastScannedAt(Date.now());
-        // Yield one frame before local CPU work so the native UI can paint and respond.
-        await new Promise<void>((resolve) => setTimeout(resolve, 96));
-        const wiki = await wikiPromise;
-        setRadarWiki(wiki);
-
-        const currentData = useScout.getState().data;
-        const engineVideoEvidence = collectEngineVideoEvidence(currentData.reports, currentData.videos);
-        const priorMemory = currentData.researchMemory.find(
-          (entry) => normalizeResearchText(entry.topic) === normalizeResearchText(discoveryTopic),
-        );
-        const hasEngineInput = Boolean(allEngineNews.length || wiki || engineVideoEvidence.length);
-        if (hasEngineInput) {
-          recordRuntimeStart('Engine');
-          engineStarted = true;
-        }
-        const nextRadarBrief = hasEngineInput ? buildInternalResearch({
-          topic: discoveryTopic,
-          feedback: buildResearchInterestProfile(currentData.ideas),
-          priorMemory,
-          language: currentData.preferences.uiLanguage ?? 'fa',
-          news: allEngineNews.map((item) => ({
-            title: item.title,
-            summary: item.summary,
-            sourceName: item.sourceName,
-            sourceUrl: item.url,
-            publishedAt: item.publishedAt,
-            sourceId: item.sourceId,
-          })),
-          videos: engineVideoEvidence,
-          ...(wiki ? { wiki } : {}),
-        }) : undefined;
-        const automaticIdeas = generateEditorialIdeas({
-          topic: discoveryTopic,
-          news: relevantNews,
-          context: wiki ? [{
-            title: wiki.articleTitle,
-            summary: [wiki.summary, wiki.monthlyViews.length
-              ? 'Wikimedia monthly article pageviews: ' + wiki.monthlyViews.map((point) => point.month + '=' + point.views).join(', ')
-              : 'No monthly Wikimedia pageview observations were returned.'].filter(Boolean).join('\n'),
-            sourceUrl: wiki.articleUrl,
-            sourceName: 'Wikimedia Pageviews · attention proxy',
-          }] : [],
-          existingIdeas: currentData.ideas,
-          region: currentData.preferences.region,
-          languages: currentData.preferences.languages,
-          language: currentData.preferences.uiLanguage ?? 'fa',
-          evidenceKey: 'rss:' + relevantNews.map((item) => item.url).sort().join('|') + '|memory:' + (priorMemory?.history?.[0]?.sourceFingerprint ?? String(priorMemory?.updatedAt ?? 0)),
-          priorMemory,
-          skipExistingEvidence: true,
-          limit: 5,
-        });
-        const nextMemory = nextRadarBrief ? createResearchMemoryEntry({
-          topic: discoveryTopic,
-          news: allEngineNews,
-          analysis: nextRadarBrief,
-          previous: priorMemory,
-          now: Date.now(),
-          language: currentData.preferences.uiLanguage ?? 'fa',
-        }) : undefined;
-
-        // One serialized SQLite write replaces three queued commits for a single scan.
-        // The updater uses the latest store state so unrelated edits are never overwritten.
-        await useScout.getState().commit((data) => ({
-          ...data,
-          feedRegistry: result.registry,
-          ideas: automaticIdeas.length ? [...automaticIdeas, ...data.ideas] : data.ideas,
-          researchMemory: nextMemory
-            ? [
-                nextMemory,
-                ...data.researchMemory.filter((entry) => normalizeResearchText(entry.topic) !== normalizeResearchText(discoveryTopic)),
-              ].slice(0, 40)
-            : data.researchMemory,
-        }));
-
-        setRadarAnalysisState(nextRadarBrief ? { topic: discoveryTopic, result: nextRadarBrief } : undefined);
-        rememberTopicDossier(discoveryTopic, { news: allEngineNews, ...(wiki ? { wiki } : {}), internalAnalysis: nextRadarBrief });
-        if (engineStarted) {
-          recordRuntimeFinish('Engine', nextRadarBrief ? 'success' : 'partial');
-          engineRecorded = true;
-        }
-        setNicheSuggestions(buildNicheSuggestions(result.items, 8).filter((suggestion) => !suggestion.id.startsWith('story:')));
-        if (force && !result.items.length && result.warnings.length) {
-          throw new Error(result.warnings.join(' '));
-        }
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        if (engineStarted && !engineRecorded) recordRuntimeFinish('Engine', 'error', message);
-        if (!sourcesRecorded) recordRuntimeFinish('Sources', 'error', message);
-        throw error;
-      } finally {
-        setScanning(false);
-      }
-    }), [
-    preferences.spaceNewsSources,
-    preferences.selectedSpaceNiche,
-    preferences.customSpaceNiche,
-    preferences.spaceInterestLanguage,
-    discoveryTopic,
-  ]);
-
-  useEffect(() => {
-    void runScan(false).catch(() => {
-      setWarnings([fa
-        ? 'خوراک‌های رسمی در دسترس نبودند یا ذخیرهٔ نتیجه کامل نشد. اتصال و فضای ذخیره‌سازی را بررسی و دوباره تلاش کن.'
-        : 'Official feeds were unavailable or the local result could not be saved. Check connectivity and storage, then retry.']);
-    });
-  }, [runScan, fa]);
-
+      : SPACE_NICHES.find((item) => item.id === preferences.selectedSpaceNiche)?.topic ?? 'Space science and exploration';
+  // The dashboard is read-only for source collection. Refresh and enrichment now live in News.
+  const engineNews = useMemo(
+    () => getCachedSpaceNews(feedRegistry, preferences.spaceNewsSources),
+    [feedRegistry, preferences.spaceNewsSources],
+  );
+  const topicDossier = useMemo(
+    () => getTopicDossier(discoveryTopic),
+    [discoveryTopic, feedRegistry, ideas],
+  );
+  const cachedTopicAnalysis = topicDossier?.internalAnalysis;
+  const topicWiki = topicDossier?.wiki;
   const latestReport = reports[0];
   const [quickTopicDraft, setQuickTopicDraft] = useState<string | undefined>(undefined);
   const quickTopic = quickTopicDraft ?? preferences.lastInput?.topic ?? latestReport?.input.topic ?? '';
@@ -615,7 +455,7 @@ function DiscoveryDashboardReady() {
           feedback: buildResearchInterestProfile(currentData.ideas),
           priorMemory,
           language: preferences.uiLanguage ?? 'fa',
-          ...(radarWiki ? { wiki: radarWiki } : {}),
+          ...(topicWiki ? { wiki: topicWiki } : {}),
           videoWindowDays: report.input.days,
         });
         if (active) setReportAnalysisState({ id: report.id, result });
@@ -629,7 +469,7 @@ function DiscoveryDashboardReady() {
       active = false;
       clearTimeout(timer);
     };
-  }, [latestReportId, latestReportSignature, engineVideoSignature, engineVideoSamples, engineNews, radarWiki, preferences.uiLanguage, fa]);
+  }, [latestReportId, latestReportSignature, engineVideoSignature, engineVideoSamples, engineNews, topicWiki, preferences.uiLanguage, fa]);
 
   const latestReportAnalysis = reportAnalysisState?.id === latestReportId
     ? reportAnalysisState.result
@@ -640,22 +480,15 @@ function DiscoveryDashboardReady() {
   const allDeskNews = useMemo(() => rankNewsForTopic(deskTopic, engineNews, Math.max(1, engineNews.length)), [deskTopic, engineNews]);
   // The local engine receives the full retained corpus; only the visual graph is bounded.
   const deskNews = useMemo(() => allDeskNews.slice(0, 60), [allDeskNews]);
-  const deskIdeas = useMemo(() => showYouTubeResearch
-    ? rankDashboardIdeas(deduplicateDisplayIdeas(ideas.filter((idea) =>
-        idea.engineGenerated && !idea.archived && idea.reportId === latestReport?.id,
-      )))
-    : [], [ideas, showYouTubeResearch, latestReport?.id]);
-  const bestIdea = deskIdeas[0];
-
   const audit = deskAnalysis?.intelligence.selfEvaluation;
   const sharedTerms = deskAnalysis?.intelligence.sharedConcepts ?? [];
   const nextGap = deskAnalysis?.intelligence.gaps[0];
   const nextQuery = deskAnalysis?.intelligence.followUpQueries[0];
   const primaryNews = deskNews[0];
-  const currentRadarAnalysis = radarAnalysisState?.topic === discoveryTopic ? radarAnalysisState.result : undefined;
-  const chartAnalysis = latestReportAnalysis ?? currentRadarAnalysis;
-  const chartTopic = latestReportAnalysis ? deskTopic : currentRadarAnalysis ? discoveryTopic : deskTopic;
-  const chartWiki = radarWiki && chartTopic === discoveryTopic ? radarWiki : undefined;
+  const chartAnalysis = latestReportAnalysis ?? cachedTopicAnalysis;
+  const chartTopic = latestReportAnalysis ? deskTopic : cachedTopicAnalysis ? discoveryTopic : deskTopic;
+  const chartDossier = useMemo(() => getTopicDossier(chartTopic), [chartTopic, feedRegistry, ideas]);
+  const chartWiki = chartDossier?.wiki ?? (chartTopic === discoveryTopic ? topicWiki : undefined);
   const chartNews = useMemo(
     () => rankNewsForTopic(chartTopic, engineNews, Math.max(1, engineNews.length)).slice(0, 60),
     [chartTopic, engineNews],
@@ -667,15 +500,14 @@ function DiscoveryDashboardReady() {
       .slice(0, 80),
     [engineVideoSamples, chartTopic],
   );
-  const chartIdeas = useMemo(() => {
-    if (latestReportAnalysis) return deskIdeas;
-    if (!currentRadarAnalysis) return [];
-    const sourceUrls = new Set(chartNews.map((item) => item.url));
-    return rankDashboardIdeas(deduplicateDisplayIdeas(ideas.filter((idea) =>
-      idea.engineGenerated && !idea.archived && Boolean(idea.sourceUrl && sourceUrls.has(idea.sourceUrl)),
-    )));
-  }, [latestReportAnalysis, currentRadarAnalysis, deskIdeas, ideas, chartNews]);
-  const latestWikiObservation = radarWiki?.monthlyViews[radarWiki.monthlyViews.length - 1];
+  const chartIdeas = useMemo(() => selectDashboardIdeas(ideas, {
+    reportId: latestReport?.id,
+    videoIds: new Set(latestReport?.videos.map((video) => video.id) ?? []),
+    sourceUrls: new Set(chartNews.map((item) => item.url)),
+    topic: chartTopic,
+  }), [ideas, latestReport?.id, latestReport?.videos, chartNews, chartTopic]);
+  const bestIdea = chartIdeas[0];
+  const latestWikiObservation = chartWiki?.monthlyViews[chartWiki.monthlyViews.length - 1];
 
   return (
     <Page
@@ -695,126 +527,10 @@ function DiscoveryDashboardReady() {
           videos={chartVideos}
           language={preferences.uiLanguage ?? 'fa'}
           selectedIdeaId={selectedIdeaId}
+          secondOpinion={chartAnalysis
+            ? <EngineAIReview topic={chartTopic} result={chartAnalysis} idea={bestIdea} />
+            : undefined}
         />
-
-        <Panel>
-          <View style={{ gap: 9 }}>
-            <View style={[styles.rowBetween, { flexWrap: 'wrap' }]}>
-              <Heading>{fa ? 'رادار منابع و گزارش‌های رسمی' : 'Space Radar · Official source monitor'}</Heading>
-              <BadgeText>{scanning ? (fa ? 'در حال دریافت' : 'REFRESHING') : lastScannedAt
-                ? (fa ? 'به‌روز شده' : 'UPDATED')
-                : (fa ? 'هنوز اجرا نشده' : 'NOT REFRESHED')}</BadgeText>
-            </View>
-            <Txt muted>{fa
-              ? 'این بخش خبرهای منتشرشده از منابع رسمی و بازدید ماهانه مقاله در ویکی‌مدیا را نشان می‌دهد؛ ابزار رصد رشد YouTube یا پیش‌بینی بازدید نیست.'
-              : 'This panel tracks official publisher reports and monthly Wikimedia article pageviews. It does not measure YouTube trend velocity or predict future views.'}</Txt>
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7 }}>
-              <MetricCard label={fa ? 'گزارش‌های خبری' : 'PUBLISHER REPORTS'} value={radarNews.length} />
-              <MetricCard label={fa ? 'ماه‌های ویکی‌مدیا' : 'WIKIMEDIA MONTHS'} value={radarWiki?.monthlyViews.length ?? 0} />
-              <MetricCard label={fa ? 'خوشه‌های موضوعی' : 'TOPIC CLUSTERS'} value={nicheSuggestions.length} />
-            </View>
-            {radarNews.length ? (
-              <View style={{ gap: 6 }}>
-                <Text style={styles.label}>{fa ? 'آخرین گزارش‌های دریافتی' : 'LATEST PUBLISHER REPORTS'}</Text>
-                {radarNews.slice(0, 2).map((item) => (
-                  <View key={item.id} style={styles.softCard}>
-                    <SourceHeading>{item.title}</SourceHeading>
-                    <Txt muted>{item.sourceName + (item.publishedAt
-                      ? ' · ' + new Date(item.publishedAt).toLocaleDateString(fa ? 'fa-IR' : 'en-US')
-                      : '')}</Txt>
-                  </View>
-                ))}
-              </View>
-            ) : (
-              <Txt muted>{scanning
-                ? (fa ? 'در حال دریافت گزارش از خوراک‌های انتخاب‌شده است.' : 'Selected publisher feeds are being checked.')
-                : warnings[0] ?? (fa ? 'هنوز گزارشی در این نشست دریافت نشده است.' : 'No publisher report has been returned in this session yet.')}</Txt>
-            )}
-            {radarWiki ? (
-              <View style={styles.softCard}>
-                <BadgeText>{fa ? 'توجه به مقاله در ویکی‌مدیا' : 'WIKIMEDIA ARTICLE ATTENTION'}</BadgeText>
-                <SourceHeading>{radarWiki.articleTitle}</SourceHeading>
-                {latestWikiObservation ? (
-                  <Txt muted>{latestWikiObservation.month + ' · ' +
-                    new Intl.NumberFormat(fa ? 'fa-IR' : 'en-US').format(latestWikiObservation.views) +
-                    (fa ? ' بازدید صفحه مقاله' : ' article pageviews')}</Txt>
-                ) : (
-                  <Txt muted>{fa ? 'هنوز ماه ثبت‌شده‌ای در دسترس نیست.' : 'No recorded monthly observation is available yet.'}</Txt>
-                )}
-              </View>
-            ) : null}
-            {nicheSuggestions.length ? (
-              <View style={{ gap: 5 }}>
-                <Text style={styles.label}>{fa ? 'موضوعات پرتکرار در گزارش‌ها' : 'TOPIC CLUSTERS IN REPORTS'}</Text>
-                {nicheSuggestions.slice(0, 2).map((item) => (
-                  <View key={item.id} style={[styles.rowBetween, { flexWrap: 'wrap' }]}>
-                    <SourceText>{item.title}</SourceText>
-                    <BadgeText>{item.matchedStories + (fa ? ' گزارش' : ' reports')}</BadgeText>
-                  </View>
-                ))}
-              </View>
-            ) : null}
-            <View style={[styles.rowBetween, { flexWrap: 'wrap' }]}>
-              <Txt muted>{lastScannedAt
-                ? (fa ? 'آخرین دریافت: ' : 'Last checked: ') + new Date(lastScannedAt).toLocaleTimeString(fa ? 'fa-IR' : 'en-US')
-                : (fa ? 'برای دریافت داده‌ها از دکمه تازه‌سازی کنار نظر AI استفاده کن.' : 'Use the refresh action beside the AI opinion to retrieve data.')}</Txt>
-              <Action secondary onPress={() => router.push('/cosmic-news')}>
-                {fa ? 'جزئیات رادار' : 'Open radar details'}
-              </Action>
-            </View>
-          </View>
-        </Panel>
-
-        {showYouTubeResearch && bestIdea ? (
-          <Panel variant="hero">
-            <BadgeText>{fa ? 'پیشنهاد برتر موتور داخلی' : 'TOP INTERNAL RECOMMENDATION'}</BadgeText>
-            <Heading>{bestIdea.topic}</Heading>
-            <BadgeText>{(bestIdea.engineScore ?? 0) + '/100 · ' + (fa ? 'امتیاز اولویت تحریری' : 'editorial priority score')}</BadgeText>
-            <Txt>{bestIdea.concept}</Txt>
-            <Txt muted>{bestIdea.engineScoreReason?.split(';').slice(0, 3).join(' · ') ?? (fa ? 'اولویت بر اساس شواهد موجود محاسبه شده است.' : 'Priority is based on the available evidence.')}</Txt>
-            {deskAnalysis ? (
-              <Txt muted>
-                {(fa ? 'اطمینان شواهد: ' : 'Evidence confidence: ') + deskAnalysis.intelligence.confidence.level +
-                  ' · ' + deskAnalysis.intelligence.sourceQuality.uniqueStories + (fa ? ' خبر یکتا · ' : ' unique stories · ') +
-                  deskAnalysis.intelligence.selfEvaluation.youtubeSampleCount + (fa ? ' ویدئو در ورودی موتور' : ' videos supplied to the engine')}
-              </Txt>
-            ) : null}
-            <Txt muted>{fa
-              ? 'این امتیاز اولویت محتوایی است؛ احتمال موفقیت، تقاضای مخاطب یا پیش‌بینی بازدید نیست.'
-              : 'This is an editorial-priority score, not a success probability, audience-demand estimate or view forecast.'}</Txt>
-            <Action secondary onPress={() => router.push({ pathname: '/detail', params: { idea: bestIdea.id } })}>
-              {fa ? 'بررسی کامل پیشنهاد و شواهد' : 'Inspect recommendation and evidence'}
-            </Action>
-          </Panel>
-        ) : null}
-        <Panel>
-          <View style={{ gap: 10 }}>
-            <View style={[styles.rowBetween, { flexWrap: 'wrap', alignItems: 'center' }]}>
-              <BadgeText>{fa ? 'نظر دوم مستقل · به‌روزرسانی منابع' : 'AI SECOND OPINION · SOURCE REFRESH'}</BadgeText>
-              <Action secondary busy={scanning || op.busy} onPress={() => void op.run(
-                () => runScan(true),
-                fa ? 'منابع رسمی و ایده‌های محلی به‌روزرسانی شدند.' : 'Publisher sources and local ideas refreshed.',
-              )}>
-                {fa ? 'تازه‌سازی منابع و ایده‌ها' : 'Refresh sources & ideas'}
-              </Action>
-            </View>
-            {deskAnalysis ? (
-              <Fold
-                title={fa ? 'بازکردن نظر مستقل هوش مصنوعی' : 'Open independent AI opinion'}
-                summary={preferences.hybridIntelligence ? 'Automatic · enabled' : 'Manual · optional'}
-              >
-                <EngineAIReview topic={deskTopic} result={deskAnalysis} />
-              </Fold>
-            ) : (
-              <Txt muted>{fa
-                ? 'پس از اجرای یک نمونه تحقیق موضوع‌محور، می‌توانی نظر مستقل AI را در همین‌جا دریافت کنی.'
-                : 'Run a topic-specific YouTube sample to request an independent AI opinion here.'}</Txt>
-            )}
-            <Txt muted>{fa
-              ? 'این دکمه خوراک‌های خبری رسمی و آمار بازدید مقاله در ویکی‌مدیا را تازه می‌کند و ایده‌های محلی را با شواهد ذخیره‌شده دوباره می‌سازد. برای دریافت نمونه تازه YouTube از بخش Start a research run استفاده کن.'
-              : 'This refreshes official publisher feeds and Wikimedia article pageviews, then rebuilds local ideas from retained research evidence. Run a new YouTube sample from Start a research run.'}</Txt>
-          </View>
-        </Panel>
 
         <Pressable onPress={() => setHealthExpanded((current) => !current)} accessibilityRole="button" accessibilityState={{ expanded: healthExpanded }}>
           <Panel>
@@ -883,22 +599,6 @@ function DiscoveryDashboardReady() {
                 {feed.lastError ? <Txt muted>{runtimeErrorHint(feed.lastError, fa ? 'fa' : 'en')}</Txt> : null}
               </View>
             ))}
-            <Heading>{fa ? 'به‌روزرسانی منابع و مصرف محلی' : 'Publisher refresh & local usage'}</Heading>
-            <Txt muted>{lastScannedAt
-              ? (fa ? 'آخرین تازه‌سازی: ' : 'Last source refresh: ') + new Date(lastScannedAt).toLocaleString(fa ? 'fa-IR' : 'en-US')
-              : (fa ? 'هنوز تازه‌سازی منبعی در این نشست ثبت نشده است.' : 'No source refresh has been recorded in this session.')} · {radarNews.length} {fa ? 'گزارش دریافتی' : 'publisher reports'} · {nicheSuggestions.length} {fa ? 'خوشه موضوعی' : 'topic clusters'}</Txt>
-            {niche?.description ? <Txt muted>{niche.description}</Txt> : null}
-            {scanning ? <Txt muted>{fa ? 'به‌روزرسانی در حال اجراست؛ می‌توانی به بخش‌های دیگر بروی.' : 'A refresh is in progress; other sections remain available.'}</Txt> : null}
-            {warnings.slice(0, 3).map((warning, index) => <Txt muted key={String(index) + warning}>{warning}</Txt>)}
-            {nicheSuggestions.slice(0, 3).map((suggestion) => (
-              <View key={suggestion.id} style={styles.softCard}>
-                <SourceHeading>{suggestion.title}</SourceHeading>
-                <Txt muted>{suggestion.description}</Txt>
-                <Action secondary onPress={() => router.push({ pathname: '/youtube', params: { topic: suggestion.topic } })}>
-                  {fa ? 'تحقیق درباره این موضوع' : 'Research this topic'}
-                </Action>
-              </View>
-            ))}
             <Txt muted>{'YouTube quota: ' + quotaUsage.units + ' / ' + preferences.budget + ' estimated units · ' + quotaUsage.requests + ' requests today'}</Txt>
             <Txt muted>{memoryCount + ' topics in local research memory · ' + reports.length + ' saved research runs'}</Txt>
             <Txt muted>{'AI second opinion: ' + (preferences.hybridIntelligence ? 'Automatic and enabled' : 'Manual only')}</Txt>
@@ -950,12 +650,15 @@ function DiscoveryDashboardReady() {
           <Panel>
             <View style={{ gap: 10 }}>
               <View style={[styles.rowBetween, { flexWrap: 'wrap' }]}>
-                <Heading>{fa ? 'خلاصه یافته‌های تحقیق' : 'What the research found'}</Heading>
+                <Heading>{fa ? 'خلاصه تحقیق · شواهد چه چیزی را پشتیبانی می‌کنند؟' : 'Research brief · What this evidence supports'}</Heading>
                 {deskAnalysis ? <BadgeText>{deskAnalysis.intelligence.confidence.level.toUpperCase() + ' CONFIDENCE'}</BadgeText> : null}
               </View>
               {deskAnalysis ? (
                 <>
                   <Txt>{deskAnalysis.summary}</Txt>
+                  <Txt muted>{fa
+                    ? 'این بخش می‌گوید چه چیزی واقعاً در نمونه دیده شده، کدام زاویه ارزش بررسی دارد و پیش از تولید چه چیزی هنوز باید تأیید شود؛ این پیش‌بینی بازدید نیست.'
+                    : 'This brief separates what the returned sample actually shows, which angle is worth exploring, and what still needs verification before production. It is not a view forecast.'}</Txt>
                   <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7 }}>
                     <MetricCard label="TOPIC-MATCHED NEWS" value={audit?.topicMatchedNewsCount ?? 0} hint="Stories matching this topic" />
                     <MetricCard label="UNIQUE PUBLISHER STORIES" value={deskAnalysis.intelligence.sourceQuality.uniqueStories} hint="After duplicate merging" />
@@ -1034,7 +737,7 @@ function DiscoveryDashboardReady() {
                     </View>
                     <View style={{ flexGrow: 1, flexBasis: 160 }}>
                       <Action secondary onPress={() => router.push('/cosmic-news')}>
-                        {fa ? 'مشاهده رادار منابع' : 'Open publisher radar'}
+                        {fa ? 'مشاهده اخبار و منابع رسمی' : 'Open News & publisher sources'}
                       </Action>
                     </View>
                   </View>
@@ -1084,8 +787,6 @@ function DiscoveryDashboardReady() {
           </View>
         </Panel>
 
-        {op.error ? <ErrorBox message={op.error} onRetry={op.clear} /> : null}
-        {op.message ? <Txt muted>{op.message}</Txt> : null}
       </View>
     </Page>
   );

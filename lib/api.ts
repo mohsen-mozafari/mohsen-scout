@@ -826,6 +826,7 @@ export type InternalEngineReviewInput = {
   confidence: { level: string; reason: string };
   gaps?: readonly string[];
   discrepancies?: readonly string[];
+  recommendation?: { topic: string; concept: string };
   language?: 'fa' | 'en';
 };
 
@@ -839,6 +840,11 @@ export function internalEngineReviewPrompt(input: InternalEngineReviewInput): st
   const discrepancies = (input.discrepancies ?? []).slice(0, 6).map((item) => item.slice(0, 220));
   const payload = [
     'Topic: ' + input.topic.trim().slice(0, 180),
+    ...(input.recommendation?.topic.trim() && input.recommendation.concept.trim()
+      ? ['Candidate idea to assess independently (not an endorsed verdict): ' +
+          input.recommendation.topic.trim().slice(0, 180) + '\nConcept: ' +
+          input.recommendation.concept.trim().slice(0, 1000)]
+      : []),
     'Local engine summary: ' + input.summary.trim().slice(0, 1200),
     'Processed evidence signals:\n' + (evidence.join('\n') || 'No evidence signals supplied.'),
     'Local confidence: ' + input.confidence.level + ' — ' + input.confidence.reason.slice(0, 400),
@@ -846,8 +852,8 @@ export function internalEngineReviewPrompt(input: InternalEngineReviewInput): st
     'Potential discrepancies:\n' + (discrepancies.join('\n') || 'Not reported.'),
   ].join('\n\n');
   const instruction = fa
-    ? 'این یک بازبینی تصمیم‌محور برای سازنده محتواست، نه گزارش خبری عمومی. فقط موضوع تحریری و شاخص‌های تجمیعی موتور محلی در اختیار تو قرار دارد؛ تیتر خام، عنوان و توضیح ویدئو، پیوند و آمار تک‌تک موارد عمداً ارسال نشده‌اند. وانمود نکن که منبع یا ویدئوی منفرد را دیده‌ای. ابتدا فقط یکی از این تصمیم‌ها را انتخاب کن: «توسعه ایده»، «جمع‌آوری شواهد بیشتر» یا «بازتعریف موضوع»؛ دلیل را با شمارنده‌های واقعی توضیح بده، نه امتیاز ساختگی. سپس حداکثر دو یافته کاربردی، یک نقد مخالف یا سوگیری نمونه‌گیری، یک اقدام دستی مشخص برای جست‌وجو یا راستی‌آزمایی و مهم‌ترین داده مفقود را بیان کن. واقعیت، استنباط و مجهول را جدا نگه دار. بازدید خام را از رشد، تقاضا و عملکرد آینده جدا بدان؛ هیچ نرخ رشد، رقابت بازار یا پیش‌بینی وایرال‌شدن نساز. هیچ منبع، آمار، تقاضا یا رابطه علّی بیرونی جعل نکن. پاسخ کوتاه و بدون تعریف عمومی از YouTube یا خبرخوانی باشد. فقط این بخش‌ها را بنویس: «تصمیم»، «یافته‌های مفید»، «نقد مخالف»، «اقدام بعدی»، «داده مفقود»؛ هر بخش حداکثر دو جمله.'
-    : 'This is a decision review for a creator, not a general news digest. You receive only the editorial topic and aggregate local-engine indicators; raw headlines, video titles, descriptions, links and per-item statistics are intentionally excluded. Do not pretend to have seen individual sources or videos. First choose exactly one action: Develop the concept, Gather more evidence, or Reframe the topic. Justify it with the supplied counts, never an invented score. Then give at most two useful findings, one important counterargument or sampling bias, one specific manual search or verification action, and the most important missing data. Separate facts, inferences and unknowns. Raw views are not growth, demand or future performance; do not infer growth rates, market competition or virality. Never invent sources, metrics, demand or causal links. Be concise and avoid generic explanations of YouTube or news feeds. Return only these sections: Decision, Useful Findings, Adversarial Check, Next Action, Missing Data; no more than two sentences per section.';
+    ? 'این بازبینی باید ایده پیشنهادی را مستقل نقد کند، نه اینکه تصمیم موتور داخلی را تأیید کند. فقط موضوع، مفهوم پیشنهادی و شاخص‌های تجمیعی در اختیار توست؛ تیتر خام، عنوان و توضیح ویدئو، پیوند و آمار تک‌تک موارد عمداً ارسال نشده‌اند. وانمود نکن منبع یا ویدئوی منفرد را دیده‌ای. وضوح، اصالت، امکان تولید و فرض‌های مربوط به تناسب با مخاطب را ارزیابی کن؛ شرایط لازم برای موفقیت را توضیح بده، اما احتمال، درصد یا امتیاز موفقیت نساز. سپس حداکثر دو یافته کاربردی، یک نقد مخالف یا سوگیری نمونه‌گیری، یک اقدام دستی مشخص برای جست‌وجو یا راستی‌آزمایی و مهم‌ترین داده مفقود را بیان کن. واقعیت، استنباط و مجهول را جدا نگه دار. بازدید خام را از رشد، تقاضا و عملکرد آینده جدا بدان؛ هیچ نرخ رشد، رقابت بازار یا پیش‌بینی وایرال‌شدن نساز. هیچ منبع، آمار، تقاضا یا رابطه علّی بیرونی جعل نکن. پاسخ کوتاه و تصمیم‌محور باشد. فقط این بخش‌ها را بنویس: «تصمیم»، «یافته‌های مفید»، «نقد مخالف»، «اقدام بعدی»، «داده مفقود»؛ هر بخش حداکثر دو جمله.'
+    : 'Independently critique the candidate idea rather than endorsing the local engine decision. You receive only the topic, proposed concept and aggregate local-engine indicators; raw headlines, video titles, descriptions, links and per-item statistics are intentionally excluded. Do not pretend to have seen individual sources or videos. Choose exactly one decision: Develop the concept, Gather more evidence, or Reframe the topic. Assess clarity, originality, production feasibility and assumptions about audience fit; explain the conditions that would need to hold, but do not invent a success probability, percentage or score. Then give at most two useful findings, one important counterargument or sampling bias, one specific manual search or verification action, and the most important missing data. Separate facts, inferences and unknowns. Raw views are not growth, demand or future performance; do not infer growth rates, market competition or virality. Never invent sources, metrics, demand or causal links. Be concise and decision-focused. Return only these sections: Decision, Useful Findings, Adversarial Check, Next Action, Missing Data; no more than two sentences per section.';
   return (instruction + '\n\n' + payload).slice(0, 10500);
 }
 

@@ -81,6 +81,42 @@ export function chooseBestIdea(ideas: readonly Idea[]): Idea | undefined {
 }
 
 /**
+ * Select generated ideas for the dashboard using their actual evidence links.
+ * Report IDs are preferred, followed by linked video/news evidence and topic
+ * relevance. If legacy generated ideas have no usable link, retain the active
+ * generated library instead of presenting misleading zero counts.
+ */
+export function selectDashboardIdeas(
+  ideas: readonly Idea[],
+  options: {
+    reportId?: string;
+    videoIds?: ReadonlySet<string>;
+    sourceUrls?: ReadonlySet<string>;
+    topic?: string;
+  } = {},
+): Idea[] {
+  const generated = rankDashboardIdeas(ideas.filter((idea) => idea.engineGenerated === true));
+  if (!generated.length) return [];
+
+  const linked = generated.filter((idea) =>
+    Boolean(options.reportId && idea.reportId === options.reportId) ||
+    Boolean(options.videoIds?.size && idea.videoIds.some((id) => options.videoIds?.has(id))) ||
+    Boolean(options.sourceUrls?.size && idea.sourceUrl && options.sourceUrls.has(idea.sourceUrl)),
+  );
+  if (linked.length) return linked;
+
+  const topic = options.topic?.trim();
+  if (topic) {
+    const topical = generated.filter((idea) =>
+      matchesResearchTerms(idea.topic + ' ' + idea.concept, [topic]),
+    );
+    if (topical.length) return topical;
+  }
+
+  return generated;
+}
+
+/**
  * Builds a dashboard feed only from unexpired videos already present in a saved report.
  * Niche terms are strict: there is no fallback to unrelated videos.
  */
