@@ -131,17 +131,19 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist
-          cp android/app/build/outputs/apk/release/app-release.apk dist/MOHSEN-SCOUT-1.5.6-arm64.apk
-          sha256sum dist/MOHSEN-SCOUT-1.5.6-arm64.apk > dist/SHA256SUMS.txt
+          APK_NAME="MOHSEN-SCOUT-1.5.7-arm64.apk"
+          APK="dist/${APK_NAME}"
+          cp android/app/build/outputs/apk/release/app-release.apk "$APK"
+          sha256sum "$APK" > dist/SHA256SUMS.txt
           cat dist/SHA256SUMS.txt
-          echo "APK SHA256: $(sha256sum dist/MOHSEN-SCOUT-1.5.6-arm64.apk | awk '{print $1}')" >> "$GITHUB_STEP_SUMMARY"
+          echo "APK SHA256: $(sha256sum "$APK" | awk '{print $1}')" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: mohsen-scout-release-apk
           path: |
-            dist/MOHSEN-SCOUT-1.5.6-arm64.apk
+            dist/MOHSEN-SCOUT-1.5.7-arm64.apk
             dist/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 7
