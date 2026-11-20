@@ -183,21 +183,14 @@ export default function Settings() {
       {!ready && <Skeleton className="h-32 rounded-2xl" />}
       <Panel>
         <View style={styles.row}>
-          <ShieldCheck size={22} strokeWidth={1.8} color={p.accent} />
-          <Heading>Local by default</Heading>
-        </View>
-        <Txt muted>
-          No account, no required AI, no paid server. API keys are excluded from backups.
-        </Txt>
-      </Panel>
-      <Panel>
-        <View style={styles.row}>
           <Bug size={19} strokeWidth={1.9} color={p.text} />
           <Heading>Developer tools</Heading>
         </View>
-        <Txt muted>Run isolated Mock regression checks, inspect failures and copy the report without using live provider APIs.</Txt>
-        <Action secondary icon={Bug} onPress={() => router.push('/diagnostics?run=1')}>
-          Open mock regression console
+        <Action secondary icon={Bug} onPress={() => router.push({
+          pathname: '/diagnostics',
+          params: { run: '1', runId: String(Date.now()) },
+        })}>
+          Run mock regression checks
         </Action>
       </Panel>
       <Fold title="Profile & defaults">
@@ -583,13 +576,6 @@ export default function Settings() {
       <Fold title="App info">
         <Heading>MOHSEN SCOUT</Heading>
         <Txt>Version 1.5.7</Txt>
-        <Action
-          icon={Bug}
-          secondary
-          onPress={() => router.push({ pathname: '/diagnostics', params: { run: '1' } })}
-        >
-          Run mock regression checks
-        </Action>
       </Fold>
       {Boolean(op.error) && <ErrorBox message={op.error} onRetry={op.clear} />}
       {Boolean(op.message) && <Txt muted>{op.message}</Txt>}

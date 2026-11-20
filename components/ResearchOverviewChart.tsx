@@ -40,6 +40,7 @@ const assessmentColor = (assessment: Idea['assessment']) => {
     case 'Uncertain': return p.warning;
     case 'Highly Competitive': return p.danger;
   }
+  return p.muted;
 };
 
 function SuggestionIntelligenceChart({ analysis, ideas, topic, news, videos, language }: Props) {

@@ -103,12 +103,6 @@ export const styles = StyleSheet.create({
     lineHeight: 33,
     letterSpacing: -0.55,
   },
-  introText: {
-    color: p.muted,
-    fontFamily: 'Inter_400Regular',
-    fontSize: 11,
-    lineHeight: 16,
-  },
   heading: {
     color: p.text,
     fontFamily: 'Inter_700Bold',
