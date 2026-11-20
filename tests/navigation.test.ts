@@ -10,6 +10,8 @@ void test('Settings is a root route, not a bottom tab, and remains reachable fro
   const rootLayout = readFileSync(resolve(root, 'app/_layout.tsx'), 'utf8');
   const dashboard = readFileSync(resolve(root, 'app/(tabs)/index.tsx'), 'utf8');
   const sharedUi = readFileSync(resolve(root, 'components/ScoutUI.tsx'), 'utf8');
+  const settings = readFileSync(resolve(root, 'app/settings.tsx'), 'utf8');
+  const diagnostics = readFileSync(resolve(root, 'app/diagnostics.tsx'), 'utf8');
 
   assert.equal(SETTINGS_ROUTE, '/settings');
   assert.equal(isSettingsRoute('/settings'), true);
@@ -23,4 +25,8 @@ void test('Settings is a root route, not a bottom tab, and remains reachable fro
   assert.doesNotMatch(tabsLayout, /<Tabs\.Screen\s+name="settings"/);
   assert.doesNotMatch(dashboard, /SETTINGS_ROUTE|router\.(?:push|navigate)\(['"]\/settings/);
   assert.match(sharedUi, /router\.navigate\(SETTINGS_ROUTE\)/);
+  assert.ok(settings.includes("router.push('/diagnostics')"));
+  assert.ok(diagnostics.includes('useFocusEffect(useCallback(() =>'));
+  assert.ok(!diagnostics.includes('useLocalSearchParams'));
+
 });
