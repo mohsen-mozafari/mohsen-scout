@@ -17,6 +17,7 @@ import {
   View,
 } from 'react-native';
 import { router, usePathname } from 'expo-router';
+import { LinearGradient } from 'expo-linear-gradient';
 import {
   AlertCircle,
   ArrowLeft,
@@ -37,10 +38,10 @@ import { useScout } from '@/lib/store';
 type Tone = 'violet' | 'cyan' | 'mint' | 'amber';
 
 const toneColors: Record<Tone, { fill: string; soft: string; line: string }> = {
-  violet: { fill: p.accent, soft: p.surfaceAlt, line: p.border },
-  cyan: { fill: p.muted, soft: p.surfaceAlt, line: p.border },
-  mint: { fill: p.success, soft: p.surfaceAlt, line: p.border },
-  amber: { fill: p.warning, soft: p.surfaceAlt, line: p.border },
+  violet: { fill: p.accent, soft: p.accentSoft, line: p.accentLine },
+  cyan: { fill: p.cyan, soft: p.cyanSoft, line: p.cyanLine },
+  mint: { fill: p.success, soft: p.successSoft, line: p.successLine },
+  amber: { fill: p.warning, soft: p.warningSoft, line: p.warningLine },
 };
 
 export const styles = StyleSheet.create({
@@ -142,20 +143,20 @@ export const styles = StyleSheet.create({
   },
   panel: {
     padding: 16,
-    borderRadius: 16,
+    borderRadius: 18,
     backgroundColor: p.surface,
     borderColor: p.border,
     borderWidth: 1,
     gap: 12,
   },
   heroPanel: {
-    padding: 16,
-    borderRadius: 16,
+    padding: 18,
+    borderRadius: 20,
     borderWidth: 1,
-    borderColor: p.border,
-    gap: 12,
+    borderColor: 'rgba(99, 160, 255, 0.48)',
+    gap: 13,
     overflow: 'hidden',
-    backgroundColor: p.surface,
+    backgroundColor: 'transparent',
   },
   // eslint-disable-next-line react-native/no-unused-styles -- Shared list surface consumed by collection screens.
   listCard: {
@@ -226,7 +227,7 @@ export const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 5,
   },
-  choiceSelected: { backgroundColor: p.accentSoft, borderColor: p.accentLine },
+  choiceSelected: { backgroundColor: 'rgba(99, 160, 255, 0.24)', borderColor: p.accent },
   choicePressed: { opacity: 0.75 },
   choiceLabel: { fontFamily: 'Inter_600SemiBold', fontSize: 11, lineHeight: 16 },
   errorAction: {
@@ -376,7 +377,7 @@ export function AppHeader({ showBack = false }: { showBack?: boolean }) {
         </View>
       </View>
       <Pressable
-        onPress={() => { if (!onSettings) router.push('/settings'); }}
+        onPress={() => { if (!onSettings) router.push('/(tabs)/settings'); }}
         disabled={onSettings}
         accessibilityRole="button"
         accessibilityLabel={settingsLabel}
@@ -387,7 +388,7 @@ export function AppHeader({ showBack = false }: { showBack?: boolean }) {
           borderRadius: 10,
           borderWidth: 1,
           borderColor: p.border,
-          backgroundColor: onSettings ? p.surface : p.surfaceAlt,
+          backgroundColor: onSettings ? p.accentSoft : p.surfaceAlt,
           flexDirection: 'row',
           alignItems: 'center',
           justifyContent: 'center',
@@ -395,8 +396,8 @@ export function AppHeader({ showBack = false }: { showBack?: boolean }) {
           opacity: pressed ? 0.72 : 1,
         }]}
       >
-        <SettingsIcon size={16} color={onSettings ? p.muted : p.text} />
-        <Text style={{ color: onSettings ? p.muted : p.text, fontFamily: 'Inter_600SemiBold', fontSize: 12 }}>{settingsLabel}</Text>
+        <SettingsIcon size={16} color={onSettings ? p.accent : p.text} />
+        <Text style={{ color: onSettings ? p.accent : p.text, fontFamily: 'Inter_600SemiBold', fontSize: 12 }}>{settingsLabel}</Text>
       </Pressable>
     </View>
   );
@@ -594,7 +595,16 @@ export function Panel({
   variant?: 'default' | 'hero' | 'soft';
 }) {
   if (variant === 'hero') {
-    return <View style={[styles.panel, styles.heroPanel]}>{children}</View>;
+    return (
+      <LinearGradient
+        colors={['#18376A', '#16445C', '#152B4A']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.heroPanel}
+      >
+        {children}
+      </LinearGradient>
+    );
   }
   return <View style={variant === 'soft' ? styles.softCard : styles.panel}>{children}</View>;
 }
