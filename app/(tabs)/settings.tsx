@@ -200,7 +200,7 @@ export default function Settings() {
           Open mock regression console
         </Action>
       </Panel>
-      <Fold title="Profile & defaults">
+      <Fold open title="Profile & defaults">
         <Field
           label="Name (optional)"
           value={prefs.name}
@@ -242,7 +242,7 @@ export default function Settings() {
         </Action>
       </Fold>
 
-      <Fold title="Content discovery defaults">
+      <Fold open title="Content discovery defaults">
         <Txt muted>These preferences are saved on this device and used automatically by Discovery and research screens.</Txt>
         <Choices
           label="Discovery scope"
@@ -301,7 +301,7 @@ export default function Settings() {
         />
         <Action busy={op.busy} disabled={!ready} onPress={save}>Save discovery preferences</Action>
       </Fold>
-      <Fold title="YouTube API">
+      <Fold open title="YouTube API">
         <CredentialSection kind="youtube" label="YouTube Data API v3" />
         <Txt muted>
           Enable YouTube Data API v3 in Google Cloud, create a key, and restrict it to that API.
@@ -319,7 +319,7 @@ export default function Settings() {
           Open Google Cloud
         </Action>
       </Fold>
-      <Fold title="OpenRouter · optional">
+      <Fold open title="OpenRouter · optional">
         <Choices
           label="Automatic external AI second opinion"
           options={['Automatic after research', 'Manual only']}
@@ -370,7 +370,7 @@ export default function Settings() {
           Open OpenRouter
         </Action>
       </Fold>
-      <Fold title="API budget & quota">
+      <Fold open title="API budget & quota">
         <Txt>Estimated units today: {data.budget.date === quotaDay() ? data.budget.units : 0}</Txt>
         <Txt>Requests today: {data.budget.date === quotaDay() ? data.budget.requests : 0}</Txt>
         <Choices
@@ -404,7 +404,7 @@ export default function Settings() {
           Open Google quota
         </Action>
       </Fold>
-      <Fold title="Automatic YouTube research">
+      <Fold open title="Automatic YouTube research">
         <Choices
           label="Frequency"
           options={['Manual', 'Every 12 hours', 'Daily', 'Weekly'] as const}
@@ -433,7 +433,7 @@ export default function Settings() {
           Allow notifications
         </Action>
       </Fold>
-      <Fold title="Backup & phone transfer">
+      <Fold open title="Backup & phone transfer">
         <Txt muted>
           Exports your notes, links, folders, tags, ideas and preferences. API metadata, AI replies
           and keys are excluded. Restore replaces personal data and resets scheduling to Manual.
@@ -504,7 +504,7 @@ export default function Settings() {
           installed directly.
         </Txt>
       </Fold>
-      <Fold title="Privacy & data management">
+      <Fold open title="Privacy & data management">
         <Txt muted>
           YouTube receives your searches and API key. OpenRouter receives the topic and processed aggregate research signals only when automatic hybrid review is enabled, or the prompt you manually request. Raw news/video metadata, private notes and API keys are not sent. Nothing is sent to an app-owned server. No video, audio,
           subtitle or caption downloads. API titles, descriptions and thumbnails expire within 29
@@ -580,7 +580,7 @@ export default function Settings() {
           OpenRouter privacy
         </Action>
       </Fold>
-      <Fold title="App info">
+      <Fold open title="App info">
         <Heading>MOHSEN SCOUT</Heading>
         <Txt>Version 1.5.5 · Personal research assistant</Txt>
         <Txt muted>
