@@ -512,6 +512,22 @@ const fa: Record<string, string> = {
   'Current sample:': 'نمونه فعلی:',
   'Region': 'منطقه',
   'Languages': 'زبان‌ها',
+  'Mission Control': 'مرکز کنترل',
+  'SPACE INTELLIGENCE': 'هوشمندی فضایی',
+  'Your live research desk: source activity, saved work, quotas and the next useful action.': 'میز پژوهش زنده شما: وضعیت منابع، کارهای ذخیره‌شده، سهمیه‌ها و اقدام بعدی.',
+  'Source scan ready': 'پویش منابع آماده است',
+  'Refreshing sources': 'در حال تازه‌سازی منابع',
+  'NEWS IN SCOPE': 'خبرهای در محدوده',
+  'SAVED IDEAS': 'ایده‌های ذخیره‌شده',
+  'YOUTUBE REPORTS': 'گزارش‌های یوتیوب',
+  'RESEARCH MEMORY': 'حافظه پژوهش',
+  'SOURCE UPDATE': 'به‌روزرسانی منابع',
+  'Checking selected publisher feeds…': 'در حال بررسی خوراک ناشران انتخاب‌شده…',
+  'YOUTUBE QUOTA': 'سهمیه یوتیوب',
+  'SCHEDULE': 'زمان‌بندی',
+  'DIRECT ACCESS': 'دسترسی مستقیم',
+  'Cosmic News': 'اخبار کیهانی',
+  'Idea workspace': 'فضای ایده‌ها',
 };
 
 const replacements: [string, string][] = Object.entries(fa)
