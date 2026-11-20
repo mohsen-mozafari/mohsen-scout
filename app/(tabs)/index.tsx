@@ -403,6 +403,7 @@ function DiscoveryDashboardReady() {
   const [radarNews, setRadarNews] = useState<SpaceNewsItem[]>([]);
   const [engineNews, setEngineNews] = useState<SpaceNewsItem[]>([]);
   const [radarWiki, setRadarWiki] = useState<WikiSignal>();
+  const [radarAnalysisState, setRadarAnalysisState] = useState<{ topic: string; result: InternalResearchResult }>();
   const [scanning, setScanning] = useState(false);
   const [reportAnalysisState, setReportAnalysisState] = useState<{ id: string; result: InternalResearchResult }>();
   const scanInFlightRef = useRef<Promise<void> | null>(null);
@@ -534,6 +535,7 @@ function DiscoveryDashboardReady() {
             : data.researchMemory,
         }));
 
+        setRadarAnalysisState(nextRadarBrief ? { topic: discoveryTopic, result: nextRadarBrief } : undefined);
         rememberTopicDossier(discoveryTopic, { news: allEngineNews, ...(wiki ? { wiki } : {}), internalAnalysis: nextRadarBrief });
         if (engineStarted) {
           recordRuntimeFinish('Engine', nextRadarBrief ? 'success' : 'partial');
@@ -680,6 +682,30 @@ function DiscoveryDashboardReady() {
   const nextGap = deskAnalysis?.intelligence.gaps[0];
   const nextQuery = deskAnalysis?.intelligence.followUpQueries[0];
   const primaryNews = deskNews[0];
+  const currentRadarAnalysis = radarAnalysisState?.topic === discoveryTopic ? radarAnalysisState.result : undefined;
+  const chartAnalysis = latestReportAnalysis ?? currentRadarAnalysis;
+  const chartTopic = latestReportAnalysis ? deskTopic : currentRadarAnalysis ? discoveryTopic : deskTopic;
+  const chartWiki = radarWiki && chartTopic === discoveryTopic ? radarWiki : undefined;
+  const chartNews = useMemo(
+    () => rankNewsForTopic(chartTopic, engineNews, Math.max(1, engineNews.length)).slice(0, 60),
+    [chartTopic, engineNews],
+  );
+  const chartVideos = useMemo(
+    () => engineVideoSamples
+      .filter((video) => scoreResearchText(chartTopic, video.title, video.description) > 0)
+      .sort((a, b) => (b.viewCount ?? -1) - (a.viewCount ?? -1))
+      .slice(0, 80),
+    [engineVideoSamples, chartTopic],
+  );
+  const chartIdeas = useMemo(() => {
+    if (latestReportAnalysis) return deskIdeas;
+    if (!currentRadarAnalysis) return [];
+    const sourceUrls = new Set(chartNews.map((item) => item.url));
+    return rankDashboardIdeas(deduplicateDisplayIdeas(ideas.filter((idea) =>
+      idea.engineGenerated && !idea.archived && Boolean(idea.sourceUrl && sourceUrls.has(idea.sourceUrl)),
+    )));
+  }, [latestReportAnalysis, currentRadarAnalysis, deskIdeas, ideas, chartNews]);
+  const latestWikiObservation = radarWiki?.monthlyViews[radarWiki.monthlyViews.length - 1];
 
   return (
     <Page
@@ -690,18 +716,95 @@ function DiscoveryDashboardReady() {
         : 'Enter a focused topic and inspect real YouTube results, evidence quality and sample limits.'}
     >
       <View style={{ gap: 15 }}>
-        {showYouTubeResearch ? (
-          <ResearchOverviewChart
-            analysis={deskAnalysis}
-            ideas={deskIdeas}
-            topic={deskTopic}
-            news={deskNews}
-            wiki={radarWiki}
-            videos={deskVideos}
-            language={preferences.uiLanguage ?? 'fa'}
-            selectedIdeaId={selectedIdeaId}
-          />
-        ) : null}
+        <ResearchOverviewChart
+          analysis={chartAnalysis}
+          ideas={chartIdeas}
+          topic={chartTopic}
+          news={chartNews}
+          wiki={chartWiki}
+          videos={chartVideos}
+          language={preferences.uiLanguage ?? 'fa'}
+          selectedIdeaId={selectedIdeaId}
+        />
+
+        <Panel variant="hero">
+          <View style={{ gap: 10 }}>
+            <View style={[styles.rowBetween, { flexWrap: 'wrap' }]}>
+              <BadgeText>{fa ? 'SPACE RADAR · پایش منابع رسمی' : 'SPACE RADAR · OFFICIAL SOURCE MONITOR'}</BadgeText>
+              <Text style={{ color: scanning ? p.cyan : p.muted, fontSize: 10, fontWeight: '700' }}>
+                {scanning
+                  ? (fa ? 'در حال به‌روزرسانی' : 'REFRESHING')
+                  : lastScannedAt
+                    ? (fa ? 'آخرین بررسی: ' : 'LAST CHECKED: ') + new Date(lastScannedAt).toLocaleTimeString(fa ? 'fa-IR' : 'en-US')
+                    : (fa ? 'هنوز بررسی نشده' : 'NOT REFRESHED YET')}
+              </Text>
+            </View>
+            <Heading>{nicheTitle}</Heading>
+            <Txt muted>{fa
+              ? 'خلاصه خوراک‌های خبری رسمی، صفحه‌نمای ویکی‌مدیا و خوشه‌های موضوعی؛ بدون اسکن پس‌زمینه یا مصرف سهمیه YouTube.'
+              : 'A compact view of official publisher feeds, Wikimedia article pageviews and topic clusters. No background polling or YouTube quota is used.'}</Txt>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7 }}>
+              <MetricCard label={fa ? 'گزارش‌های دریافتی' : 'PUBLISHER REPORTS'} value={radarNews.length} />
+              <MetricCard label={fa ? 'ماه‌های ویکی‌مدیا' : 'WIKIMEDIA MONTHS'} value={radarWiki?.monthlyViews.length ?? 0} />
+              <MetricCard label={fa ? 'خوشه‌های پیشنهادی' : 'TOPIC CLUSTERS'} value={nicheSuggestions.length} />
+            </View>
+            {radarWiki ? (
+              <View style={styles.softCard}>
+                <BadgeText>{fa ? 'مشاهده صفحه‌نمای مقاله' : 'WIKIMEDIA ARTICLE OBSERVATION'}</BadgeText>
+                <SourceHeading>{radarWiki.articleTitle}</SourceHeading>
+                {radarWiki.summary ? <Txt muted>{radarWiki.summary.slice(0, 260)}</Txt> : null}
+                {latestWikiObservation ? (
+                  <Txt muted>
+                    {(fa ? 'آخرین ماه ثبت‌شده: ' : 'Latest recorded month: ') + latestWikiObservation.month + ' · ' +
+                      new Intl.NumberFormat(fa ? 'fa-IR' : 'en-US').format(latestWikiObservation.views) +
+                      (fa ? ' بازدید مقاله' : ' article pageviews')}
+                  </Txt>
+                ) : null}
+              </View>
+            ) : (
+              <Txt muted>{fa ? 'مشاهده ویکی‌مدیا پس از تکمیل درخواست فعلی نمایش داده می‌شود.' : 'The Wikimedia observation appears when the current request finishes.'}</Txt>
+            )}
+            {radarNews.length ? (
+              <View style={{ gap: 8 }}>
+                <Heading>{fa ? 'تازه‌ترین گزارش‌های ناشران' : 'Latest publisher reports'}</Heading>
+                {radarNews.slice(0, 3).map((item) => (
+                  <View key={item.id} style={styles.softCard}>
+                    <BadgeText>{item.sourceName}</BadgeText>
+                    <SourceHeading>{item.title}</SourceHeading>
+                    <Txt muted>{item.publishedAt ? new Date(item.publishedAt).toLocaleDateString(fa ? 'fa-IR' : 'en-US') : (fa ? 'تاریخ انتشار اعلام نشده' : 'Publication date not supplied')}</Txt>
+                  </View>
+                ))}
+              </View>
+            ) : (
+              <Txt muted>{scanning
+                ? (fa ? 'در حال دریافت خوراک‌های انتخاب‌شده؛ نتایج ذخیره‌شده پس از دریافت نمایش داده می‌شوند.' : 'Checking selected feeds; retained results remain available while refreshing.')
+                : warnings[0] ?? (fa ? 'هنوز گزارشی از خوراک‌های انتخاب‌شده در این نشست دریافت نشده است.' : 'No selected-feed report has been returned in this session yet.')}</Txt>
+            )}
+            {nicheSuggestions.length ? (
+              <View style={{ gap: 6 }}>
+                <Heading>{fa ? 'خوشه‌های موضوعی برجسته' : 'Leading topic clusters'}</Heading>
+                {nicheSuggestions.slice(0, 3).map((item) => (
+                  <View key={item.id} style={[styles.rowBetween, { flexWrap: 'wrap' }]}>
+                    <SourceText>{item.title}</SourceText>
+                    <BadgeText>{item.matchedStories + (fa ? ' گزارش' : ' stories')}</BadgeText>
+                  </View>
+                ))}
+              </View>
+            ) : null}
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <View style={{ flex: 1 }}>
+                <Action secondary onPress={() => router.push('/cosmic-news')}>{fa ? 'مشاهده Space Radar' : 'Open Space Radar'}</Action>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Action secondary busy={scanning} onPress={() => {
+                  void runScan(true).catch(() => setWarnings([fa
+                    ? 'به‌روزرسانی Space Radar کامل نشد؛ اتصال را بررسی و دوباره تلاش کن.'
+                    : 'Space Radar could not refresh. Check the connection and try again.']));
+                }}>{fa ? 'به‌روزرسانی' : 'Refresh radar'}</Action>
+              </View>
+            </View>
+          </View>
+        </Panel>
 
         {showYouTubeResearch && bestIdea ? (
           <Panel variant="hero">
@@ -887,6 +990,36 @@ function DiscoveryDashboardReady() {
             <Action secondary onPress={() => router.push('/opportunities')}>Open all ideas</Action>
           </View>
         </Fold>
+
+        <Panel>
+          <Heading>{fa ? 'ابزارهای تکمیلی تحقیق' : 'Additional research tools'}</Heading>
+          <Txt muted>{fa
+            ? 'ابزارهای مستقل برنامه از همین داشبورد هم در دسترس‌اند؛ هرکدام مسیر و خروجی تخصصی خود را دارند.'
+            : 'The app’s dedicated research tools are also accessible here, each with its own focused workflow and results.'}</Txt>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+            <View style={{ flexGrow: 1, flexBasis: 180 }}>
+              <Panel variant="soft">
+                <Heading>{fa ? 'تحقیق عمیق' : 'Deep Research'}</Heading>
+                <Txt muted>{fa ? 'ساخت پرونده تحقیق با منابع و پرسش‌های قابل پیگیری.' : 'Build a source-linked research brief and follow-up questions.'}</Txt>
+                <Action secondary onPress={() => router.push('/deep-research')}>{fa ? 'شروع تحقیق عمیق' : 'Open Deep Research'}</Action>
+              </Panel>
+            </View>
+            <View style={{ flexGrow: 1, flexBasis: 180 }}>
+              <Panel variant="soft">
+                <Heading>{fa ? 'هوشمندی روندها' : 'Trend Intelligence'}</Heading>
+                <Txt muted>{fa ? 'بررسی نشانه‌های موضوعی و زمینه‌های مرتبط.' : 'Inspect topic signals and related context.'}</Txt>
+                <Action secondary onPress={() => router.push('/trend-intelligence')}>{fa ? 'بررسی روندها' : 'Open Trend Intelligence'}</Action>
+              </Panel>
+            </View>
+            <View style={{ flexGrow: 1, flexBasis: 180 }}>
+              <Panel variant="soft">
+                <Heading>{fa ? 'تقاضای جست‌وجو' : 'Search Demand'}</Heading>
+                <Txt muted>{fa ? 'مقایسه داده‌های در دسترس جست‌وجو و محدودیت‌های آن.' : 'Compare available search signals and their data limits.'}</Txt>
+                <Action secondary onPress={() => router.push('/search-demand')}>{fa ? 'بررسی تقاضا' : 'Open Search Demand'}</Action>
+              </Panel>
+            </View>
+          </View>
+        </Panel>
 
         <Pressable onPress={() => setHealthExpanded((current) => !current)} accessibilityRole="button" accessibilityState={{ expanded: healthExpanded }}>
           <Panel>

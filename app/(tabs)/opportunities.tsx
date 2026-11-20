@@ -235,6 +235,7 @@ export default function Opportunities() {
   return (
     <Page scroll={false}>
       <FlatList
+        style={{ flex: 1 }}
         data={remainingIdeas}
         keyExtractor={(i) => i.id}
         contentContainerStyle={styles.content}
@@ -243,7 +244,7 @@ export default function Opportunities() {
         maxToRenderPerBatch={8}
         updateCellsBatchingPeriod={50}
         windowSize={7}
-        removeClippedSubviews
+        removeClippedSubviews={false}
         ListHeaderComponent={
           <View style={{ gap: 16, marginBottom: 18 }}>
             <ScreenIntro

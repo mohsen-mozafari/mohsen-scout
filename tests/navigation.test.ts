@@ -1,11 +1,22 @@
 import assert from 'node:assert/strict';
+import { existsSync, readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { test } from 'node:test';
 import { isSettingsRoute, SETTINGS_ROUTE } from '../lib/routes';
 
-void test('Settings has one canonical, directly reachable route from every tab context', () => {
+void test('Settings is a root route, not a bottom tab, and remains reachable from the header', () => {
+  const root = process.cwd();
+  const tabsLayout = readFileSync(resolve(root, 'app/(tabs)/_layout.tsx'), 'utf8');
+  const rootLayout = readFileSync(resolve(root, 'app/_layout.tsx'), 'utf8');
+
   assert.equal(SETTINGS_ROUTE, '/settings');
   assert.equal(isSettingsRoute('/settings'), true);
-  assert.equal(isSettingsRoute('/(tabs)/settings'), true);
   assert.equal(isSettingsRoute('/settings/'), true);
+  assert.equal(isSettingsRoute('/(tabs)/settings'), false);
   assert.equal(isSettingsRoute('/youtube'), false);
+
+  assert.equal(existsSync(resolve(root, 'app/settings.tsx')), true);
+  assert.equal(existsSync(resolve(root, 'app/(tabs)/settings.tsx')), false);
+  assert.match(rootLayout, /<Stack\.Screen name="settings"/);
+  assert.doesNotMatch(tabsLayout, /<Tabs\.Screen\s+name="settings"/);
 });

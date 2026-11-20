@@ -157,6 +157,7 @@ export default function RootLayout() {
           }}
         >
           <Stack.Screen name="(tabs)" options={{ title: 'MOHSEN SCOUT', headerShown: false }} />
+          <Stack.Screen name="settings" options={{ title: 'Settings' }} />
           <Stack.Screen name="detail" options={{ title: 'Research detail' }} />
           <Stack.Screen name="note" options={{ title: 'Edit page' }} />
           <Stack.Screen name="diagnostics" options={{ title: 'Mock tests' }} />

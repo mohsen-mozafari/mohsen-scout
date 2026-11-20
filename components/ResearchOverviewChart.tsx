@@ -46,6 +46,17 @@ export const ResearchOverviewChart = memo(function ResearchOverviewChart({
     weak: scored.filter((idea) => getEditorialPriorityBand(idea.engineScore ?? 0) === 'weak').length,
   }), [scored]);
   const number = (value: number) => new Intl.NumberFormat(fa ? 'fa-IR' : 'en-US').format(value);
+  const evidenceMetrics = [
+    { id: 'publisher-reports', title: label('PUBLISHER REPORTS', 'گزارش ناشران'), value: news.length },
+    { id: 'youtube-samples', title: label('YOUTUBE SAMPLES', 'نمونه‌های YouTube'), value: videos.length },
+    { id: 'wikimedia-months', title: label('WIKIMEDIA MONTHS', 'ماه‌های ویکی‌مدیا'), value: wiki?.monthlyViews.length ?? 0 },
+    { id: 'engine-evidence', title: label('ENGINE EVIDENCE', 'شواهد موتور'), value: analysis?.evidence.length ?? 0 },
+    { id: 'entities', title: label('ENTITIES', 'موجودیت‌ها'), value: analysis?.entityCandidates.length ?? 0 },
+    { id: 'editorial-angles', title: label('EDITORIAL ANGLES', 'زاویه‌های محتوایی'), value: analysis?.angles.length ?? 0 },
+    { id: 'verification-checks', title: label('VERIFICATION CHECKS', 'پرسش‌های راستی‌آزمایی'), value: analysis?.verificationQuestions.length ?? 0 },
+    { id: 'research-gaps', title: label('RESEARCH GAPS', 'خلأهای تحقیق'), value: (analysis?.intelligence.gaps.length ?? 0) + (analysis?.intelligence.potentialContradictions.length ?? 0) },
+  ];
+  const maxEvidenceMetric = Math.max(1, ...evidenceMetrics.map((metric) => metric.value));
 
   return (
     <Panel variant="hero">
@@ -77,6 +88,31 @@ export const ResearchOverviewChart = memo(function ResearchOverviewChart({
           <Text style={{ color: p.muted, fontSize: 9 }}>{label('WEAK', 'ضعیف')}</Text>
         </View>
       </View>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7 }}>
+        {evidenceMetrics.map((metric) => (
+          <View
+            key={metric.id}
+            style={{
+              flexGrow: 1,
+              flexBasis: 100,
+              minWidth: 88,
+              borderRadius: 10,
+              borderWidth: 1,
+              borderColor: p.border,
+              backgroundColor: p.surface,
+              paddingHorizontal: 10,
+              paddingVertical: 8,
+              gap: 6,
+            }}
+          >
+            <Text style={{ color: p.text, fontSize: 16, fontWeight: '800' }}>{number(metric.value)}</Text>
+            <Text style={{ color: p.muted, fontSize: 9 }}>{metric.title}</Text>
+            <View style={{ height: 5, borderRadius: 4, backgroundColor: p.surfaceAlt, overflow: 'hidden' }}>
+              <View style={{ height: 5, width: Math.round(metric.value / maxEvidenceMetric * 100) + '%', borderRadius: 4, backgroundColor: p.accent }} />
+            </View>
+          </View>
+        ))}
+      </View>
       {analysis ? (
         <ResearchKnowledgeGraph
           topic={topic}
@@ -90,7 +126,7 @@ export const ResearchOverviewChart = memo(function ResearchOverviewChart({
           onSelectIdea={setSelectedIdeaId}
         />
       ) : (
-        <Txt muted>{label('The evidence map appears after a topic-linked research sample is available.', 'نقشه شواهد پس از در دسترس قرار گرفتن نمونه تحقیق موضوع‌محور نمایش داده می‌شود.')}</Txt>
+        <Txt muted>{label('The visual evidence map fills in as topic-linked analysis becomes available. Source and output counts above remain visible while it loads.', 'نقشه بصری با آماده‌شدن تحلیل موضوع‌محور تکمیل می‌شود؛ شمارنده‌های منابع و خروجی‌ها تا آن زمان هم قابل مشاهده‌اند.')}</Txt>
       )}
       <Action secondary onPress={() => router.push('/opportunities')}>
         {label('Open all ideas', 'مشاهده همه ایده‌ها')}
