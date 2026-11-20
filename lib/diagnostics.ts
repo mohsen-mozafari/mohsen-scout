@@ -621,10 +621,11 @@ export async function runDiagnostics(): Promise<TestResult[]> {
       },
     ],
     [
-      'No API metadata in AI prompt or ideas',
+      'MOCK raw API metadata stays out of AI prompts and generated idea text',
       () => {
         const prompt = opinionPrompt(input.topic, 'My concept', 'My decision');
         check(!prompt.includes(video.title));
+        check(!prompt.includes(video.description));
         const ideas = buildIdeas({
           id: 'r',
           input,
@@ -635,8 +636,11 @@ export async function runDiagnostics(): Promise<TestResult[]> {
           analyzed: false,
         });
         check(ideas.length === 4);
-        check(ideas.every((i) => i.assessment === 'Uncertain'));
-        check(!JSON.stringify(ideas).includes(video.title));
+        check(ideas[0].assessment === 'Worth Exploring');
+        check(ideas.slice(1).every((idea) => idea.assessment === 'Uncertain'));
+        check(ideas.every((idea) => !JSON.stringify(idea).includes(video.title)));
+        check(ideas.every((idea) => !JSON.stringify(idea).includes(video.description)));
+        check(ideas[0].videoIds.includes(video.id));
       },
     ],
   ];
