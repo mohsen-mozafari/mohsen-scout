@@ -127,7 +127,7 @@ export default function SearchDemand() {
                 <Txt>{point.month}</Txt>
                 <Text style={styles.badge}>{point.views.toLocaleString()}</Text>
               </View>
-              <View style={{ height: 5, borderRadius: 4, backgroundColor: '#292936', overflow: 'hidden' }}>
+              <View style={{ height: 5, borderRadius: 4, backgroundColor: p.raised, overflow: 'hidden' }}>
                 <View style={{ height: 5, width: (result.monthlyViews.length ? (point.views / maxViews) * 100 : 0) + '%', backgroundColor: p.purple, borderRadius: 4 }} />
               </View>
             </View>
