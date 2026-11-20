@@ -732,7 +732,12 @@ function DiscoveryDashboardReady() {
               </Action>
             </View>
             {deskAnalysis ? (
-              <EngineAIReview topic={deskTopic} result={deskAnalysis} />
+              <Fold
+                title={fa ? 'بازکردن نظر مستقل هوش مصنوعی' : 'Open independent AI opinion'}
+                summary={preferences.hybridIntelligence ? 'Automatic · enabled' : 'Manual · optional'}
+              >
+                <EngineAIReview topic={deskTopic} result={deskAnalysis} />
+              </Fold>
             ) : (
               <Txt muted>{fa
                 ? 'پس از اجرای یک نمونه تحقیق موضوع‌محور، می‌توانی نظر مستقل AI را در همین‌جا دریافت کنی.'
