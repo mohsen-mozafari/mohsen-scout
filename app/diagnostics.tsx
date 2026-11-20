@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { Text, View } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { ClipboardCopy, Copy, Play, RefreshCw } from 'lucide-react-native';
@@ -18,12 +18,11 @@ import {
 import { useScout } from '@/lib/store';
 import { runDiagnostics, formatDiagnosticReport, type TestResult } from '@/lib/diagnostics';
 import { palette as p } from '@/lib/theme';
-import { useLocalSearchParams } from 'expo-router';
+import { useFocusEffect } from 'expo-router';
 
 type CheckFilter = 'All checks' | 'Failed only';
 
 export default function Diagnostics() {
-  const { run, runId } = useLocalSearchParams<{ run?: string; runId?: string }>();
   const language = useScout((state) => state.data.preferences.uiLanguage ?? 'fa');
   const [results, setResults] = useState<TestResult[]>([]);
   const [busy, setBusy] = useState(false);
@@ -33,7 +32,6 @@ export default function Diagnostics() {
   const [copyMessage, setCopyMessage] = useState('');
   const [copyError, setCopyError] = useState('');
   const [lastRunAt, setLastRunAt] = useState<number | null>(null);
-  const lastAutoRunId = useRef<string | null>(null);
   const executionInFlight = useRef(false);
 
   const execute = useCallback(async () => {
@@ -55,13 +53,10 @@ export default function Diagnostics() {
     }
   }, []);
 
-  useEffect(() => {
-    if (run !== '1') return;
-    const requestId = runId ?? 'initial-run';
-    if (lastAutoRunId.current === requestId) return;
-    lastAutoRunId.current = requestId;
+  useFocusEffect(useCallback(() => {
     void execute();
-  }, [run, runId, execute]);
+    return undefined;
+  }, [execute]));
 
   const passed = results.filter((result) => result.passed).length;
   const failed = results.length - passed;
