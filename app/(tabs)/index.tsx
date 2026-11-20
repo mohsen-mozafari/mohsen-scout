@@ -567,7 +567,6 @@ function DiscoveryDashboardReady() {
   const latestReportSignature = latestReport
     ? latestReport.videos.map((video) => video.id + ':' + video.fetchedAt).join('|')
     : '';
-  const latestReportVideoRecords = latestReport?.videos;
   const engineVideoEvidence = useMemo(
     () => collectEngineVideoEvidence(reports, storedVideos),
     [reports, storedVideos],
@@ -697,6 +696,74 @@ function DiscoveryDashboardReady() {
           language={preferences.uiLanguage ?? 'fa'}
           selectedIdeaId={selectedIdeaId}
         />
+
+        <Panel>
+          <View style={{ gap: 9 }}>
+            <View style={[styles.rowBetween, { flexWrap: 'wrap' }]}>
+              <Heading>{fa ? 'رادار منابع و گزارش‌های رسمی' : 'Space Radar · Official source monitor'}</Heading>
+              <BadgeText>{scanning ? (fa ? 'در حال دریافت' : 'REFRESHING') : lastScannedAt
+                ? (fa ? 'به‌روز شده' : 'UPDATED')
+                : (fa ? 'هنوز اجرا نشده' : 'NOT REFRESHED')}</BadgeText>
+            </View>
+            <Txt muted>{fa
+              ? 'این بخش خبرهای منتشرشده از منابع رسمی و بازدید ماهانه مقاله در ویکی‌مدیا را نشان می‌دهد؛ ابزار رصد رشد YouTube یا پیش‌بینی بازدید نیست.'
+              : 'This panel tracks official publisher reports and monthly Wikimedia article pageviews. It does not measure YouTube trend velocity or predict future views.'}</Txt>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7 }}>
+              <MetricCard label={fa ? 'گزارش‌های خبری' : 'PUBLISHER REPORTS'} value={radarNews.length} />
+              <MetricCard label={fa ? 'ماه‌های ویکی‌مدیا' : 'WIKIMEDIA MONTHS'} value={radarWiki?.monthlyViews.length ?? 0} />
+              <MetricCard label={fa ? 'خوشه‌های موضوعی' : 'TOPIC CLUSTERS'} value={nicheSuggestions.length} />
+            </View>
+            {radarNews.length ? (
+              <View style={{ gap: 6 }}>
+                <Text style={styles.label}>{fa ? 'آخرین گزارش‌های دریافتی' : 'LATEST PUBLISHER REPORTS'}</Text>
+                {radarNews.slice(0, 2).map((item) => (
+                  <View key={item.id} style={styles.softCard}>
+                    <SourceHeading>{item.title}</SourceHeading>
+                    <Txt muted>{item.sourceName + (item.publishedAt
+                      ? ' · ' + new Date(item.publishedAt).toLocaleDateString(fa ? 'fa-IR' : 'en-US')
+                      : '')}</Txt>
+                  </View>
+                ))}
+              </View>
+            ) : (
+              <Txt muted>{scanning
+                ? (fa ? 'در حال دریافت گزارش از خوراک‌های انتخاب‌شده است.' : 'Selected publisher feeds are being checked.')
+                : warnings[0] ?? (fa ? 'هنوز گزارشی در این نشست دریافت نشده است.' : 'No publisher report has been returned in this session yet.')}</Txt>
+            )}
+            {radarWiki ? (
+              <View style={styles.softCard}>
+                <BadgeText>{fa ? 'توجه به مقاله در ویکی‌مدیا' : 'WIKIMEDIA ARTICLE ATTENTION'}</BadgeText>
+                <SourceHeading>{radarWiki.articleTitle}</SourceHeading>
+                {latestWikiObservation ? (
+                  <Txt muted>{latestWikiObservation.month + ' · ' +
+                    new Intl.NumberFormat(fa ? 'fa-IR' : 'en-US').format(latestWikiObservation.views) +
+                    (fa ? ' بازدید صفحه مقاله' : ' article pageviews')}</Txt>
+                ) : (
+                  <Txt muted>{fa ? 'هنوز ماه ثبت‌شده‌ای در دسترس نیست.' : 'No recorded monthly observation is available yet.'}</Txt>
+                )}
+              </View>
+            ) : null}
+            {nicheSuggestions.length ? (
+              <View style={{ gap: 5 }}>
+                <Text style={styles.label}>{fa ? 'موضوعات پرتکرار در گزارش‌ها' : 'TOPIC CLUSTERS IN REPORTS'}</Text>
+                {nicheSuggestions.slice(0, 2).map((item) => (
+                  <View key={item.id} style={[styles.rowBetween, { flexWrap: 'wrap' }]}>
+                    <SourceText>{item.title}</SourceText>
+                    <BadgeText>{item.matchedStories + (fa ? ' گزارش' : ' reports')}</BadgeText>
+                  </View>
+                ))}
+              </View>
+            ) : null}
+            <View style={[styles.rowBetween, { flexWrap: 'wrap' }]}>
+              <Txt muted>{lastScannedAt
+                ? (fa ? 'آخرین دریافت: ' : 'Last checked: ') + new Date(lastScannedAt).toLocaleTimeString(fa ? 'fa-IR' : 'en-US')
+                : (fa ? 'برای دریافت داده‌ها از دکمه تازه‌سازی کنار نظر AI استفاده کن.' : 'Use the refresh action beside the AI opinion to retrieve data.')}</Txt>
+              <Action secondary onPress={() => router.push('/cosmic-news')}>
+                {fa ? 'جزئیات رادار' : 'Open radar details'}
+              </Action>
+            </View>
+          </View>
+        </Panel>
 
         {showYouTubeResearch && bestIdea ? (
           <Panel variant="hero">
