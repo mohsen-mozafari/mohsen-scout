@@ -1,22 +1,45 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Newspaper } from 'lucide-react-native';
 import { Linking, View, Text, FlatList } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { Button } from 'heroui-native';
-import { Page, Panel, Heading, Txt, Action, Choices, styles, ErrorBox, useOperation, ScreenIntro } from '@/components/ScoutUI';
+import { Page, Panel, Heading, Txt, Action, Choices, styles, ErrorBox, useOperation, ScreenIntro, MetricCard, BadgeText, SourceHeading } from '@/components/ScoutUI';
 import { useScout } from '@/lib/store';
-import { SPACE_NICHES, SPACE_NEWS_SOURCES, fetchSpaceNews, getCachedSpaceNews, newsForNiche, type SpaceNewsItem } from '@/lib/space';
+import { useShallow } from 'zustand/react/shallow';
+import {
+  SPACE_NICHES, SPACE_NEWS_SOURCES, fetchSpaceNews, getCachedSpaceNews,
+  newsForNiche, getWikipediaSignal, buildNicheSuggestions,
+  type SpaceNewsItem, type WikiSignal, type SpaceNicheSuggestion,
+} from '@/lib/space';
+import { buildInternalResearch } from '@/lib/engine';
+import { buildResearchInterestProfile, normalizeResearchText } from '@/lib/intelligence';
+import { collectEngineVideoEvidence, runSingleFlight } from '@/lib/dashboard';
+import { generateEditorialIdeas } from '@/lib/idea-generation';
+import { createResearchMemoryEntry } from '@/lib/research-memory';
+import { rememberTopicDossier } from '@/lib/topic-dossier';
 import { uid } from '@/lib/types';
 import { MediaPreview } from '@/components/MediaPreview';
 import { recordRuntimeFinish, recordRuntimeStart } from '@/lib/runtime-metrics';
 
 export default function CosmicNews() {
   const params = useLocalSearchParams<{ niche?: string }>();
-  const preferences = useScout((state) => state.data.preferences);
+  const preferences = useScout(useShallow((state) => ({
+    uiLanguage: state.data.preferences.uiLanguage ?? 'fa',
+    selectedSpaceNiche: state.data.preferences.selectedSpaceNiche,
+    customSpaceNiche: state.data.preferences.customSpaceNiche,
+    spaceInterestLanguage: state.data.preferences.spaceInterestLanguage ?? 'en',
+    spaceNewsSources: state.data.preferences.spaceNewsSources,
+    region: state.data.preferences.region,
+    languages: state.data.preferences.languages,
+  })));
   const feedRegistry = useScout((state) => state.data.feedRegistry);
-  const lastUpdatedAt = feedRegistry.reduce((latest, feed) => Math.max(latest, feed.lastSuccessAt), 0);
   const nicheId = typeof params.niche === 'string' ? params.niche : preferences.selectedSpaceNiche;
   const niche = SPACE_NICHES.find((item) => item.id === nicheId);
+  const discoveryTopic = preferences.selectedSpaceNiche === 'all'
+    ? 'Space science and exploration'
+    : preferences.selectedSpaceNiche === 'custom'
+      ? preferences.customSpaceNiche
+      : SPACE_NICHES.find((item) => item.id === preferences.selectedSpaceNiche)?.topic ?? 'Space science and exploration';
   const [items, setItems] = useState<SpaceNewsItem[]>(() =>
     getCachedSpaceNews(useScout.getState().data.feedRegistry, preferences.spaceNewsSources),
   );
@@ -24,13 +47,178 @@ export default function CosmicNews() {
   const [loading, setLoading] = useState(() =>
     getCachedSpaceNews(useScout.getState().data.feedRegistry, preferences.spaceNewsSources).length === 0,
   );
+  const [scanning, setScanning] = useState(false);
   const [visibleCount, setVisibleCount] = useState(15);
   const [scope, setScope] = useState('All selected feeds');
+  const [radarNews, setRadarNews] = useState<SpaceNewsItem[]>([]);
+  const [engineNews, setEngineNews] = useState<SpaceNewsItem[]>([]);
+  const [radarWiki, setRadarWiki] = useState<WikiSignal>();
+  const [lastScannedAt, setLastScannedAt] = useState<number | null>(null);
+  const [nicheSuggestions, setNicheSuggestions] = useState<SpaceNicheSuggestion[]>([]);
+  const scanInFlightRef = useRef<Promise<void> | null>(null);
+  const op = useOperation();
+  const fa = preferences.uiLanguage === 'fa';
+  const lastUpdatedAt = feedRegistry.reduce((latest, feed) => Math.max(latest, feed.lastSuccessAt), 0);
   const displayedItems = scope === 'Selected niche'
     ? newsForNiche(items, nicheId, preferences.customSpaceNiche)
     : items;
   const visibleItems = displayedItems.slice(0, visibleCount);
-  const op = useOperation();
+
+  const runScan = useCallback((force = false): Promise<void> =>
+    runSingleFlight(scanInFlightRef, async () => {
+      setScanning(true);
+      recordRuntimeStart('Sources');
+      let sourcesRecorded = false;
+      let engineStarted = false;
+      let engineRecorded = false;
+      try {
+        // Fetch this free attention proxy alongside RSS, but never delay the fresh feed preview.
+        recordRuntimeStart('Wikimedia');
+        const wikiPromise = getWikipediaSignal(discoveryTopic, preferences.spaceInterestLanguage ?? 'en')
+          .then((value) => {
+            recordRuntimeFinish('Wikimedia', value ? 'success' : 'partial');
+            return value;
+          })
+          .catch((error) => {
+            recordRuntimeFinish('Wikimedia', 'error', error instanceof Error ? error.message : String(error));
+            return undefined;
+          });
+        const result = await fetchSpaceNews(preferences.spaceNewsSources, fetch, force);
+        recordRuntimeFinish('Sources', result.warnings.length ? 'partial' : 'success');
+        sourcesRecorded = true;
+        setItems(result.items);
+        setVisibleCount(15);
+        setLoading(false);
+        const relevantNews = preferences.selectedSpaceNiche === 'all'
+          ? result.items
+          : newsForNiche(result.items, preferences.selectedSpaceNiche, preferences.customSpaceNiche);
+        const engineNewsByUrl = new Map<string, SpaceNewsItem>();
+        for (const item of [...getCachedSpaceNews(result.registry, preferences.spaceNewsSources), ...result.items]) {
+          engineNewsByUrl.set(item.url, item);
+        }
+        const allEngineNews = [...engineNewsByUrl.values()].sort(
+          (a, b) => (Date.parse(b.publishedAt ?? '') || 0) - (Date.parse(a.publishedAt ?? '') || 0),
+        );
+
+        // Show the latest feed preview first and defer CPU-heavy local analysis until
+        // gestures/navigation settle, so scroll and tab changes remain responsive.
+        setRadarNews(relevantNews);
+        setEngineNews(allEngineNews);
+        setWarnings(result.warnings);
+        setLastScannedAt(Date.now());
+        // Yield one frame before local CPU work so the native UI can paint and respond.
+        await new Promise<void>((resolve) => setTimeout(resolve, 96));
+        const wiki = await wikiPromise;
+        setRadarWiki(wiki);
+
+        const currentData = useScout.getState().data;
+        const engineVideoEvidence = collectEngineVideoEvidence(currentData.reports, currentData.videos);
+        const priorMemory = currentData.researchMemory.find(
+          (entry) => normalizeResearchText(entry.topic) === normalizeResearchText(discoveryTopic),
+        );
+        const hasEngineInput = Boolean(allEngineNews.length || wiki || engineVideoEvidence.length);
+        if (hasEngineInput) {
+          recordRuntimeStart('Engine');
+          engineStarted = true;
+        }
+        const nextRadarBrief = hasEngineInput ? buildInternalResearch({
+          topic: discoveryTopic,
+          feedback: buildResearchInterestProfile(currentData.ideas),
+          priorMemory,
+          language: currentData.preferences.uiLanguage ?? 'fa',
+          news: allEngineNews.map((item) => ({
+            title: item.title,
+            summary: item.summary,
+            sourceName: item.sourceName,
+            sourceUrl: item.url,
+            publishedAt: item.publishedAt,
+            sourceId: item.sourceId,
+          })),
+          videos: engineVideoEvidence,
+          ...(wiki ? { wiki } : {}),
+        }) : undefined;
+        const automaticIdeas = generateEditorialIdeas({
+          topic: discoveryTopic,
+          news: relevantNews,
+          context: wiki ? [{
+            title: wiki.articleTitle,
+            summary: [wiki.summary, wiki.monthlyViews.length
+              ? 'Wikimedia monthly article pageviews: ' + wiki.monthlyViews.map((point) => point.month + '=' + point.views).join(', ')
+              : 'No monthly Wikimedia pageview observations were returned.'].filter(Boolean).join('\n'),
+            sourceUrl: wiki.articleUrl,
+            sourceName: 'Wikimedia Pageviews · attention proxy',
+          }] : [],
+          existingIdeas: currentData.ideas,
+          region: currentData.preferences.region,
+          languages: currentData.preferences.languages,
+          language: currentData.preferences.uiLanguage ?? 'fa',
+          evidenceKey: 'rss:' + relevantNews.map((item) => item.url).sort().join('|') + '|memory:' + (priorMemory?.history?.[0]?.sourceFingerprint ?? String(priorMemory?.updatedAt ?? 0)),
+          priorMemory,
+          skipExistingEvidence: true,
+          limit: 5,
+        });
+        const nextMemory = nextRadarBrief ? createResearchMemoryEntry({
+          topic: discoveryTopic,
+          news: allEngineNews,
+          analysis: nextRadarBrief,
+          previous: priorMemory,
+          now: Date.now(),
+          language: currentData.preferences.uiLanguage ?? 'fa',
+        }) : undefined;
+
+        // One serialized SQLite write replaces three queued commits for a single scan.
+        // The updater uses the latest store state so unrelated edits are never overwritten.
+        await useScout.getState().commit((data) => ({
+          ...data,
+          feedRegistry: result.registry,
+          ideas: automaticIdeas.length ? [...automaticIdeas, ...data.ideas] : data.ideas,
+          researchMemory: nextMemory
+            ? [
+                nextMemory,
+                ...data.researchMemory.filter((entry) => normalizeResearchText(entry.topic) !== normalizeResearchText(discoveryTopic)),
+              ].slice(0, 40)
+            : data.researchMemory,
+        }));
+
+        rememberTopicDossier(discoveryTopic, { news: allEngineNews, ...(wiki ? { wiki } : {}), internalAnalysis: nextRadarBrief });
+        if (engineStarted) {
+          recordRuntimeFinish('Engine', nextRadarBrief ? 'success' : 'partial');
+          engineRecorded = true;
+        }
+        setNicheSuggestions(buildNicheSuggestions(result.items, 8).filter((suggestion) => !suggestion.id.startsWith('story:')));
+        if (force && !result.items.length && result.warnings.length) {
+          throw new Error(result.warnings.join(' '));
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (engineStarted && !engineRecorded) recordRuntimeFinish('Engine', 'error', message);
+        if (!sourcesRecorded) recordRuntimeFinish('Sources', 'error', message);
+        throw error;
+      } finally {
+        setScanning(false);
+        setLoading(false);
+      }
+    }), [
+    preferences.spaceNewsSources,
+    preferences.selectedSpaceNiche,
+    preferences.customSpaceNiche,
+    preferences.spaceInterestLanguage,
+    discoveryTopic,
+  ]);
+
+  useEffect(() => {
+    void runScan(false).catch(() => {
+      setWarnings([fa
+        ? 'خوراک‌های رسمی در دسترس نبودند یا ذخیرهٔ نتیجه کامل نشد. اتصال و فضای ذخیره‌سازی را بررسی و دوباره تلاش کن.'
+        : 'Official feeds were unavailable or the local result could not be saved. Check connectivity and storage, then retry.']);
+    });
+  }, [runScan, fa]);
+
+
+  const refresh = () => void op.run(
+    () => runScan(true),
+    fa ? 'رادار منابع و خبرها به‌روزرسانی شد.' : 'Space Radar and publisher news refreshed.',
+  );
 
   const saveItem = (item: SpaceNewsItem) => void op.run(async () => {
     const note = {
@@ -48,46 +236,6 @@ export default function CosmicNews() {
     };
     await useScout.getState().commit((data) => ({ ...data, notes: [note, ...data.notes] }));
   }, 'Source saved to the Space Research folder in Notes.');
-
-  useEffect(() => {
-    let active = true;
-    recordRuntimeStart('Sources');
-    void fetchSpaceNews(preferences.spaceNewsSources).then((result) => {
-      recordRuntimeFinish('Sources', result.warnings.length ? 'partial' : 'success');
-      if (!active) return;
-      setItems(result.items);
-      setVisibleCount(15);
-      setWarnings(result.warnings);
-      const currentRegistry = useScout.getState().data.feedRegistry;
-      if (JSON.stringify(currentRegistry) !== JSON.stringify(result.registry)) {
-        void useScout.getState().commit((data) => ({ ...data, feedRegistry: result.registry }))
-          .catch(() => setWarnings((current) => [...current, 'The refreshed feed cache could not be saved locally.']));
-      }
-    }).catch((error) => {
-      recordRuntimeFinish('Sources', 'error', error instanceof Error ? error.message : String(error));
-      if (active) setWarnings((current) => [...current, 'Official news feeds could not be reached. Showing saved publisher items when available.']);
-    }).finally(() => {
-      if (active) setLoading(false);
-    });
-    return () => { active = false; };
-  }, [preferences.spaceNewsSources]);
-
-  const refresh = () => void op.run(async () => {
-    recordRuntimeStart('Sources');
-    let result: Awaited<ReturnType<typeof fetchSpaceNews>>;
-    try {
-      result = await fetchSpaceNews(preferences.spaceNewsSources, fetch, true);
-      recordRuntimeFinish('Sources', result.warnings.length ? 'partial' : 'success');
-    } catch (error) {
-      recordRuntimeFinish('Sources', 'error', error instanceof Error ? error.message : String(error));
-      throw error;
-    }
-    setItems(result.items);
-    setVisibleCount(15);
-    setWarnings(result.warnings);
-    await useScout.getState().commit((data) => ({ ...data, feedRegistry: result.registry }));
-    if (!result.items.length && result.warnings.length) throw new Error(result.warnings.join(' '));
-  }, 'Space news updated from selected feeds.');
 
   const researchStory = (item: SpaceNewsItem) => void op.run(async () => {
     const idea = await useScout.getState().ensureSourceIdea({
@@ -116,23 +264,66 @@ export default function CosmicNews() {
         ListHeaderComponent={
           <View style={{ gap: 16, marginBottom: 18 }}>
             <ScreenIntro
-              eyebrow="OFFICIAL PUBLISHER FEEDS"
-              title="Cosmic News"
-              subtitle="NASA, JPL and ESA headlines with the publisher, publication date and original source link kept attached."
+              eyebrow="SPACE RADAR · OFFICIAL SIGNALS"
+              title="News & Space Radar"
+              subtitle="One place for official publisher reports, Wikimedia attention signals and topic clusters. Open any story to research it."
               icon={Newspaper}
             />
             <Panel variant="soft">
               <View style={styles.rowBetween}>
-                <Heading>Feed controls</Heading>
+                <Heading>Space Radar</Heading>
+                <BadgeText>{scanning ? 'REFRESHING' : lastScannedAt ? 'UPDATED' : 'NOT REFRESHED'}</BadgeText>
+              </View>
+              <Txt muted>Official publisher feeds and Wikimedia monthly article pageviews. Pageviews are an attention proxy, not YouTube search volume, trend velocity or a view forecast.</Txt>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7 }}>
+                <MetricCard label="MATCHED PUBLISHER REPORTS" value={radarNews.length} hint="Reports for the selected space scope" />
+                <MetricCard label="ALL RETAINED REPORTS" value={engineNews.length} hint="Unique publisher records retained for engine analysis" />
+                <MetricCard label="WIKIMEDIA MONTHS" value={radarWiki?.monthlyViews.length ?? 0} hint="Monthly article pageview observations" />
+                <MetricCard label="TOPIC CLUSTERS" value={nicheSuggestions.length} hint="Clusters from returned reports" />
+              </View>
+              {radarWiki ? (
+                <View style={styles.softCard}>
+                  <BadgeText>WIKIMEDIA ARTICLE ATTENTION</BadgeText>
+                  <SourceHeading>{radarWiki.articleTitle}</SourceHeading>
+                  {radarWiki.monthlyViews.length ? (
+                    <Txt muted>{radarWiki.monthlyViews[radarWiki.monthlyViews.length - 1].month + ' · ' +
+                      new Intl.NumberFormat(fa ? 'fa-IR' : 'en-US').format(radarWiki.monthlyViews[radarWiki.monthlyViews.length - 1].views) +
+                      ' article pageviews'}</Txt>
+                  ) : <Txt muted>No monthly pageview observation was returned.</Txt>}
+                </View>
+              ) : (
+                <Txt muted>{scanning ? 'Checking Wikimedia attention data…' : 'No Wikimedia pageview sample is saved for this topic yet.'}</Txt>
+              )}
+              {nicheSuggestions.length ? (
+                <View style={{ gap: 7 }}>
+                  <Heading>Topics appearing across reports</Heading>
+                  {nicheSuggestions.slice(0, 3).map((suggestion) => (
+                    <View key={suggestion.id} style={styles.softCard}>
+                      <View style={styles.rowBetween}>
+                        <SourceHeading>{suggestion.title}</SourceHeading>
+                        <BadgeText>{suggestion.matchedStories + ' reports'}</BadgeText>
+                      </View>
+                      <Txt muted>{suggestion.description}</Txt>
+                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7 }}>
+                        <Action secondary onPress={() => router.push({ pathname: '/youtube', params: { topic: suggestion.topic } })}>Research on YouTube</Action>
+                        <Action secondary onPress={() => router.push({ pathname: '/deep-research', params: { topic: suggestion.topic, niche: nicheId } })}>Deep Research</Action>
+                      </View>
+                    </View>
+                  ))}
+                </View>
+              ) : null}
+              <View style={styles.rowBetween}>
+                <Txt muted>{lastUpdatedAt > 0
+                  ? 'Last successful publisher response: ' + new Date(lastUpdatedAt).toLocaleString()
+                  : 'No successful publisher response has been recorded yet.'}</Txt>
                 <Text style={styles.badge}>{items.length} STORIES</Text>
               </View>
-              <Choices label="Show stories" options={['All selected feeds', 'Selected niche']} selected={[scope]} onChange={(values) => { setScope(values[0]); setVisibleCount(15); }} />
+              {scope ? <Choices label="Show stories" options={['All selected feeds', 'Selected niche']} selected={[scope]} onChange={(values) => { setScope(values[0]); setVisibleCount(15); }} /> : null}
               <Txt muted>{niche?.title ?? (nicheId === 'custom' ? 'Custom niche: ' + preferences.customSpaceNiche : 'All space topics')}</Txt>
-              {lastUpdatedAt > 0 ? <Txt muted>{'Last successful feed update: ' + new Date(lastUpdatedAt).toLocaleString()}</Txt> : null}
-              <Action busy={op.busy} onPress={refresh}>Refresh selected feeds</Action>
+              <Action busy={scanning || op.busy} onPress={refresh}>Refresh Radar & News</Action>
               {warnings.map((warning) => <Txt muted key={warning}>{warning}</Txt>)}
               <Text style={styles.badge}>{Math.min(visibleCount, displayedItems.length)} / {displayedItems.length} {scope === 'Selected niche' ? 'matching niche reports' : 'source reports'}</Text>
-              {loading ? <Txt muted>Checking enabled publishers… saved stories remain visible where available.</Txt> : null}
+              {loading || scanning ? <Txt muted>Checking enabled publishers… saved stories remain visible where available.</Txt> : null}
             </Panel>
             {!loading && !items.length ? (
               <Panel>

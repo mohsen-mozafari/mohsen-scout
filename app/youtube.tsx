@@ -133,6 +133,8 @@ export default function Discover() {
       subtitle="Build a bounded sample with your own topic, filters and saved reports. No scraping and no automatic background searches."
     >
       <Panel>
+        <Heading>1 · Choose a topic and sample settings</Heading>
+        <Txt muted>Enter one focused topic, refine the optional filters only when needed, then request one bounded official YouTube sample.</Txt>
         <Field
           label="What are you exploring?"
           value={topic}
@@ -140,9 +142,9 @@ export default function Discover() {
           placeholder="e.g. Small-space home studios"
         />
         <Txt muted>
-          Current sample: {region} · {selectedLanguages.map((code) => languages[code] || code).join(', ')} · {period} · {maximum} max videos
+          Selected sample: {region} · {selectedLanguages.map((code) => languages[code] || code).join(', ')} · {period} · {duration} · {category} · up to {maximum} videos
         </Txt>
-        <Fold title="Adjust search settings" summary={region + ' · ' + period + ' · ' + maximum + ' max videos'}>
+        <Fold title="Optional filters · tap to refine" summary={region + ' · ' + period + ' · ' + duration + ' · ' + category + ' · ' + maximum + ' videos'}>
           <Choices
             label="Region"
             options={regions}
@@ -192,12 +194,12 @@ export default function Discover() {
           disabled={busy || !ready || !topic.trim() || !selectedLanguages.length}
           onPress={() => void run()}
         >
-          {busy ? 'Researching…' : 'Start research'}
+          {busy ? 'Researching…' : '2 · Search YouTube sample'}
         </Action>
       </Panel>
       {Boolean(topic.trim()) && !report && (
-        <View style={{ gap: 12 }}>
-          <Heading>Query map</Heading>
+        <Fold title="How the search is prepared" summary={relatedQueries(topic).length + ' query variations'}>
+          <Txt muted>The query map shows the search scope before you spend YouTube API quota.</Txt>
           {relatedQueries(topic).map((query, index) => (
             <View style={[styles.row, { marginLeft: index ? 16 : 0 }]} key={query}>
               <View
@@ -211,7 +213,7 @@ export default function Discover() {
               <Txt muted>{query}</Txt>
             </View>
           ))}
-        </View>
+        </Fold>
       )}
       {!hasKey && !report && (
         <Button
@@ -240,7 +242,7 @@ export default function Discover() {
       {report && (
         <>
           <View style={styles.row}>
-            <Heading>Research desk</Heading>
+            <Heading>3 · Review your research results</Heading>
             <Text style={[styles.badge, { marginLeft: 'auto' }]}>
               {report.videos.length} {report.videos.length === 1 ? 'video' : 'videos'}
             </Text>
@@ -270,7 +272,7 @@ export default function Discover() {
               </Action>
             </Panel>
           ) : null}
-          <Fold title="Evidence & limitations" summary={report.videos.length + ' videos · ' + report.warnings.length + ' warnings'}>
+          <Fold title="What this sample shows · evidence & limitations" summary={report.videos.length + ' videos · ' + report.warnings.length + ' warnings'}>
             <Txt muted>{limitations}</Txt>
             <Txt muted>
               Collected {new Date(report.createdAt).toLocaleString('en-US')}. Cached for 15 minutes.

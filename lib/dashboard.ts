@@ -80,6 +80,32 @@ export function chooseBestIdea(ideas: readonly Idea[]): Idea | undefined {
   return rankDashboardIdeas(ideas)[0];
 }
 
+/** Select active engine ideas linked to the current research evidence. */
+export function selectDashboardIdeas(
+  ideas: readonly Idea[],
+  options: {
+    reportId?: string;
+    videoIds?: ReadonlySet<string>;
+    sourceUrls?: ReadonlySet<string>;
+    topic?: string;
+  } = {},
+): Idea[] {
+  const generated = rankDashboardIdeas(ideas.filter((idea) => idea.engineGenerated === true));
+  if (!generated.length) return [];
+
+  const linked = generated.filter((idea) =>
+    Boolean(options.reportId && idea.reportId === options.reportId) ||
+    Boolean(options.videoIds?.size && idea.videoIds.some((id) => options.videoIds?.has(id))) ||
+    Boolean(options.sourceUrls?.size && idea.sourceUrl && options.sourceUrls.has(idea.sourceUrl)),
+  );
+  if (linked.length) return linked;
+
+  const topic = options.topic?.trim();
+  return topic
+    ? generated.filter((idea) => matchesResearchTerms(idea.topic + ' ' + idea.concept, [topic]))
+    : generated;
+}
+
 /**
  * Builds a dashboard feed only from unexpired videos already present in a saved report.
  * Niche terms are strict: there is no fallback to unrelated videos.

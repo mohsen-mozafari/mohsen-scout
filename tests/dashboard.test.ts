@@ -7,6 +7,7 @@ import {
   engineReviewCacheKey,
   findCachedEngineReview,
   rankDashboardIdeas,
+  selectDashboardIdeas,
   runSingleFlight,
   selectDashboardVideos,
 } from '../lib/dashboard';
@@ -56,6 +57,25 @@ void test('dashboard chooses the strongest active idea and excludes archived, re
   const newestStrong = idea('newest-strong', 'Strong Opportunity', { sourceUrl: 'https://example.com/source', createdAt: now });
   assert.equal(chooseBestIdea([completed, rejected, archived, promising, strong, newestStrong])?.id, 'newest-strong');
   assert.deepEqual(rankDashboardIdeas([completed, rejected, archived]).map((item) => item.id), []);
+});
+
+void test('dashboard selects source-linked radar ideas without a report ID', () => {
+  const radarIdea = idea('radar-idea', 'Strong Opportunity', {
+    engineGenerated: true,
+    sourceUrl: 'https://example.com/publisher-story',
+    engineScore: 91,
+  });
+  const reportIdea = idea('report-idea', 'Promising', {
+    engineGenerated: true, reportId: 'report-2', videoIds: ['video-2'], engineScore: 74,
+  });
+  const manual = idea('manual-idea', 'Strong Opportunity', { engineScore: 99 });
+  assert.deepEqual(selectDashboardIdeas([manual, radarIdea], {
+    sourceUrls: new Set(['https://example.com/publisher-story']), topic: 'Mars exploration',
+  }).map((item) => item.id), ['radar-idea']);
+  assert.deepEqual(selectDashboardIdeas([radarIdea, reportIdea], {
+    reportId: 'report-2', videoIds: new Set(['video-2']), topic: 'Mars',
+  }).map((item) => item.id), ['report-idea']);
+  assert.deepEqual(selectDashboardIdeas([manual], { topic: 'Mars' }), []);
 });
 
 void test('internal engine evidence merges retained report and global videos, deduplicates, expires and caps input', () => {

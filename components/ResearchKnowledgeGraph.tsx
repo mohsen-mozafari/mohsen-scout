@@ -376,7 +376,7 @@ export function ResearchKnowledgeGraph({
                       alignItems: 'center',
                       justifyContent: 'center',
                     }}>
-                    <Text style={{ color: p.background, fontSize: 9, fontWeight: '800' }}>{selected ? point.idea.engineScore : point.index + 1}</Text>
+                    <Text style={{ color: p.background, fontSize: 8, fontWeight: '800' }}>{Math.round(point.idea.engineScore ?? 0)}</Text>
                   </Pressable>
                 );
               })}
@@ -406,7 +406,7 @@ export function ResearchKnowledgeGraph({
                 <DirectionalText value={band === 'strong' ? label('Strong', 'قوی') : band === 'moderate' ? label('Medium', 'متوسط') : label('Weak', 'ضعیف')} style={{ color: p.muted, fontSize: 10 }} />
               </View>
             ))}
-            <DirectionalText value={label('Lines = shared evidence / graph relation', 'خطوط = شاهد مشترک یا رابطه ثبت‌شده در گراف')} style={{ color: p.muted, fontSize: 10 }} />
+            <DirectionalText value={label('Color = score band · number = score / 100 · lines = shared evidence', 'رنگ = سطح امتیاز · عدد = امتیاز از ۱۰۰ · خطوط = شواهد مشترک')} style={{ color: p.muted, fontSize: 10 }} />
           </View>
           {monthlyChart ? (
             <View style={{ gap: 7, borderTopWidth: 1, borderTopColor: p.borderSoft, paddingTop: 12 }}>

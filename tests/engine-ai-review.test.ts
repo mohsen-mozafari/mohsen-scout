@@ -13,6 +13,7 @@ void test('AI engine review prompt is grounded in aggregate local intelligence s
       { label: 'Duplicate records merged', detail: '4 duplicates merged' },
     ],
     confidence: { level: 'moderate', reason: 'Computed from sample coverage and freshness only.' },
+    recommendation: { topic: 'Build a Mars sample-return explainer', concept: 'Compare mission goals with evidence that could verify each claim.' },
     language: 'en',
   });
   assert.match(prompt, /local engine processed/i);
@@ -23,6 +24,12 @@ void test('AI engine review prompt is grounded in aggregate local intelligence s
   assert.match(prompt, /Adversarial Check/);
   assert.match(prompt, /Next Action/);
   assert.match(prompt, /Gather more evidence/);
+  assert.match(prompt, /Build a Mars sample-return explainer/);
+  assert.match(prompt, /Compare mission goals/);
+  assert.match(prompt, /Independently critique the proposed idea rather than endorsing the local engine/i);
+  assert.match(prompt, /only if the supplied evidence includes enough comparable historical outcomes/i);
+  assert.match(prompt, /no reliable percentage can be calculated from the available evidence/i);
+  assert.match(prompt, /Never invent a number to fill the gap/i);
   assert.match(prompt, /aggregate local-engine indicators/i);
   assert.match(prompt, /raw headlines, video titles, descriptions, links and per-item statistics are intentionally excluded/i);
   assert.match(prompt, /Do not pretend to have seen individual sources or videos/i);

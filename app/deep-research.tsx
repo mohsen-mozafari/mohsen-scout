@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Linking, View, Text } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { Button } from 'heroui-native';
-import { Page, Panel, Heading, Txt, Field, Action, styles, ErrorBox, useOperation, SourceText } from '@/components/ScoutUI';
+import { Page, Panel, Heading, Txt, Field, Action, Fold, styles, ErrorBox, useOperation, SourceText } from '@/components/ScoutUI';
 import { palette as p } from '@/lib/theme';
 import { useScout } from '@/lib/store';
 import { translateText } from '@/lib/i18n';
@@ -293,22 +293,25 @@ export default function DeepResearch() {
     await useScout.getState().commit((data) => ({ ...data, notes: [note, ...data.notes] }));
   }, 'Research brief saved to Notes.');
   return (
-    <Page title="Deep Research" eyebrow="SOURCE-LED WORKSPACE" showBack subtitle="Bring official publisher sources, public-interest context and a bounded YouTube sample together in one reviewable brief.">
-      <Txt muted>Choose a topic. The app combines selected official news, a clearly labelled public-interest proxy and an optional YouTube sample, then prepares a research structure with source links. The final topic choice and research start stay under your control.</Txt>
+    <Page title="Deep Research" eyebrow="3-STEP RESEARCH WORKSPACE" showBack subtitle="Choose a question, build one evidence-backed brief, then review the sections you need.">
+      <Txt muted>Step 1 · Choose the topic. Step 2 · Build the brief. Step 3 · Review the evidence, sources and production plan. Research begins only when you press the action.</Txt>
       {linkedIdea ? <Action secondary onPress={() => router.push({ pathname: '/detail', params: { idea: linkedIdea.id } })}>{'Research linked to: ' + linkedIdea.topic + ' · Open idea'}</Action> : null}
       <Panel>
-        <Field label="Research topic" value={topic} onChange={setTopic} placeholder="e.g. What JWST has found in exoplanet atmospheres" multiline />
-        <Action busy={op.busy} disabled={!topic.trim()} onPress={run}>Start deep research</Action>
+        <Heading>1 · Choose the research question</Heading>
+        <Field label="What should this brief investigate?" value={topic} onChange={setTopic} placeholder="e.g. What JWST has found in exoplanet atmospheres" multiline />
+        <Txt muted>Uses selected publisher feeds, a clearly labelled Wikimedia attention proxy and a bounded YouTube sample. The brief keeps original source links and verification steps.</Txt>
+        <Action busy={op.busy} disabled={!topic.trim()} onPress={run}>2 · Build research brief</Action>
       </Panel>
       {brief && (
         <>
           <Panel>
-            <Heading>{brief.topic}</Heading>
+            <Heading>Research overview · {brief.topic}</Heading>
             <Text style={styles.badge}>Prepared {new Date(brief.createdAt).toLocaleString()}</Text>
-            <Txt muted>Evidence is presented by provider. Wikipedia is not treated as a primary scientific source; confirm scientific claims in the linked NASA/JPL/ESA material and cited papers.</Txt>
-            {brief.warnings.map((warning) => <Txt muted key={warning}>Limitation: {warning}</Txt>)}
+            <Txt muted>{brief.news.length} publisher reports · {brief.videos.length} YouTube sample videos · {brief.generatedIdeas.length} generated ideas · {brief.wiki ? 'Wikimedia context available' : 'No Wikimedia result'}.</Txt>
+            <Txt muted>Wikimedia pageviews indicate article attention, not YouTube demand. Treat generated angles as research candidates and verify claims against the linked primary sources.</Txt>
+            {brief.warnings.length ? <Fold title="Coverage limits & warnings" summary={brief.warnings.length + ' item(s) to review'}>{brief.warnings.map((warning) => <Txt muted key={warning}>Limitation: {warning}</Txt>)}</Fold> : null}
           </Panel>
-          <Panel>
+          <Fold title="3 · Recommended content ideas" summary={brief.generatedIdeas.length + ' evidence-backed ideas'}>          <Panel>
             <Heading>Ideas generated from this research</Heading>
             {brief.generatedIdeas.length ? brief.generatedIdeas.map((idea) => (
               <View key={idea.id} style={{ gap: 5 }}>
@@ -319,7 +322,7 @@ export default function DeepResearch() {
               </View>
             )) : <Txt muted>No sufficiently distinct angle could be generated from the returned evidence. Add more source material or choose a narrower question.</Txt>}
           </Panel>
-          <Panel>
+</Fold>          <Fold title="4 · Engine findings, evidence & confidence" summary={brief.internalAnalysis.evidence.length + ' evidence signals · ' + brief.internalAnalysis.angles.length + ' content angles'}>          <Panel>
             <Heading>Internal Research Engine</Heading>
             <ResearchOverviewChart
               topic={brief.topic}
@@ -368,8 +371,8 @@ export default function DeepResearch() {
               {brief.internalAnalysis.intelligence.potentialContradictions.map((item) => <Txt muted key={item}>{'Potential discrepancy: ' + item}</Txt>)}
             </View>
           </Panel>
-          {brief.wiki && (
-            <Panel>
+</Fold>          {brief.wiki && (
+          <Fold title="5 · Wikimedia context" summary={brief.wiki.articleTitle}>            <Panel>
               <Heading>Public-interest context · Wikimedia</Heading>
               <SourceText>{brief.wiki.articleTitle}</SourceText>
               <SourceText muted>{brief.wiki.summary || 'No encyclopedia summary was returned.'}</SourceText>
@@ -377,8 +380,9 @@ export default function DeepResearch() {
                 <Button.Label>Check the article and its references ↗</Button.Label>
               </Button>
             </Panel>
+          </Fold>
           )}
-          <Panel>
+          <Fold title="6 · Official publisher news" summary={brief.news.length + ' source-linked reports'}>          <Panel>
             <Heading>Primary-source news</Heading>
             {!brief.news.length && <Txt muted>No selected-feed headline directly matched this topic. Use the source links from Cosmic News for a broader scan.</Txt>}
             {brief.news.map((item) => (
@@ -393,7 +397,7 @@ export default function DeepResearch() {
               </View>
             ))}
           </Panel>
-          <Panel>
+</Fold>          <Fold title="7 · YouTube evidence sample" summary={brief.videos.length + ' videos · source links retained'}>          <Panel>
             <Heading>YouTube evidence</Heading>
             {brief.videos.length > 0 ? brief.videos.map((video) => (
               <View key={video.id} style={{ gap: 4 }}>
@@ -404,7 +408,7 @@ export default function DeepResearch() {
               </View>
             )) : <Txt muted>No YouTube sample was available. This does not block the source-led brief.</Txt>}
           </Panel>
-          <Panel>
+</Fold>          <Fold title="8 · Production plan & verification" summary={brief.titleIdeas.length + ' title ideas · ' + brief.outline.length + ' story steps'}>          <Panel>
             <Heading>Suggested video titles</Heading>
             {brief.titleIdeas.map((title) => <Txt key={title}>{title}</Txt>)}
           </Panel>
@@ -421,7 +425,7 @@ export default function DeepResearch() {
             <Heading>Scientific verification checklist</Heading>
             {brief.verificationQuestions.map((line) => <Txt key={line}>• {line}</Txt>)}
           </Panel>
-          <Action busy={op.busy} onPress={saveToNotes}>Save full brief to Notes</Action>
+</Fold>          <Action busy={op.busy} onPress={saveToNotes}>Save full brief to Notes</Action>
           <Action secondary onPress={() => router.push('/notes')}>Open Notes workspace</Action>
         </>
       )}
