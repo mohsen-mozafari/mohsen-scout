@@ -141,7 +141,7 @@ export default function Discover() {
         <Txt muted>
           Current sample: {region} · {selectedLanguages.map((code) => languages[code] || code).join(', ')} · {period} · {maximum} max videos
         </Txt>
-        <Fold title="Adjust search settings">
+        <Fold title="Adjust search settings" summary={region + ' · ' + period + ' · ' + maximum + ' max videos'}>
           <Choices
             label="Region"
             options={regions}
@@ -269,7 +269,7 @@ export default function Discover() {
               </Action>
             </Panel>
           ) : null}
-          <Fold title="Evidence & limitations">
+          <Fold title="Evidence & limitations" summary={report.videos.length + ' videos · ' + report.warnings.length + ' warnings'}>
             <Txt muted>{limitations}</Txt>
             <Txt muted>
               Collected {new Date(report.createdAt).toLocaleString('en-US')}. Cached for 15 minutes.
@@ -277,7 +277,7 @@ export default function Discover() {
             </Txt>
             <Txt muted>Queries: {report.queries.join(' · ')}</Txt>
           </Fold>
-          <Fold title="Emerging Topics">
+          <Fold title="Emerging Topics" summary={Math.min(2, report.videos.length) + ' recent examples'}>
             <Txt muted>Recent examples, not proof of an emerging trend.</Txt>
             {[...report.videos].sort((a, b) => Date.parse(b.publishedAt) - Date.parse(a.publishedAt)).slice(0, 2).map((v) => (
               <View style={{ gap: 6 }} key={v.id}>
@@ -289,7 +289,7 @@ export default function Discover() {
               </View>
             ))}
           </Fold>
-          <Fold title="Popular Topics">
+          <Fold title="Popular Topics" summary={report.videos.filter((v) => v.query.includes('YouTube popularity order')).length + ' popularity-ordered examples'}>
             <Txt muted>
               Examples ordered by YouTube popularity, not an estimate of market demand.
             </Txt>
@@ -302,13 +302,13 @@ export default function Discover() {
               <Txt muted>No distinct popularity-ordered examples in this sample.</Txt>
             )}
           </Fold>
-          <Fold title="Interesting Subtopics">
+          <Fold title="Interesting Subtopics" summary={Math.max(0, report.queries.length - 1) + ' follow-up queries'}>
             <Txt muted>Generated search angles to investigate, not discovered trends.</Txt>
             {report.queries.slice(1).map((q) => (
               <Txt key={q}>{q}</Txt>
             ))}
           </Fold>
-          <Fold title="Research Questions">
+          <Fold title="Research Questions" summary="3 production prompts">
             <Txt>
               Who is this useful for? Which claim can you demonstrate? What would your version add?
               Which assumptions need direct audience research?
@@ -345,7 +345,7 @@ export default function Discover() {
                 ))}
             </View>
           )}
-          <Fold title="Relevant Videos">
+          <Fold title="Relevant Videos" summary={report.videos.length + ' returned videos'}>
             {report.videos.length > 1 && (
               <Choices label="Sort this sample" options={RESEARCH_SORT_OPTIONS} selected={[sort]} onChange={(values) => { const value = values[0]; if (value && isResearchVideoSort(value)) setSort(value); }} />
             )}
@@ -368,7 +368,7 @@ export default function Discover() {
         </>
       )}
       {!report && !busy && reports.length > 0 && (
-        <Fold title="Recent research">
+        <Fold title="Recent research" summary={reports.length + ' saved runs'}>
           {reports.slice(0, 10).map((r) => (
             <Action
               key={r.id}

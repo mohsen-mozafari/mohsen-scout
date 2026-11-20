@@ -17,6 +17,7 @@ import { generateEditorialIdeas } from './idea-generation';
 import { attachReportToIdea as attachReport, attachVideoReferenceToIdea as attachVideoReference, getOrCreateSourceIdea, type SourceIdeaInput } from './idea-research';
 import { getCachedSpaceNews, hydrateSpaceNewsRegistry } from './space';
 import { normalizeResearchText } from './intelligence';
+import { recordRuntimeFinish, recordRuntimeStart } from './runtime-metrics';
 type State = {
   data: LocalData;
   ready: boolean;
@@ -101,6 +102,10 @@ export const useScout = create<State>((set, get) => ({
   },
   research: async (input, origin = 'manual', forceRefresh = false) => {
     if (get().busy) return undefined;
+    recordRuntimeStart('YouTube');
+    let youtubeRecorded = false;
+    let engineStarted = false;
+    let engineRecorded = false;
     set({ busy: true, error: '', progress: 'Preparing related queries…' });
     try {
       if (!input.topic.trim() || !input.languages.length)
@@ -115,6 +120,8 @@ export const useScout = create<State>((set, get) => ({
       if (cached) {
         set({ progress: 'Using a recent local search sample.' });
         if (!cached.analyzed) await get().analyze(cached.id);
+        recordRuntimeFinish('YouTube', 'partial');
+        youtubeRecorded = true;
         return get().data.reports.find((item) => item.id === cached.id) ?? cached;
       }
       const result = await searchYouTube(
@@ -134,6 +141,8 @@ export const useScout = create<State>((set, get) => ({
         },
         (progress) => set({ progress }),
       );
+      recordRuntimeFinish('YouTube', 'success');
+      youtubeRecorded = true;
       const report: Report = {
         ...result,
         input: { ...input, topic: input.topic.trim() },
@@ -145,6 +154,8 @@ export const useScout = create<State>((set, get) => ({
       const availableNews = getCachedSpaceNews(currentData.feedRegistry, currentData.preferences.spaceNewsSources);
       const priorMemory = currentData.researchMemory.find((entry) => normalizeResearchText(entry.topic) === normalizeResearchText(report.input.topic));
       const currentVideos = recentEngineVideos(result.videos);
+      recordRuntimeStart('Engine');
+      engineStarted = true;
       const generatedIdeas = generateEditorialIdeas({
         topic: report.input.topic,
         news: availableNews,
@@ -161,6 +172,8 @@ export const useScout = create<State>((set, get) => ({
         language: get().data.preferences.uiLanguage ?? 'fa',
         limit: 8,
       });
+      recordRuntimeFinish('Engine', 'success');
+      engineRecorded = true;
       await get().commit((data) => ({
         ...data,
         reports: [report, ...data.reports],
@@ -171,8 +184,17 @@ export const useScout = create<State>((set, get) => ({
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       return report;
     } catch (error) {
+      const message = error instanceof Error ? error.message : 'Research could not finish. Try again.';
+      if (engineStarted && !engineRecorded) {
+        recordRuntimeFinish('Engine', 'error', message);
+        engineRecorded = true;
+      }
+      if (!youtubeRecorded) {
+        recordRuntimeFinish('YouTube', 'error', message);
+        youtubeRecorded = true;
+      }
       set({
-        error: error instanceof Error ? error.message : 'Research could not finish. Try again.',
+        error: message,
       });
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       return undefined;
@@ -183,6 +205,8 @@ export const useScout = create<State>((set, get) => ({
   analyze: async (id) => {
     const report = get().data.reports.find((r) => r.id === id);
     if (!report || report.analyzed) return;
+    recordRuntimeStart('Engine');
+    try {
     const currentData = get().data;
     const availableNews = getCachedSpaceNews(currentData.feedRegistry, currentData.preferences.spaceNewsSources);
     const priorMemory = currentData.researchMemory.find((entry) => normalizeResearchText(entry.topic) === normalizeResearchText(report.input.topic));
@@ -207,7 +231,12 @@ export const useScout = create<State>((set, get) => ({
       reports: data.reports.map((r) => (r.id === id ? { ...r, analyzed: true } : r)),
       ideas: [...generatedIdeas, ...data.ideas],
     }));
+    recordRuntimeFinish('Engine', 'success');
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (error) {
+      recordRuntimeFinish('Engine', 'error', error instanceof Error ? error.message : String(error));
+      throw error;
+    }
   },
   saveVideo: async (video, topic) => {
     await get().commit((data) => ({

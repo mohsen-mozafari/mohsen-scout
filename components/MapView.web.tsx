@@ -9,6 +9,7 @@ import {
 } from 'react';
 import { GeoJson, Map, Marker, Overlay, type Point } from 'pigeon-maps';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { palette as p } from '@/lib/theme';
 
 import {
   DEFAULT_REGION,
@@ -341,26 +342,26 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
               disabled={!calloutMarker.onCalloutPress}
               onPress={() => calloutMarker.onCalloutPress?.(calloutMarker)}
               style={{
-                backgroundColor: '#ffffff',
-                borderColor: 'rgba(15, 23, 42, 0.12)',
+                backgroundColor: p.surface,
+                borderColor: p.border,
                 borderRadius: 8,
                 borderWidth: 1,
                 maxWidth: 180,
                 paddingHorizontal: 8,
                 paddingVertical: 6,
-                boxShadow: '0 10px 20px rgba(15, 23, 42, 0.14)',
+                boxShadow: '0 10px 20px ' + p.shadow,
                 // Centred above the 34px pin. Don't use Overlay `offset` for this: pigeon-maps
                 // places at anchor − offset, so a negative y moves the card down, not up.
                 transform: 'translate(-50%, calc(-100% - 40px))',
               }}
             >
               {calloutMarker.title ? (
-                <Text style={{ color: '#0f172a', fontSize: 12, fontWeight: '700' }}>
+                <Text style={{ color: p.text, fontSize: 12, fontWeight: '700' }}>
                   {calloutMarker.title}
                 </Text>
               ) : null}
               {calloutMarker.description ? (
-                <Text style={{ color: '#64748b', fontSize: 11, marginTop: 2 }}>
+                <Text style={{ color: p.muted, fontSize: 11, marginTop: 2 }}>
                   {calloutMarker.description}
                 </Text>
               ) : null}

@@ -59,6 +59,9 @@ export const styles = StyleSheet.create({
     minHeight: 52,
     paddingHorizontal: 18,
     paddingBottom: 8,
+    position: 'relative',
+    zIndex: 10,
+    elevation: 6,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -147,7 +150,7 @@ export const styles = StyleSheet.create({
     padding: 18,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: 'rgba(99, 160, 255, 0.48)',
+    borderColor: p.accentLine,
     gap: 13,
     overflow: 'hidden',
     backgroundColor: 'transparent',
@@ -221,7 +224,7 @@ export const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 5,
   },
-  choiceSelected: { backgroundColor: 'rgba(99, 160, 255, 0.24)', borderColor: p.accent },
+  choiceSelected: { backgroundColor: p.accentSoft, borderColor: p.accent },
   choicePressed: { opacity: 0.75 },
   choiceLabel: { fontFamily: 'Inter_600SemiBold', fontSize: 11, lineHeight: 16 },
   errorAction: {
@@ -334,7 +337,11 @@ export const styles = StyleSheet.create({
 export function AppHeader({ showBack = false }: { showBack?: boolean }) {
   const pathname = usePathname();
   const language = useScout((s) => s.data.preferences.uiLanguage ?? 'fa');
-  const canGoBack = showBack && router.canGoBack();
+  const canGoBack = showBack;
+  const goBack = () => {
+    if (router.canGoBack()) router.back();
+    else router.replace('/');
+  };
   const settingsLabel = translateText('Settings', language);
   const onSettings = pathname.endsWith('/settings');
   return (
@@ -342,10 +349,10 @@ export function AppHeader({ showBack = false }: { showBack?: boolean }) {
       <View style={styles.brandLockup}>
         {canGoBack ? (
           <Pressable
-            onPress={() => router.back()}
+            onPress={goBack}
+            hitSlop={12}
             accessibilityRole="button"
             accessibilityLabel="Go back"
-            hitSlop={8}
             style={({ pressed }) => [{
               width: 34,
               height: 34,
@@ -371,8 +378,9 @@ export function AppHeader({ showBack = false }: { showBack?: boolean }) {
         </View>
       </View>
       <Pressable
-        onPress={() => { if (!onSettings) router.push('/(tabs)/settings'); }}
+        onPress={() => { if (!onSettings) router.push('/settings'); }}
         disabled={onSettings}
+        hitSlop={12}
         accessibilityRole="button"
         accessibilityLabel={settingsLabel}
         accessibilityState={{ disabled: onSettings }}
@@ -388,6 +396,8 @@ export function AppHeader({ showBack = false }: { showBack?: boolean }) {
           justifyContent: 'center',
           gap: 7,
           opacity: pressed ? 0.72 : 1,
+          zIndex: 20,
+          elevation: 8,
         }]}
       >
         <SettingsIcon size={16} color={onSettings ? p.accent : p.text} />
@@ -579,7 +589,7 @@ export function Panel({
   if (variant === 'hero') {
     return (
       <LinearGradient
-        colors={['#18376A', '#16445C', '#152B4A']}
+        colors={[p.heroGradientStart, p.heroGradientMiddle, p.heroGradientEnd]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={styles.heroPanel}
@@ -832,14 +842,17 @@ export function ErrorBox({ message, onRetry }: { message: string; onRetry: () =>
 
 export function Fold({
   title,
+  summary,
   children,
 }: {
   title: string;
+  summary?: string;
   children: ReactNode;
 }) {
   const [expanded, setExpanded] = useState(false);
   const language = useScout((s) => s.data.preferences.uiLanguage ?? 'fa');
   const translatedTitle = translateText(title, language);
+  const translatedSummary = summary ? translateText(summary, language) : '';
   const direction = resolveTextDirection(translatedTitle);
   return (
     <View style={styles.fold}>
@@ -850,6 +863,11 @@ export function Fold({
         style={({ pressed }) => [styles.foldTrigger, pressed ? { opacity: 0.72 } : null]}
       >
         <Text style={[styles.foldLabel, { writingDirection: direction, textAlign: direction === 'rtl' ? 'right' : 'left', flex: 1 }]}>{translatedTitle}</Text>
+        {translatedSummary && !expanded ? (
+          <View style={{ maxWidth: '46%', borderRadius: 999, borderWidth: 1, borderColor: p.border, backgroundColor: p.surfaceAlt, paddingHorizontal: 8, paddingVertical: 4 }}>
+            <Text numberOfLines={1} style={{ color: p.muted, fontFamily: 'Inter_600SemiBold', fontSize: 9, lineHeight: 13 }}>{translatedSummary}</Text>
+          </View>
+        ) : null}
         <View style={styles.foldIcon}>
           {expanded ? <ChevronUp size={16} color={p.accent} /> : <ChevronDown size={16} color={p.muted} />}
         </View>

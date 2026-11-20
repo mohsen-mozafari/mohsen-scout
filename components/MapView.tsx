@@ -14,6 +14,7 @@ import RNMapView, {
   type UserLocationChangeEvent,
 } from 'react-native-maps';
 
+import { palette as p } from '@/lib/theme';
 import {
   DEFAULT_REGION,
   MAP_OVERLAY_DEFAULTS,
@@ -222,7 +223,7 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
         style={[
           {
             alignItems: 'center',
-            backgroundColor: '#f8fafc',
+            backgroundColor: p.background,
             justifyContent: 'center',
             padding: 24,
           },
@@ -232,7 +233,7 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
       >
         <Text
           style={{
-            color: '#0f172a',
+            color: p.text,
             fontSize: 16,
             fontWeight: '700',
             marginBottom: 8,
@@ -241,7 +242,7 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
         >
           Map unavailable in this runtime
         </Text>
-        <Text style={{ color: '#64748b', fontSize: 13, lineHeight: 18, textAlign: 'center' }}>
+        <Text style={{ color: p.muted, fontSize: 13, lineHeight: 18, textAlign: 'center' }}>
           This screen needs the native react-native-maps view. Use a development build or a runtime
           that includes it.
         </Text>

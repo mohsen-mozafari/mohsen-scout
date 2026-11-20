@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Image, Modal, Pressable, Text, View } from 'react-native';
 import { X } from 'lucide-react-native';
+import { palette as p } from '@/lib/theme';
 
 type Props = {
   uri?: string | null;
@@ -59,7 +60,7 @@ export function MediaPreview({
               source={{ uri: safeUri }}
               resizeMode="cover"
               onError={() => setFailed(true)}
-              style={{ width: '100%', height: imageHeight, backgroundColor: '#111827' }}
+              style={{ width: '100%', height: imageHeight, backgroundColor: p.surfaceAlt }}
             />
           </Pressable>
         ) : (
@@ -67,7 +68,7 @@ export function MediaPreview({
             source={{ uri: safeUri }}
             resizeMode="cover"
             onError={() => setFailed(true)}
-            style={{ width: '100%', height: imageHeight, borderRadius: 14, backgroundColor: '#111827' }}
+            style={{ width: '100%', height: imageHeight, borderRadius: 14, backgroundColor: p.surfaceAlt }}
           />
         )
       ) : (
@@ -76,13 +77,13 @@ export function MediaPreview({
             width: '100%',
             aspectRatio,
             borderRadius: 14,
-            backgroundColor: '#111827',
+            backgroundColor: p.surfaceAlt,
             alignItems: 'center',
             justifyContent: 'center',
             padding: 12,
           }}
         >
-          <Text style={{ color: '#94A3B8', fontSize: 12 }}>{placeholder}</Text>
+          <Text style={{ color: p.muted, fontSize: 12 }}>{placeholder}</Text>
         </View>
       )}
       {viewer && usable && (
@@ -96,7 +97,7 @@ export function MediaPreview({
           <View
             style={{
               flex: 1,
-              backgroundColor: 'rgba(2, 6, 23, 0.97)',
+              backgroundColor: p.overlay,
               justifyContent: 'center',
               alignItems: 'center',
               padding: 16,
@@ -114,12 +115,12 @@ export function MediaPreview({
                 width: 42,
                 height: 42,
                 borderRadius: 21,
-                backgroundColor: '#1E293B',
+                backgroundColor: p.raised,
                 alignItems: 'center',
                 justifyContent: 'center',
               }}
             >
-              <X size={22} color="#F8FAFC" />
+              <X size={22} color={p.text} />
             </Pressable>
             <Pressable onPress={() => setOpen(false)} style={{ width: '100%', height: '78%', justifyContent: 'center' }}>
               <Image
@@ -129,7 +130,7 @@ export function MediaPreview({
                 style={{ width: '100%', height: '100%', minHeight: 240 }}
               />
             </Pressable>
-            <Text style={{ color: '#CBD5E1', fontSize: 12, marginTop: 12 }}>{alt}</Text>
+            <Text style={{ color: p.muted, fontSize: 12, marginTop: 12 }}>{alt}</Text>
           </View>
         </Modal>
       )}

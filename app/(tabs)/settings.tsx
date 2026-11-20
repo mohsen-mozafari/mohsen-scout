@@ -1,5 +1,5 @@
 import * as Haptics from 'expo-haptics';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Text, View, Linking } from 'react-native';
 import { Button, Skeleton } from 'heroui-native';
 import { KeyRound, Download, Upload, Bell, Trash2, Bug } from 'lucide-react-native';
@@ -24,11 +24,29 @@ import { exportBackup, importBackup, restorePersonalData } from '@/lib/backup';
 import { shareText, readBackup, shareApk } from '@/lib/transfer';
 import { configureSchedule, enableNotifications, scheduleNotice } from '@/lib/scheduler';
 import { commitWithSchedule } from '@/lib/schedule';
-import { router } from 'expo-router';
+import { router, type ErrorBoundaryProps } from 'expo-router';
 import { palette as p } from '@/lib/theme';
 import { translateText } from '@/lib/i18n';
 import { SPACE_NICHES, SPACE_NEWS_SOURCES, type WikiLanguage } from '@/lib/space';
-function CredentialSection({ kind, label }: { kind: Credential; label: string }) {
+function normalizePreferences(value?: Partial<Preferences>): Preferences {
+  const fallback = defaults().preferences;
+  return {
+    ...fallback,
+    ...value,
+    languages: Array.isArray(value?.languages) ? [...value.languages] : fallback.languages,
+    spaceNewsSources: Array.isArray(value?.spaceNewsSources) ? [...value.spaceNewsSources] : fallback.spaceNewsSources,
+  };
+}
+
+function CredentialSection({
+  kind,
+  label,
+  onStatusChange,
+}: {
+  kind: Credential;
+  label: string;
+  onStatusChange?: (kind: Credential, stored: boolean | null) => void;
+}) {
   const language = useScout((state) => state.data.preferences.uiLanguage ?? 'fa');
   const [key, setValue] = useState('');
   const [stored, setStored] = useState(false);
@@ -37,12 +55,17 @@ function CredentialSection({ kind, label }: { kind: Credential; label: string })
   const op = useOperation();
   useEffect(() => {
     void getKey(kind)
-      .then((value) => setStored(Boolean(value)))
+      .then((value) => {
+        const exists = Boolean(value);
+        setStored(exists);
+        onStatusChange?.(kind, exists);
+      })
       .catch(() => {
+        onStatusChange?.(kind, null);
         setReadError('Could not read saved credentials. Reopen Settings to retry.');
         void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       });
-  }, [kind]);
+  }, [kind, onStatusChange]);
   const test = () =>
     void op.run(async () => {
       const value = await getKey(kind);
@@ -80,6 +103,7 @@ function CredentialSection({ kind, label }: { kind: Credential; label: string })
             await setKey(kind, key);
             setValue('');
             setStored(true);
+            onStatusChange?.(kind, true);
           }, 'Key saved securely.')
         }
       >
@@ -105,6 +129,7 @@ function CredentialSection({ kind, label }: { kind: Credential; label: string })
                 await deleteKey(kind);
                 setStored(false);
                 setConfirmed(false);
+                onStatusChange?.(kind, false);
               }, 'Key deleted.');
             }}
           >
@@ -121,20 +146,36 @@ function CredentialSection({ kind, label }: { kind: Credential; label: string })
 export default function Settings() {
   const data = useScout((s) => s.data);
   const ready = useScout((s) => s.ready);
-  const [prefs, setPrefs] = useState<Preferences>(data.preferences);
+  const [prefs, setPrefs] = useState<Preferences>(() => normalizePreferences(data.preferences));
   const [models, setModels] = useState<{ id: string; name: string }[]>([]);
+  const [credentialStatus, setCredentialStatus] = useState<{ youtube: boolean | null; openrouter: boolean | null }>({
+    youtube: null,
+    openrouter: null,
+  });
   const [modelBusy, setModelBusy] = useState(false);
   const [confirm, setConfirm] = useState('');
   const [restore, setRestore] = useState<ReturnType<typeof importBackup>>();
   const op = useOperation();
-  const [previousPreferences, setPreviousPreferences] = useState(data.preferences);
-  if (previousPreferences !== data.preferences) {
-    setPreviousPreferences(data.preferences);
-    setPrefs(data.preferences);
-  }
+  const handleCredentialStatus = useCallback((kind: Credential, stored: boolean | null) => {
+    setCredentialStatus((current) => ({ ...current, [kind]: stored }));
+  }, []);
+  useEffect(() => {
+    setPrefs(normalizePreferences(data.preferences));
+  }, [data.preferences]);
+  useEffect(() => {
+    let active = true;
+    void Promise.all([getKey('youtube'), getKey('openrouter')])
+      .then(([youtube, openrouter]) => {
+        if (active) setCredentialStatus({ youtube: Boolean(youtube), openrouter: Boolean(openrouter) });
+      })
+      .catch(() => {
+        if (active) setCredentialStatus({ youtube: null, openrouter: null });
+      });
+    return () => { active = false; };
+  }, []);
   const save = () =>
     void op.run(async () => {
-      if (!prefs.languages.length) throw new Error('Choose at least one default language.');
+      if (!Array.isArray(prefs.languages) || !prefs.languages.length) throw new Error('Choose at least one default language.');
       const current = useScout.getState();
       await commitWithSchedule(
         current.ready,
@@ -179,7 +220,7 @@ export default function Settings() {
       }));
     }, 'OpenRouter daily quota refreshed.');
   return (
-    <Page title="Settings" eyebrow="DEVICE & PROVIDERS" subtitle="Control your local profile, provider access, quotas, privacy and backups.">
+    <Page showBack title="Settings" eyebrow="DEVICE & PROVIDERS" subtitle="Control your local profile, provider access, quotas, privacy and backups.">
       {!ready && <Skeleton className="h-32 rounded-2xl" />}
       <Panel>
         <View style={styles.row}>
@@ -193,7 +234,7 @@ export default function Settings() {
           Run mock regression checks
         </Action>
       </Panel>
-      <Fold title="Profile & defaults">
+      <Fold title="Profile & defaults" summary={prefs.region + ' · ' + (prefs.languages?.length ?? 0) + ' language(s)'}>
         <Field
           label="Name (optional)"
           value={prefs.name}
@@ -235,7 +276,7 @@ export default function Settings() {
         </Action>
       </Fold>
 
-      <Fold title="Content discovery defaults">
+      <Fold title="Content discovery defaults" summary={(prefs.selectedSpaceNiche === 'all' ? 'All topics' : prefs.selectedSpaceNiche === 'custom' ? (prefs.customSpaceNiche || 'Custom topic') : prefs.selectedSpaceNiche) + ' · ' + (prefs.spaceNewsSources?.length ?? 0) + ' feeds'}>
         <Txt muted>These preferences are saved on this device and used automatically by Discovery and research screens.</Txt>
         <Choices
           label="Discovery scope"
@@ -294,8 +335,8 @@ export default function Settings() {
         />
         <Action busy={op.busy} disabled={!ready} onPress={save}>Save discovery preferences</Action>
       </Fold>
-      <Fold title="YouTube API">
-        <CredentialSection kind="youtube" label="YouTube Data API v3" />
+      <Fold title="YouTube API" summary={credentialStatus.youtube === null ? 'Key status not confirmed' : credentialStatus.youtube ? 'Key saved securely' : 'Key not set'}>
+        <CredentialSection kind="youtube" label="YouTube Data API v3" onStatusChange={handleCredentialStatus} />
         <Txt muted>
           Enable YouTube Data API v3 in Google Cloud, create a key, and restrict it to that API.
           Native clients cannot keep bundled secrets; this key belongs to you and is entered on your
@@ -312,7 +353,7 @@ export default function Settings() {
           Open Google Cloud
         </Action>
       </Fold>
-      <Fold title="OpenRouter · optional">
+      <Fold title="OpenRouter · optional" summary={(credentialStatus.openrouter === null ? 'Key status not confirmed' : credentialStatus.openrouter ? 'Key saved securely' : 'Key not set') + ' · ' + (prefs.hybridIntelligence ? 'Automatic review on' : 'Manual review only')}>
         <Choices
           label="Automatic external AI second opinion"
           options={['Automatic after research', 'Manual only']}
@@ -326,7 +367,7 @@ export default function Settings() {
           OpenRouter usage is limited by the existing daily cap and cached by evidence content.
         </Txt>
         <Action busy={op.busy} disabled={!ready} onPress={save}>Save AI automation</Action>
-        <CredentialSection kind="openrouter" label="OpenRouter" />
+        <CredentialSection kind="openrouter" label="OpenRouter" onStatusChange={handleCredentialStatus} />
         <Txt>
           Free-model requests today (UTC): {prefs.openRouterDailyUsed ?? prefs.openRouterRequestsToday ?? 0}
           /{prefs.openRouterDailyLimit ?? 50} · Remaining: {prefs.openRouterDailyRemaining ?? 'not refreshed'}
@@ -363,7 +404,7 @@ export default function Settings() {
           Open OpenRouter
         </Action>
       </Fold>
-      <Fold title="API budget & quota">
+      <Fold title="API budget & quota" summary={(data.budget.units ?? 0) + ' units · ' + (data.budget.requests ?? 0) + ' requests today'}>
         <Txt>Estimated units today: {data.budget.date === quotaDay() ? data.budget.units : 0}</Txt>
         <Txt>Requests today: {data.budget.date === quotaDay() ? data.budget.requests : 0}</Txt>
         <Choices
@@ -397,7 +438,7 @@ export default function Settings() {
           Open Google quota
         </Action>
       </Fold>
-      <Fold title="Automatic YouTube research">
+      <Fold title="Automatic YouTube research" summary={prefs.schedule === 'Manual' ? 'Manual · off' : prefs.paused ? 'Paused' : prefs.schedule}>
         <Choices
           label="Frequency"
           options={['Manual', 'Every 12 hours', 'Daily', 'Weekly'] as const}
@@ -426,7 +467,7 @@ export default function Settings() {
           Allow notifications
         </Action>
       </Fold>
-      <Fold title="Backup & phone transfer">
+      <Fold title="Backup & phone transfer" summary={(data.notes?.length ?? 0) + ' notes · ' + (data.links?.length ?? 0) + ' links · ' + (data.ideas?.length ?? 0) + ' ideas'}>
         <Txt muted>
           Exports your notes, links, folders, tags, ideas and preferences. API metadata, AI replies
           and keys are excluded. Restore replaces personal data and resets scheduling to Manual.
@@ -497,7 +538,7 @@ export default function Settings() {
           installed directly.
         </Txt>
       </Fold>
-      <Fold title="Privacy & data management">
+      <Fold title="Privacy & data management" summary={(data.researchMemory?.length ?? 0) + ' saved research topics · keys stay on device'}>
         <Txt muted>
           YouTube receives your searches and API key. OpenRouter receives the topic and processed aggregate research signals only when automatic hybrid review is enabled, or the prompt you manually request. Raw news/video metadata, private notes and API keys are not sent. Nothing is sent to an app-owned server. No video, audio,
           subtitle or caption downloads. API titles, descriptions and thumbnails expire within 29
@@ -573,12 +614,28 @@ export default function Settings() {
           OpenRouter privacy
         </Action>
       </Fold>
-      <Fold title="App info">
+      <Fold title="App info" summary="Version 1.5.7 · local-first">
         <Heading>MOHSEN SCOUT</Heading>
         <Txt>Version 1.5.7</Txt>
       </Fold>
       {Boolean(op.error) && <ErrorBox message={op.error} onRetry={op.clear} />}
       {Boolean(op.message) && <Txt muted>{op.message}</Txt>}
+    </Page>
+  );
+}
+
+export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
+  return (
+    <Page showBack title="Settings recovery" eyebrow="LOCAL FALLBACK">
+      <Panel>
+        <Heading>Settings could not be displayed</Heading>
+        <Txt>The settings screen encountered a problem. Your saved preferences and keys have not been intentionally changed.</Txt>
+        <Action onPress={retry}>Retry settings</Action>
+        <Action secondary onPress={() => router.replace('/(tabs)')}>Return to Space Radar</Action>
+        <Fold title="Technical details" summary="Optional diagnostic detail">
+          <Txt muted>{error.message}</Txt>
+        </Fold>
+      </Panel>
     </Page>
   );
 }

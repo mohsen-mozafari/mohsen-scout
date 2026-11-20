@@ -125,7 +125,7 @@ export default function Library() {
                   </Action>
                 </View>
               </View>
-              <Fold title="Filter and sort library">
+              <Fold title="Filter and sort library" summary={filtered.length + ' shown · ' + data.links.length + ' saved'}>
                 <Choices
                   label="Sort"
                   options={['Newest', 'Oldest', 'Title']}

@@ -1,4 +1,17 @@
 import { Platform } from 'react-native';
+import { palette } from './theme';
+
+const ROOT_THEME_TOKENS: Record<string, string> = {
+  '--scout-background': palette.background,
+  '--scout-surface': palette.surface,
+  '--scout-surface-raised': palette.raised,
+  '--scout-foreground': palette.text,
+  '--scout-muted': palette.muted,
+  '--scout-placeholder': palette.placeholder,
+  '--scout-accent': palette.accent,
+  '--scout-input': palette.input,
+  '--scout-border': palette.border,
+};
 
 // HeroUI computes these with color-mix(). On web, useThemeColor can read the unresolved
 // expression and HeroUI's colorKit then falls back to black; registering them as <color>
@@ -38,7 +51,14 @@ const CALCULATED_COLOR_TOKENS = [
 ];
 
 export function registerColorTokens(): void {
-  if (Platform.OS !== 'web' || typeof CSS === 'undefined' || !CSS.registerProperty) return;
+  if (Platform.OS !== 'web') return;
+  if (typeof document !== 'undefined') {
+    const rootStyle = document.documentElement.style;
+    for (const [name, value] of Object.entries(ROOT_THEME_TOKENS)) {
+      rootStyle.setProperty(name, value);
+    }
+  }
+  if (typeof CSS === 'undefined' || !CSS.registerProperty) return;
   for (const name of CALCULATED_COLOR_TOKENS) {
     try {
       CSS.registerProperty({

@@ -8,6 +8,7 @@ import { useScout } from '@/lib/store';
 import { SPACE_NICHES, SPACE_NEWS_SOURCES, fetchSpaceNews, getCachedSpaceNews, newsForNiche, type SpaceNewsItem } from '@/lib/space';
 import { uid } from '@/lib/types';
 import { MediaPreview } from '@/components/MediaPreview';
+import { recordRuntimeFinish, recordRuntimeStart } from '@/lib/runtime-metrics';
 
 export default function CosmicNews() {
   const params = useLocalSearchParams<{ niche?: string }>();
@@ -50,7 +51,9 @@ export default function CosmicNews() {
 
   useEffect(() => {
     let active = true;
+    recordRuntimeStart('Sources');
     void fetchSpaceNews(preferences.spaceNewsSources).then((result) => {
+      recordRuntimeFinish('Sources', result.warnings.length ? 'partial' : 'success');
       if (!active) return;
       setItems(result.items);
       setVisibleCount(15);
@@ -60,7 +63,8 @@ export default function CosmicNews() {
         void useScout.getState().commit((data) => ({ ...data, feedRegistry: result.registry }))
           .catch(() => setWarnings((current) => [...current, 'The refreshed feed cache could not be saved locally.']));
       }
-    }).catch(() => {
+    }).catch((error) => {
+      recordRuntimeFinish('Sources', 'error', error instanceof Error ? error.message : String(error));
       if (active) setWarnings((current) => [...current, 'Official news feeds could not be reached. Showing saved publisher items when available.']);
     }).finally(() => {
       if (active) setLoading(false);
@@ -69,7 +73,15 @@ export default function CosmicNews() {
   }, [preferences.spaceNewsSources]);
 
   const refresh = () => void op.run(async () => {
-    const result = await fetchSpaceNews(preferences.spaceNewsSources, fetch, true);
+    recordRuntimeStart('Sources');
+    let result: Awaited<ReturnType<typeof fetchSpaceNews>>;
+    try {
+      result = await fetchSpaceNews(preferences.spaceNewsSources, fetch, true);
+      recordRuntimeFinish('Sources', result.warnings.length ? 'partial' : 'success');
+    } catch (error) {
+      recordRuntimeFinish('Sources', 'error', error instanceof Error ? error.message : String(error));
+      throw error;
+    }
     setItems(result.items);
     setVisibleCount(15);
     setWarnings(result.warnings);

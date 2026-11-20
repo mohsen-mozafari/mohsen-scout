@@ -6,36 +6,46 @@
 
 @layer theme {
   :root {
+    --scout-background: #000000;
+    --scout-surface: #0A0A0A;
+    --scout-surface-raised: #121212;
+    --scout-foreground: #F1F6FF;
+    --scout-muted: #B8B8B8;
+    --scout-placeholder: #909090;
+    --scout-accent: #63A0FF;
+    --scout-input: #0A0A0A;
+    --scout-border: #404040;
+
     @variant light {
-      --background: oklch(0.145 0.035 258);
-      --foreground: oklch(0.96 0.012 255);
-      --surface: oklch(0.195 0.045 258);
-      --surface-foreground: oklch(0.96 0.012 255);
-      --accent: oklch(0.68 0.17 255);
-      --accent-foreground: oklch(0.16 0.04 258);
-      --muted: oklch(0.73 0.035 250);
-      --default: oklch(0.24 0.05 258);
-      --default-foreground: oklch(0.96 0.012 255);
-      --field-background: oklch(0.16 0.04 258);
-      --field-foreground: oklch(0.96 0.012 255);
-      --field-placeholder: oklch(0.61 0.04 250);
-      --border: oklch(0.34 0.06 255);
+      --background: var(--scout-background);
+      --foreground: var(--scout-foreground);
+      --surface: var(--scout-surface);
+      --surface-foreground: var(--scout-foreground);
+      --accent: var(--scout-accent);
+      --accent-foreground: var(--scout-background);
+      --muted: var(--scout-muted);
+      --default: var(--scout-surface-raised);
+      --default-foreground: var(--scout-foreground);
+      --field-background: var(--scout-input);
+      --field-foreground: var(--scout-foreground);
+      --field-placeholder: var(--scout-placeholder);
+      --border: var(--scout-border);
       --focus: var(--accent);
     }
     @variant dark {
-      --background: oklch(0.145 0.035 258);
-      --foreground: oklch(0.96 0.012 255);
-      --surface: oklch(0.195 0.045 258);
-      --surface-foreground: oklch(0.96 0.012 255);
-      --accent: oklch(0.68 0.17 255);
-      --accent-foreground: oklch(0.16 0.04 258);
-      --muted: oklch(0.73 0.035 250);
-      --default: oklch(0.24 0.05 258);
-      --default-foreground: oklch(0.96 0.012 255);
-      --field-background: oklch(0.16 0.04 258);
-      --field-foreground: oklch(0.96 0.012 255);
-      --field-placeholder: oklch(0.61 0.04 250);
-      --border: oklch(0.34 0.06 255);
+      --background: var(--scout-background);
+      --foreground: var(--scout-foreground);
+      --surface: var(--scout-surface);
+      --surface-foreground: var(--scout-foreground);
+      --accent: var(--scout-accent);
+      --accent-foreground: var(--scout-background);
+      --muted: var(--scout-muted);
+      --default: var(--scout-surface-raised);
+      --default-foreground: var(--scout-foreground);
+      --field-background: var(--scout-input);
+      --field-foreground: var(--scout-foreground);
+      --field-placeholder: var(--scout-placeholder);
+      --border: var(--scout-border);
       --focus: var(--accent);
     }
   }

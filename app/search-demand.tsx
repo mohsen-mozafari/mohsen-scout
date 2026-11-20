@@ -8,6 +8,7 @@ import { palette as p } from '@/lib/theme';
 import { SEARCH_DEMAND_PROVIDERS, type WikiLanguage, type WikiSignal } from '@/lib/space';
 import { uid, type Note } from '@/lib/types';
 import { getTopicDossier, rememberTopicDossier } from '@/lib/topic-dossier';
+import { recordRuntimeFinish, recordRuntimeStart } from '@/lib/runtime-metrics';
 
 export default function SearchDemand() {
   const params = useLocalSearchParams<{ topic?: string; idea?: string }>();
@@ -32,8 +33,16 @@ export default function SearchDemand() {
     const settled = await Promise.allSettled(active.map(async (topic) => {
       const cached = getTopicDossier(topic);
       if (cached?.wiki?.language === language) return cached.wiki;
-      const signal = await provider.run(topic, language);
-      rememberTopicDossier(topic, { wiki: signal });
+      recordRuntimeStart('Wikimedia');
+      try {
+        const signal = await provider.run(topic, language);
+        recordRuntimeFinish('Wikimedia', 'success');
+        rememberTopicDossier(topic, { wiki: signal });
+        return signal;
+      } catch (error) {
+        recordRuntimeFinish('Wikimedia', 'error', error instanceof Error ? error.message : String(error));
+        throw error;
+      }
       return signal;
     }));
     const values = settled.flatMap((result) => result.status === 'fulfilled' ? [result.value] : []);

@@ -756,7 +756,8 @@ export function createEditorialOpportunityScorer(
     const dated = relevant.filter((item) => item.date > 0);
     const fresh = dated.filter((item) =>
       now - item.date <= 30 * 86400000 && now >= item.date - 86400000).length;
-    const freshness = dated.length ? Math.round(100 * fresh / dated.length) : 35;
+    // Missing dates are missing evidence, not a neutral or invented freshness score.
+    const freshness = dated.length ? Math.round(100 * fresh / dated.length) : 0;
     const audienceSignal = null;
     const anchorFrequency = anchorDocuments.size;
     const saturation = topicMatchedVideoCount;

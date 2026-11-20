@@ -35,7 +35,9 @@ import {
   type Fetcher,
 } from '../lib/api';
 import { buildIdeas, buildInternalResearch, createManualIdea, rankNewsForTopic, topicRelevanceScore } from '../lib/engine';
-import { sortResearchVideos } from '../lib/intelligence';
+import { scoreEditorialOpportunity, sortResearchVideos } from '../lib/intelligence';
+import { EDITORIAL_PRIORITY_CONFIG, getEditorialPriorityBand } from '../lib/editorial-priority';
+import { rankDashboardIdeas } from '../lib/dashboard';
 import { translateText } from '../lib/i18n';
 import { getTopicDossier, rememberTopicDossier, TOPIC_DOSSIER_TTL_MS } from '../lib/topic-dossier';
 const input: ResearchInput = {
@@ -1322,4 +1324,67 @@ void test('YouTube full-refresh helper no longer blocks after three cycles', () 
   assert.ok(next.includes(now));
   assert.equal(next.length, 3);
   assert.doesNotThrow(() => reserveYoutubeRefreshCycle(next, now + 1));
+});
+
+
+void test('Editorial priority bands use the centralized, evidence-only thresholds', () => {
+  assert.equal(
+    EDITORIAL_PRIORITY_CONFIG.weights.relevance +
+      EDITORIAL_PRIORITY_CONFIG.weights.evidenceBreadth +
+      EDITORIAL_PRIORITY_CONFIG.weights.freshness +
+      EDITORIAL_PRIORITY_CONFIG.weights.differentiation,
+    1,
+  );
+  assert.equal(getEditorialPriorityBand(85), 'strong');
+  assert.equal(getEditorialPriorityBand(65), 'moderate');
+  assert.equal(getEditorialPriorityBand(64), 'weak');
+  assert.equal(getEditorialPriorityBand(100), 'strong');
+  assert.equal(getEditorialPriorityBand(0), 'weak');
+});
+
+void test('Dashboard ranking keeps every eligible idea and places scored ideas first', () => {
+  const makeIdea = (topic: string, engineScore?: number) => ({
+    id: topic,
+    topic,
+    concept: 'Evidence-backed editorial question',
+    note: '',
+    status: 'New Discoveries' as const,
+    decision: '',
+    videoIds: [],
+    createdAt: 1,
+    archived: false,
+    assessment: 'Worth Exploring' as const,
+    region: 'Iran' as const,
+    languages: ['en'],
+    ...(engineScore === undefined ? {} : { engineScore }),
+  });
+  const ranked = rankDashboardIdeas([
+    makeIdea('unscored'),
+    makeIdea('medium', 70),
+    makeIdea('strong', 88),
+    makeIdea('weak', 42),
+  ]);
+  assert.deepEqual(ranked.map((idea) => idea.topic), ['strong', 'medium', 'weak', 'unscored']);
+  assert.equal(ranked.length, 4);
+});
+
+
+void test('Editorial priority does not fabricate freshness when all matched evidence is undated', () => {
+  const result = scoreEditorialOpportunity({
+    topic: 'Mars sample return',
+    anchor: 'Mars sample return',
+    news: [{
+      title: 'Mars sample return mission',
+      summary: 'Mars sample return mission planning',
+      sourceName: 'NASA',
+      sourceId: 'nasa',
+      sourceUrl: 'https://example.com/mars',
+      publishedAt: null,
+    }],
+    historicalNews: [],
+    context: [],
+    videos: [],
+    now: Date.UTC(2026, 10, 20),
+  });
+  assert.equal(result.components.freshness, 0);
 });

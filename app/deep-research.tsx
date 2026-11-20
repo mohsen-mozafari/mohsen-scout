@@ -11,10 +11,11 @@ import { getKey } from '@/lib/vault';
 import { buildInternalResearch, rankNewsForTopic, type InternalResearchResult } from '@/lib/engine';
 import { buildResearchInterestProfile, normalizeResearchText } from '@/lib/intelligence';
 import { MediaPreview } from '@/components/MediaPreview';
-import { ResearchKnowledgeGraph } from '@/components/ResearchKnowledgeGraph';
+import { ResearchOverviewChart } from '@/components/ResearchOverviewChart';
 import { getTopicDossier, rememberTopicDossier } from '@/lib/topic-dossier';
 import { generateEditorialIdeas } from '@/lib/idea-generation';
 import { createResearchMemoryEntry } from '@/lib/research-memory';
+import { recordRuntimeFinish, recordRuntimeStart } from '@/lib/runtime-metrics';
 import { searchYouTubeSample, type YouTubeSampleVideo } from '@/lib/api';
 import {
   SPACE_NICHES, fetchSpaceNews, newsForNiche, getWikipediaSignal, buildResearchOutline,
@@ -57,9 +58,19 @@ export default function DeepResearch() {
     if (priorMemory) warnings.push(preferences.uiLanguage === 'fa' ? 'حافظه تحقیق محلی قبلی برای مقایسه بارگذاری شد؛ ادعاهای منابع ذخیره‌شده با نتایج فعلی بررسی می‌شوند.' : 'Previous local research memory was loaded for comparison; saved source claims may be checked against this run.');
     const cachedDossier = getTopicDossier(query);
     const cachedNews = (cachedDossier?.news ?? []).filter((item) => preferences.spaceNewsSources.includes(item.sourceId));
-    const newsResult = cachedNews.length
-      ? { items: cachedNews, warnings: [] as string[] }
-      : await fetchSpaceNews(preferences.spaceNewsSources);
+    let newsResult: Awaited<ReturnType<typeof fetchSpaceNews>>;
+    if (cachedNews.length) {
+      newsResult = { items: cachedNews, warnings: [] };
+    } else {
+      recordRuntimeStart('Sources');
+      try {
+        newsResult = await fetchSpaceNews(preferences.spaceNewsSources);
+        recordRuntimeFinish('Sources', newsResult.warnings.length ? 'partial' : 'success');
+      } catch (error) {
+        recordRuntimeFinish('Sources', 'error', error instanceof Error ? error.message : String(error));
+        throw error;
+      }
+    }
     warnings.push(...newsResult.warnings);
     if (cachedNews.length) warnings.push(preferences.uiLanguage === 'fa' ? 'شواهد خبری تازه از پرونده محلی موضوع دوباره استفاده شد؛ درخواست دیگری برای خوراک خبری ارسال نشد.' : 'Reused recent publisher evidence from the local topic dossier; no additional feed request was made.');
     const nicheNews = niche
@@ -73,9 +84,12 @@ export default function DeepResearch() {
       wiki = cachedDossier.wiki;
       warnings.push('Reused recent Wikimedia evidence from the local topic dossier; no additional pageview request was made.');
     } else {
+      recordRuntimeStart('Wikimedia');
       try {
         wiki = await getWikipediaSignal(query, preferences.spaceInterestLanguage ?? 'en');
+        recordRuntimeFinish('Wikimedia', wiki ? 'success' : 'partial');
       } catch (error) {
+        recordRuntimeFinish('Wikimedia', 'error', error instanceof Error ? error.message : String(error));
         warnings.push(error instanceof Error ? error.message : 'Public-interest data was unavailable.');
       }
     }
@@ -102,19 +116,26 @@ export default function DeepResearch() {
       try {
         const key = await getKey('youtube');
         if (key) {
-          const sample = await searchYouTubeSample(query, {
-            key,
-            charge: useScout.getState().charge,
-            onQuota: () => useScout.getState().commit((data) => ({ ...data, budget: { ...data.budget, exhausted: true } })),
-          }, 25, { days: preferences.defaultResearchDays ?? 30, region: preferences.region, language: preferences.languages[0] });
-          videos = sample.videos;
-          videoCriteria = {
-            days: preferences.defaultResearchDays ?? 30,
-            region: preferences.region,
-            language: preferences.languages[0] ?? '',
-            order: 'viewCount',
-          };
-          if (sample.warning) warnings.push(sample.warning);
+          recordRuntimeStart('YouTube');
+          try {
+            const sample = await searchYouTubeSample(query, {
+              key,
+              charge: useScout.getState().charge,
+              onQuota: () => useScout.getState().commit((data) => ({ ...data, budget: { ...data.budget, exhausted: true } })),
+            }, 25, { days: preferences.defaultResearchDays ?? 30, region: preferences.region, language: preferences.languages[0] });
+            videos = sample.videos;
+            videoCriteria = {
+              days: preferences.defaultResearchDays ?? 30,
+              region: preferences.region,
+              language: preferences.languages[0] ?? '',
+              order: 'viewCount',
+            };
+            recordRuntimeFinish('YouTube', sample.warning ? 'partial' : videos.length ? 'success' : 'partial');
+            if (sample.warning) warnings.push(sample.warning);
+          } catch (error) {
+            recordRuntimeFinish('YouTube', 'error', error instanceof Error ? error.message : String(error));
+            throw error;
+          }
         } else {
           warnings.push('YouTube view sample skipped: add a YouTube API key in Settings to include it.');
         }
@@ -128,6 +149,8 @@ export default function DeepResearch() {
     if (!wiki && !videos.length) {
       warnings.push(preferences.uiLanguage === 'fa' ? 'شواهد ویکی‌مدیا یا یوتیوب در دسترس نبود. از این اجرا نمی‌توان درباره تقاضا یا رقابت نتیجه‌گیری کرد.' : 'No Wikimedia or YouTube evidence was available. No demand or competition conclusion can be drawn from this run.');
     }
+    recordRuntimeStart('Engine');
+    try {
     const outline = buildResearchOutline(query, selectedNews.map((item) => item.title), preferences.uiLanguage ?? 'fa');
     const internalAnalysis = buildInternalResearch({
       topic: query,
@@ -232,6 +255,11 @@ export default function DeepResearch() {
         'CLOSING — Return to the opening question and tell viewers what upcoming observation or mission could resolve it.',
       ],
     });
+    recordRuntimeFinish('Engine', 'success');
+    } catch (error) {
+      recordRuntimeFinish('Engine', 'error', error instanceof Error ? error.message : String(error));
+      throw error;
+    }
   }, 'Source-backed research brief prepared.');
   const saveToNotes = () => void op.run(async () => {
     if (!brief) throw new Error('Generate a research brief first.');
@@ -293,14 +321,14 @@ export default function DeepResearch() {
           </Panel>
           <Panel>
             <Heading>Internal Research Engine</Heading>
-            <ResearchKnowledgeGraph
+            <ResearchOverviewChart
               topic={brief.topic}
               news={brief.news}
               wiki={brief.wiki}
               videos={brief.videos}
               analysis={brief.internalAnalysis}
+              ideas={brief.generatedIdeas}
               language={preferences.uiLanguage ?? 'fa'}
-              generatedIdeas={brief.generatedIdeas}
             />
             <Txt muted>{brief.internalAnalysis.summary}</Txt>
             {brief.internalAnalysis.evidence.map((item) => (

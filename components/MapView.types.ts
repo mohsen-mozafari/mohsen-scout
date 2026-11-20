@@ -1,4 +1,5 @@
 import type { StyleProp, ViewStyle } from 'react-native';
+import { palette as p } from '@/lib/theme';
 
 export interface LatLng {
   latitude: number;
@@ -186,28 +187,28 @@ export const DEFAULT_REGION: MapRegion = {
 export const DEFAULT_ZOOM = 12;
 
 export const MARKER_COLOR_HEX: Record<MarkerColor, string> = {
-  red: '#ef4444',
-  blue: '#2563eb',
-  green: '#16a34a',
-  orange: '#f97316',
-  yellow: '#eab308',
-  purple: '#a855f7',
-  cyan: '#06b6d4',
+  red: p.danger,
+  blue: p.accent,
+  green: p.success,
+  orange: p.warning,
+  yellow: p.warning,
+  purple: p.indigo,
+  cyan: p.cyan,
 };
 
 export const MAP_OVERLAY_DEFAULTS = {
   circle: {
-    fillColor: 'rgba(220, 38, 38, 0.12)',
-    strokeColor: '#dc2626',
+    fillColor: p.dangerSoft,
+    strokeColor: p.danger,
     strokeWidth: 2,
   },
   polygon: {
-    fillColor: 'rgba(34, 197, 94, 0.18)',
-    strokeColor: '#16a34a',
+    fillColor: p.successSoft,
+    strokeColor: p.success,
     strokeWidth: 2,
   },
   polyline: {
-    strokeColor: '#2563eb',
+    strokeColor: p.accent,
     strokeWidth: 3,
   },
 } as const;

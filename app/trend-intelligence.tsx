@@ -7,6 +7,7 @@ import { searchYouTubeSample, type YouTubeSampleVideo } from '@/lib/api';
 import { getKey } from '@/lib/vault';
 import { MediaPreview } from '@/components/MediaPreview';
 import { rememberTopicDossier } from '@/lib/topic-dossier';
+import { recordRuntimeFinish, recordRuntimeStart } from '@/lib/runtime-metrics';
 
 const formatCount = (value: number | null, label: string) => value === null ? label + ' unavailable' : value.toLocaleString() + ' ' + label;
 
@@ -38,17 +39,27 @@ export default function TrendIntelligence() {
     const generation = searchGeneration.current;
     const key = await getKey('youtube');
     if (!key) throw new Error('Save your personal YouTube Data API key in Settings before running a YouTube sample.');
-    const result = await searchYouTubeSample(search.topic, {
-      key,
-      charge: useScout.getState().charge,
-      onQuota: () => useScout.getState().commit((data) => ({ ...data, budget: { ...data.budget, exhausted: true } })),
-    }, 50, {
-      days: search.days,
-      order: search.sort === 'Newest' ? 'date' : search.sort === 'Most Likes' ? 'relevance' : 'viewCount',
-      region: preferences.region,
-      language: preferences.languages[0],
-      ...(pageToken ? { pageToken } : {}),
-    });
+    recordRuntimeStart('YouTube');
+    let youtubeRecorded = false;
+    let result: Awaited<ReturnType<typeof searchYouTubeSample>>;
+    try {
+      result = await searchYouTubeSample(search.topic, {
+        key,
+        charge: useScout.getState().charge,
+        onQuota: () => useScout.getState().commit((data) => ({ ...data, budget: { ...data.budget, exhausted: true } })),
+      }, 50, {
+        days: search.days,
+        order: search.sort === 'Newest' ? 'date' : search.sort === 'Most Likes' ? 'relevance' : 'viewCount',
+        region: preferences.region,
+        language: preferences.languages[0],
+        ...(pageToken ? { pageToken } : {}),
+      });
+      recordRuntimeFinish('YouTube', result.videos.length ? 'success' : 'partial');
+      youtubeRecorded = true;
+    } catch (error) {
+      if (!youtubeRecorded) recordRuntimeFinish('YouTube', 'error', error instanceof Error ? error.message : String(error));
+      throw error;
+    }
     if (generation !== searchGeneration.current) return;
     const combinedVideos = append
       ? [...videos, ...result.videos.filter((video) => !videos.some((item) => item.id === video.id))]

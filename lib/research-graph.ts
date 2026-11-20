@@ -287,10 +287,13 @@ export function buildResearchGraphModel(input: BuildResearchGraphInput): Researc
   ];
   const nodeIds = new Set(nodes.map((node) => node.id));
   const edges: ResearchGraphEdge[] = [];
+  const edgeIds = new Set<string>();
   const addEdge = (source: string, target: string, relation: string) => {
     if (!nodeIds.has(source) || !nodeIds.has(target) || source === target) return;
     const id = source + '|' + relation + '|' + target;
-    if (!edges.some((edge) => edge.id === id)) edges.push({ id, source, target, relation });
+    if (edgeIds.has(id)) return;
+    edgeIds.add(id);
+    edges.push({ id, source, target, relation });
   };
   for (const node of nodes) {
     if (node.id !== 'topic-root') addEdge('topic-root', node.id, text('included in this research', 'بخشی از این تحقیق'));

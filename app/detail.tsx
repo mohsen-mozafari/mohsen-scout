@@ -28,7 +28,10 @@ import { getIdeaDisplayTitle } from '@/lib/idea-research';
 import { getKey } from '@/lib/vault';
 import { localDateKey, getFreeModels, getOpenRouterDailyQuota, getOpinion, nextOpenRouterUsage, opinionPrompt, selectFreeModel } from '@/lib/api';
 import { uid } from '@/lib/types';
+import { recordRuntimeFinish, recordRuntimeStart } from '@/lib/runtime-metrics';
 import { MediaPreview } from '@/components/MediaPreview';
+import { palette as p } from '@/lib/theme';
+import { getEditorialPriorityBand } from '@/lib/editorial-priority';
 export default function Detail() {
   const params = useLocalSearchParams<{ idea?: string; video?: string }>();
   const data = useScout((s) => s.data);
@@ -65,6 +68,8 @@ export default function Detail() {
     void op.run(async () => {
       if (!idea) return;
       if (!ideaReadyForOpinion) throw new Error('Add a meaningful topic and non-empty video concept before requesting an AI opinion.');
+      recordRuntimeStart('AI');
+      try {
       const key = await getKey('openrouter');
       if (!key) throw new Error('Add your OpenRouter key in Settings first.');
       const models = await getFreeModels();
@@ -116,7 +121,12 @@ export default function Detail() {
           ...d.opinions,
         ],
       }));
+      recordRuntimeFinish('AI', 'success');
       setConsent(false);
+      } catch (error) {
+        recordRuntimeFinish('AI', 'error', error instanceof Error ? error.message : String(error));
+        throw error;
+      }
     });
   const saveVideoIdea = () =>
     void op.run(async () => {
@@ -173,6 +183,28 @@ export default function Detail() {
           ? getIdeaDisplayTitle(idea, data.preferences.uiLanguage ?? 'fa')
           : savedLink?.manualTitle || video?.title || savedLink?.topic || (data.preferences.uiLanguage === 'fa' ? 'پیوند ذخیره‌شده یوتیوب' : 'Saved YouTube link')}
       </SourceTitle>
+      {idea ? (
+        <Panel>
+          {typeof idea.engineScore === 'number' && Number.isFinite(idea.engineScore) ? (() => {
+            const band = getEditorialPriorityBand(idea.engineScore);
+            const tint = band === 'strong' ? p.success : band === 'moderate' ? p.cyan : p.danger;
+            const fa = uiLanguage === 'fa';
+            return (
+              <View style={{ gap: 5 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                  <Text style={{ color: tint, fontSize: 12, fontWeight: '800' }}>
+                    {(band === 'strong' ? (fa ? 'قوی' : 'STRONG') : band === 'moderate' ? (fa ? 'متوسط' : 'MEDIUM') : (fa ? 'ضعیف' : 'WEAK'))}
+                  </Text>
+                  <Text style={{ color: tint, fontSize: 17, fontWeight: '800' }}>{idea.engineScore}/100</Text>
+                </View>
+                <Txt muted>{idea.engineScoreReason?.split(';').slice(0, 2).join(' • ') || (fa ? 'دلیل تفصیلی در دادهٔ این ایده ثبت نشده است.' : 'A detailed rationale is not stored for this idea.')}</Txt>
+              </View>
+            );
+          })() : (
+            <Txt muted>{uiLanguage === 'fa' ? 'این ایده هنوز امتیاز تحریری مبتنی بر شواهد ندارد؛ امتیاز یا برچسبی به‌صورت حدسی ساخته نمی‌شود.' : 'This idea has no evidence-based editorial score yet. No score or label is fabricated.'}</Txt>
+          )}
+        </Panel>
+      ) : null}
       {video && (
         <>
           <MediaPreview uri={video.thumbnail} aspectRatio={16 / 9} onPress={() => void Linking.openURL('https://www.youtube.com/watch?v=' + video.id).catch(() => {})} alt={video.title} />
