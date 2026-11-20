@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { type Budget, type ResearchInput, type Video, type Region } from './types';
-import { matchesResearchTerms, matchesStrongResearchTopic, scoreResearchText } from './intelligence';
+import { matchesStrongResearchTopic, scoreResearchText } from './intelligence';
 export type Fetcher = typeof fetch;
 export class ApiError extends Error {
   constructor(

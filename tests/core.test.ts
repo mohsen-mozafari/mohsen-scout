@@ -1174,9 +1174,9 @@ void test('Internal engine keeps historical context while separating recent, all
   const allTime = buildInternalResearch({
     topic: 'Exoplanet atmospheres', now: fixedNow, videoWindowDays: 0,
     videos: [
-      { id: 'dQw4w9WgXcQ', title: 'James Webb observes an exoplanet atmosphere', channel: 'Science One', publishedAt: '2026-11-17T09:00:00.000Z', viewCount: 800 },
-      { id: '9bZkp7q19f0', title: 'Exoplanet atmosphere discoveries in 2025', channel: 'Old Science', publishedAt: '2026-10-01T09:00:00.000Z', viewCount: 9000 },
-      { id: 'aqz-KE-bpKQ', title: 'Exoplanet atmosphere announced for the future', channel: 'Future Science', publishedAt: '2026-12-01T09:00:00.000Z', viewCount: 12000 },
+      { id: 'dQw4w9WgXcQ', title: 'James Webb observes an exoplanet atmosphere', channel: 'Science One', publishedAt: '2026-11-17T09:00:00.000Z', viewCount: 800, likeCount: 40 },
+      { id: '9bZkp7q19f0', title: 'Exoplanet atmosphere discoveries in 2025', channel: 'Old Science', publishedAt: '2026-10-01T09:00:00.000Z', viewCount: 9000, likeCount: 400 },
+      { id: 'aqz-KE-bpKQ', title: 'Exoplanet atmosphere announced for the future', channel: 'Future Science', publishedAt: '2026-12-01T09:00:00.000Z', viewCount: 12000, likeCount: 500 },
     ],
   }).intelligence.selfEvaluation;
   assert.equal(allTime.recentVideoCandidateCount, 2);

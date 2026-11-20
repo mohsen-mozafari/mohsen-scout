@@ -373,7 +373,6 @@ function DiscoveryDashboardReady() {
   const runtimeMetrics = useRuntimeMetrics();
   const selectedIdeaId = useSelectedIdeaId();
   const [healthExpanded, setHealthExpanded] = useState(false);
-  const researchMemory = useScout((state) => state.data.researchMemory);
   const youtubeBudget = useScout((state) => state.data.budget);
   const quotaDate = quotaDay();
   const quotaUsage = youtubeBudget.date === quotaDate
@@ -552,11 +551,8 @@ function DiscoveryDashboardReady() {
   }, [runScan, fa]);
 
   const latestReport = reports[0];
-  const [quickTopic, setQuickTopic] = useState('');
-  const [quickTopicEdited, setQuickTopicEdited] = useState(false);
-  useEffect(() => {
-    if (!quickTopicEdited) setQuickTopic(preferences.lastInput?.topic ?? latestReport?.input.topic ?? '');
-  }, [quickTopicEdited, preferences.lastInput?.topic, latestReport?.input.topic]);
+  const [quickTopicDraft, setQuickTopicDraft] = useState<string | undefined>(undefined);
+  const quickTopic = quickTopicDraft ?? preferences.lastInput?.topic ?? latestReport?.input.topic ?? '';
   const latestReportId = latestReport?.id ?? '';
   const latestReportSignature = latestReport
     ? latestReport.videos.map((video) => video.id + ':' + video.fetchedAt).join('|')
@@ -690,7 +686,7 @@ function DiscoveryDashboardReady() {
             <Field
               label={fa ? 'موضوع یا کلیدواژه' : 'Topic or keyword'}
               value={quickTopic}
-              onChange={(value) => { setQuickTopic(value); setQuickTopicEdited(true); }}
+              onChange={(value) => setQuickTopicDraft(value)}
               placeholder={fa ? 'مثلاً هوش مصنوعی در تدوین ویدئو' : 'e.g. AI video editing workflows'}
             />
             <Action icon={Search} disabled={!quickTopic.trim()}
