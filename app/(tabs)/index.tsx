@@ -34,7 +34,6 @@ import { getKey } from '@/lib/vault';
 import { ResearchOverviewChart } from '@/components/ResearchOverviewChart';
 import { recordRuntimeFinish, recordRuntimeStart, runtimeErrorHint, useRuntimeMetrics } from '@/lib/runtime-metrics';
 import { useSelectedIdeaId } from '@/lib/idea-selection';
-import { SETTINGS_ROUTE } from '@/lib/routes';
 
 const automaticReviewStarted = new Set<string>();
 
@@ -650,12 +649,6 @@ function DiscoveryDashboardReady() {
   const allDeskNews = useMemo(() => rankNewsForTopic(deskTopic, engineNews, Math.max(1, engineNews.length)), [deskTopic, engineNews]);
   // The local engine receives the full retained corpus; only the visual graph is bounded.
   const deskNews = useMemo(() => allDeskNews.slice(0, 60), [allDeskNews]);
-  const deskVideos = useMemo(() => showYouTubeResearch
-    ? engineVideoSamples
-      .filter((video) => scoreResearchText(deskTopic, video.title, video.description) > 0)
-      .sort((a, b) => (b.viewCount ?? -1) - (a.viewCount ?? -1))
-      .slice(0, 80)
-    : [], [showYouTubeResearch, engineVideoSamples, deskTopic]);
   const deskIdeas = useMemo(() => showYouTubeResearch
     ? rankDashboardIdeas(deduplicateDisplayIdeas(ideas.filter((idea) =>
         idea.engineGenerated && !idea.archived && idea.reportId === latestReport?.id,
@@ -1132,7 +1125,6 @@ function DiscoveryDashboardReady() {
               <Txt muted>{memoryCount + ' topics in local research memory · ' + reports.length + ' saved reports'}</Txt>
               <Txt muted>{'AI second opinion: ' + (preferences.hybridIntelligence ? 'Automatic and enabled' : 'Manual only')}</Txt>
               <Txt muted>{'YouTube schedule: ' + (preferences.schedule === 'Manual' ? 'Off' : preferences.paused ? 'Paused' : preferences.schedule)}</Txt>
-              <Action secondary onPress={() => router.navigate(SETTINGS_ROUTE)}>Open settings and preferences</Action>
             </View>
           </View>
         </Fold>
