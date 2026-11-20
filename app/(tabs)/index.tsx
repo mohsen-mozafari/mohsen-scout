@@ -701,6 +701,8 @@ function DiscoveryDashboardReady() {
             language={preferences.uiLanguage ?? 'fa'}
             selectedIdeaId={selectedIdeaId}
           />
+        ) : null}
+
         {showYouTubeResearch && bestIdea ? (
           <Panel variant="hero">
             <BadgeText>{fa ? 'پیشنهاد برتر موتور داخلی' : 'TOP INTERNAL RECOMMENDATION'}</BadgeText>
@@ -759,8 +761,10 @@ function DiscoveryDashboardReady() {
           </View>
         </Panel>
 
-          <View style={[styles.rowBetween, { flexWrap: 'wrap' }]}>
-            <Heading>Latest evidence brief</Heading>
+        {showYouTubeResearch ? (
+          <View style={{ gap: 10 }}>
+            <View style={[styles.rowBetween, { flexWrap: 'wrap' }]}>
+              <Heading>Latest evidence brief</Heading>
             {deskAnalysis ? <BadgeText>{`${deskAnalysis.intelligence.confidence.level.toUpperCase()} CONFIDENCE`}</BadgeText> : null}
           </View>
           {deskAnalysis ? (
@@ -804,8 +808,7 @@ function DiscoveryDashboardReady() {
               </Action>
             </Panel>
           )}
-        </View>
-
+          </View>
         ) : null}
 
         <Fold title="Evidence quality and source audit" summary={deskAnalysis ? deskAnalysis.intelligence.sourceQuality.uniqueStories + ' stories · ' + deskAnalysis.intelligence.sourceQuality.feedsRepresented + ' feeds' : 'No analyzed sample yet'}>

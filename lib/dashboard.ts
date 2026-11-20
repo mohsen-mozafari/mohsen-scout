@@ -16,10 +16,13 @@ function evidenceWeight(idea: Idea): number {
     (idea.sourceUrl ? 1 : 0);
 }
 
-export type EngineVideoEvidence = Pick<
-  Video,
-  'id' | 'title' | 'description' | 'channel' | 'publishedAt' | 'viewCount' | 'likeCount' | 'fetchedAt'
->;
+export type EngineVideoEvidence = Omit<
+  Pick<Video, 'id' | 'title' | 'description' | 'channel' | 'publishedAt' | 'viewCount' | 'likeCount' | 'fetchedAt'>,
+  'viewCount' | 'likeCount'
+> & {
+  viewCount: number | null;
+  likeCount: number | null;
+};
 
 /**
  * Merge every retained video already collected by the app. The global metadata index
