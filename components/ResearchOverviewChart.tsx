@@ -12,11 +12,6 @@ import type { SpaceNewsItem, WikiSignal } from '@/lib/space';
 import type { YouTubeSampleVideo } from '@/lib/api';
 import { setSelectedIdeaId, useSelectedIdeaId } from '@/lib/idea-selection';
 
-function reasonLine(idea: Idea): string {
-  return idea.engineScoreReason?.split(';').slice(0, 2).join(' • ') ??
-    'Score is based on the available topic match, source mix and dated evidence.';
-}
-
 export const ResearchOverviewChart = memo(function ResearchOverviewChart({
   analysis,
   ideas,
@@ -45,7 +40,6 @@ export const ResearchOverviewChart = memo(function ResearchOverviewChart({
     [ranked],
   );
   const activeIdeaId = selectedIdeaId ?? sharedSelectedIdeaId;
-  const bestIdea = scored[0];
   const bands = useMemo(() => ({
     strong: scored.filter((idea) => getEditorialPriorityBand(idea.engineScore ?? 0) === 'strong').length,
     moderate: scored.filter((idea) => getEditorialPriorityBand(idea.engineScore ?? 0) === 'moderate').length,
@@ -56,16 +50,13 @@ export const ResearchOverviewChart = memo(function ResearchOverviewChart({
   return (
     <Panel variant="hero">
       <View style={{ gap: 5 }}>
-        <BadgeText>{label('EDITORIAL PRIORITY · EVIDENCE ONLY', 'اولویت تحریری · مبتنی بر شواهد')}</BadgeText>
-        <Heading>
-          {bestIdea
-            ? label('Best editorial lead: ', 'بهترین ایده تحریری: ') + bestIdea.topic
-            : label('No scored idea yet', 'هنوز ایده امتیازدار نداریم')}
-        </Heading>
+        <BadgeText>{label('MULTI-SOURCE RESEARCH GRAPH · EVIDENCE ONLY', 'گراف تحقیق چندمنبعی · مبتنی بر شواهد')}</BadgeText>
+        <Heading>{label('Research graph: ', 'نمودار تحقیق: ') + topic}</Heading>
         <Txt muted>
-          {bestIdea
-            ? number(bestIdea.engineScore ?? 0) + '/100 · ' + label('priority score', 'امتیاز اولویت') + ' · ' + reasonLine(bestIdea)
-            : label('Run a real research sample to generate explainable, evidence-backed ideas.', 'برای تولید ایده‌های قابل توضیح، ابتدا یک نمونه تحقیق واقعی اجرا کن.')}
+          {label(
+            'Explore how publisher reports, YouTube samples, Wikimedia observations, entities and editorial hypotheses connect. Priority scores are not audience-demand or view forecasts.',
+            'ارتباط گزارش ناشران، نمونه‌های YouTube، مشاهدات ویکی‌مدیا، موجودیت‌ها و فرضیه‌های محتوایی را بررسی کن. امتیاز اولویت، پیش‌بینی تقاضا یا بازدید نیست.',
+          )}
         </Txt>
       </View>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7 }}>

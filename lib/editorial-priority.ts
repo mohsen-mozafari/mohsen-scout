@@ -11,7 +11,7 @@ export const EDITORIAL_PRIORITY_CONFIG = {
     moderate: 65,
   },
   pinnedIdeas: 5,
-  chartLimit: 24,
+  chartLimit: 40,
   chartDebounceMs: 160,
 } as const;
 

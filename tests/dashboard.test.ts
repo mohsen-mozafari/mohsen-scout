@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import { getOpinion, selectFreeModel } from '../lib/api';
 import {
   chooseBestIdea,
+  collectEngineVideoEvidence,
   engineReviewCacheKey,
   findCachedEngineReview,
   rankDashboardIdeas,
@@ -55,6 +56,27 @@ void test('dashboard chooses the strongest active idea and excludes archived, re
   const newestStrong = idea('newest-strong', 'Strong Opportunity', { sourceUrl: 'https://example.com/source', createdAt: now });
   assert.equal(chooseBestIdea([completed, rejected, archived, promising, strong, newestStrong])?.id, 'newest-strong');
   assert.deepEqual(rankDashboardIdeas([completed, rejected, archived]).map((item) => item.id), []);
+});
+
+void test('internal engine evidence merges retained report and global videos, deduplicates, expires and caps input', () => {
+  const olderCopy = video('shared', 'Older title', 10, now - 2_000);
+  const newestCopy = video('shared', 'Newest title', 25, now - 1_000);
+  const reportOnly = video('report-only', 'Report-only sample', 100, now - 3_000);
+  const expired = video('expired', 'Expired metadata', 999, now - RETENTION_MS - 1);
+  const future = video('future', 'Future fetched record', 999, now + 1);
+  const collected = collectEngineVideoEvidence(
+    [{ videos: [olderCopy, reportOnly, expired] }],
+    [newestCopy, expired, future],
+    now,
+  );
+  assert.deepEqual(collected.map((item) => item.id), ['shared', 'report-only']);
+  assert.equal(collected[0].title, 'Newest title');
+  assert.equal(collected[0].viewCount, 25);
+  const many = Array.from({ length: 320 }, (_, index) =>
+    video('sample-' + index, 'Sample ' + index, index, now - index),
+  );
+  assert.equal(collectEngineVideoEvidence([], many, now).length, 300);
+  assert.equal(collectEngineVideoEvidence([], many, now, 10).length, 10);
 });
 
 void test('dashboard video feed filters strictly to the selected niche and sorts by raw views', () => {

@@ -378,7 +378,7 @@ export function AppHeader({ showBack = false }: { showBack?: boolean }) {
         </View>
       </View>
       <Pressable
-        onPress={() => { if (!onSettings) router.push(SETTINGS_ROUTE); }}
+        onPress={() => { if (!onSettings) router.navigate(SETTINGS_ROUTE); }}
         disabled={onSettings}
         hitSlop={12}
         accessibilityRole="button"

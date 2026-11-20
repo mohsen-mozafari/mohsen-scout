@@ -1,6 +1,6 @@
 import { fingerprintText } from './api';
 import { matchesResearchTerms } from './intelligence';
-import { RETENTION_MS, type Idea, type Opinion, type Video } from './types';
+import { RETENTION_MS, type Idea, type Opinion, type Report, type Video } from './types';
 
 const assessmentOrder: Record<Idea['assessment'], number> = {
   'Strong Opportunity': 5,
@@ -14,6 +14,46 @@ function evidenceWeight(idea: Idea): number {
   return (idea.videoIds.length ? idea.videoIds.length : 0) +
     (idea.reportId ? 1 : 0) +
     (idea.sourceUrl ? 1 : 0);
+}
+
+export type EngineVideoEvidence = Pick<
+  Video,
+  'id' | 'title' | 'description' | 'channel' | 'publishedAt' | 'viewCount' | 'likeCount' | 'fetchedAt'
+>;
+
+/**
+ * Merge every retained video already collected by the app. The global metadata index
+ * and report snapshots can overlap; one newest copy per video is kept. The cap bounds
+ * local analysis cost without discarding the saved source records.
+ */
+export function collectEngineVideoEvidence(
+  reports: readonly Pick<Report, 'videos'>[],
+  videos: readonly Video[],
+  now = Date.now(),
+  limit = 300,
+): EngineVideoEvidence[] {
+  const byId = new Map<string, EngineVideoEvidence>();
+  for (const video of [...videos, ...reports.flatMap((report) => report.videos)]) {
+    if (!video.id || !video.title.trim() || !Number.isFinite(video.fetchedAt)) continue;
+    const age = now - video.fetchedAt;
+    if (age < 0 || age >= RETENTION_MS) continue;
+    const previous = byId.get(video.id);
+    if (!previous || video.fetchedAt > previous.fetchedAt) {
+      byId.set(video.id, {
+        id: video.id,
+        title: video.title,
+        description: video.description,
+        channel: video.channel,
+        publishedAt: video.publishedAt,
+        viewCount: video.viewCount ?? null,
+        likeCount: video.likeCount ?? null,
+        fetchedAt: video.fetchedAt,
+      });
+    }
+  }
+  return [...byId.values()]
+    .sort((a, b) => b.fetchedAt - a.fetchedAt || a.id.localeCompare(b.id))
+    .slice(0, Math.max(0, Math.min(300, Math.floor(limit))));
 }
 
 /** Highest editorial assessment first, then linked evidence, then recency. */
