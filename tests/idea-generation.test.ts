@@ -85,7 +85,6 @@ void test('idea engine rejects unrelated samples and marks a single-channel hypo
     }], limit: 8,
   });
   assert.ok(singleSource.length > 0);
-  assert.ok(singleSource.length <= 2);
   assert.ok(singleSource.every((idea) => idea.assessment === 'Uncertain'));
 });
 

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { type Budget, type ResearchInput, type Video, type Region } from './types';
-import { matchesResearchTerms, scoreResearchText } from './intelligence';
+import { matchesResearchTerms, scoreResearchText, tokenizeResearchText } from './intelligence';
 export type Fetcher = typeof fetch;
 export class ApiError extends Error {
   constructor(
@@ -308,8 +308,25 @@ export function isWithinYouTubeResearchWindow(publishedAt: string, days: number,
   return normalizedDays === 0 || published >= now - normalizedDays * 86400000;
 }
 
+/**
+ * Uses direct topic concepts for multi-word topics. A known acronym such as JWST
+ * cannot qualify a long topic on its own, while a one-term acronym query still
+ * supports its explicit semantic aliases.
+ */
 export function filterYouTubeSearchResults<T extends { title: string; description?: string }>(topic: string, videos: readonly T[]): T[] {
-  return videos.filter((video) => matchesResearchTerms(video.title + ' ' + (video.description ?? ''), [topic]));
+  const tokens = [...new Set(tokenizeResearchText(topic).filter((token) => token.length > 2))];
+  const rawTokens = topic.match(/[\p{L}\p{N}]+/gu) ?? [];
+  const acronymTokens = new Set(rawTokens
+    .filter((token) => token.length >= 2 && token.length <= 5 && token === token.toUpperCase())
+    .map((token) => tokenizeResearchText(token)[0])
+    .filter((token): token is string => Boolean(token)));
+  const coreTokens = tokens.filter((token) => !acronymTokens.has(token));
+  return videos.filter((video) => {
+    const searchable = video.title + ' ' + (video.description ?? '');
+    if (tokens.length <= 1 || !coreTokens.length) return matchesResearchTerms(searchable, [topic]);
+    const evidenceTokens = new Set(tokenizeResearchText(searchable));
+    return coreTokens.some((token) => evidenceTokens.has(token));
+  });
 }
 
 /** Ranks a bounded YouTube sample by transparent title-first textual relevance. */
@@ -364,7 +381,6 @@ export async function searchYouTube(input: ResearchInput, options: YouTubeOption
       if (!parsed.success) throw new ApiError('YouTube returned an invalid search response.', 'invalid');
       for (const item of parsed.data.items) {
         if (!isWithinYouTubeResearchWindow(item.snippet.publishedAt, input.days, searchNow)) continue;
-        if (!filterYouTubeSearchResults(topic, [{ title: item.snippet.title, description: item.snippet.description }]).length) continue;
         const id = item.id.videoId;
         if (!candidates.has(id)) {
           candidates.set(id, {
@@ -399,9 +415,9 @@ export async function searchYouTube(input: ResearchInput, options: YouTubeOption
   }
 
   const targets: Record<SearchBucket, number> = {
-    relevance: Math.ceil(resultLimit * 0.35),
-    popularity: Math.ceil(resultLimit * 0.2),
-    recent: Math.ceil(resultLimit * 0.3),
+    relevance: Math.ceil(resultLimit * 0.25),
+    popularity: Math.ceil(resultLimit * 0.5),
+    recent: Math.ceil(resultLimit * 0.15),
     explainer: 0,
   };
   targets.explainer = Math.max(0, resultLimit - targets.relevance - targets.popularity - targets.recent);

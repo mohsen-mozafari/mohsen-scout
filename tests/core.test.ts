@@ -56,7 +56,7 @@ const video: Video = {
   description: 'MOCK API description',
   channel: 'MOCK channel',
   thumbnail: 'https://example.com/mock.jpg',
-  publishedAt: '2026-10-01T12:00:00Z',
+  publishedAt: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
   fetchedAt: now,
   query: input.topic,
 };

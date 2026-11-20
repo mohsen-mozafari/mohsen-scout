@@ -684,10 +684,9 @@ export function generateEditorialIdeas(input: GenerateEditorialIdeasInput): Idea
     .filter(Boolean)).size;
   // Confidence follows independent publisher/channel coverage, not raw item count.
   const confidence = publisherGroups >= 2 || videoChannels >= 2 ? 'moderate' : 'low';
-  const evidenceDepthLimit = Math.max(1, Math.min(5, Math.max(publisherGroups, videoChannels) * 2));
   const output: Idea[] = [];
   const now = input.now ?? Date.now();
-  const limit = Math.max(1, Math.min(5, input.limit ?? 5, evidenceDepthLimit));
+  const limit = Math.max(1, Math.min(25, input.limit ?? 25));
   const sourceUrl = topicRelevantNews.find((item) => item.url.startsWith('https://'))?.url ??
     topicRelevantHistory.find((item) => item.sourceUrl?.startsWith('https://'))?.sourceUrl ??
     context.find((item) => item.sourceUrl?.startsWith('https://'))?.sourceUrl;

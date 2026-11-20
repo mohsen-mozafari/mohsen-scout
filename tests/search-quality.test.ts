@@ -150,6 +150,7 @@ void test('YouTube sample rejects weak one-token matches before they reach the i
   const results = filterYouTubeSearchResults('JWST exoplanet atmosphere', [
     { id: 'noise', title: 'JWST gaming commentary', description: 'A general channel update.' },
     { id: 'match', title: 'James Webb Space Telescope observes an exoplanet atmosphere', description: 'Spectroscopy measurements.' },
+    { id: 'partial', title: 'An exoplanet atmosphere measured by a space telescope', description: 'Spectroscopy observations.' },
   ]);
-  assert.deepEqual(results.map((item) => item.id), ['match']);
+  assert.deepEqual(results.map((item) => item.id), ['match', 'partial']);
 });

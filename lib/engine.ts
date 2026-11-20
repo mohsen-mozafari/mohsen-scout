@@ -157,8 +157,8 @@ function median(values: number[]): number | null {
 export function buildInternalResearch(input: InternalResearchInput): InternalResearchResult {
   const startedAt = Date.now();
   const now = Number.isFinite(input.now) ? input.now! : Date.now();
-  const videoWindowDays = Number.isFinite(input.videoWindowDays) ? Math.max(1, Math.min(90, Math.floor(input.videoWindowDays!))) : 30;
-  const videoWindowStart = now - videoWindowDays * 86400000;
+  const videoWindowDays = Number.isFinite(input.videoWindowDays) ? Math.max(0, Math.min(90, Math.floor(input.videoWindowDays!))) : 30;
+  const videoWindowStart = videoWindowDays === 0 ? Number.NEGATIVE_INFINITY : now - videoWindowDays * 86400000;
   const topic = cleanTopic(input.topic);
   const fa = input.language === 'fa';
   const text = (english: string, persian: string) => fa ? persian : english;
