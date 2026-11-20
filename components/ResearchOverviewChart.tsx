@@ -5,7 +5,7 @@ import { Panel, Heading, Txt, Action, BadgeText } from '@/components/ScoutUI';
 import { ResearchKnowledgeGraph } from '@/components/ResearchKnowledgeGraph';
 import { palette as p } from '@/lib/theme';
 import { rankDashboardIdeas } from '@/lib/dashboard';
-import { getEditorialPriorityBand } from '@/lib/editorial-priority';
+import { summarizeEditorialPriority } from '@/lib/editorial-priority';
 import type { Idea } from '@/lib/types';
 import type { InternalResearchResult } from '@/lib/engine';
 import type { SpaceNewsItem, WikiSignal } from '@/lib/space';
@@ -35,29 +35,9 @@ export const ResearchOverviewChart = memo(function ResearchOverviewChart({
   const label = (english: string, persian: string) => fa ? persian : english;
   const sharedSelectedIdeaId = useSelectedIdeaId();
   const ranked = useMemo(() => rankDashboardIdeas(ideas), [ideas]);
-  const scored = useMemo(
-    () => ranked.filter((idea) => typeof idea.engineScore === 'number' && Number.isFinite(idea.engineScore)),
-    [ranked],
-  );
+  const prioritySummary = useMemo(() => summarizeEditorialPriority(ideas), [ideas]);
   const activeIdeaId = selectedIdeaId ?? sharedSelectedIdeaId;
-  const bands = useMemo(() => ({
-    strong: scored.filter((idea) => getEditorialPriorityBand(idea.engineScore ?? 0) === 'strong').length,
-    moderate: scored.filter((idea) => getEditorialPriorityBand(idea.engineScore ?? 0) === 'moderate').length,
-    weak: scored.filter((idea) => getEditorialPriorityBand(idea.engineScore ?? 0) === 'weak').length,
-  }), [scored]);
   const number = (value: number) => new Intl.NumberFormat(fa ? 'fa-IR' : 'en-US').format(value);
-  const evidenceMetrics = [
-    { id: 'publisher-reports', title: label('PUBLISHER REPORTS', 'گزارش ناشران'), value: news.length },
-    { id: 'youtube-samples', title: label('YOUTUBE SAMPLES', 'نمونه‌های YouTube'), value: videos.length },
-    { id: 'wikimedia-months', title: label('WIKIMEDIA MONTHS', 'ماه‌های ویکی‌مدیا'), value: wiki?.monthlyViews.length ?? 0 },
-    { id: 'engine-evidence', title: label('ENGINE EVIDENCE', 'شواهد موتور'), value: analysis?.evidence.length ?? 0 },
-    { id: 'entities', title: label('ENTITIES', 'موجودیت‌ها'), value: analysis?.entityCandidates.length ?? 0 },
-    { id: 'editorial-angles', title: label('EDITORIAL ANGLES', 'زاویه‌های محتوایی'), value: analysis?.angles.length ?? 0 },
-    { id: 'verification-checks', title: label('VERIFICATION CHECKS', 'پرسش‌های راستی‌آزمایی'), value: analysis?.verificationQuestions.length ?? 0 },
-    { id: 'research-gaps', title: label('RESEARCH GAPS', 'خلأهای تحقیق'), value: (analysis?.intelligence.gaps.length ?? 0) + (analysis?.intelligence.potentialContradictions.length ?? 0) },
-  ];
-  const maxEvidenceMetric = Math.max(1, ...evidenceMetrics.map((metric) => metric.value));
-
   return (
     <Panel variant="hero">
       <View style={{ gap: 5 }}>
@@ -71,45 +51,35 @@ export const ResearchOverviewChart = memo(function ResearchOverviewChart({
         </Txt>
       </View>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7 }}>
-        <View style={{ borderRadius: 10, borderWidth: 1, borderColor: p.border, backgroundColor: p.surface, paddingHorizontal: 10, paddingVertical: 8 }}>
-          <Text style={{ color: p.text, fontSize: 16, fontWeight: '800' }}>{number(scored.length)}</Text>
-          <Text style={{ color: p.muted, fontSize: 9 }}>{label('SCORED IDEAS', 'ایده امتیازدار')}</Text>
+        <View style={{ flexGrow: 1, minWidth: 72, borderRadius: 10, borderWidth: 1, borderColor: p.border, backgroundColor: p.surface, paddingHorizontal: 11, paddingVertical: 10 }}>
+          <Text style={{ color: p.text, fontSize: 23, fontWeight: '800' }}>{number(prioritySummary.scored)}</Text>
+          <Text style={{ color: p.muted, fontSize: 10, fontWeight: '700' }}>{label('SCORED IDEAS', 'IDEAS WITH SCORE')}</Text>
         </View>
-        <View style={{ borderRadius: 10, borderWidth: 1, borderColor: p.successLine, backgroundColor: p.surface, paddingHorizontal: 10, paddingVertical: 8 }}>
-          <Text style={{ color: p.success, fontSize: 16, fontWeight: '800' }}>{number(bands.strong)}</Text>
-          <Text style={{ color: p.muted, fontSize: 9 }}>{label('STRONG', 'قوی')}</Text>
+        <View style={{ flexGrow: 1, minWidth: 65, borderRadius: 10, borderWidth: 1, borderColor: p.successLine, backgroundColor: p.surface, paddingHorizontal: 11, paddingVertical: 10 }}>
+          <Text style={{ color: p.success, fontSize: 23, fontWeight: '800' }}>{number(prioritySummary.strong)}</Text>
+          <Text style={{ color: p.muted, fontSize: 10, fontWeight: '700' }}>{label('STRONG', 'STRONG')}</Text>
         </View>
-        <View style={{ borderRadius: 10, borderWidth: 1, borderColor: p.cyanLine, backgroundColor: p.surface, paddingHorizontal: 10, paddingVertical: 8 }}>
-          <Text style={{ color: p.cyan, fontSize: 16, fontWeight: '800' }}>{number(bands.moderate)}</Text>
-          <Text style={{ color: p.muted, fontSize: 9 }}>{label('MEDIUM', 'متوسط')}</Text>
+        <View style={{ flexGrow: 1, minWidth: 65, borderRadius: 10, borderWidth: 1, borderColor: p.cyanLine, backgroundColor: p.surface, paddingHorizontal: 11, paddingVertical: 10 }}>
+          <Text style={{ color: p.cyan, fontSize: 23, fontWeight: '800' }}>{number(prioritySummary.moderate)}</Text>
+          <Text style={{ color: p.muted, fontSize: 10, fontWeight: '700' }}>{label('MEDIUM', 'MEDIUM')}</Text>
         </View>
-        <View style={{ borderRadius: 10, borderWidth: 1, borderColor: p.dangerLine, backgroundColor: p.surface, paddingHorizontal: 10, paddingVertical: 8 }}>
-          <Text style={{ color: p.danger, fontSize: 16, fontWeight: '800' }}>{number(bands.weak)}</Text>
-          <Text style={{ color: p.muted, fontSize: 9 }}>{label('WEAK', 'ضعیف')}</Text>
+        <View style={{ flexGrow: 1, minWidth: 65, borderRadius: 10, borderWidth: 1, borderColor: p.dangerLine, backgroundColor: p.surface, paddingHorizontal: 11, paddingVertical: 10 }}>
+          <Text style={{ color: p.danger, fontSize: 23, fontWeight: '800' }}>{number(prioritySummary.weak)}</Text>
+          <Text style={{ color: p.muted, fontSize: 10, fontWeight: '700' }}>{label('WEAK', 'WEAK')}</Text>
         </View>
       </View>
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7 }}>
-        {evidenceMetrics.map((metric) => (
-          <View
-            key={metric.id}
-            style={{
-              flexGrow: 1,
-              flexBasis: 100,
-              minWidth: 88,
-              borderRadius: 10,
-              borderWidth: 1,
-              borderColor: p.border,
-              backgroundColor: p.surface,
-              paddingHorizontal: 10,
-              paddingVertical: 8,
-              gap: 6,
-            }}
-          >
-            <Text style={{ color: p.text, fontSize: 16, fontWeight: '800' }}>{number(metric.value)}</Text>
-            <Text style={{ color: p.muted, fontSize: 9 }}>{metric.title}</Text>
-            <View style={{ height: 5, borderRadius: 4, backgroundColor: p.surfaceAlt, overflow: 'hidden' }}>
-              <View style={{ height: 5, width: Math.round(metric.value / maxEvidenceMetric * 100) + '%', borderRadius: 4, backgroundColor: p.accent }} />
-            </View>
+      <Txt muted>{label(
+        'Score bands: Strong 85–100 · Medium 65–84 · Weak below 65. Scores rank editorial readiness from relevance, evidence breadth, freshness and differentiation; they are not view forecasts.',
+        'Strong: 85–100 · Medium: 65–84 · Weak: below 65. Scores rank editorial readiness using relevance, evidence breadth, freshness and differentiation; they do not predict views.',
+      )}</Txt>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+        {[
+          { id: 'reports', value: news.length, title: label('publisher reports', 'PUBLISHER REPORTS') },
+          { id: 'videos', value: videos.length, title: label('YouTube samples', 'YOUTUBE SAMPLES') },
+          { id: 'wiki', value: wiki?.monthlyViews.length ?? 0, title: label('Wikimedia months', 'WIKIMEDIA MONTHS') },
+        ].map((metric) => (
+          <View key={metric.id} style={{ borderRadius: 8, borderWidth: 1, borderColor: p.border, backgroundColor: p.surface, paddingHorizontal: 9, paddingVertical: 6 }}>
+            <Text style={{ color: p.text, fontSize: 12, fontWeight: '800' }}>{number(metric.value)} <Text style={{ color: p.muted, fontSize: 9, fontWeight: '600' }}>{metric.title}</Text></Text>
           </View>
         ))}
       </View>
