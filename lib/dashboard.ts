@@ -80,12 +80,7 @@ export function chooseBestIdea(ideas: readonly Idea[]): Idea | undefined {
   return rankDashboardIdeas(ideas)[0];
 }
 
-/**
- * Select generated ideas for the dashboard using their actual evidence links.
- * Report IDs are preferred, followed by linked video/news evidence and topic
- * relevance. If legacy generated ideas have no usable link, retain the active
- * generated library instead of presenting misleading zero counts.
- */
+/** Select active engine ideas linked to the current research evidence. */
 export function selectDashboardIdeas(
   ideas: readonly Idea[],
   options: {
@@ -106,14 +101,9 @@ export function selectDashboardIdeas(
   if (linked.length) return linked;
 
   const topic = options.topic?.trim();
-  if (topic) {
-    const topical = generated.filter((idea) =>
-      matchesResearchTerms(idea.topic + ' ' + idea.concept, [topic]),
-    );
-    if (topical.length) return topical;
-  }
-
-  return generated;
+  return topic
+    ? generated.filter((idea) => matchesResearchTerms(idea.topic + ' ' + idea.concept, [topic]))
+    : generated;
 }
 
 /**

@@ -606,8 +606,11 @@ export default function Settings() {
       <Fold title="App info & mock diagnostics" summary="Version 1.5.9 · local-first · isolated test runner">
         <Heading>MOHSEN SCOUT</Heading>
         <Txt>Version 1.5.9</Txt>
-        <Txt muted>Run synthetic regression checks using mocked responses. Tests do not call YouTube or OpenRouter, use saved API keys, or change your research workspace.</Txt>
-        <Action secondary icon={Bug} onPress={() => router.push('/diagnostics')}>
+        <Txt muted>Run synthetic regression checks with mocked responses. They do not call YouTube or OpenRouter, use saved API keys, or change your research workspace.</Txt>
+        <Action secondary icon={Bug} onPress={() => router.push({
+          pathname: '/diagnostics',
+          params: { run: '1', runId: String(Date.now()) },
+        })}>
           Run mock regression checks
         </Action>
       </Fold>

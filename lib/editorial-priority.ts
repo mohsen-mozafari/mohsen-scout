@@ -37,7 +37,7 @@ export type EditorialPrioritySummary = {
   unscored: number;
 };
 
-/** Count active ideas using the same score bands shown by the dashboard and Opportunities. */
+/** Count only active ideas using the same bands shown by the dashboard. */
 export function summarizeEditorialPriority(
   ideas: readonly EditorialPriorityCandidate[],
 ): EditorialPrioritySummary {

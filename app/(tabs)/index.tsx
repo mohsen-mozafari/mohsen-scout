@@ -11,15 +11,13 @@ import { useScout } from '@/lib/store';
 import { palette as p } from '@/lib/theme';
 import { useShallow } from 'zustand/react/shallow';
 import { uid, type Idea } from '@/lib/types';
-import {
-  SPACE_NICHES,
-  getCachedSpaceNews,
-} from '@/lib/space';
+import { SPACE_NICHES, getCachedSpaceNews } from '@/lib/space';
 import { buildInternalResearch, rankNewsForTopic, type InternalResearchResult } from '@/lib/engine';
 import { buildResearchInterestProfile, normalizeResearchText, scoreResearchText } from '@/lib/intelligence';
 import { getTopicDossier } from '@/lib/topic-dossier';
-import { collectEngineVideoEvidence, engineReviewCacheKey, findCachedEngineReview, selectDashboardIdeas } from '@/lib/dashboard';
-import { fingerprintText, getFreeModels, getOpenRouterDailyQuota, getOpinion, internalEngineReviewPrompt, localDateKey, nextOpenRouterUsage, quotaDay, selectFreeModel, type YouTubeSampleVideo } from '@/lib/api';
+import { VideoRow } from '@/components/VideoRow';
+import { collectEngineVideoEvidence, engineReviewCacheKey, findCachedEngineReview, selectDashboardIdeas, selectDashboardVideos } from '@/lib/dashboard';
+import { fingerprintText, getFreeModels, getOpenRouterDailyQuota, getOpinion, internalEngineReviewPrompt, localDateKey, nextOpenRouterUsage, selectFreeModel, type YouTubeSampleVideo } from '@/lib/api';
 import { getKey } from '@/lib/vault';
 import { ResearchOverviewChart } from '@/components/ResearchOverviewChart';
 import { recordRuntimeFinish, recordRuntimeStart, runtimeErrorHint, useRuntimeMetrics } from '@/lib/runtime-metrics';
@@ -37,7 +35,7 @@ function AnalysisSignals({ result }: { result: InternalResearchResult }) {
     ? confidence === 'high' ? 'بالا' : confidence === 'moderate' ? 'متوسط' : 'پایین'
     : confidence;
   return (
-    <View style={{ gap: 10 }}>
+    <Fold title={fa ? 'کیفیت شواهد و گام‌های بعدی' : 'Evidence quality & next steps'} summary={(fa ? 'اطمینان ' : 'Confidence ') + confidenceLabel + ' · ' + result.intelligence.sourceQuality.uniqueStories + (fa ? ' خبر یکتا' : ' unique stories')}>
       <Heading>{fa ? 'حد و حدود اطمینان تحلیل' : 'Confidence and evidence scope'}</Heading>
       <BadgeText>{(fa ? 'میزان اطمینان: ' : 'Confidence: ') + confidenceLabel}</BadgeText>
       <Txt muted>{result.intelligence.confidence.reason}</Txt>
@@ -107,7 +105,7 @@ function AnalysisSignals({ result }: { result: InternalResearchResult }) {
           {result.intelligence.scenarios.map((scenario) => <Txt muted key={scenario}>{scenario}</Txt>)}
         </View>
       )}
-    </View>
+    </Fold>
   );
 }
 
@@ -309,8 +307,8 @@ function EngineAIReview({ topic, result, idea }: { topic: string; result: Intern
       <BadgeText>{review ? 'SECOND OPINION · SAVED' : 'SECOND OPINION · OPTIONAL'}</BadgeText>
       <Heading>{fa ? 'بازبینی مستقل با AI' : 'Independent AI review'}</Heading>
       <Txt muted>{fa
-        ? 'مدل فقط موضوع، مفهوم ایده پیشنهادی و شاخص‌های تجمیعی را می‌بیند؛ تیتر خام، پیوند و آمار تک‌تک خبرها و ویدئوها ارسال نمی‌شوند. پاسخ مستقل است و جابه‌جایی میان بخش‌های برنامه را قفل نمی‌کند.'
-        : 'The model receives the topic, proposed concept and aggregate indicators — never raw headlines, links or per-item video statistics. Its critique is independent and does not lock navigation.'}</Txt>
+        ? 'مدل موضوع، مفهوم ایده پیشنهادی و شاخص‌های تجمیعی را می‌بیند؛ تیتر خام، پیوند و آمار تک‌تک خبرها و ویدئوها ارسال نمی‌شوند. نظر مستقل دریافت می‌شود و جابه‌جایی میان بخش‌ها را قفل نمی‌کند.'
+        : 'The model receives the topic, candidate concept and aggregate indicators — never raw headlines, links or per-item statistics. The review is independent and does not lock navigation.'}</Txt>
       {savedReview ? <Txt muted>{'Model: ' + savedReview.model + ' · ' + new Date(savedReview.createdAt).toLocaleString()}</Txt> : null}
       <Txt muted>{reviewBusy
         ? (fa ? 'در حال دریافت نظر دوم؛ می‌توانی هم‌زمان در بخش‌های دیگر کار کنی.' : 'Getting the second opinion. You can keep using other sections.')
@@ -350,25 +348,18 @@ function DiscoveryDashboardReady() {
     lastInput: state.data.preferences.lastInput,
     selectedSpaceNiche: state.data.preferences.selectedSpaceNiche,
     customSpaceNiche: state.data.preferences.customSpaceNiche,
+    spaceInterestLanguage: state.data.preferences.spaceInterestLanguage ?? 'en',
     spaceNewsSources: state.data.preferences.spaceNewsSources,
-    schedule: state.data.preferences.schedule,
-    paused: state.data.preferences.paused,
-    hybridIntelligence: state.data.preferences.hybridIntelligence,
-    budget: state.data.preferences.budget,
+    region: state.data.preferences.region,
+    languages: state.data.preferences.languages,
   })));
   const ideas = useScout((state) => state.data.ideas);
   const reports = useScout((state) => state.data.reports);
   const storedVideos = useScout((state) => state.data.videos);
   const feedRegistry = useScout((state) => state.data.feedRegistry);
-  const memoryCount = useScout((state) => state.data.researchMemory.length);
   const runtimeMetrics = useRuntimeMetrics();
   const selectedIdeaId = useSelectedIdeaId();
   const [healthExpanded, setHealthExpanded] = useState(false);
-  const youtubeBudget = useScout((state) => state.data.budget);
-  const quotaDate = quotaDay();
-  const quotaUsage = youtubeBudget.date === quotaDate
-    ? youtubeBudget
-    : { date: quotaDate, units: 0, requests: 0, exhausted: false };
   const completedOperations = runtimeMetrics.succeeded + runtimeMetrics.partial + runtimeMetrics.failed;
   const sessionSuccessRate = completedOperations
     ? Math.round(runtimeMetrics.succeeded * 100 / completedOperations)
@@ -382,14 +373,17 @@ function DiscoveryDashboardReady() {
     lastSuccessAt: feedRegistry.reduce((latest, item) => Math.max(latest, item.lastSuccessAt ?? 0), 0),
   }), [feedRegistry]);
   const fa = preferences.uiLanguage === 'fa';
-  const [_warnings, setWarnings] = useState<string[]>([]);
+  const [warnings, setWarnings] = useState<string[]>([]);
+  const [dashboardNow] = useState(() => Date.now());
   const [reportAnalysisState, setReportAnalysisState] = useState<{ id: string; result: InternalResearchResult }>();
+
+  const niche = SPACE_NICHES.find((item) => item.id === preferences.selectedSpaceNiche);
   const discoveryTopic = preferences.selectedSpaceNiche === 'all'
     ? 'Space science and exploration'
     : preferences.selectedSpaceNiche === 'custom'
       ? preferences.customSpaceNiche
-      : SPACE_NICHES.find((item) => item.id === preferences.selectedSpaceNiche)?.topic ?? 'Space science and exploration';
-  // The dashboard is read-only for source collection. Refresh and enrichment now live in News.
+      : niche?.topic ?? 'Space science and exploration';
+
   const engineNews = useMemo(
     () => getCachedSpaceNews(feedRegistry, preferences.spaceNewsSources),
     [feedRegistry, preferences.spaceNewsSources],
@@ -397,6 +391,7 @@ function DiscoveryDashboardReady() {
   const topicDossier = getTopicDossier(discoveryTopic);
   const cachedTopicAnalysis = topicDossier?.internalAnalysis;
   const topicWiki = topicDossier?.wiki;
+
   const latestReport = reports[0];
   const [quickTopicDraft, setQuickTopicDraft] = useState<string | undefined>(undefined);
   const quickTopic = quickTopicDraft ?? preferences.lastInput?.topic ?? latestReport?.input.topic ?? '';
@@ -404,6 +399,7 @@ function DiscoveryDashboardReady() {
   const latestReportSignature = latestReport
     ? latestReport.videos.map((video) => video.id + ':' + video.fetchedAt).join('|')
     : '';
+  const latestReportVideoRecords = latestReport?.videos;
   const engineVideoEvidence = useMemo(
     () => collectEngineVideoEvidence(reports, storedVideos),
     [reports, storedVideos],
@@ -444,6 +440,7 @@ function DiscoveryDashboardReady() {
           sourceId: item.sourceId,
         }));
         const currentData = useScout.getState().data;
+        const reportWiki = getTopicDossier(report.input.topic)?.wiki;
         const priorMemory = currentData.researchMemory.find((entry) => normalizeResearchText(entry.topic) === normalizeResearchText(report.input.topic));
         const result = buildInternalResearch({
           topic: report.input.topic,
@@ -452,7 +449,7 @@ function DiscoveryDashboardReady() {
           feedback: buildResearchInterestProfile(currentData.ideas),
           priorMemory,
           language: preferences.uiLanguage ?? 'fa',
-          ...(topicWiki ? { wiki: topicWiki } : {}),
+          ...(reportWiki ? { wiki: reportWiki } : {}),
           videoWindowDays: report.input.days,
         });
         if (active) setReportAnalysisState({ id: report.id, result });
@@ -466,7 +463,7 @@ function DiscoveryDashboardReady() {
       active = false;
       clearTimeout(timer);
     };
-  }, [latestReportId, latestReportSignature, engineVideoSignature, engineVideoSamples, engineNews, topicWiki, preferences.uiLanguage, fa]);
+  }, [latestReportId, latestReportSignature, engineVideoSignature, engineVideoSamples, engineNews, preferences.uiLanguage, fa]);
 
   const latestReportAnalysis = reportAnalysisState?.id === latestReportId
     ? reportAnalysisState.result
@@ -477,6 +474,20 @@ function DiscoveryDashboardReady() {
   const allDeskNews = useMemo(() => rankNewsForTopic(deskTopic, engineNews, Math.max(1, engineNews.length)), [deskTopic, engineNews]);
   // The local engine receives the full retained corpus; only the visual graph is bounded.
   const deskNews = useMemo(() => allDeskNews.slice(0, 60), [allDeskNews]);
+  const nicheTerms = useMemo<string[]>(() => {
+    if (preferences.selectedSpaceNiche === 'custom') {
+      return preferences.customSpaceNiche.split(/[,;\n]+/).map((term) => term.trim()).filter(Boolean);
+    }
+    return preferences.selectedSpaceNiche === 'all' ? [] : niche?.keywords ? [...niche.keywords] : [];
+  }, [preferences.selectedSpaceNiche, preferences.customSpaceNiche, niche]);
+  const feedTopic = preferences.selectedSpaceNiche === 'all'
+    ? latestReport?.input.topic ?? discoveryTopic
+    : discoveryTopic;
+  const feedVideos = useMemo(
+    () => selectDashboardVideos(latestReportVideoRecords ?? [], feedTopic, nicheTerms, dashboardNow, 12),
+    [latestReportVideoRecords, feedTopic, nicheTerms, dashboardNow],
+  );
+
   const audit = deskAnalysis?.intelligence.selfEvaluation;
   const sharedTerms = deskAnalysis?.intelligence.sharedConcepts ?? [];
   const nextGap = deskAnalysis?.intelligence.gaps[0];
@@ -504,7 +515,8 @@ function DiscoveryDashboardReady() {
     topic: chartTopic,
   }), [ideas, latestReport?.id, latestReport?.videos, chartNews, chartTopic]);
   const bestIdea = chartIdeas[0];
-  const latestWikiObservation = chartWiki?.monthlyViews[chartWiki.monthlyViews.length - 1];
+  const deskIdeas = chartIdeas;
+  const recommendations = chartIdeas.slice(1, 4);
 
   return (
     <Page
@@ -528,6 +540,197 @@ function DiscoveryDashboardReady() {
             ? <EngineAIReview topic={chartTopic} result={chartAnalysis} idea={bestIdea} />
             : undefined}
         />
+
+        <Panel variant="hero">
+          <View style={{ gap: 11 }}>
+            <BadgeText>{fa ? 'شروع تحقیق' : 'START A RESEARCH RUN'}</BadgeText>
+            <Heading>{fa ? 'موضوع ویدئوی بعدی‌ات را پیدا کن' : 'Find your next video topic'}</Heading>
+            <Txt muted>{fa
+              ? 'جست‌وجو فقط پس از اقدام تو انجام می‌شود. نتایج نامرتبط حذف می‌شوند و موتور ایده فقط از شواهد همین نمونه استفاده می‌کند.'
+              : 'Search runs only after you start it. Weakly related results are excluded, and ideas are tied to evidence in the returned sample.'}</Txt>
+            <Field
+              label={fa ? 'موضوع یا کلیدواژه' : 'Topic or keyword'}
+              value={quickTopic}
+              onChange={(value) => setQuickTopicDraft(value)}
+              placeholder={fa ? 'مثلاً هوش مصنوعی در تدوین ویدئو' : 'e.g. AI video editing workflows'}
+            />
+            <Action icon={Search} disabled={!quickTopic.trim()}
+              onPress={() => router.push({ pathname: '/youtube', params: { topic: quickTopic.trim() } })}>
+              {fa ? 'شروع تحقیق YouTube' : 'Start YouTube research'}
+            </Action>
+            {latestReport ? (
+              <View style={{ gap: 7 }}>
+                <Txt muted>
+                  {(fa ? 'آخرین نمونه: ' : 'Latest sample: ') + latestReport.input.topic + ' · ' +
+                    latestReport.videos.length + (fa ? ' ویدئو · ' : ' videos · ') +
+                    new Date(latestReport.createdAt).toLocaleString(fa ? 'fa-IR' : 'en-US')}
+                </Txt>
+                <Action secondary onPress={() => router.push({ pathname: '/youtube', params: { topic: latestReport.input.topic, report: latestReport.id } })}>
+                  {fa ? 'مشاهده آخرین تحقیق' : 'Review latest research'}
+                </Action>
+              </View>
+            ) : (
+              <Txt muted>{fa
+                ? 'هنوز تحقیقی اجرا نشده؛ با بازکردن داشبورد هیچ درخواست YouTube یا مصرف سهمیه‌ای انجام نمی‌شود.'
+                : 'No research run yet. Opening the dashboard does not call YouTube or consume API quota.'}</Txt>
+            )}
+          </View>
+        </Panel>
+
+        {showYouTubeResearch ? (
+          <View style={{ gap: 10 }}>
+            <View style={[styles.rowBetween, { flexWrap: 'wrap' }]}>
+              <Heading>{fa ? 'خلاصه تحقیق · شواهد چه چیزی را پشتیبانی می‌کنند؟' : 'Research brief · What this evidence supports'}</Heading>
+            {deskAnalysis ? <BadgeText>{`${deskAnalysis.intelligence.confidence.level.toUpperCase()} CONFIDENCE`}</BadgeText> : null}
+          </View>
+          {deskAnalysis ? (
+            <Panel>
+              <Txt>{deskAnalysis.summary}</Txt>
+              <Txt muted>{fa
+                ? 'این بخش مشاهدات واقعی نمونه، برداشت‌های محتمل و داده‌هایی را که هنوز باید بررسی شوند جدا می‌کند؛ این پیش‌بینی بازدید نیست.'
+                : 'This brief separates observations in the returned sample, plausible interpretations and details that still need verification. It is not a view forecast.'}</Txt>
+              {warnings[0] ? <Txt muted>{warnings[0]}</Txt> : null}
+              {primaryNews ? (
+                <View style={styles.softCard}>
+                  <Text style={styles.label}>RELEVANT PUBLISHER ITEM</Text>
+                  <SourceHeading>{primaryNews.title}</SourceHeading>
+                  <Txt muted>
+                    {primaryNews.sourceName}
+                    {primaryNews.publishedAt ? ' · ' + new Date(primaryNews.publishedAt).toLocaleDateString(preferences.uiLanguage === 'fa' ? 'fa-IR' : 'en-US') : ''}
+                  </Txt>
+                </View>
+              ) : sharedTerms.length ? (
+                <View style={styles.softCard}>
+                  <Text style={styles.label}>RECURRING WORDING IN THIS SAMPLE</Text>
+                  <SourceHeading>{sharedTerms.slice(0, 4).join(', ')}</SourceHeading>
+                  <Txt muted>Repeated wording is not proof of demand, agreement or trend strength.</Txt>
+                </View>
+              ) : null}
+              <View style={{ gap: 6 }}>
+                <Text style={styles.label}>NEXT RESEARCH STEP</Text>
+                <Txt muted>{nextGap ?? 'No additional gap was flagged. Verify important claims against original sources before production.'}</Txt>
+                {nextQuery ? (
+                  <Action secondary onPress={() => router.push({ pathname: '/youtube', params: { topic: nextQuery } })}>
+                    Research suggested question
+                  </Action>
+                ) : null}
+                <Action onPress={() => router.push({ pathname: '/deep-research', params: { topic: deskTopic } })}>
+                  Build a research brief
+                </Action>
+              </View>
+            </Panel>
+          ) : (
+            <Panel>
+              <Heading>No topic-specific brief yet</Heading>
+              <Txt muted>Publisher headlines alone are not enough for a useful recommendation. Collect a real topic-linked sample first.</Txt>
+              <Action onPress={() => router.push({ pathname: '/youtube', params: { topic: discoveryTopic } })}>
+                Research the selected topic
+              </Action>
+            </Panel>
+          )}
+          </View>
+        ) : null}
+
+        <Fold title="Evidence quality and source audit" summary={deskAnalysis ? deskAnalysis.intelligence.sourceQuality.uniqueStories + ' stories · ' + deskAnalysis.intelligence.sourceQuality.feedsRepresented + ' feeds' : 'No analyzed sample yet'}>
+          {deskAnalysis ? (
+            <View style={{ gap: 12 }}>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7 }}>
+                <MetricCard label="UNIQUE STORIES" value={deskAnalysis.intelligence.sourceQuality.uniqueStories} />
+                <MetricCard label="FEEDS REPRESENTED" value={deskAnalysis.intelligence.sourceQuality.feedsRepresented} />
+                <MetricCard label="STALE / UNDATED" value={deskAnalysis.intelligence.sourceQuality.staleItems + deskAnalysis.intelligence.sourceQuality.undatedItems} />
+                <MetricCard label="WIKIMEDIA MONTHS" value={audit?.wikimediaMonthlyObservations ?? 0} />
+              </View>
+              {deskAnalysis.evidence
+                .filter((item) => ['publisher-news', 'wikimedia', 'youtube-sample', 'cross-source-overlap'].includes(item.id))
+                .map((item) => (
+                  <View key={item.id} style={{ gap: 4 }}>
+                    <BadgeText>{item.label}</BadgeText>
+                    <Txt muted>{item.detail}</Txt>
+                  </View>
+                ))}
+              <AnalysisSignals result={deskAnalysis} />
+            </View>
+          ) : (
+            <Txt muted>Source-quality details appear after a sample is available.</Txt>
+          )}
+        </Fold>
+
+        <Fold title="Editorial angles and verification" summary={deskAnalysis ? deskAnalysis.angles.length + ' angles · ' + deskAnalysis.verificationQuestions.length + ' checks' : 'Waiting for analysis'}>
+          {deskAnalysis ? deskAnalysis.angles.slice(0, 3).map((angle) => (
+            <View key={angle.id} style={{ gap: 5, paddingBottom: 10 }}>
+              <Heading>{angle.title}</Heading>
+              <Txt>{angle.hook}</Txt>
+              <Txt muted>{angle.approach}</Txt>
+              <Txt muted>{'Verify: ' + angle.verification}</Txt>
+            </View>
+          )) : <Txt muted>Research angles are generated from the available evidence.</Txt>}
+        </Fold>
+
+        <Fold title="Recent research and saved results" summary={reports.length + ' reports · ' + deskIdeas.length + ' ideas'}>
+          <View style={{ gap: 12 }}>
+            {feedVideos.length ? (
+              <View style={{ gap: 8 }}>
+                <Heading>Related videos</Heading>
+                {feedVideos.slice(0, 5).map((video) => <VideoRow key={video.id} video={video} topic={feedTopic} />)}
+              </View>
+            ) : <Txt muted>No saved video matched this focus. Unrelated results are intentionally hidden.</Txt>}
+            {recommendations.length ? (
+              <View style={{ gap: 8 }}>
+                <Heading>Other editorial ideas</Heading>
+                {recommendations.slice(0, 3).map((idea) => (
+                  <View key={idea.id} style={styles.softCard}>
+                    <SourceHeading>{idea.topic}</SourceHeading>
+                    <Txt muted>{idea.concept.slice(0, 180)}</Txt>
+                    <Action secondary onPress={() => router.push({ pathname: '/detail', params: { idea: idea.id } })}>
+                      Open idea
+                    </Action>
+                  </View>
+                ))}
+              </View>
+            ) : null}
+            {reports.length ? (
+              <View style={{ gap: 7 }}>
+                <Heading>Saved research runs</Heading>
+                {reports.slice(0, 4).map((report) => (
+                  <Action key={report.id} secondary onPress={() => router.push({ pathname: '/youtube', params: { topic: report.input.topic, report: report.id } })}>
+                    {report.input.topic + ' · ' + new Date(report.createdAt).toLocaleDateString(preferences.uiLanguage === 'fa' ? 'fa-IR' : 'en-US')}
+                  </Action>
+                ))}
+              </View>
+            ) : null}
+            <Action secondary onPress={() => router.push('/opportunities')}>Open all ideas</Action>
+          </View>
+        </Fold>
+
+        <Panel>
+          <Heading>{fa ? 'ابزارهای تکمیلی تحقیق' : 'Additional research tools'}</Heading>
+          <Txt muted>{fa
+            ? 'ابزارهای مستقل برنامه از همین داشبورد هم در دسترس‌اند؛ هرکدام مسیر و خروجی تخصصی خود را دارند.'
+            : 'The app’s dedicated research tools are also accessible here, each with its own focused workflow and results.'}</Txt>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+            <View style={{ flexGrow: 1, flexBasis: 180 }}>
+              <Panel variant="soft">
+                <Heading>{fa ? 'تحقیق عمیق' : 'Deep Research'}</Heading>
+                <Txt muted>{fa ? 'ساخت پرونده تحقیق با منابع و پرسش‌های قابل پیگیری.' : 'Build a source-linked research brief and follow-up questions.'}</Txt>
+                <Action secondary onPress={() => router.push('/deep-research')}>{fa ? 'شروع تحقیق عمیق' : 'Open Deep Research'}</Action>
+              </Panel>
+            </View>
+            <View style={{ flexGrow: 1, flexBasis: 180 }}>
+              <Panel variant="soft">
+                <Heading>{fa ? 'هوشمندی روندها' : 'Trend Intelligence'}</Heading>
+                <Txt muted>{fa ? 'بررسی نشانه‌های موضوعی و زمینه‌های مرتبط.' : 'Inspect topic signals and related context.'}</Txt>
+                <Action secondary onPress={() => router.push('/trend-intelligence')}>{fa ? 'بررسی روندها' : 'Open Trend Intelligence'}</Action>
+              </Panel>
+            </View>
+            <View style={{ flexGrow: 1, flexBasis: 180 }}>
+              <Panel variant="soft">
+                <Heading>{fa ? 'تقاضای جست‌وجو' : 'Search Demand'}</Heading>
+                <Txt muted>{fa ? 'مقایسه داده‌های در دسترس جست‌وجو و محدودیت‌های آن.' : 'Compare available search signals and their data limits.'}</Txt>
+                <Action secondary onPress={() => router.push('/search-demand')}>{fa ? 'بررسی تقاضا' : 'Open Search Demand'}</Action>
+              </Panel>
+            </View>
+          </View>
+        </Panel>
 
         <Pressable onPress={() => setHealthExpanded((current) => !current)} accessibilityRole="button" accessibilityState={{ expanded: healthExpanded }}>
           <Panel>
@@ -596,193 +799,12 @@ function DiscoveryDashboardReady() {
                 {feed.lastError ? <Txt muted>{runtimeErrorHint(feed.lastError, fa ? 'fa' : 'en')}</Txt> : null}
               </View>
             ))}
-            <Txt muted>{'YouTube quota: ' + quotaUsage.units + ' / ' + preferences.budget + ' estimated units · ' + quotaUsage.requests + ' requests today'}</Txt>
-            <Txt muted>{memoryCount + ' topics in local research memory · ' + reports.length + ' saved research runs'}</Txt>
-            <Txt muted>{'AI second opinion: ' + (preferences.hybridIntelligence ? 'Automatic and enabled' : 'Manual only')}</Txt>
-            <Txt muted>{'YouTube schedule: ' + (preferences.schedule === 'Manual' ? 'Off' : preferences.paused ? 'Paused' : preferences.schedule)}</Txt>
             <Txt muted>{fa
               ? 'درصدها فقط از عملیات ثبت‌شده از ابتدای همین نشست محاسبه می‌شوند و آمار تاریخی یا سلامت کلی سرویس‌دهنده نیستند.'
               : 'Session percentages use completed instrumented operations since this app session began. They are not lifetime, server-wide or provider availability statistics.'}</Txt>
             {runtimeMetrics.lastError ? <Txt muted>{(fa ? 'آخرین خطای ثبت‌شده: ' : 'Latest measured error: ') + runtimeErrorHint(runtimeMetrics.lastError, fa ? 'fa' : 'en')}</Txt> : null}
           </Panel>
         ) : null}
-
-        <Panel variant="hero">
-          <View style={{ gap: 11 }}>
-            <BadgeText>{fa ? 'شروع تحقیق' : 'START A RESEARCH RUN'}</BadgeText>
-            <Heading>{fa ? 'موضوع ویدئوی بعدی‌ات را پیدا کن' : 'Find your next video topic'}</Heading>
-            <Txt muted>{fa
-              ? 'جست‌وجو فقط پس از اقدام تو انجام می‌شود. نتایج نامرتبط حذف می‌شوند و موتور ایده فقط از شواهد همین نمونه استفاده می‌کند.'
-              : 'Search runs only after you start it. Weakly related results are excluded, and ideas are tied to evidence in the returned sample.'}</Txt>
-            <Field
-              label={fa ? 'موضوع یا کلیدواژه' : 'Topic or keyword'}
-              value={quickTopic}
-              onChange={(value) => setQuickTopicDraft(value)}
-              placeholder={fa ? 'مثلاً هوش مصنوعی در تدوین ویدئو' : 'e.g. AI video editing workflows'}
-            />
-            <Action icon={Search} disabled={!quickTopic.trim()}
-              onPress={() => router.push({ pathname: '/youtube', params: { topic: quickTopic.trim() } })}>
-              {fa ? 'شروع تحقیق YouTube' : 'Start YouTube research'}
-            </Action>
-            {latestReport ? (
-              <View style={{ gap: 7 }}>
-                <Txt muted>
-                  {(fa ? 'آخرین نمونه: ' : 'Latest sample: ') + latestReport.input.topic + ' · ' +
-                    latestReport.videos.length + (fa ? ' ویدئو · ' : ' videos · ') +
-                    new Date(latestReport.createdAt).toLocaleString(fa ? 'fa-IR' : 'en-US')}
-                </Txt>
-                <Action secondary onPress={() => router.push({ pathname: '/youtube', params: { topic: latestReport.input.topic, report: latestReport.id } })}>
-                  {fa ? 'مشاهده آخرین تحقیق' : 'Review latest research'}
-                </Action>
-              </View>
-            ) : (
-              <Txt muted>{fa
-                ? 'هنوز تحقیقی اجرا نشده؛ با بازکردن داشبورد هیچ درخواست YouTube یا مصرف سهمیه‌ای انجام نمی‌شود.'
-                : 'No research run yet. Opening the dashboard does not call YouTube or consume API quota.'}</Txt>
-            )}
-          </View>
-        </Panel>
-
-        {showYouTubeResearch ? (
-          <Panel>
-            <View style={{ gap: 10 }}>
-              <View style={[styles.rowBetween, { flexWrap: 'wrap' }]}>
-                <Heading>{fa ? 'خلاصه تحقیق · شواهد چه چیزی را پشتیبانی می‌کنند؟' : 'Research brief · What this evidence supports'}</Heading>
-                {deskAnalysis ? <BadgeText>{deskAnalysis.intelligence.confidence.level.toUpperCase() + ' CONFIDENCE'}</BadgeText> : null}
-              </View>
-              {deskAnalysis ? (
-                <>
-                  <Txt>{deskAnalysis.summary}</Txt>
-                  <Txt muted>{fa
-                    ? 'این بخش می‌گوید چه چیزی واقعاً در نمونه دیده شده، کدام زاویه ارزش بررسی دارد و پیش از تولید چه چیزی هنوز باید تأیید شود؛ این پیش‌بینی بازدید نیست.'
-                    : 'This brief separates what the returned sample actually shows, which angle is worth exploring, and what still needs verification before production. It is not a view forecast.'}</Txt>
-                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7 }}>
-                    <MetricCard label="TOPIC-MATCHED NEWS" value={audit?.topicMatchedNewsCount ?? 0} hint="Stories matching this topic" />
-                    <MetricCard label="UNIQUE PUBLISHER STORIES" value={deskAnalysis.intelligence.sourceQuality.uniqueStories} hint="After duplicate merging" />
-                    <MetricCard label="RECENT MATCHED VIDEOS" value={audit?.recentMatchedVideoCount ?? 0} hint="Within the selected research window" />
-                  </View>
-                  {primaryNews ? (
-                    <View style={styles.softCard}>
-                      <BadgeText>{fa ? 'گزارش مرتبط از ناشر' : 'RELEVANT PUBLISHER REPORT'}</BadgeText>
-                      <SourceHeading>{primaryNews.title}</SourceHeading>
-                      <Txt muted>
-                        {primaryNews.sourceName}
-                        {primaryNews.publishedAt ? ' · ' + new Date(primaryNews.publishedAt).toLocaleDateString(fa ? 'fa-IR' : 'en-US') : ''}
-                      </Txt>
-                    </View>
-                  ) : sharedTerms.length ? (
-                    <View style={styles.softCard}>
-                      <BadgeText>{fa ? 'عبارت‌های تکرارشده در نمونه' : 'REPEATED WORDING IN THIS SAMPLE'}</BadgeText>
-                      <SourceHeading>{sharedTerms.slice(0, 4).join(', ')}</SourceHeading>
-                      <Txt muted>{fa ? 'تکرار واژه‌ها به‌تنهایی نشانه تقاضا یا قدرت روند نیست.' : 'Repeated wording alone is not proof of demand or trend strength.'}</Txt>
-                    </View>
-                  ) : null}
-                  {deskAnalysis.angles[0] ? (
-                    <View style={styles.softCard}>
-                      <BadgeText>{fa ? 'بهترین زاویه پیشنهادی محتوا' : 'TOP SUGGESTED CONTENT ANGLE'}</BadgeText>
-                      <Heading>{deskAnalysis.angles[0].title}</Heading>
-                      <Txt>{deskAnalysis.angles[0].hook}</Txt>
-                      <Txt muted>{deskAnalysis.angles[0].approach}</Txt>
-                      <Txt muted>{(fa ? 'برای انتشار بررسی شود: ' : 'Verify before publishing: ') + deskAnalysis.angles[0].verification}</Txt>
-                    </View>
-                  ) : null}
-                  {latestWikiObservation ? (
-                    <Txt muted>{(fa ? 'ویکی‌مدیا · آخرین ماه ثبت‌شده: ' : 'Wikimedia · latest recorded month: ') + latestWikiObservation.month + ' · ' + new Intl.NumberFormat(fa ? 'fa-IR' : 'en-US').format(latestWikiObservation.views) + (fa ? ' بازدید مقاله؛ این آمار، جست‌وجوی YouTube نیست.' : ' article pageviews; this is not YouTube search volume.')}</Txt>
-                  ) : null}
-                  <View style={{ gap: 5 }}>
-                    <Text style={styles.label}>{fa ? 'گام بعدی تحقیق' : 'NEXT RESEARCH CHECK'}</Text>
-                    <Txt muted>{nextGap ?? (fa ? 'ادعای مهم را پیش از تولید با منبع اولیه تطبیق بده.' : 'Check important claims against primary sources before production.')}</Txt>
-                    {nextQuery ? (
-                      <Action secondary onPress={() => router.push({ pathname: '/youtube', params: { topic: nextQuery } })}>
-                        {fa ? 'تحقیق پرسش پیشنهادی' : 'Research suggested question'}
-                      </Action>
-                    ) : null}
-                  </View>
-                  <Fold
-                    title={fa ? 'جزئیات شواهد، کیفیت منابع و راستی‌آزمایی' : 'Evidence, source quality & verification'}
-                    summary={deskAnalysis.intelligence.sourceQuality.uniqueStories + ' stories · ' + deskAnalysis.angles.length + ' angles · ' + deskAnalysis.verificationQuestions.length + ' checks'}
-                  >
-                    <View style={{ gap: 12 }}>
-                      <AnalysisSignals result={deskAnalysis} />
-                      {deskAnalysis.angles.length > 1 ? (
-                        <View style={{ gap: 7 }}>
-                          <Heading>{fa ? 'زاویه‌های محتوایی دیگر' : 'Other editorial angles'}</Heading>
-                          {deskAnalysis.angles.slice(1, 4).map((angle) => (
-                            <View key={angle.id} style={{ gap: 4 }}>
-                              <SourceHeading>{angle.title}</SourceHeading>
-                              <Txt>{angle.hook}</Txt>
-                              <Txt muted>{angle.approach}</Txt>
-                            </View>
-                          ))}
-                        </View>
-                      ) : null}
-                      {deskAnalysis.verificationQuestions.length ? (
-                        <View style={{ gap: 7 }}>
-                          <Heading>{fa ? 'پرسش‌ها پیش از انتشار' : 'Checks before publishing'}</Heading>
-                          {deskAnalysis.verificationQuestions.slice(0, 10).map((question, index) => (
-                            <Txt muted key={String(index) + question}>{'• ' + question}</Txt>
-                          ))}
-                        </View>
-                      ) : null}
-                    </View>
-                  </Fold>
-                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-                    <View style={{ flexGrow: 1, flexBasis: 160 }}>
-                      <Action onPress={() => router.push({ pathname: '/deep-research', params: { topic: deskTopic } })}>
-                        {fa ? 'ساخت پرونده تحقیق کامل' : 'Build a full research brief'}
-                      </Action>
-                    </View>
-                    <View style={{ flexGrow: 1, flexBasis: 160 }}>
-                      <Action secondary onPress={() => router.push('/cosmic-news')}>
-                        {fa ? 'مشاهده اخبار و منابع رسمی' : 'Open News & publisher sources'}
-                      </Action>
-                    </View>
-                  </View>
-                </>
-              ) : (
-                <>
-                  <Heading>{fa ? 'هنوز خلاصه موضوع‌محور آماده نیست' : 'No topic-specific brief yet'}</Heading>
-                  <Txt muted>{fa
-                    ? 'تیترهای ناشران به‌تنهایی برای پیشنهاد قابل اتکا کافی نیستند؛ ابتدا یک نمونه واقعی YouTube اجرا کن.'
-                    : 'Publisher headlines alone are not enough for a useful recommendation. Collect a real topic-specific YouTube sample first.'}</Txt>
-                  <Action onPress={() => router.push({ pathname: '/youtube', params: { topic: discoveryTopic } })}>
-                    {fa ? 'تحقیق درباره موضوع انتخاب‌شده' : 'Research the selected topic'}
-                  </Action>
-                </>
-              )}
-            </View>
-          </Panel>
-        ) : null}
-
-        <Panel>
-          <Heading>{fa ? 'ابزارهای تکمیلی تحقیق' : 'Additional research tools'}</Heading>
-          <Txt muted>{fa
-            ? 'ابزارهای مستقل برنامه از همین داشبورد هم در دسترس‌اند؛ هرکدام مسیر و خروجی تخصصی خود را دارند.'
-            : 'The app’s dedicated research tools are also accessible here, each with its own focused workflow and results.'}</Txt>
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-            <View style={{ flexGrow: 1, flexBasis: 180 }}>
-              <Panel variant="soft">
-                <Heading>{fa ? 'تحقیق عمیق' : 'Deep Research'}</Heading>
-                <Txt muted>{fa ? 'ساخت پرونده تحقیق با منابع و پرسش‌های قابل پیگیری.' : 'Build a source-linked research brief and follow-up questions.'}</Txt>
-                <Action secondary onPress={() => router.push('/deep-research')}>{fa ? 'شروع تحقیق عمیق' : 'Open Deep Research'}</Action>
-              </Panel>
-            </View>
-            <View style={{ flexGrow: 1, flexBasis: 180 }}>
-              <Panel variant="soft">
-                <Heading>{fa ? 'هوشمندی روندها' : 'Trend Intelligence'}</Heading>
-                <Txt muted>{fa ? 'بررسی نشانه‌های موضوعی و زمینه‌های مرتبط.' : 'Inspect topic signals and related context.'}</Txt>
-                <Action secondary onPress={() => router.push('/trend-intelligence')}>{fa ? 'بررسی روندها' : 'Open Trend Intelligence'}</Action>
-              </Panel>
-            </View>
-            <View style={{ flexGrow: 1, flexBasis: 180 }}>
-              <Panel variant="soft">
-                <Heading>{fa ? 'تقاضای جست‌وجو' : 'Search Demand'}</Heading>
-                <Txt muted>{fa ? 'مقایسه داده‌های در دسترس جست‌وجو و محدودیت‌های آن.' : 'Compare available search signals and their data limits.'}</Txt>
-                <Action secondary onPress={() => router.push('/search-demand')}>{fa ? 'بررسی تقاضا' : 'Open Search Demand'}</Action>
-              </Panel>
-            </View>
-          </View>
-        </Panel>
 
       </View>
     </Page>

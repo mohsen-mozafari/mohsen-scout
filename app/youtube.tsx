@@ -134,7 +134,7 @@ export default function Discover() {
     >
       <Panel>
         <Heading>1 · Choose a topic and sample settings</Heading>
-        <Txt muted>Enter one focused topic, optionally refine the filters, then run one official YouTube API sample. No background search is started.</Txt>
+        <Txt muted>Enter one focused topic, refine the optional filters only when needed, then request one bounded official YouTube sample.</Txt>
         <Field
           label="What are you exploring?"
           value={topic}
@@ -199,7 +199,7 @@ export default function Discover() {
       </Panel>
       {Boolean(topic.trim()) && !report && (
         <Fold title="How the search is prepared" summary={relatedQueries(topic).length + ' query variations'}>
-          <Txt muted>The query map makes the search scope visible before you use YouTube API quota.</Txt>
+          <Txt muted>The query map shows the search scope before you spend YouTube API quota.</Txt>
           {relatedQueries(topic).map((query, index) => (
             <View style={[styles.row, { marginLeft: index ? 16 : 0 }]} key={query}>
               <View
