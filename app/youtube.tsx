@@ -215,7 +215,7 @@ export default function Discover() {
       {!hasKey && !report && (
         <Button
           variant="tertiary"
-          onPress={() => router.push('/settings')}
+          onPress={() => router.push('/(tabs)/settings')}
           className="h-auto justify-start px-0"
         >
           <KeyRound size={18} color={p.accent} />
