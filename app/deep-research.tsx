@@ -380,8 +380,9 @@ export default function DeepResearch() {
                 <Button.Label>Check the article and its references ↗</Button.Label>
               </Button>
             </Panel>
+          </Fold>
           )}
-</Fold>          <Fold title="6 · Official publisher news" summary={brief.news.length + ' source-linked reports'}>          <Panel>
+          <Fold title="6 · Official publisher news" summary={brief.news.length + ' source-linked reports'}>          <Panel>
             <Heading>Primary-source news</Heading>
             {!brief.news.length && <Txt muted>No selected-feed headline directly matched this topic. Use the source links from Cosmic News for a broader scan.</Txt>}
             {brief.news.map((item) => (
