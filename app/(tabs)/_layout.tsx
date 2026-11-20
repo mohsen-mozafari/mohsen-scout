@@ -1,4 +1,4 @@
-import { Bookmark, Compass, Lightbulb, NotebookPen, Newspaper } from 'lucide-react-native';
+import { Bookmark, Compass, Lightbulb, NotebookPen, Newspaper, Settings } from 'lucide-react-native';
 import { Tabs } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as Haptics from 'expo-haptics';
@@ -36,10 +36,10 @@ export default function TabLayout() {
           tabBarInactiveTintColor: p.muted,
           tabBarLabelStyle: {
             fontFamily: 'Inter_600SemiBold',
-            fontSize: 10,
+            fontSize: 9,
             marginTop: 1,
           },
-          tabBarItemStyle: { paddingHorizontal: 2 },
+          tabBarItemStyle: { paddingHorizontal: 0 },
           tabBarIconStyle: { marginTop: 0 },
           tabBarHideOnKeyboard: true,
         }}
@@ -91,7 +91,14 @@ export default function TabLayout() {
             tabBarIcon: ({ color, focused }) => <NotebookPen size={21} strokeWidth={focused ? 2.15 : 1.7} color={color} />,
           }}
         />
-        <Tabs.Screen name="settings" options={{ href: null, title: translateText('Settings', language) }} />
+        <Tabs.Screen
+          name="settings"
+          options={{
+            title: translateText('Settings', language),
+            tabBarLabel: translateText('Settings', language),
+            tabBarIcon: ({ color, focused }) => <Settings size={20} strokeWidth={focused ? 2.15 : 1.7} color={color} />,
+          }}
+        />
       </Tabs>
     </>
   );
