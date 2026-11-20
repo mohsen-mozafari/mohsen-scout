@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { type Budget, type ResearchInput, type Video, type Region } from './types';
-import { matchesResearchTerms, scoreResearchText, tokenizeResearchText } from './intelligence';
+import { matchesResearchTerms, matchesStrongResearchTopic, scoreResearchText } from './intelligence';
 export type Fetcher = typeof fetch;
 export class ApiError extends Error {
   constructor(
@@ -313,20 +313,9 @@ export function isWithinYouTubeResearchWindow(publishedAt: string, days: number,
  * cannot qualify a long topic on its own, while a one-term acronym query still
  * supports its explicit semantic aliases.
  */
+/** Rejects acronym-only matches for multi-concept topics before idea generation. */
 export function filterYouTubeSearchResults<T extends { title: string; description?: string }>(topic: string, videos: readonly T[]): T[] {
-  const tokens = [...new Set(tokenizeResearchText(topic).filter((token) => token.length > 2))];
-  const rawTokens = topic.match(/[\p{L}\p{N}]+/gu) ?? [];
-  const acronymTokens = new Set(rawTokens
-    .filter((token) => token.length >= 2 && token.length <= 5 && token === token.toUpperCase())
-    .map((token) => tokenizeResearchText(token)[0])
-    .filter((token): token is string => Boolean(token)));
-  const coreTokens = tokens.filter((token) => !acronymTokens.has(token));
-  return videos.filter((video) => {
-    const searchable = video.title + ' ' + (video.description ?? '');
-    if (tokens.length <= 1 || !coreTokens.length) return matchesResearchTerms(searchable, [topic]);
-    const evidenceTokens = new Set(tokenizeResearchText(searchable));
-    return coreTokens.some((token) => evidenceTokens.has(token));
-  });
+  return videos.filter((video) => matchesStrongResearchTopic(video.title + ' ' + (video.description ?? ''), topic));
 }
 
 /** Ranks a bounded YouTube sample by transparent title-first textual relevance. */

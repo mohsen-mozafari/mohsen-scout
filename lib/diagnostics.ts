@@ -83,7 +83,7 @@ export async function runDiagnostics(): Promise<TestResult[]> {
     description: 'MOCK description',
     channel: 'MOCK channel',
     thumbnail: 'https://example.com/mock.jpg',
-    publishedAt: '2026-10-01T12:00:00Z',
+    publishedAt: new Date(now - 24 * 60 * 60 * 1000).toISOString(),
     fetchedAt: now,
     query: input.topic,
   };

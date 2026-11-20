@@ -281,6 +281,26 @@ export function matchesResearchTerms(value: string, terms: readonly string[]): b
   return matchesAnyResearchTerms(value, terms);
 }
 
+/**
+ * Stronger topic gate for idea generation. Known acronyms are useful entity
+ * anchors, but an acronym alone cannot qualify a multi-concept topic.
+ */
+export function matchesStrongResearchTopic(value: string, topic: string): boolean {
+  const topicTokens = [...new Set(tokenizeResearchText(topic).filter((token) => token.length > 2))];
+  if (!topicTokens.length) return false;
+  const rawTokens = topic.match(/[\p{L}\p{N}]+/gu) ?? [];
+  const acronymTokens = new Set(rawTokens
+    .filter((token) => token.length >= 2 && token.length <= 5 && token === token.toUpperCase())
+    .map((token) => tokenizeResearchText(token)[0])
+    .filter((token): token is string => Boolean(token)));
+  const coreTokens = topicTokens.filter((token) => !acronymTokens.has(token));
+  if (!coreTokens.length) return matchesAnyResearchTerms(value, [topic]);
+  const evidenceTokens = new Set(tokenizeResearchText(value));
+  const overlap = coreTokens.filter((token) => evidenceTokens.has(token)).length;
+  const required = acronymTokens.size ? 1 : Math.max(1, Math.ceil(coreTokens.length * 0.6));
+  return overlap >= required;
+}
+
 function relevanceWithFeedback<T extends ResearchDocument>(
   topic: string,
   item: T,

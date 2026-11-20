@@ -1,4 +1,4 @@
-import { buildResearchInterestProfile, canonicalizeResearchUrl, createEditorialOpportunityScorer, matchesAnyResearchTerms, matchesResearchTerms, normalizeResearchText, scoreResearchText, tokenizeResearchText, type ResearchFeedbackProfile } from './intelligence';
+import { buildResearchInterestProfile, canonicalizeResearchUrl, createEditorialOpportunityScorer, matchesAnyResearchTerms, matchesResearchTerms, matchesStrongResearchTopic, normalizeResearchText, scoreResearchText, tokenizeResearchText, type ResearchFeedbackProfile } from './intelligence';
 import type { ResearchMemoryEntry } from './types';
 import type { SpaceNewsItem } from './space';
 import { uid, type Idea, type Region } from './types';
@@ -291,7 +291,7 @@ export function selectIdeaGenerationVideos(
     // Require a meaningful match across the topic, not just one shared generic word.
     // The shared matcher still recognizes the project's explicit semantic aliases.
     const searchable = video.title + ' ' + (video.description ?? '');
-    if (!matchesResearchTerms(searchable, [topic])) continue;
+    if (!matchesStrongResearchTopic(searchable, topic)) continue;
     const relevance = scoreResearchText(topic, video.title, video.description ?? '');
     if (relevance <= 0) continue;
     const previous = unique.get(video.id);
