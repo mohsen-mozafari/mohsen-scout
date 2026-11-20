@@ -308,8 +308,8 @@ export function ResearchKnowledgeGraph({
         <DirectionalText value={label('Editorial evidence map', 'نقشه شواهد و اولویت تحریری')} style={{ fontSize: 17, fontWeight: '700' }} />
         <DirectionalText
           value={label(
-            'Vertical: editorial score · horizontal: linked relationship types · bubble area: direct evidence count.',
-            'محور عمودی: امتیاز تحریری · محور افقی: تنوع نوع ارتباط‌ها · مساحت حباب: تعداد شواهد مستقیم متصل.',
+            'Each dot is one idea. Higher dots have stronger editorial scores; larger dots have more direct evidence; moving right means more evidence types are connected. Lines show shared sources or entities. Tap a dot to inspect it.',
+            'هر نقطه یک ایده است. نقطه بالاتر امتیاز تحریری بیشتری دارد؛ نقطه بزرگ‌تر شواهد مستقیم بیشتری دارد؛ حرکت به راست یعنی تنوع بیشتر نوع شواهد. خطوط منابع یا موجودیت‌های مشترک را نشان می‌دهند. برای دیدن جزئیات، نقطه را لمس کن.',
           )}
           style={{ color: p.muted, fontSize: 11 }}
         />
@@ -376,15 +376,15 @@ export function ResearchKnowledgeGraph({
                       alignItems: 'center',
                       justifyContent: 'center',
                     }}>
-                    <Text style={{ color: p.background, fontSize: 9, fontWeight: '800' }}>{selected ? point.idea.engineScore : point.index + 1}</Text>
+                    <Text style={{ color: p.background, fontSize: 8, fontWeight: '800' }}>{Math.round(point.idea.engineScore ?? 0)}</Text>
                   </Pressable>
                 );
               })}
             </View>
           </View>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: -5 }}>
-            <DirectionalText value={label('1 relationship type', '۱ نوع ارتباط')} style={{ color: p.muted, fontSize: 10 }} />
-            <DirectionalText value={number(chart.maxRelationshipTypes) + ' ' + label('relationship types', 'نوع ارتباط')} style={{ color: p.muted, fontSize: 10 }} />
+            <DirectionalText value={label('1 evidence type', '۱ نوع شاهد')} style={{ color: p.muted, fontSize: 10 }} />
+            <DirectionalText value={number(chart.maxRelationshipTypes) + ' ' + label('evidence types', 'نوع شاهد')} style={{ color: p.muted, fontSize: 10 }} />
           </View>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7 }}>
             {model.groups.map((group) => (
@@ -406,7 +406,7 @@ export function ResearchKnowledgeGraph({
                 <DirectionalText value={band === 'strong' ? label('Strong', 'قوی') : band === 'moderate' ? label('Medium', 'متوسط') : label('Weak', 'ضعیف')} style={{ color: p.muted, fontSize: 10 }} />
               </View>
             ))}
-            <DirectionalText value={label('Lines = shared evidence / graph relation', 'خطوط = شاهد مشترک یا رابطه ثبت‌شده در گراف')} style={{ color: p.muted, fontSize: 10 }} />
+            <DirectionalText value={label('Color = score band · number = score / 100 · tap a dot for sources', 'رنگ = سطح امتیاز · عدد = امتیاز از ۱۰۰ · لمس نقطه برای دیدن منابع')} style={{ color: p.muted, fontSize: 10 }} />
           </View>
           {monthlyChart ? (
             <View style={{ gap: 7, borderTopWidth: 1, borderTopColor: p.borderSoft, paddingTop: 12 }}>
