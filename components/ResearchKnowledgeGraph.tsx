@@ -8,7 +8,7 @@ import type { InternalResearchResult } from '@/lib/engine';
 import type { SpaceNewsItem, WikiSignal } from '@/lib/space';
 import type { YouTubeSampleVideo } from '@/lib/api';
 
-const GRAPH_COLORS = [p.purple, p.blue, '#48B9C8', p.success, '#8293AA', '#6F83A0'];
+const GRAPH_COLORS = [p.accent, p.cyan, p.warning, p.success, p.danger, p.indigo];
 
 function DirectionalText({ value, style }: { value: string; style?: StyleProp<TextStyle> }) {
   const direction = resolveTextDirection(value);
@@ -77,7 +77,7 @@ export function ResearchKnowledgeGraph({
     setActiveNodeId(undefined);
   };
   const colorFor = (node: ResearchGraphNode) =>
-    node.type === 'topic' ? p.purple : groupColor(groupIndex(node.groupId));
+    node.type === 'topic' ? p.accent : groupColor(groupIndex(node.groupId));
   const totalItems = model.nodes.filter((node) => node.type !== 'topic' && node.type !== 'publisher').length;
 
   return (
@@ -100,11 +100,11 @@ export function ResearchKnowledgeGraph({
                 if (!source || !target) return null;
                 return (
                   <Line key={edge.id} x1={source.x} y1={source.y} x2={target.x} y2={target.y}
-                    stroke={edge.relation.includes('word overlap') ? p.blue : p.border}
+                    stroke={edge.relation.includes('word overlap') ? p.cyan : p.border}
                     strokeWidth={edge.relation.includes('word overlap') ? 1.8 : 1.1} />
                 );
               })}
-              <Circle cx={center.x} cy={center.y} r={30} fill={p.raised} stroke={p.purple} strokeWidth={2} />
+              <Circle cx={center.x} cy={center.y} r={30} fill={p.raised} stroke={p.accent} strokeWidth={2} />
               <SvgText x={center.x} y={center.y - 2} fill={p.text} fontSize={9} fontWeight="700" textAnchor="middle">TOPIC</SvgText>
               <SvgText x={center.x} y={center.y + 10} fill={p.muted} fontSize={7} textAnchor="middle">{String(graphNodes.length)}</SvgText>
               {graphNodes.map((node) => {
@@ -150,7 +150,7 @@ export function ResearchKnowledgeGraph({
                 return (
                   <Pressable key={item.id} onPress={() => setActiveNodeId(item.id)} accessibilityRole="button"
                     accessibilityState={{ selected }}
-                    style={{ borderRadius: 12, borderWidth: 1, borderColor: selected ? p.purple : p.border,
+                    style={{ borderRadius: 12, borderWidth: 1, borderColor: selected ? p.accent : p.border,
                       backgroundColor: selected ? p.raised : p.surface, paddingHorizontal: 12, paddingVertical: 10, gap: 3 }}>
                     <DirectionalText value={item.title} style={{ fontWeight: '600' }} />
                     {item.meta ? <DirectionalText value={item.meta} style={{ color: p.muted, fontSize: 10, lineHeight: 15 }} /> : null}
