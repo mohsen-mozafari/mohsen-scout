@@ -157,7 +157,7 @@ export default function TrendIntelligence() {
       {videos.length > 0 && !nextPageToken && <Txt muted>YouTube has no next page for this query and filter set.</Txt>}
       {Boolean(op.error) && <ErrorBox message={op.error} onRetry={run} />}
       {Boolean(op.message) && <Txt muted>{op.message}</Txt>}
-      <Action secondary onPress={() => router.push('/settings')}>Manage YouTube API key and research defaults</Action>
+      <Action secondary onPress={() => router.push('/(tabs)/settings')}>Manage YouTube API key and research defaults</Action>
     </Page>
   );
 }
