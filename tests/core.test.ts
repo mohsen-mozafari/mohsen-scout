@@ -1171,6 +1171,17 @@ void test('Internal engine keeps historical context while separating recent, all
   assert.equal(audit.futureDatedVideoCount, 1);
   assert.equal(audit.excludedVideoCount, 2);
   assert.equal(audit.videoViewCountsAvailable, 2);
+  const allTime = buildInternalResearch({
+    topic: 'Exoplanet atmospheres', now: fixedNow, videoWindowDays: 0,
+    videos: [
+      { id: 'dQw4w9WgXcQ', title: 'James Webb observes an exoplanet atmosphere', channel: 'Science One', publishedAt: '2026-11-17T09:00:00.000Z', viewCount: 800 },
+      { id: '9bZkp7q19f0', title: 'Exoplanet atmosphere discoveries in 2025', channel: 'Old Science', publishedAt: '2026-10-01T09:00:00.000Z', viewCount: 9000 },
+      { id: 'aqz-KE-bpKQ', title: 'Exoplanet atmosphere announced for the future', channel: 'Future Science', publishedAt: '2026-12-01T09:00:00.000Z', viewCount: 12000 },
+    ],
+  }).intelligence.selfEvaluation;
+  assert.equal(allTime.recentVideoCandidateCount, 2);
+  assert.equal(allTime.recentMatchedVideoCount, 2);
+  assert.equal(allTime.outsideVideoWindowCount, 1);
   assert.ok(result.evidence.some((item) => item.id === 'retrieved-news-headlines' && item.detail.includes('Artemis')), 'unmatched publisher records remain visible in the contextual evidence audit');
   assert.ok(result.evidence.some((item) => item.id === 'youtube-sample' && item.detail.includes('9,000')));
 });

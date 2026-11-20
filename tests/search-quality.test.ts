@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { ApiError, buildYouTubeSearchPlan, getOpinion, rankYouTubeSearchResults, requestJson, selectFreeModel, type Fetcher } from '../lib/api';
+import { ApiError, buildYouTubeSearchPlan, filterYouTubeSearchResults, getOpinion, isWithinYouTubeResearchWindow, rankYouTubeSearchResults, requestJson, selectFreeModel, type Fetcher } from '../lib/api';
 import { getWikipediaSignal, newsForNiche, SPACE_NEWS_SOURCES } from '../lib/space';
 
 const jsonResponse = (body: unknown, status = 200) =>
@@ -131,4 +131,25 @@ void test('Official niche news results rank direct headline matches above summar
   };
   const results = newsForNiche([summaryOnly, titleMatch], 'jwst');
   assert.deepEqual(results.map((item) => item.id), ['title-match', 'summary-only']);
+});
+
+
+void test('selected YouTube research period is applied locally without admitting future or invalid dates', () => {
+  const now = Date.parse('2026-11-20T12:00:00Z');
+  assert.equal(isWithinYouTubeResearchWindow('2026-11-19T12:00:00Z', 30, now), true);
+  assert.equal(isWithinYouTubeResearchWindow('2026-10-21T12:00:00Z', 30, now), true);
+  assert.equal(isWithinYouTubeResearchWindow('2026-10-20T11:59:59Z', 30, now), false);
+  assert.equal(isWithinYouTubeResearchWindow('2026-08-22T12:00:00Z', 90, now), true);
+  assert.equal(isWithinYouTubeResearchWindow('2026-08-20T12:00:00Z', 90, now), false);
+  assert.equal(isWithinYouTubeResearchWindow('2025-01-01T00:00:00Z', 0, now), true);
+  assert.equal(isWithinYouTubeResearchWindow('2026-11-21T00:00:00Z', 0, now), false);
+  assert.equal(isWithinYouTubeResearchWindow('not-a-date', 0, now), false);
+});
+
+void test('YouTube sample rejects weak one-token matches before they reach the idea engine', () => {
+  const results = filterYouTubeSearchResults('JWST exoplanet atmosphere', [
+    { id: 'noise', title: 'JWST gaming commentary', description: 'A general channel update.' },
+    { id: 'match', title: 'James Webb Space Telescope observes an exoplanet atmosphere', description: 'Spectroscopy measurements.' },
+  ]);
+  assert.deepEqual(results.map((item) => item.id), ['match']);
 });

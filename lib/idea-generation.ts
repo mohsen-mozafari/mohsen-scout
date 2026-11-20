@@ -135,26 +135,26 @@ function buildCandidate(
   const term = displayTerm(anchor || topic);
   const titles: Record<IdeaGenerationCategory, string> = {
     Explainer: fa
-      ? 'سازوکار ' + term + ' در موضوع ' + topic + ' چگونه کار می‌کند؟'
-      : 'How ' + term + ' works within ' + topic,
+      ? 'آنچه «' + term + '» درباره ' + topic + ' نشان می‌دهد'
+      : 'What ' + term + ' tells us about ' + topic,
     'Evidence audit': fa
-      ? 'شواهد فعلی درباره ' + term + ' دقیقاً چه چیزی را نشان می‌دهند؟'
-      : 'What the available evidence actually establishes about ' + term,
+      ? 'شواهد درباره «' + term + '» چه چیزی را نشان می‌دهند و چه چیزی را نه؟'
+      : 'What the evidence does—and does not—show about ' + term,
     Comparison: fa
-      ? 'چه تفاوتی میان گزارش‌ها و نمونه‌های موجود درباره ' + term + ' دیده می‌شود؟'
-      : 'What differs across the available accounts of ' + term,
+      ? 'مقایسه شواهد موجود درباره ' + term
+      : 'Comparing the available evidence on ' + term,
     Timeline: fa
-      ? 'رد زمانی رویدادهای مرتبط با ' + term + ' در ' + topic
-      : 'How the available reports trace the timeline of ' + term,
+      ? 'خط زمانی شواهد درباره ' + term
+      : 'The evidence timeline for ' + term,
     'Open question': fa
-      ? 'پرسش بی‌پاسخ پشت ' + term + ' در موضوع ' + topic
-      : 'The unanswered question behind ' + term + ' in ' + topic,
+      ? 'چه چیزی هنوز درباره «' + term + '» نامعلوم است؟'
+      : 'What remains unknown about ' + term + '?',
     'Cross-source': fa
-      ? 'نقطه تلاقی گزارش‌های رسمی و نمونه‌های ویدئویی درباره ' + term
-      : 'Where official reporting and video examples meet on ' + term,
+      ? 'خبرها و ویدئوها «' + term + '» را چگونه متفاوت روایت می‌کنند؟'
+      : 'How news and videos frame ' + term + ' differently',
     Storytelling: fa
-      ? 'از مشاهده تا معنا: روایت مستند ' + term + ' در ' + topic
-      : 'From observation to meaning: the evidence trail behind ' + term,
+      ? 'روایت مستند مبتنی بر شواهد درباره ' + term
+      : 'The evidence-led story behind ' + term,
   };
   const questions: Record<IdeaGenerationCategory, string> = {
     Explainer: fa
@@ -257,6 +257,20 @@ function buildCandidate(
  * It performs no network calls and never copies YouTube titles, descriptions,
  * thumbnails or statistics into the durable Idea record.
  */
+/** Keeps the complete selected YouTube time range; 0 means all available past records. */
+export function filterVideosToSelectedResearchPeriod<T extends { publishedAt?: string | null }>(
+  videos: readonly T[],
+  days: number,
+  now = Date.now(),
+): T[] {
+  const windowDays = Number.isFinite(days) ? Math.max(0, Math.floor(days)) : 30;
+  const cutoff = windowDays === 0 ? Number.NEGATIVE_INFINITY : now - windowDays * 86400000;
+  return videos.filter((video) => {
+    const published = Date.parse(video.publishedAt ?? '');
+    return Number.isFinite(published) && published <= now && published >= cutoff;
+  });
+}
+
 /**
  * Selects relevant records from the existing YouTube sample. Missing view metrics
  * do not discard evidence; available views are only a secondary tie-breaker.
@@ -274,8 +288,10 @@ export function selectIdeaGenerationVideos(
     const titleTokens = new Set(tokenizeResearchText(video.title));
     const descriptionTokens = new Set(tokenizeResearchText(video.description ?? ''));
     const totalOverlap = [...topicTokens].filter((token) => titleTokens.has(token) || descriptionTokens.has(token)).length;
-    // Use the shared lexical-semantic matcher as the inclusion gate. Literal token
-    // ratios alone incorrectly discard known aliases such as "JWST" / "James Webb".
+    // Require a meaningful match across the topic, not just one shared generic word.
+    // The shared matcher still recognizes the project's explicit semantic aliases.
+    const searchable = video.title + ' ' + (video.description ?? '');
+    if (!matchesResearchTerms(searchable, [topic])) continue;
     const relevance = scoreResearchText(topic, video.title, video.description ?? '');
     if (relevance <= 0) continue;
     const previous = unique.get(video.id);
@@ -660,21 +676,24 @@ export function generateEditorialIdeas(input: GenerateEditorialIdeasInput): Idea
   }
 
   candidates.sort((a, b) => b.opportunityScore - a.opportunityScore || a.title.localeCompare(b.title));
+  const publisherGroups = new Set(topicRelevantNews
+    .map((item) => normalizeResearchText(item.sourceId || item.sourceName))
+    .filter(Boolean)).size;
+  const videoChannels = new Set(videos
+    .map((video) => normalizeResearchText(video.channel ?? ''))
+    .filter(Boolean)).size;
+  // Confidence follows independent publisher/channel coverage, not raw item count.
+  const confidence = publisherGroups >= 2 || videoChannels >= 2 ? 'moderate' : 'low';
+  const evidenceDepthLimit = Math.max(1, Math.min(5, Math.max(publisherGroups, videoChannels) * 2));
   const output: Idea[] = [];
   const now = input.now ?? Date.now();
-  const limit = Math.max(1, Math.min(25, input.limit ?? 25));
+  const limit = Math.max(1, Math.min(5, input.limit ?? 5, evidenceDepthLimit));
   const sourceUrl = topicRelevantNews.find((item) => item.url.startsWith('https://'))?.url ??
     topicRelevantHistory.find((item) => item.sourceUrl?.startsWith('https://'))?.sourceUrl ??
     context.find((item) => item.sourceUrl?.startsWith('https://'))?.sourceUrl;
   const sourceName = news.find((item) => item.url === sourceUrl)?.sourceName ??
     historicalSources.find((item) => item.sourceUrl === sourceUrl)?.sourceName ??
     context.find((item) => item.sourceUrl === sourceUrl)?.sourceName;
-  const currentEvidenceCount = topicRelevantNews.length + videos.length + context.length;
-  const confidence = topicRelevantNews.length >= 2 && videos.length >= 2
-    ? 'moderate'
-    : currentEvidenceCount >= 3 && (topicRelevantNews.length >= 2 || videos.length >= 2 || context.length >= 3)
-      ? 'moderate'
-      : 'low';
   const language = input.language ?? 'en';
 
   for (const candidate of candidates) {
@@ -742,7 +761,7 @@ export function generateEditorialIdeas(input: GenerateEditorialIdeasInput): Idea
       videoIds: relatedVideoIds,
       createdAt: now + output.length,
       archived: false,
-      assessment: topicRelevantDocuments.length ? 'Worth Exploring' : 'Uncertain',
+      assessment: confidence === 'moderate' ? 'Worth Exploring' : 'Uncertain',
       region: input.region,
       languages: [...input.languages],
       ...(sourceUrl ? { sourceUrl } : {}),

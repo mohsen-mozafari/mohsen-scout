@@ -13,7 +13,7 @@ import {
 import { readData, writeData } from './storage';
 import { getKey } from './vault';
 import { nextBudget, searchYouTube, type YouTubeQuotaKind, type YouTubeQuotaOrigin } from './api';
-import { generateEditorialIdeas } from './idea-generation';
+import { filterVideosToSelectedResearchPeriod, generateEditorialIdeas } from './idea-generation';
 import { attachReportToIdea as attachReport, attachVideoReferenceToIdea as attachVideoReference, getOrCreateSourceIdea, type SourceIdeaInput } from './idea-research';
 import { getCachedSpaceNews, hydrateSpaceNewsRegistry } from './space';
 import { normalizeResearchText } from './intelligence';
@@ -36,17 +36,8 @@ type State = {
   charge: (units: number, kind?: YouTubeQuotaKind, origin?: YouTubeQuotaOrigin) => Promise<void>;
   clearError: () => void;
 };
-const ENGINE_VIDEO_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 const RETENTION_SWEEP_INTERVAL_MS = 6 * 60 * 60 * 1000;
 let lastRetentionSweepAt = 0;
-
-function recentEngineVideos<T extends { publishedAt: string }>(videos: readonly T[], now = Date.now()): T[] {
-  return videos.filter((video) => {
-    const published = Date.parse(video.publishedAt);
-    const age = now - published;
-    return Number.isFinite(published) && age >= 0 && age <= ENGINE_VIDEO_WINDOW_MS;
-  });
-}
 
 let queue = Promise.resolve();
 export const useScout = create<State>((set, get) => ({
@@ -153,7 +144,7 @@ export const useScout = create<State>((set, get) => ({
       const currentData = get().data;
       const availableNews = getCachedSpaceNews(currentData.feedRegistry, currentData.preferences.spaceNewsSources);
       const priorMemory = currentData.researchMemory.find((entry) => normalizeResearchText(entry.topic) === normalizeResearchText(report.input.topic));
-      const currentVideos = recentEngineVideos(result.videos);
+      const currentVideos = filterVideosToSelectedResearchPeriod(result.videos, report.input.days);
       recordRuntimeStart('Engine');
       engineStarted = true;
       const generatedIdeas = generateEditorialIdeas({
@@ -170,7 +161,7 @@ export const useScout = create<State>((set, get) => ({
         region: report.input.region,
         languages: report.input.languages,
         language: get().data.preferences.uiLanguage ?? 'fa',
-        limit: 8,
+        limit: 5,
       });
       recordRuntimeFinish('Engine', 'success');
       engineRecorded = true;
@@ -214,7 +205,7 @@ export const useScout = create<State>((set, get) => ({
       topic: report.input.topic,
       news: availableNews,
       priorMemory,
-      videos: recentEngineVideos(report.videos).map((video) => ({
+      videos: filterVideosToSelectedResearchPeriod(report.videos, report.input.days).map((video) => ({
         id: video.id, title: video.title, description: video.description,
         channel: video.channel, publishedAt: video.publishedAt,
         viewCount: video.viewCount ?? null, likeCount: video.likeCount ?? null,
@@ -224,7 +215,7 @@ export const useScout = create<State>((set, get) => ({
       region: report.input.region,
       languages: report.input.languages,
       language: get().data.preferences.uiLanguage ?? 'fa',
-      limit: 8,
+      limit: 5,
     });
     await get().commit((data) => ({
       ...data,

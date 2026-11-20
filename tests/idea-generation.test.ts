@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { deduplicateDisplayIdeas, generateEditorialIdeas, selectIdeaGenerationVideos } from '../lib/idea-generation';
+import { deduplicateDisplayIdeas, filterVideosToSelectedResearchPeriod, generateEditorialIdeas, selectIdeaGenerationVideos } from '../lib/idea-generation';
 import { createManualIdea } from '../lib/engine';
 import type { SpaceNewsItem } from '../lib/space';
 import { defaults } from '../lib/types';
@@ -55,7 +55,41 @@ const base = {
   now: 1794760000000,
 };
 
-void test('idea generation works with official news only and links its original source', () => {
+void test('idea engine receives the complete user-selected YouTube period, including all-time history', () => {
+  const now = Date.parse('2026-11-20T12:00:00Z');
+  const records = [
+    { id: 'recent', publishedAt: '2026-11-10T12:00:00Z' },
+    { id: 'older', publishedAt: '2026-08-25T12:00:00Z' },
+    { id: 'too-old', publishedAt: '2026-08-20T12:00:00Z' },
+    { id: 'future', publishedAt: '2026-11-21T12:00:00Z' },
+    { id: 'invalid', publishedAt: 'not-a-date' },
+  ];
+  assert.deepEqual(filterVideosToSelectedResearchPeriod(records, 90, now).map((item) => item.id), ['recent', 'older']);
+  assert.deepEqual(filterVideosToSelectedResearchPeriod(records, 0, now).map((item) => item.id), ['recent', 'older', 'too-old']);
+});
+
+void test('idea engine rejects unrelated samples and marks a single-channel hypothesis uncertain', () => {
+  const unrelated = generateEditorialIdeas({
+    ...base, news: [], videos: [{
+      id: 'dQw4w9WgXcQ', title: 'JWST gaming commentary',
+      description: 'A creator update and channel news unrelated to this topic.',
+      channel: 'MOCK Unrelated Channel', publishedAt: '2026-11-15T12:00:00Z',
+    }], limit: 8,
+  });
+  assert.equal(unrelated.length, 0);
+  const singleSource = generateEditorialIdeas({
+    ...base, news: [], videos: [{
+      id: '9bZkp7q19f0', title: 'JWST exoplanet atmosphere: measurement limits',
+      description: 'An overview of atmospheric measurement uncertainty.',
+      channel: 'MOCK Single Channel', publishedAt: '2026-11-15T12:00:00Z',
+    }], limit: 8,
+  });
+  assert.ok(singleSource.length > 0);
+  assert.ok(singleSource.length <= 2);
+  assert.ok(singleSource.every((idea) => idea.assessment === 'Uncertain'));
+});
+
+void test('idea generation works with official news only and links its original source',() => {
   const ideas = generateEditorialIdeas({ ...base, news, videos: [], limit: 5 });
   assert.ok(ideas.length >= 3);
   assert.ok(ideas.every((idea) => idea.engineGenerated && idea.ideaCategory));

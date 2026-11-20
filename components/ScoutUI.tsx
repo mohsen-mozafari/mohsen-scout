@@ -34,6 +34,7 @@ import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { palette as p } from '@/lib/theme';
 import { useScout } from '@/lib/store';
+import { isSettingsRoute, SETTINGS_ROUTE } from '@/lib/routes';
 
 type Tone = 'violet' | 'cyan' | 'mint' | 'amber';
 
@@ -339,7 +340,7 @@ export function AppHeader({ showBack = false }: { showBack?: boolean }) {
   const language = useScout((s) => s.data.preferences.uiLanguage ?? 'fa');
   const canGoBack = showBack;
   const settingsLabel = translateText('Settings', language);
-  const onSettings = pathname.endsWith('/settings');
+  const onSettings = isSettingsRoute(pathname);
   return (
     <View style={styles.brandBar}>
       <View style={styles.brandLockup}>
@@ -372,12 +373,12 @@ export function AppHeader({ showBack = false }: { showBack?: boolean }) {
           </View>
           <View style={{ flexShrink: 1, minWidth: 0 }}>
             <Text numberOfLines={1} style={styles.brandName}>MOHSEN SCOUT</Text>
-            {!canGoBack ? <Text numberOfLines={1} style={styles.brandSubtitle}>SPACE INTELLIGENCE STUDIO</Text> : null}
+            {!canGoBack ? <Text numberOfLines={1} style={styles.brandSubtitle}>YOUTUBE TREND RESEARCH</Text> : null}
           </View>
         </View>
       </View>
       <Pressable
-        onPress={() => { if (!onSettings) router.push('/settings'); }}
+        onPress={() => { if (!onSettings) router.push(SETTINGS_ROUTE); }}
         disabled={onSettings}
         hitSlop={12}
         accessibilityRole="button"

@@ -26,6 +26,7 @@ import { relatedQueries } from '@/lib/api';
 import { limitations } from '@/lib/engine';
 import { sortResearchVideos, type ResearchVideoSort } from '@/lib/intelligence';
 import { getKey } from '@/lib/vault';
+import { SETTINGS_ROUTE } from '@/lib/routes';
 const RESEARCH_SORT_OPTIONS: ResearchVideoSort[] = [
   'Newest', 'Oldest', 'Most Views', 'Least Views',
   'Most Likes', 'Least Likes', 'Most Relevant', 'A-Z', 'Z-A',
@@ -215,7 +216,7 @@ export default function Discover() {
       {!hasKey && !report && (
         <Button
           variant="tertiary"
-          onPress={() => router.push('/(tabs)/settings')}
+          onPress={() => router.push(SETTINGS_ROUTE)}
           className="h-auto justify-start px-0"
         >
           <KeyRound size={18} color={p.accent} />

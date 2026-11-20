@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { type Budget, type ResearchInput, type Video, type Region } from './types';
-import { scoreResearchText } from './intelligence';
+import { matchesResearchTerms, scoreResearchText } from './intelligence';
 export type Fetcher = typeof fetch;
 export class ApiError extends Error {
   constructor(
@@ -301,6 +301,17 @@ export function buildYouTubeSearchPlan(topic: string, languages: readonly string
   return tasks.slice(0, limit);
 }
 
+export function isWithinYouTubeResearchWindow(publishedAt: string, days: number, now = Date.now()): boolean {
+  const published = Date.parse(publishedAt);
+  if (!Number.isFinite(published) || published > now) return false;
+  const normalizedDays = Number.isFinite(days) ? Math.max(0, Math.floor(days)) : 30;
+  return normalizedDays === 0 || published >= now - normalizedDays * 86400000;
+}
+
+export function filterYouTubeSearchResults<T extends { title: string; description?: string }>(topic: string, videos: readonly T[]): T[] {
+  return videos.filter((video) => matchesResearchTerms(video.title + ' ' + (video.description ?? ''), [topic]));
+}
+
 /** Ranks a bounded YouTube sample by transparent title-first textual relevance. */
 export function rankYouTubeSearchResults<T extends { title: string; description?: string }>(topic: string, videos: readonly T[]): T[] {
   return videos.map((video, index) => ({
@@ -315,6 +326,7 @@ export async function searchYouTube(input: ResearchInput, options: YouTubeOption
   const searches = buildYouTubeSearchPlan(topic, input.languages);
   if (!searches.length) throw new ApiError('Select at least one research language before starting YouTube search.', 'input');
   const warnings: string[] = [];
+  const searchNow = Date.now();
   const languageCount = new Set(input.languages.map((language) => language.trim().toLowerCase()).filter(Boolean)).size;
   if (searches.length < 1 + languageCount * 3) {
     warnings.push('The 12-search safety cap covers a global popularity sample and primary language searches first; some secondary query angles are omitted.');
@@ -343,12 +355,16 @@ export async function searchYouTube(input: ResearchInput, options: YouTubeOption
     if (search.language) params.relevanceLanguage = search.language;
     if (search.bucket !== 'popularity' && regionCodes[input.region]) params.regionCode = regionCodes[input.region]!;
     if (input.category) params.videoCategoryId = input.category;
-    if (input.days) params.publishedAfter = new Date(Date.now() - input.days * 86400000).toISOString();
+    // Apply the exact user-selected window locally for date/view-count ordered searches.
+    if (search.order === 'relevance' && input.days > 0)
+      params.publishedAfter = new Date(searchNow - input.days * 86400000).toISOString();
     try {
       const raw = await youtube('search', params, researchOptions, 1);
       const parsed = searchSchema.safeParse(raw);
       if (!parsed.success) throw new ApiError('YouTube returned an invalid search response.', 'invalid');
       for (const item of parsed.data.items) {
+        if (!isWithinYouTubeResearchWindow(item.snippet.publishedAt, input.days, searchNow)) continue;
+        if (!filterYouTubeSearchResults(topic, [{ title: item.snippet.title, description: item.snippet.description }]).length) continue;
         const id = item.id.videoId;
         if (!candidates.has(id)) {
           candidates.set(id, {
@@ -379,13 +395,13 @@ export async function searchYouTube(input: ResearchInput, options: YouTubeOption
   }
   const bestMatchScore = Math.max(0, ...[...candidates.values()].map((video) => scoreResearchText(topic, video.title, video.description)));
   if (bestMatchScore === 0) {
-    warnings.push('YouTube returned no clear title or description match for this topic. Results remain in provider order and should be checked manually.');
+    warnings.push('No returned video met the required topic match in its title or description. Try a more specific topic or another language.');
   }
 
   const targets: Record<SearchBucket, number> = {
-    relevance: Math.ceil(resultLimit * 0.25),
-    popularity: Math.ceil(resultLimit * 0.5),
-    recent: Math.ceil(resultLimit * 0.15),
+    relevance: Math.ceil(resultLimit * 0.35),
+    popularity: Math.ceil(resultLimit * 0.2),
+    recent: Math.ceil(resultLimit * 0.3),
     explainer: 0,
   };
   targets.explainer = Math.max(0, resultLimit - targets.relevance - targets.popularity - targets.recent);
@@ -436,7 +452,11 @@ export async function searchYouTube(input: ResearchInput, options: YouTubeOption
       break;
     }
   }
-  return { videos: collected, queries: relatedQueries(topic), warnings: [...new Set(warnings)] };
+  return {
+    videos: collected,
+    queries: searches.map((search) => [search.query, search.bucket, search.language || 'global'].join(' · ')),
+    warnings: [...new Set(warnings)],
+  };
 }
 const modelSchema = z.object({
   data: z.array(

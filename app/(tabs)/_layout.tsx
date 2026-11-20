@@ -54,8 +54,8 @@ export default function TabLayout() {
         <Tabs.Screen
           name="index"
           options={{
-            title: translateText('Space Radar', language),
-            tabBarLabel: translateText('Radar', language),
+            title: translateText('YouTube Trend Scout', language),
+            tabBarLabel: translateText('Scout', language),
             tabBarIcon: ({ color, focused }) => <Compass size={21} strokeWidth={focused ? 2.15 : 1.7} color={color} />,
           }}
         />
