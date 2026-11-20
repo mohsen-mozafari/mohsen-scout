@@ -263,7 +263,7 @@ export async function runDiagnostics(): Promise<TestResult[]> {
       'Defaults & local-only profile',
       () => {
         check(defaults().preferences.name === 'Mohsen');
-        check(defaults().preferences.schedule === 'Manual');
+        check(defaults().preferences.schedule === 'Daily');
       },
     ],
     [
@@ -350,7 +350,7 @@ export async function runDiagnostics(): Promise<TestResult[]> {
     [
       'Local quota budget enforced',
       () => {
-        const budget = { date: quotaDay(), units: 100, requests: 1, exhausted: false };
+        const budget = { date: quotaDay(), units: 100, requests: 1, exhausted: false, otherManualUnits: 100 };
         check(nextBudget(budget, 500, 100).units === 200);
         throws(() => nextBudget(budget, 150, 100));
       },
@@ -408,7 +408,7 @@ export async function runDiagnostics(): Promise<TestResult[]> {
       'MOCK pagination cap',
       async () => {
         let calls = 0;
-        await searchYouTube(input, {
+        await searchYouTube({ ...input, languages: ['en', 'fa', 'es', 'de', 'fr'] }, {
           key: 'MOCK_PAGINATION',
           charge: async () => {},
           fetcher: fetcher(() => {
@@ -416,7 +416,7 @@ export async function runDiagnostics(): Promise<TestResult[]> {
             return mock({ items: [item], nextPageToken: 'next' });
           }),
         });
-        check(calls === 10);
+        check(calls === 12);
       },
     ],
     [
@@ -500,7 +500,7 @@ export async function runDiagnostics(): Promise<TestResult[]> {
         await rejects(
           () =>
             requestJson(
-              'https://example.com',
+              'https://www.googleapis.com/youtube/v3/videos',
               {},
               fetcher(() => mock({}, 401)),
             ),
@@ -509,7 +509,7 @@ export async function runDiagnostics(): Promise<TestResult[]> {
         await rejects(
           () =>
             requestJson(
-              'https://example.com',
+              'https://www.googleapis.com/youtube/v3/videos',
               {},
               fetcher(() => mock({}, 403)),
             ),
@@ -634,7 +634,7 @@ export async function runDiagnostics(): Promise<TestResult[]> {
           createdAt: now,
           analyzed: false,
         });
-        check(ideas.length === 3);
+        check(ideas.length === 4);
         check(ideas.every((i) => i.assessment === 'Uncertain'));
         check(!JSON.stringify(ideas).includes(video.title));
       },
