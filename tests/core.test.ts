@@ -1299,31 +1299,31 @@ void test('Manual YouTube result sorting changes order for date, views, likes an
 });
 
 void test('YouTube Search and other API quotas are independent and use their correct daily units', () => {
-  const now = new Date('2026-11-16T12:00:00.000Z');
-  const date = quotaDay(now);
+  const fixedNow = new Date('2026-11-16T12:00:00.000Z');
+  const date = quotaDay(fixedNow);
   let other: Budget = { date, units: 0, requests: 0, exhausted: false };
-  other = nextBudget(other, 10000, 10000, now, 'other', 'manual');
+  other = nextBudget(other, 10000, 10000, fixedNow, 'other', 'manual');
   assert.equal(other.units, 10000);
-  assert.throws(() => nextBudget(other, 10000, 1, now, 'other', 'manual'), /non-search allowance/);
+  assert.throws(() => nextBudget(other, 10000, 1, fixedNow, 'other', 'manual'), /non-search allowance/);
 
   let search: Budget = { ...other, searchManualRequests: 0, searchAutomaticRequests: 0, searchReserveRequests: 0 };
   for (let index = 0; index < 100; index += 1)
-    search = nextBudget(search, 10000, 1, now, 'search', 'manual');
+    search = nextBudget(search, 10000, 1, fixedNow, 'search', 'manual');
   assert.equal(search.searchManualRequests, 100);
   assert.equal(search.units, 10000);
-  assert.throws(() => nextBudget(search, 10000, 1, now, 'search', 'manual'), /100 calls/);
+  assert.throws(() => nextBudget(search, 10000, 1, fixedNow, 'search', 'manual'), /100 calls/);
 
-  const freshSearch = nextBudget(other, 10000, 1, now, 'search', 'manual');
+  const freshSearch = nextBudget(other, 10000, 1, fixedNow, 'search', 'manual');
   assert.equal(freshSearch.searchManualRequests, 1);
 });
 
 void test('YouTube full-refresh helper no longer blocks after three cycles', () => {
-  const now = Date.UTC(2026, 10, 16, 12, 0, 0);
-  const threeRecent = [now - 23 * 60 * 60 * 1000, now - 12 * 60 * 60 * 1000, now - 60_000];
-  const next = reserveYoutubeRefreshCycle(threeRecent, now);
-  assert.ok(next.includes(now));
+  const refreshTestTime = Date.UTC(2026, 10, 16, 12, 0, 0);
+  const threeRecent = [refreshTestTime - 23 * 60 * 60 * 1000, refreshTestTime - 12 * 60 * 60 * 1000, refreshTestTime - 60_000];
+  const next = reserveYoutubeRefreshCycle(threeRecent, refreshTestTime);
+  assert.ok(next.includes(refreshTestTime));
   assert.equal(next.length, 3);
-  assert.doesNotThrow(() => reserveYoutubeRefreshCycle(next, now + 1));
+  assert.doesNotThrow(() => reserveYoutubeRefreshCycle(next, refreshTestTime + 1));
 });
 
 
@@ -1342,8 +1342,8 @@ void test('Editorial priority bands use the centralized, evidence-only threshold
   assert.equal(getEditorialPriorityBand(0), 'weak');
 });
 
-void test('Dashboard ranking keeps every eligible idea and places scored ideas first', () => {
-  const makeIdea = (topic: string, engineScore?: number) => ({
+function makeEditorialPriorityTestIdea(topic: string, engineScore?: number) {
+  return {
     id: topic,
     topic,
     concept: 'Evidence-backed editorial question',
@@ -1357,12 +1357,15 @@ void test('Dashboard ranking keeps every eligible idea and places scored ideas f
     region: 'Iran' as const,
     languages: ['en'],
     ...(engineScore === undefined ? {} : { engineScore }),
-  });
+  };
+}
+
+void test('Dashboard ranking keeps every eligible idea and places scored ideas first', () => {
   const ranked = rankDashboardIdeas([
-    makeIdea('unscored'),
-    makeIdea('medium', 70),
-    makeIdea('strong', 88),
-    makeIdea('weak', 42),
+    makeEditorialPriorityTestIdea('unscored'),
+    makeEditorialPriorityTestIdea('medium', 70),
+    makeEditorialPriorityTestIdea('strong', 88),
+    makeEditorialPriorityTestIdea('weak', 42),
   ]);
   assert.deepEqual(ranked.map((idea) => idea.topic), ['strong', 'medium', 'weak', 'unscored']);
   assert.equal(ranked.length, 4);

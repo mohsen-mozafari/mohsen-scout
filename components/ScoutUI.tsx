@@ -338,10 +338,6 @@ export function AppHeader({ showBack = false }: { showBack?: boolean }) {
   const pathname = usePathname();
   const language = useScout((s) => s.data.preferences.uiLanguage ?? 'fa');
   const canGoBack = showBack;
-  const goBack = () => {
-    if (router.canGoBack()) router.back();
-    else router.replace('/');
-  };
   const settingsLabel = translateText('Settings', language);
   const onSettings = pathname.endsWith('/settings');
   return (
@@ -349,7 +345,10 @@ export function AppHeader({ showBack = false }: { showBack?: boolean }) {
       <View style={styles.brandLockup}>
         {canGoBack ? (
           <Pressable
-            onPress={goBack}
+            onPress={() => {
+              if (router.canGoBack()) router.back();
+              else router.replace('/');
+            }}
             hitSlop={12}
             accessibilityRole="button"
             accessibilityLabel="Go back"

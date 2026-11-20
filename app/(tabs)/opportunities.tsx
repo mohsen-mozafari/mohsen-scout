@@ -319,7 +319,7 @@ export default function Opportunities() {
               <View style={{ gap: 8 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
                   <Heading>{fa ? '۵ ایده برتر سنجاق‌شده' : 'Top 5 pinned ideas'}</Heading>
-                  <BadgeText>{pinnedIdeas.length}</BadgeText>
+                  <BadgeText>{String(pinnedIdeas.length)}</BadgeText>
                 </View>
                 {pinnedIdeas.map((idea, index) => {
                   const band = getEditorialPriorityBand(idea.engineScore ?? 0);
@@ -402,7 +402,7 @@ export default function Opportunities() {
             </Button>
           </View>
         )}
-        ListEmptyComponent={sortedFiltered.length ? null : (
+        ListEmptyComponent={sortedFiltered.length ? undefined : (
           <Empty
             title={displayableIdeas.length ? 'No ideas match this view.' : 'Keep your ideas and decisions here.'}
             action={displayableIdeas.length ? 'Clear filters' : 'Create an idea'}

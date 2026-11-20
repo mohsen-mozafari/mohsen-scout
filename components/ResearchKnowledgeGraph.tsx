@@ -249,9 +249,7 @@ export function ResearchKnowledgeGraph({
   const selectedConnections = selectedIdea ? connectionsByIdea.get(selectedIdea.id) : undefined;
   const selectedReason = selectedIdea?.engineScoreReason?.split(';').slice(0, 2).join(' • ');
   const [detailsOpen, setDetailsOpen] = useState(false);
-  useEffect(() => {
-    if (selectedIdeaId) setDetailsOpen(true);
-  }, [selectedIdeaId]);
+  const detailsVisible = detailsOpen || Boolean(selectedIdeaId);
 
   const chooseIdea = (id: string) => {
     setLocalSelectedId(id);
@@ -407,7 +405,7 @@ export function ResearchKnowledgeGraph({
               </Action>
             </View>
           ) : null}
-          {detailsOpen && selectedIdea ? (
+          {detailsVisible && selectedIdea ? (
             <View style={{ borderRadius: 14, borderWidth: 1, borderColor: p.border, backgroundColor: p.raised, padding: 13, gap: 8 }}>
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
                 <DirectionalText value={label('Selected idea', 'ایده انتخاب‌شده')} style={{ color: p.muted, fontSize: 10 }} />

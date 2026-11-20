@@ -60,7 +60,7 @@ export default function DeepResearch() {
     const cachedNews = (cachedDossier?.news ?? []).filter((item) => preferences.spaceNewsSources.includes(item.sourceId));
     let newsResult: Awaited<ReturnType<typeof fetchSpaceNews>>;
     if (cachedNews.length) {
-      newsResult = { items: cachedNews, warnings: [] };
+      newsResult = { items: cachedNews, warnings: [], registry: useScout.getState().data.feedRegistry };
     } else {
       recordRuntimeStart('Sources');
       try {

@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useState } from 'react';
+import { memo, useMemo } from 'react';
 import { View, Text } from 'react-native';
 import { router } from 'expo-router';
 import { Panel, Heading, Txt, Action, BadgeText } from '@/components/ScoutUI';
@@ -44,11 +44,7 @@ export const ResearchOverviewChart = memo(function ResearchOverviewChart({
     () => ranked.filter((idea) => typeof idea.engineScore === 'number' && Number.isFinite(idea.engineScore)),
     [ranked],
   );
-  const [activeIdeaId, setActiveIdeaId] = useState<string | undefined>(selectedIdeaId ?? sharedSelectedIdeaId);
-  useEffect(() => {
-    const next = selectedIdeaId ?? sharedSelectedIdeaId;
-    if (next) setActiveIdeaId(next);
-  }, [selectedIdeaId, sharedSelectedIdeaId]);
+  const activeIdeaId = selectedIdeaId ?? sharedSelectedIdeaId;
   const bestIdea = scored[0];
   const bands = useMemo(() => ({
     strong: scored.filter((idea) => getEditorialPriorityBand(idea.engineScore ?? 0) === 'strong').length,
@@ -100,10 +96,7 @@ export const ResearchOverviewChart = memo(function ResearchOverviewChart({
           language={language}
           generatedIdeas={ranked}
           selectedIdeaId={activeIdeaId}
-          onSelectIdea={(id) => {
-            setActiveIdeaId(id);
-            setSelectedIdeaId(id);
-          }}
+          onSelectIdea={setSelectedIdeaId}
         />
       ) : (
         <Txt muted>{label('The evidence map appears after a topic-linked research sample is available.', 'نقشه شواهد پس از در دسترس قرار گرفتن نمونه تحقیق موضوع‌محور نمایش داده می‌شود.')}</Txt>

@@ -160,7 +160,8 @@ export default function Settings() {
     setCredentialStatus((current) => ({ ...current, [kind]: stored }));
   }, []);
   useEffect(() => {
-    setPrefs(normalizePreferences(data.preferences));
+    const frame = requestAnimationFrame(() => setPrefs(normalizePreferences(data.preferences)));
+    return () => cancelAnimationFrame(frame);
   }, [data.preferences]);
   useEffect(() => {
     let active = true;

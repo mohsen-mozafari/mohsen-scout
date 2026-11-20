@@ -43,7 +43,6 @@ export default function SearchDemand() {
         recordRuntimeFinish('Wikimedia', 'error', error instanceof Error ? error.message : String(error));
         throw error;
       }
-      return signal;
     }));
     const values = settled.flatMap((result) => result.status === 'fulfilled' ? [result.value] : []);
     const issues = settled.flatMap((result, index) => result.status === 'rejected'
