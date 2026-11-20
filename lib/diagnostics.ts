@@ -405,18 +405,18 @@ export async function runDiagnostics(): Promise<TestResult[]> {
       },
     ],
     [
-      'MOCK pagination cap',
+      'MOCK search-attempt cap across language buckets',
       async () => {
-        let calls = 0;
+        let searchCalls = 0;
         await searchYouTube({ ...input, languages: ['en', 'fa', 'es', 'de', 'fr'] }, {
           key: 'MOCK_PAGINATION',
           charge: async () => {},
-          fetcher: fetcher(() => {
-            calls++;
-            return mock({ items: [item], nextPageToken: 'next' });
+          fetcher: fetcher((url) => {
+            if (url.pathname.endsWith('/search')) searchCalls++;
+            return mock({ items: [] });
           }),
         });
-        check(calls === 12);
+        check(searchCalls === 12);
       },
     ],
     [
