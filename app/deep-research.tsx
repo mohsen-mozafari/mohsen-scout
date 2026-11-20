@@ -3,6 +3,7 @@ import { Linking, View, Text } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { Button } from 'heroui-native';
 import { Page, Panel, Heading, Txt, Field, Action, styles, ErrorBox, useOperation, SourceText } from '@/components/ScoutUI';
+import { palette as p } from '@/lib/theme';
 import { useScout } from '@/lib/store';
 import { translateText } from '@/lib/i18n';
 import { uid, RETENTION_MS, type Idea } from '@/lib/types';
@@ -323,7 +324,7 @@ export default function DeepResearch() {
             ))}
             {brief.internalAnalysis.verificationQuestions.map((question) => <Txt muted key={question}>{question}</Txt>)}
             {brief.internalAnalysis.limitations.map((limitation) => <Txt muted key={limitation}>{limitation}</Txt>)}
-            <View style={{ gap: 8, borderTopWidth: 1, borderTopColor: '#343047', paddingTop: 12 }}>
+            <View style={{ gap: 8, borderTopWidth: 1, borderTopColor: p.border, paddingTop: 12 }}>
               <Heading>Evidence quality & confidence</Heading>
               <Txt muted>{'Confidence: ' + translateText(brief.internalAnalysis.intelligence.confidence.level.charAt(0).toUpperCase() + brief.internalAnalysis.intelligence.confidence.level.slice(1), preferences.uiLanguage ?? 'fa') + ' — ' + brief.internalAnalysis.intelligence.confidence.reason}</Txt>
               <Txt muted>{'Feeds represented: ' + brief.internalAnalysis.intelligence.sourceQuality.feedsRepresented + ' · Independent publisher groups: ' + brief.internalAnalysis.intelligence.sourceQuality.independentPublishers}</Txt>
