@@ -228,10 +228,7 @@ export default function Settings() {
           <Bug size={19} strokeWidth={1.9} color={p.text} />
           <Heading>Developer tools</Heading>
         </View>
-        <Action secondary icon={Bug} onPress={() => router.push({
-          pathname: '/diagnostics',
-          params: { run: '1', runId: String(Date.now()) },
-        })}>
+        <Action secondary icon={Bug} onPress={() => router.push('/diagnostics')}>
           Run mock regression checks
         </Action>
       </Panel>
