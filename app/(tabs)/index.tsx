@@ -641,26 +641,48 @@ function DiscoveryDashboardReady() {
 
   return (
     <Page
-      title="Space Radar"
-      eyebrow="RESEARCH OVERVIEW"
-      subtitle="Your current focus, most useful evidence and next research action."
+      title="Mission Control"
+      eyebrow="SPACE INTELLIGENCE"
+      subtitle="Your live research desk: source activity, saved work, quotas and the next useful action."
     >
-      <View style={{ gap: 14 }}>
+      <View style={{ gap: 15 }}>
         <Panel variant="hero">
           <View style={[styles.rowBetween, { flexWrap: 'wrap' }]}>
             <BadgeText>ACTIVE RESEARCH FOCUS</BadgeText>
-            <Txt muted>{scanning ? 'Updating sources…' : 'On-demand sources'}</Txt>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}>
+              <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: scanning ? p.warning : p.success }} />
+              <Txt muted>{scanning ? 'Refreshing sources' : 'Source scan ready'}</Txt>
+            </View>
           </View>
           <Heading>{latestReport ? latestReport.input.topic : nicheTitle}</Heading>
           <Txt muted>
             {latestReport
               ? 'Latest YouTube sample · ' + new Date(latestReport.createdAt).toLocaleString(preferences.uiLanguage === 'fa' ? 'fa-IR' : 'en-US')
-              : 'No YouTube sample has been saved for this focus yet. Start with a topic-specific search.'}
+              : niche?.description ?? 'Your selected research scope. Start a search to create the first topic-linked report.'}
           </Txt>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7 }}>
-            <MetricCard label="MATCHED NEWS" value={audit?.topicMatchedNewsCount ?? 0} />
-            <MetricCard label="MATCHED VIDEOS" value={audit?.matchedVideoCount ?? 0} />
-            <MetricCard label="PUBLISHER GROUPS" value={deskAnalysis?.intelligence.sourceQuality.independentPublishers ?? 0} />
+            <MetricCard label="NEWS IN SCOPE" value={radarNews.length} tone="cyan" />
+            <MetricCard label="SAVED IDEAS" value={ideas.length} tone="violet" />
+            <MetricCard label="YOUTUBE REPORTS" value={reports.length} tone="amber" />
+            <MetricCard label="RESEARCH MEMORY" value={memoryCount} tone="mint" />
+          </View>
+          <View style={[styles.softCard, { backgroundColor: 'rgba(8, 17, 34, 0.48)', borderColor: 'rgba(99, 160, 255, 0.25)' }]}>
+            <View style={[styles.rowBetween, { flexWrap: 'wrap' }]}>
+              <View style={{ flex: 1, minWidth: 120, gap: 3 }}>
+                <Text style={[styles.label, { color: p.cyan }]}>SOURCE UPDATE</Text>
+                <Txt>{lastScannedAt
+                  ? new Date(lastScannedAt).toLocaleString(preferences.uiLanguage === 'fa' ? 'fa-IR' : 'en-US')
+                  : 'Checking selected publisher feeds…'}</Txt>
+              </View>
+              <View style={{ flex: 1, minWidth: 120, gap: 3 }}>
+                <Text style={[styles.label, { color: p.warning }]}>YOUTUBE QUOTA</Text>
+                <Txt>{quotaUsage.units.toLocaleString()} / {preferences.budget.toLocaleString()} units</Txt>
+              </View>
+              <View style={{ flex: 1, minWidth: 120, gap: 3 }}>
+                <Text style={[styles.label, { color: p.success }]}>SCHEDULE</Text>
+                <Txt>{preferences.schedule === 'Manual' ? 'Manual' : preferences.paused ? 'Paused' : preferences.schedule}</Txt>
+              </View>
+            </View>
           </View>
           <Action icon={Search} onPress={() => router.push({ pathname: '/youtube', params: { topic: deskTopic } })}>
             Start YouTube research
@@ -681,8 +703,11 @@ function DiscoveryDashboardReady() {
           </View>
         </Panel>
 
-        <View style={{ gap: 8 }}>
-          <Heading>Research tools</Heading>
+        <View style={{ gap: 9 }}>
+          <View style={styles.rowBetween}>
+            <Heading>Research tools</Heading>
+            <BadgeText>DIRECT ACCESS</BadgeText>
+          </View>
           <View style={{ flexDirection: 'row', gap: 8 }}>
             <View style={{ flex: 1, minWidth: 0 }}>
               <Action secondary icon={Telescope} onPress={() => router.push({ pathname: '/trend-intelligence', params: { topic: deskTopic } })}>
@@ -693,6 +718,14 @@ function DiscoveryDashboardReady() {
               <Action secondary icon={Search} onPress={() => router.push({ pathname: '/search-demand', params: { topic: deskTopic } })}>
                 Public-interest data
               </Action>
+            </View>
+          </View>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Action secondary onPress={() => router.push('/cosmic-news')}>Cosmic News</Action>
+            </View>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Action secondary onPress={() => router.push('/opportunities')}>Idea workspace</Action>
             </View>
           </View>
         </View>
@@ -755,7 +788,7 @@ function DiscoveryDashboardReady() {
           )}
         </View>
 
-        <Fold title="Evidence quality and source audit">
+        <Fold title="Evidence quality and source audit" open>
           {deskAnalysis ? (
             <View style={{ gap: 12 }}>
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7 }}>
@@ -792,13 +825,13 @@ function DiscoveryDashboardReady() {
           ) : <Txt muted>Collect topic-specific evidence to build the relationship map.</Txt>}
         </Fold>
 
-        <Fold title="Charts and available data">
+        <Fold title="Charts and available data" open>
           {deskAnalysis ? (
             <ResearchOverviewChart analysis={deskAnalysis} ideas={deskIdeas} videoCount={deskVideos.length} language={preferences.uiLanguage ?? 'fa'} />
           ) : <Txt muted>No chart is available until the first research sample is collected.</Txt>}
         </Fold>
 
-        <Fold title="Editorial angles and verification">
+        <Fold title="Editorial angles and verification" open>
           {deskAnalysis ? deskAnalysis.angles.slice(0, 3).map((angle) => (
             <View key={angle.id} style={{ gap: 5, paddingBottom: 10 }}>
               <Heading>{angle.title}</Heading>
@@ -815,7 +848,7 @@ function DiscoveryDashboardReady() {
           </Fold>
         ) : null}
 
-        <Fold title="Recent research and saved results">
+        <Fold title="Recent research and saved results" open>
           <View style={{ gap: 12 }}>
             {feedVideos.length ? (
               <View style={{ gap: 8 }}>
@@ -851,7 +884,7 @@ function DiscoveryDashboardReady() {
           </View>
         </Fold>
 
-        <Fold title="Publisher feeds and usage">
+        <Fold title="Publisher feeds and usage" open>
           <View style={{ gap: 10 }}>
             <Heading>{nicheTitle}</Heading>
             <Txt muted>{niche?.description ?? 'Publisher feeds provide source context; headlines alone do not establish a trend or audience demand.'}</Txt>
@@ -888,7 +921,7 @@ function DiscoveryDashboardReady() {
               <Txt muted>{memoryCount + ' topics in local research memory · ' + reports.length + ' saved reports'}</Txt>
               <Txt muted>{'AI second opinion: ' + (preferences.hybridIntelligence ? 'Automatic and enabled' : 'Manual only')}</Txt>
               <Txt muted>{'YouTube schedule: ' + (preferences.schedule === 'Manual' ? 'Off' : preferences.paused ? 'Paused' : preferences.schedule)}</Txt>
-              <Action secondary onPress={() => router.push('/settings')}>Open settings and preferences</Action>
+              <Action secondary onPress={() => router.push('/(tabs)/settings')}>Open settings and preferences</Action>
             </View>
           </View>
         </Fold>
