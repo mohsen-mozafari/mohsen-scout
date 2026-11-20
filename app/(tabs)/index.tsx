@@ -382,7 +382,7 @@ function DiscoveryDashboardReady() {
     lastSuccessAt: feedRegistry.reduce((latest, item) => Math.max(latest, item.lastSuccessAt ?? 0), 0),
   }), [feedRegistry]);
   const fa = preferences.uiLanguage === 'fa';
-  const [warnings, setWarnings] = useState<string[]>([]);
+  const [_warnings, setWarnings] = useState<string[]>([]);
   const [reportAnalysisState, setReportAnalysisState] = useState<{ id: string; result: InternalResearchResult }>();
   const discoveryTopic = preferences.selectedSpaceNiche === 'all'
     ? 'Space science and exploration'
@@ -394,10 +394,7 @@ function DiscoveryDashboardReady() {
     () => getCachedSpaceNews(feedRegistry, preferences.spaceNewsSources),
     [feedRegistry, preferences.spaceNewsSources],
   );
-  const topicDossier = useMemo(
-    () => getTopicDossier(discoveryTopic),
-    [discoveryTopic, feedRegistry, ideas],
-  );
+  const topicDossier = getTopicDossier(discoveryTopic);
   const cachedTopicAnalysis = topicDossier?.internalAnalysis;
   const topicWiki = topicDossier?.wiki;
   const latestReport = reports[0];
@@ -487,7 +484,7 @@ function DiscoveryDashboardReady() {
   const primaryNews = deskNews[0];
   const chartAnalysis = latestReportAnalysis ?? cachedTopicAnalysis;
   const chartTopic = latestReportAnalysis ? deskTopic : cachedTopicAnalysis ? discoveryTopic : deskTopic;
-  const chartDossier = useMemo(() => getTopicDossier(chartTopic), [chartTopic, feedRegistry, ideas]);
+  const chartDossier = getTopicDossier(chartTopic);
   const chartWiki = chartDossier?.wiki ?? (chartTopic === discoveryTopic ? topicWiki : undefined);
   const chartNews = useMemo(
     () => rankNewsForTopic(chartTopic, engineNews, Math.max(1, engineNews.length)).slice(0, 60),
