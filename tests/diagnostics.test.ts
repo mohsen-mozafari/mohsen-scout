@@ -2,14 +2,14 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { formatDiagnosticReport, runDiagnostics } from '../lib/diagnostics';
 
-test('the in-app Mock regression console executes all 52 isolated checks', async () => {
+void test('the in-app Mock regression console executes all 52 isolated checks', async () => {
   const results = await runDiagnostics();
   const failures = results.filter((result) => !result.passed);
   assert.equal(results.length, 52, formatDiagnosticReport(results));
   assert.deepEqual(failures, [], formatDiagnosticReport(results, true));
 });
 
-test('the Mock report formatter produces a clipboard-ready failure-only export', () => {
+void test('the Mock report formatter produces a clipboard-ready failure-only export', () => {
   const report = formatDiagnosticReport([
     { name: 'Synthetic success', passed: true },
     { name: 'Synthetic failure', passed: false, detail: 'Controlled mismatch' },
