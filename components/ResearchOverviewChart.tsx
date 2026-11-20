@@ -41,42 +41,45 @@ export const ResearchOverviewChart = memo(function ResearchOverviewChart({
   return (
     <Panel variant="hero">
       <View style={{ gap: 5 }}>
-        <BadgeText>{label('MULTI-SOURCE RESEARCH GRAPH · EVIDENCE ONLY', 'گراف تحقیق چندمنبعی · مبتنی بر شواهد')}</BadgeText>
-        <Heading>{label('Research graph: ', 'نمودار تحقیق: ') + topic}</Heading>
+        <BadgeText>{label('IDEA EVIDENCE MAP · NOT A VIEW FORECAST', 'نقشه شواهد ایده‌ها · نه پیش‌بینی بازدید')}</BadgeText>
+        <Heading>{label('How this topic is supported: ', 'شواهد پشتیبان این موضوع: ') + topic}</Heading>
         <Txt muted>
           {label(
-            'Explore how publisher reports, YouTube samples, Wikimedia observations, entities and editorial hypotheses connect. Priority scores are not audience-demand or view forecasts.',
-            'ارتباط گزارش ناشران، نمونه‌های YouTube، مشاهدات ویکی‌مدیا، موجودیت‌ها و فرضیه‌های محتوایی را بررسی کن. امتیاز اولویت، پیش‌بینی تقاضا یا بازدید نیست.',
+            'See how the collected sources support the ranked ideas below. Tap any dot to inspect its evidence. These editorial scores do not estimate audience demand or future views.',
+            'ببین منابع گردآوری‌شده چگونه از ایده‌های رتبه‌بندی‌شده پشتیبانی می‌کنند. برای دیدن شواهد هر ایده، نقطه‌اش را لمس کن. امتیاز تحریری، تقاضای مخاطب یا بازدید آینده را پیش‌بینی نمی‌کند.',
           )}
         </Txt>
       </View>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7 }}>
         <View style={{ flexGrow: 1, minWidth: 72, borderRadius: 10, borderWidth: 1, borderColor: p.border, backgroundColor: p.surface, paddingHorizontal: 11, paddingVertical: 10 }}>
           <Text style={{ color: p.text, fontSize: 23, fontWeight: '800' }}>{number(prioritySummary.scored)}</Text>
-          <Text style={{ color: p.muted, fontSize: 10, fontWeight: '700' }}>{label('SCORED IDEAS', 'IDEAS WITH SCORE')}</Text>
+          <Text style={{ color: p.muted, fontSize: 10, fontWeight: '700' }}>{label('SCORED IDEAS', 'ایده‌های امتیازدار')}</Text>
         </View>
         <View style={{ flexGrow: 1, minWidth: 65, borderRadius: 10, borderWidth: 1, borderColor: p.successLine, backgroundColor: p.surface, paddingHorizontal: 11, paddingVertical: 10 }}>
           <Text style={{ color: p.success, fontSize: 23, fontWeight: '800' }}>{number(prioritySummary.strong)}</Text>
-          <Text style={{ color: p.muted, fontSize: 10, fontWeight: '700' }}>{label('STRONG', 'STRONG')}</Text>
+          <Text style={{ color: p.muted, fontSize: 10, fontWeight: '700' }}>{label('STRONG', 'قوی')}</Text>
         </View>
         <View style={{ flexGrow: 1, minWidth: 65, borderRadius: 10, borderWidth: 1, borderColor: p.cyanLine, backgroundColor: p.surface, paddingHorizontal: 11, paddingVertical: 10 }}>
           <Text style={{ color: p.cyan, fontSize: 23, fontWeight: '800' }}>{number(prioritySummary.moderate)}</Text>
-          <Text style={{ color: p.muted, fontSize: 10, fontWeight: '700' }}>{label('MEDIUM', 'MEDIUM')}</Text>
+          <Text style={{ color: p.muted, fontSize: 10, fontWeight: '700' }}>{label('MEDIUM', 'متوسط')}</Text>
         </View>
         <View style={{ flexGrow: 1, minWidth: 65, borderRadius: 10, borderWidth: 1, borderColor: p.dangerLine, backgroundColor: p.surface, paddingHorizontal: 11, paddingVertical: 10 }}>
           <Text style={{ color: p.danger, fontSize: 23, fontWeight: '800' }}>{number(prioritySummary.weak)}</Text>
-          <Text style={{ color: p.muted, fontSize: 10, fontWeight: '700' }}>{label('WEAK', 'WEAK')}</Text>
+          <Text style={{ color: p.muted, fontSize: 10, fontWeight: '700' }}>{label('WEAK', 'ضعیف')}</Text>
         </View>
       </View>
       <Txt muted>{label(
         'Score bands: Strong 85–100 · Medium 65–84 · Weak below 65. Scores rank editorial readiness from relevance, evidence breadth, freshness and differentiation; they are not view forecasts.',
         'Strong: 85–100 · Medium: 65–84 · Weak: below 65. Scores rank editorial readiness using relevance, evidence breadth, freshness and differentiation; they do not predict views.',
       )}</Txt>
+      {prioritySummary.unscored > 0 ? (
+        <Txt muted>{number(prioritySummary.unscored) + ' ' + label('active idea(s) have no score yet and are excluded from the four totals.', 'ایده فعال هنوز امتیاز ندارد و در چهار شمارنده بالا محاسبه نشده است.')}</Txt>
+      ) : null}
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
         {[
-          { id: 'reports', value: news.length, title: label('publisher reports', 'PUBLISHER REPORTS') },
-          { id: 'videos', value: videos.length, title: label('YouTube samples', 'YOUTUBE SAMPLES') },
-          { id: 'wiki', value: wiki?.monthlyViews.length ?? 0, title: label('Wikimedia months', 'WIKIMEDIA MONTHS') },
+          { id: 'reports', value: news.length, title: label('publisher reports', 'گزارش ناشران') },
+          { id: 'videos', value: videos.length, title: label('YouTube samples', 'نمونه‌های YouTube') },
+          { id: 'wiki', value: wiki?.monthlyViews.length ?? 0, title: label('Wikimedia months', 'ماه‌های ویکی‌مدیا') },
         ].map((metric) => (
           <View key={metric.id} style={{ borderRadius: 8, borderWidth: 1, borderColor: p.border, backgroundColor: p.surface, paddingHorizontal: 9, paddingVertical: 6 }}>
             <Text style={{ color: p.text, fontSize: 12, fontWeight: '800' }}>{number(metric.value)} <Text style={{ color: p.muted, fontSize: 9, fontWeight: '600' }}>{metric.title}</Text></Text>
