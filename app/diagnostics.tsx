@@ -34,9 +34,11 @@ export default function Diagnostics() {
   const [copyError, setCopyError] = useState('');
   const [lastRunAt, setLastRunAt] = useState<number | null>(null);
   const autoRunStarted = useRef(false);
+  const executionInFlight = useRef(false);
 
   const execute = useCallback(async () => {
-    if (busy) return;
+    if (executionInFlight.current) return;
+    executionInFlight.current = true;
     setBusy(true);
     setRunError('');
     setCopyMessage('');
@@ -48,9 +50,10 @@ export default function Diagnostics() {
     } catch (error) {
       setRunError(error instanceof Error ? error.message : 'The mock runner could not complete.');
     } finally {
+      executionInFlight.current = false;
       setBusy(false);
     }
-  }, [busy]);
+  }, []);
 
   useEffect(() => {
     if (run === '1' && !autoRunStarted.current) {

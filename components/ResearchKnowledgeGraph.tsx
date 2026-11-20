@@ -78,17 +78,12 @@ export function ResearchKnowledgeGraph({
   };
   const colorFor = (node: ResearchGraphNode) =>
     node.type === 'topic' ? p.accent : groupColor(groupIndex(node.groupId));
-  const totalItems = model.nodes.filter((node) => node.type !== 'topic' && node.type !== 'publisher').length;
 
   return (
     <View style={{ gap: 12 }}>
       <View style={{ gap: 5 }}>
         <DirectionalText value={label('Connected research graph', 'گراف ارتباطی تحقیق')} style={{ fontSize: 17, fontWeight: '700' }} />
         <DirectionalText value={model.summary} style={{ color: p.muted }} />
-        <DirectionalText value={label(
-          'Each node is drawn from the current evidence or local analysis. Select one to inspect its source and explicit relationships.',
-          'هر گره از شواهد همین تحقیق یا تحلیل محلی ساخته شده است. برای دیدن منبع و رابطه‌های ثبت‌شده، گره را انتخاب کن.',
-        )} style={{ color: p.muted, fontSize: 11 }} />
       </View>
       {model.groups.length ? (
         <>
@@ -106,7 +101,6 @@ export function ResearchKnowledgeGraph({
               })}
               <Circle cx={center.x} cy={center.y} r={30} fill={p.raised} stroke={p.accent} strokeWidth={2} />
               <SvgText x={center.x} y={center.y - 2} fill={p.text} fontSize={9} fontWeight="700" textAnchor="middle">TOPIC</SvgText>
-              <SvgText x={center.x} y={center.y + 10} fill={p.muted} fontSize={7} textAnchor="middle">{String(graphNodes.length)}</SvgText>
               {graphNodes.map((node) => {
                 const point = positionById.get(node.id);
                 if (!point) return null;
@@ -123,10 +117,6 @@ export function ResearchKnowledgeGraph({
               })}
             </Svg>
           </View>
-          <DirectionalText value={label(
-            'Visual preview: ' + graphNodes.length + ' of ' + totalItems + ' records. Use the category filters and lists to inspect every record.',
-            'پیش‌نمایش بصری: ' + graphNodes.length.toLocaleString('fa') + ' مورد از ' + totalItems.toLocaleString('fa') + ' رکورد؛ برای بررسی همه موارد از فیلتر و فهرست دسته‌ها استفاده کن.',
-          )} style={{ color: p.muted, fontSize: 10 }} />
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7 }}>
             {model.groups.map((group, index) => {
               const selected = activeGroupId === group.id;
@@ -137,7 +127,7 @@ export function ResearchKnowledgeGraph({
                     borderColor: selected ? groupColor(index) : p.border, backgroundColor: selected ? p.raised : p.surface,
                     paddingHorizontal: 10, paddingVertical: 7 }}>
                   <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: groupColor(index) }} />
-                  <DirectionalText value={group.title + ' · ' + String(group.items.length)} style={{ fontSize: 11, lineHeight: 15 }} />
+                  <DirectionalText value={group.title} style={{ fontSize: 11, lineHeight: 15 }} />
                 </Pressable>
               );
             })}
@@ -158,9 +148,7 @@ export function ResearchKnowledgeGraph({
                 );
               })}
             </View>
-          ) : (
-            <DirectionalText value={label('Select a category to browse every record in it.', 'برای دیدن رکوردهای یک دسته، آن را انتخاب کن.')} style={{ color: p.muted, fontSize: 11 }} />
-          )}
+          ) : null}
           {selectedNode ? (
             <View style={{ borderRadius: 16, borderWidth: 1, borderColor: p.border, backgroundColor: p.raised, padding: 14, gap: 8 }}>
               <DirectionalText value={selectedNode.title} style={{ fontWeight: '700', fontSize: 15 }} />

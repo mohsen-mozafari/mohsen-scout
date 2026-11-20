@@ -109,13 +109,11 @@ export default function CosmicNews() {
               subtitle="NASA, JPL and ESA headlines with the publisher, publication date and original source link kept attached."
               icon={Newspaper}
             />
-            <Txt muted>A headline is a source lead, not independent scientific verification. Check the original release or paper before relying on a claim.</Txt>
             <Panel variant="soft">
               <View style={styles.rowBetween}>
                 <Heading>Feed controls</Heading>
                 <Text style={styles.badge}>{items.length} STORIES</Text>
               </View>
-              <Txt muted>Saved headlines appear immediately. Selected feeds refresh in the background when the short cache expires; use Refresh for a deliberate update.</Txt>
               <Choices label="Show stories" options={['All selected feeds', 'Selected niche']} selected={[scope]} onChange={(values) => { setScope(values[0]); setVisibleCount(15); }} />
               <Txt muted>{niche?.title ?? (nicheId === 'custom' ? 'Custom niche: ' + preferences.customSpaceNiche : 'All space topics')}</Txt>
               {lastUpdatedAt > 0 ? <Txt muted>{'Last successful feed update: ' + new Date(lastUpdatedAt).toLocaleString()}</Txt> : null}

@@ -106,14 +106,14 @@ export const styles = StyleSheet.create({
   introText: {
     color: p.muted,
     fontFamily: 'Inter_400Regular',
-    fontSize: 13,
-    lineHeight: 20,
+    fontSize: 11,
+    lineHeight: 16,
   },
   heading: {
     color: p.text,
     fontFamily: 'Inter_700Bold',
-    fontSize: 16,
-    lineHeight: 22,
+    fontSize: 14,
+    lineHeight: 20,
     letterSpacing: -0.2,
     flexShrink: 1,
     minWidth: 0,
@@ -121,8 +121,8 @@ export const styles = StyleSheet.create({
   text: {
     color: p.text,
     fontFamily: 'Inter_400Regular',
-    fontSize: 14,
-    lineHeight: 21,
+    fontSize: 13,
+    lineHeight: 19,
     flexShrink: 1,
     minWidth: 0,
   },
@@ -313,8 +313,8 @@ export const styles = StyleSheet.create({
   },
   emptyWrap: {
     alignItems: 'center',
-    paddingVertical: 28,
-    paddingHorizontal: 18,
+    paddingVertical: 22,
+    paddingHorizontal: 14,
     gap: 12,
   },
   emptyIcon: {
@@ -406,7 +406,6 @@ export function AppHeader({ showBack = false }: { showBack?: boolean }) {
 function PageHeading({
   title,
   eyebrow,
-  subtitle,
 }: {
   title: string;
   eyebrow?: string;
@@ -415,7 +414,6 @@ function PageHeading({
   const language = useScout((s) => s.data.preferences.uiLanguage ?? 'fa');
   const translatedTitle = translateText(title, language);
   const translatedEyebrow = eyebrow ? translateText(eyebrow, language) : 'WORKSPACE';
-  const translatedSubtitle = subtitle ? translateText(subtitle, language) : '';
   const direction = resolveTextDirection(translatedTitle);
   return (
     <View style={styles.intro}>
@@ -425,11 +423,6 @@ function PageHeading({
       <Text style={[styles.title, { writingDirection: direction, textAlign: direction === 'rtl' ? 'right' : 'left' }]}>
         {translatedTitle}
       </Text>
-      {translatedSubtitle ? (
-        <Text style={[styles.introText, { writingDirection: resolveTextDirection(translatedSubtitle), textAlign: direction === 'rtl' ? 'right' : 'left' }]}>
-          {translatedSubtitle}
-        </Text>
-      ) : null}
     </View>
   );
 }
@@ -437,7 +430,6 @@ function PageHeading({
 export function ScreenIntro({
   eyebrow,
   title,
-  subtitle,
   icon: Icon,
 }: {
   eyebrow: string;
@@ -448,7 +440,6 @@ export function ScreenIntro({
   const language = useScout((s) => s.data.preferences.uiLanguage ?? 'fa');
   const translatedTitle = translateText(title, language);
   const translatedEyebrow = translateText(eyebrow, language);
-  const translatedSubtitle = subtitle ? translateText(subtitle, language) : '';
   const direction = resolveTextDirection(translatedTitle);
   return (
     <View style={styles.intro}>
@@ -459,9 +450,6 @@ export function ScreenIntro({
       ) : null}
       <Text style={[styles.eyebrow, { writingDirection: resolveTextDirection(translatedEyebrow) }]}>{translatedEyebrow}</Text>
       <Text style={[styles.title, { writingDirection: direction, textAlign: direction === 'rtl' ? 'right' : 'left' }]}>{translatedTitle}</Text>
-      {translatedSubtitle ? (
-        <Text style={[styles.introText, { writingDirection: resolveTextDirection(translatedSubtitle), textAlign: direction === 'rtl' ? 'right' : 'left' }]}>{translatedSubtitle}</Text>
-      ) : null}
     </View>
   );
 }
@@ -851,13 +839,11 @@ export function ErrorBox({ message, onRetry }: { message: string; onRetry: () =>
 export function Fold({
   title,
   children,
-  open = false,
 }: {
   title: string;
   children: ReactNode;
-  open?: boolean;
 }) {
-  const [expanded, setExpanded] = useState(open);
+  const [expanded, setExpanded] = useState(false);
   const language = useScout((s) => s.data.preferences.uiLanguage ?? 'fa');
   const translatedTitle = translateText(title, language);
   const direction = resolveTextDirection(translatedTitle);

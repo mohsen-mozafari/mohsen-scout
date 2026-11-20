@@ -24,7 +24,6 @@ import { buildInternalResearch, rankNewsForTopic, type InternalResearchResult } 
 import { buildResearchInterestProfile, normalizeResearchText, scoreResearchText } from '@/lib/intelligence';
 import { rememberTopicDossier } from '@/lib/topic-dossier';
 import { createResearchMemoryEntry } from '@/lib/research-memory';
-import { ResearchKnowledgeGraph } from '@/components/ResearchKnowledgeGraph';
 import { VideoRow } from '@/components/VideoRow';
 import { engineReviewCacheKey, findCachedEngineReview, rankDashboardIdeas, runSingleFlight, selectDashboardVideos } from '@/lib/dashboard';
 import { generateEditorialIdeas } from '@/lib/idea-generation';
@@ -655,17 +654,9 @@ function DiscoveryDashboardReady() {
             </View>
           </View>
           <Heading>{latestReport ? latestReport.input.topic : nicheTitle}</Heading>
-          <Txt muted>
-            {latestReport
-              ? 'Latest YouTube sample · ' + new Date(latestReport.createdAt).toLocaleString(preferences.uiLanguage === 'fa' ? 'fa-IR' : 'en-US')
-              : niche?.description ?? 'Your selected research scope. Start a search to create the first topic-linked report.'}
-          </Txt>
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7 }}>
-            <MetricCard label="NEWS IN SCOPE" value={radarNews.length} tone="cyan" />
-            <MetricCard label="SAVED IDEAS" value={ideas.length} tone="violet" />
-            <MetricCard label="YOUTUBE REPORTS" value={reports.length} tone="amber" />
-            <MetricCard label="RESEARCH MEMORY" value={memoryCount} tone="mint" />
-          </View>
+          {latestReport ? (
+            <Txt muted>{'Latest YouTube sample · ' + new Date(latestReport.createdAt).toLocaleString(preferences.uiLanguage === 'fa' ? 'fa-IR' : 'en-US')}</Txt>
+          ) : null}
           <View style={[styles.softCard, { backgroundColor: 'rgba(8, 17, 34, 0.48)', borderColor: 'rgba(99, 160, 255, 0.25)' }]}>
             <View style={[styles.rowBetween, { flexWrap: 'wrap' }]}>
               <View style={{ flex: 1, minWidth: 120, gap: 3 }}>
@@ -702,6 +693,15 @@ function DiscoveryDashboardReady() {
             ) : null}
           </View>
         </Panel>
+
+        <ResearchOverviewChart
+          analysis={deskAnalysis}
+          ideas={deskIdeas}
+          topic={deskTopic}
+          news={deskNews}
+          videos={deskVideos}
+          language={preferences.uiLanguage ?? 'fa'}
+        />
 
         <View style={{ gap: 9 }}>
           <View style={styles.rowBetween}>
@@ -788,7 +788,7 @@ function DiscoveryDashboardReady() {
           )}
         </View>
 
-        <Fold title="Evidence quality and source audit" open>
+        <Fold title="Evidence quality and source audit">
           {deskAnalysis ? (
             <View style={{ gap: 12 }}>
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7 }}>
@@ -812,26 +812,7 @@ function DiscoveryDashboardReady() {
           )}
         </Fold>
 
-        <Fold title="Evidence relationship map">
-          {deskAnalysis ? (
-            <ResearchKnowledgeGraph
-              topic={deskTopic}
-              news={deskNews}
-              videos={deskVideos}
-              analysis={deskAnalysis}
-              language={preferences.uiLanguage ?? 'fa'}
-              generatedIdeas={deskIdeas}
-            />
-          ) : <Txt muted>Collect topic-specific evidence to build the relationship map.</Txt>}
-        </Fold>
-
-        <Fold title="Charts and available data" open>
-          {deskAnalysis ? (
-            <ResearchOverviewChart analysis={deskAnalysis} ideas={deskIdeas} videoCount={deskVideos.length} language={preferences.uiLanguage ?? 'fa'} />
-          ) : <Txt muted>No chart is available until the first research sample is collected.</Txt>}
-        </Fold>
-
-        <Fold title="Editorial angles and verification" open>
+        <Fold title="Editorial angles and verification">
           {deskAnalysis ? deskAnalysis.angles.slice(0, 3).map((angle) => (
             <View key={angle.id} style={{ gap: 5, paddingBottom: 10 }}>
               <Heading>{angle.title}</Heading>
@@ -848,7 +829,7 @@ function DiscoveryDashboardReady() {
           </Fold>
         ) : null}
 
-        <Fold title="Recent research and saved results" open>
+        <Fold title="Recent research and saved results">
           <View style={{ gap: 12 }}>
             {feedVideos.length ? (
               <View style={{ gap: 8 }}>
@@ -884,7 +865,7 @@ function DiscoveryDashboardReady() {
           </View>
         </Fold>
 
-        <Fold title="Publisher feeds and usage" open>
+        <Fold title="Publisher feeds and usage">
           <View style={{ gap: 10 }}>
             <Heading>{nicheTitle}</Heading>
             <Txt muted>{niche?.description ?? 'Publisher feeds provide source context; headlines alone do not establish a trend or audience demand.'}</Txt>

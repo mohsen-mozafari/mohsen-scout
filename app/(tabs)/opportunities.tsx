@@ -251,7 +251,6 @@ export default function Opportunities() {
                 <Field label="Topic / working title" value={draftTopic} onChange={setDraftTopic} placeholder="e.g. What JWST reveals about exoplanet atmospheres" />
                 <Field label="Video concept" value={draftConcept} onChange={setDraftConcept} multiline placeholder="What is the central question, what will the viewer learn, and what makes your explanation useful?" />
                 <Field label="Your initial decision (optional)" value={draftDecision} onChange={setDraftDecision} multiline placeholder="What would make this worth producing?" />
-                <Txt muted>Ideas are saved only after you provide a real topic and a concept. This prevents empty records from reaching AI Second Opinion.</Txt>
                 <View style={{ flexDirection: 'row', gap: 8 }}>
                   <View style={{ flex: 1 }}>
                     <Action busy={op.busy} disabled={!draftTopic.trim() || !draftConcept.trim()} onPress={create}>Save idea</Action>
@@ -283,7 +282,6 @@ export default function Opportunities() {
                 <SourceHeading>{getIdeaDisplayTitle(item, preferences.uiLanguage ?? 'fa')}</SourceHeading>
                 {item.concept ? <SourceText muted numberOfLines={3}>{item.concept}</SourceText> : <Txt muted>Concept missing — open the editor to complete this draft before requesting an AI opinion.</Txt>}
                 {item.sourceName ? <View style={styles.row}><Txt muted>Source:</Txt><SourceText>{item.sourceName}</SourceText></View> : null}
-                {item.engineGenerated ? <Txt muted>{fa ? 'بر پایه شواهد موجود تولید شده است. برای دیدن پرسش، دلیل پیشنهاد، دامنه شواهد، مسیر روایت و مراحل راستی‌آزمایی انتخاب کن.' : 'Generated from available research evidence. Select to inspect the complete question, rationale, evidence scope, story path and verification steps.'}</Txt> : null}
                 {item.decision ? <SourceText muted>{item.decision}</SourceText> : null}
               </View>
               <ArrowUpRight color={p.purple} size={20} />
