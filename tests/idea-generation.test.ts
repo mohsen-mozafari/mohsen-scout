@@ -55,6 +55,29 @@ const base = {
   now: 1794760000000,
 };
 
+const batchAnchors = Array.from({ length: 30 }, (_, index) =>
+  'astroterm' + String.fromCharCode(97 + Math.floor(index / 26)) + String.fromCharCode(97 + (index % 26)),
+);
+const batchAnchorText = batchAnchors.join(' ');
+const batchNews: SpaceNewsItem[] = Array.from({ length: 12 }, (_, index) => ({
+  id: 'batch-news-' + index,
+  sourceId: index % 2 ? 'esa-science' : 'nasa',
+  sourceName: index % 2 ? 'ESA' : 'NASA',
+  title: 'MOCK: JWST exoplanet atmosphere ' + batchAnchorText + ' mission observation record' + index,
+  summary: 'MOCK: JWST exoplanet atmosphere ' + batchAnchorText + ' measurement calibration uncertainty instrument response analysis',
+  url: 'https://' + (index % 2 ? 'esa.int' : 'nasa.gov') + '/mock-batch-' + index,
+  publishedAt: new Date(Date.UTC(2026, 10, 15 - index)).toISOString(),
+}));
+
+const batchVideos = Array.from({ length: 6 }, (_, index) => ({
+  id: ['dQw4w9WgXcQ', '9bZkp7q19f0', '3JZ_D3ELwOQ', 'L_jWHffIx5E', 'kJQP7kiw5Fk', 'fJ9rUzIMcZQ'][index],
+  title: 'MOCK: JWST exoplanet atmosphere spectroscopy sample ' + index,
+  description: 'MOCK: JWST exoplanet atmosphere ' + batchAnchorText + ' uncertainty measurement',
+  channel: 'MOCK channel ' + index,
+  publishedAt: new Date(Date.UTC(2026, 10, 10 - index)).toISOString(),
+  viewCount: 1800000 - index * 25000,
+}));
+
 void test('idea engine receives the complete user-selected YouTube period, including all-time history', () => {
   const now = Date.parse('2026-11-20T12:00:00Z');
   const records = [
