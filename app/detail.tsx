@@ -59,6 +59,7 @@ export default function Detail() {
   const ideaOpinionTopic = hasMeaningfulIdeaTopic ? ideaDisplayTopic : '';
   const ideaReadyForOpinion = Boolean(ideaOpinionTopic.trim() && idea?.concept.trim());
   const related = idea ? data.videos.filter((v) => idea.videoIds.includes(v.id)) : [];
+  const engineV2 = idea?.engineV2;
   const analysisSections = idea
     ? buildIdeaAnalysis({ ...idea, topic: ideaDisplayTopic }, related, uiLanguage)
     : [];
@@ -256,6 +257,41 @@ export default function Detail() {
               </View>
             ))}
           </Panel>
+          {engineV2 ? (
+            <Panel>
+              <Heading>{uiLanguage === 'fa' ? 'Детали предложения движка v2' : 'Engine v2 idea details'}</Heading>
+              <Txt muted>{(uiLanguage === 'fa' ? 'Оценка: ' : 'Score: ') + engineV2.score + ' · ' + (uiLanguage === 'fa' ? 'Риск: ' : 'Risk: ') + engineV2.riskLevel}</Txt>
+              {engineV2.publishWindow.bestTime ? (
+                <Txt muted>{(uiLanguage === 'fa' ? 'Лучшее время публикации: ' : 'Best publish time: ') + engineV2.publishWindow.bestTime + (engineV2.publishWindow.horizonDays ? (uiLanguage === 'fa' ? ' (в пределах ' : ' (within ') + engineV2.publishWindow.horizonDays + (uiLanguage === 'fa' ? ' дн.)' : ' days.)') : '')}</Txt>
+              ) : null}
+              {engineV2.estimatedIncome ? (
+                <Txt muted>{(uiLanguage === 'fa' ? 'Оценка дохода: ≈ ' : 'Est. income: ≈ ') + engineV2.estimatedIncome.estimate + (uiLanguage === 'fa' ? ' USD/мес · Предположения:' : ' USD/mo · Assumptions:') + ' ' + engineV2.estimatedIncome.assumptions.slice(0, 2).join(' ')}</Txt>
+              ) : null}
+              {engineV2.reasons.length ? (
+                <Txt muted>{(uiLanguage === 'fa' ? 'Обоснование оценки: ' : 'Score basis: ') + engineV2.reasons.slice(0, 4).join(' · ')}</Txt>
+              ) : null}
+              {related.length ? (
+                <View style={{ gap: 8, marginTop: 6 }}>
+                  <Heading>{uiLanguage === 'fa' ? 'Видео-ориентиры' : 'Reference videos'}</Heading>
+                  {related.slice(0, 3).map((video) => (
+                    <View key={video.id} style={{ gap: 3 }}>
+                      <Heading>{video.title}</Heading>
+                      <Txt muted>{video.channel + ' · ' + (video.viewCount == null ? (uiLanguage === 'fa' ? 'данные недоступны' : 'stats unavailable') : video.viewCount.toLocaleString() + (uiLanguage === 'fa' ? ' просмотров' : ' views')) + ' · ' + new Date(video.publishedAt).toLocaleDateString()}</Txt>
+                      <Action secondary onPress={() => void Linking.openURL('https://www.youtube.com/watch?v=' + video.id).catch(() => {})}>{uiLanguage === 'fa' ? 'Открыть на YouTube' : 'Open on YouTube'}</Action>
+                    </View>
+                  ))}
+                </View>
+              ) : null}
+              {engineV2.news.length ? (
+                <View style={{ gap: 3, marginTop: 6 }}>
+                  <Heading>{uiLanguage === 'fa' ? 'Поддерживающие новости' : 'Supporting news'}</Heading>
+                  {engineV2.news.slice(0, 3).map((item) => (
+                    <Txt key={item.id ?? item.sourceUrl} muted>{item.title + ' · ' + item.sourceName}</Txt>
+                  ))}
+                </View>
+              ) : null}
+            </Panel>
+          ) : null}
           <Txt muted>
             {idea.region} · {idea.languages.map((l) => languages[l] || l).join(', ')}
           </Txt>
