@@ -1,4 +1,4 @@
-import { parseStructuredSecondOpinion, type StructuredSecondOpinion, type ApiError } from './api';
+import { parseStructuredSecondOpinion, type StructuredSecondOpinion } from './api';
 import type { SecondOpinionProvider } from './types';
 
 export type ProviderCredentials = {
@@ -218,6 +218,7 @@ export async function requestSecondOpinionWithFallback(
   configs: readonly SecondOpinionProviderConfig[],
   prompt: string,
   fetcher: Fetcher = fetch,
+  beforeProviderRequest?: (config: SecondOpinionProviderConfig) => Promise<void>,
 ): Promise<SecondOpinionResult> {
   if (!prompt.trim()) throw new SecondOpinionProviderError('The approved topic and candidate concept are required.', 'invalid-response');
   const attempts: ProviderAttempt[] = [];
@@ -230,6 +231,7 @@ export async function requestSecondOpinionWithFallback(
       continue;
     }
     try {
+      await beforeProviderRequest?.(config);
       const opinion = await postOpinion(config, prompt, fetcher);
       attempts.push({ provider: config.provider, model: config.model, status: 'success', message: 'Structured response validated.' });
       return { provider: config.provider, model: config.model, opinion, attempts };
