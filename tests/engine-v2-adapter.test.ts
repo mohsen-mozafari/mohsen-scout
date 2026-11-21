@@ -2,7 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildUnifiedBrief, type UnifiedBriefInput } from '../lib/engine-v2-adapter';
 import type { WikiSignal } from '../lib/space';
-import type { Video } from '../lib/types';
+import { defaults, type Video } from '../lib/types';
+import { validateLocal } from '../lib/validation';
 
 const NOW = Date.parse('2026-11-20T12:00:00Z');
 
@@ -25,12 +26,17 @@ function newsItem(index: number) {
     sourceId: 'nasa' as const,
     sourceName: 'NASA',
     title: [
-      'Mars rover mineral sample analysis report',
-      'Mars rover mineral sample crater update',
-      'Mars rover mineral sample instrument findings',
-      'Mars rover mineral sample soil measurement',
+      'Mars rover sample bulletin alpha',
+      'Mars rover sample bulletin beta',
+      'Mars rover sample bulletin gamma',
+      'Mars rover sample bulletin delta',
     ][index],
-    summary: 'The Mars rover collected a mineral sample from a crater and analysed the soil with its instrument during survey ' + index + '.',
+    summary: [
+      'A crater rock was collected and its mineral composition was recorded by the survey team.',
+      'Orbital imagery mapped layered terrain and tracked seasonal dust changes over the basin.',
+      'A lander measured soil moisture and temperature across the dusty plain at noon.',
+      'Spectral readings identified hydrated minerals in an ancient riverbed near the highlands.',
+    ][index],
     url: 'https://example.org/mars/news/' + index,
     publishedAt: new Date(NOW - (index + 1) * 3600000).toISOString(),
   };
@@ -41,14 +47,14 @@ function videoItem(index: number): Video {
   return {
     id,
     title: [
-      'Mars rover mineral sample walkthrough',
-      'Mars rover mineral sample crater explained',
-      'Mars rover mineral sample instrument guide',
+      'Mars rover sample study alpha',
+      'Mars rover sample study beta',
+      'Mars rover sample study gamma',
     ][index],
     description: [
-      'A walkthrough of the rover mineral sample collected from the crater floor.',
-      'An instrument overview explaining soil measurements at the landing site.',
-      'Orbital imagery review shows layered rocks near the dusty basin.',
+      'The rover collected a crater rock and recorded its mineral composition with an onboard instrument.',
+      'An orbiter mapped layered terrain and tracked seasonal dust changes above the basin.',
+      'A lander measured soil moisture and temperature across the plain at local noon.',
     ][index],
     channel: 'Mars Lab',
     thumbnail: 'https://example.org/' + id + '.jpg',
@@ -71,6 +77,7 @@ function fixture(): UnifiedBriefInput {
     language: 'en',
     region: 'United States',
     languages: ['en'],
+    reportId: 'report-42',
   };
 }
 
@@ -163,6 +170,75 @@ void test('ideas reference only real video ids and real evidence sources', () =>
     assert.ok(idea.decision.length > 0);
     assert.ok(idea.concept.length > 0);
   }
+});
+
+void test('adapter links ideas to real news URLs and propagates the report id', () => {
+  const brief = buildUnifiedBrief(fixture());
+  assert.ok(brief.ideas.length > 0);
+  for (const idea of brief.ideas) {
+    assert.equal(idea.reportId, 'report-42');
+    assert.ok(idea.sourceUrl, 'a real news url must be attached');
+    assert.match(idea.sourceUrl!, /^https:\/\/example\.org\/mars\/news\//);
+    assert.ok(brief.result.items.some((item) => item.source === 'news' && item.url === idea.sourceUrl));
+  }
+});
+
+void test('engine fields carry data-driven text, a real evidence digest and literal claims', () => {
+  const brief = buildUnifiedBrief(fixture());
+  assert.ok(brief.ideas.length > 0);
+  const idea = brief.ideas[0];
+  const realTitles = new Set(brief.result.items.map((item) => item.title));
+
+  assert.equal(idea.engineScoreReason, idea.engineV2Why);
+  assert.match(idea.engineScoreReason ?? '', /^Evidence:/);
+  assert.match(idea.engineScoreReason ?? '', /real views/);
+  assert.ok([...realTitles].some((title) => idea.engineScoreReason!.includes(title.slice(0, 30))));
+  assert.ok(!idea.engineScoreReason!.includes('A timely explainer'));
+
+  const refs = idea.engineV2Evidence ?? [];
+  assert.ok(refs.length > 0 && refs.length <= 3);
+  for (const ref of refs) {
+    assert.ok(ref.title.length > 0);
+    assert.ok(ref.source.length > 0);
+    assert.ok(ref.url && ref.url.startsWith('http'));
+    assert.ok(ref.views != null && ref.views >= 90000);
+    assert.ok(idea.note.includes(ref.title));
+    assert.ok(idea.note.includes(ref.url!));
+  }
+  assert.match(idea.note, /Evidence \(real refs\):/);
+  assert.equal(idea.note.split('\n').filter((line) => /^\d+\./.test(line)).length, refs.length);
+
+  const claims = idea.engineV2Claims ?? [];
+  assert.ok(claims.length > 0 && claims.length <= 3);
+  for (const claim of claims) {
+    assert.ok(realTitles.has(claim.text), 'claim must be literal real text: ' + claim.text);
+    assert.ok(['NASA', 'Mars Lab'].includes(claim.source));
+  }
+});
+
+void test('insufficient engine topics never become adapter ideas', () => {
+  const brief = buildUnifiedBrief({
+    topic: 'Mars rover mineral sample',
+    news: [newsItem(0)],
+    videos: [videoItem(0)],
+    now: NOW,
+    language: 'en',
+  });
+  assert.equal(brief.result.fallback, false);
+  assert.deepEqual(brief.ideas, []);
+  assert.ok(brief.warnings.some((warning) => /data-sufficient/i.test(warning)));
+});
+
+void test('engine explainability fields survive validated local persistence', () => {
+  const brief = buildUnifiedBrief(fixture());
+  assert.ok(brief.ideas.length > 0);
+  const data = defaults();
+  data.ideas = brief.ideas;
+  const restored = validateLocal(data);
+  assert.deepEqual(restored.ideas.map((idea) => idea.engineV2Claims), brief.ideas.map((idea) => idea.engineV2Claims));
+  assert.deepEqual(restored.ideas.map((idea) => idea.engineV2Evidence), brief.ideas.map((idea) => idea.engineV2Evidence));
+  assert.deepEqual(restored.ideas.map((idea) => idea.sourceUrl), brief.ideas.map((idea) => idea.sourceUrl));
+  assert.deepEqual(restored.ideas.map((idea) => idea.dataSufficient), brief.ideas.map((idea) => idea.dataSufficient));
 });
 
 void test('fallback or empty output yields no adapter ideas', () => {

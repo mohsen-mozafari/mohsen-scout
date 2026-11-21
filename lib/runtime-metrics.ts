@@ -1,13 +1,15 @@
 import { useEffect, useState } from 'react';
 
 export type RuntimeModule = 'YouTube' | 'Sources' | 'Wikimedia' | 'Engine' | 'AI';
-export type RuntimeOutcome = 'success' | 'partial' | 'error';
+/** `skipped` is additive: an optional feature that was intentionally not run is not a failure. */
+export type RuntimeOutcome = 'success' | 'partial' | 'error' | 'skipped';
 
 type ModuleMetrics = {
   attempted: number;
   succeeded: number;
   partial: number;
   failed: number;
+  skipped: number;
   lastStartedAt: number;
   lastCompletedAt: number;
   lastError: string;
@@ -19,6 +21,7 @@ export type RuntimeMetrics = {
   succeeded: number;
   partial: number;
   failed: number;
+  skipped: number;
   lastStartedAt: number;
   lastCompletedAt: number;
   lastSuccessAt: number;
@@ -30,6 +33,7 @@ const emptyModule = (): ModuleMetrics => ({
   succeeded: 0,
   partial: 0,
   failed: 0,
+  skipped: 0,
   lastStartedAt: 0,
   lastCompletedAt: 0,
   lastError: '',
@@ -47,6 +51,7 @@ const createEmpty = (): RuntimeMetrics => ({
   succeeded: 0,
   partial: 0,
   failed: 0,
+  skipped: 0,
   lastStartedAt: 0,
   lastCompletedAt: 0,
   lastSuccessAt: 0,
@@ -125,6 +130,7 @@ export function recordRuntimeFinish(
     succeeded: current.succeeded + (outcome === 'success' ? 1 : 0),
     partial: current.partial + (outcome === 'partial' ? 1 : 0),
     failed: current.failed + (outcome === 'error' ? 1 : 0),
+    skipped: current.skipped + (outcome === 'skipped' ? 1 : 0),
     lastCompletedAt: at,
     lastError: outcome === 'error' ? error.slice(0, 240) : current.lastError,
   };
@@ -134,6 +140,7 @@ export function recordRuntimeFinish(
     succeeded: snapshot.succeeded + (outcome === 'success' ? 1 : 0),
     partial: snapshot.partial + (outcome === 'partial' ? 1 : 0),
     failed: snapshot.failed + (outcome === 'error' ? 1 : 0),
+    skipped: snapshot.skipped + (outcome === 'skipped' ? 1 : 0),
     lastCompletedAt: at,
     lastSuccessAt: outcome === 'success' ? at : snapshot.lastSuccessAt,
     lastError: outcome === 'error' ? error.slice(0, 240) : snapshot.lastError,

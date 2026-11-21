@@ -80,6 +80,26 @@ const schema = z.object({
       generationKey: text.max(1200).optional(),
       engineScore: z.number().int().min(0).max(100).optional(),
       engineScoreReason: text.max(600).optional(),
+      // Engine-v2 explainability fields must survive persistence, otherwise
+      // evidence-backed ideas and their claims vanish from the saved data shape.
+      engineV2Score: z.number().finite().optional(),
+      engineV2Confidence: z.number().finite().optional(),
+      engineV2Why: text.optional(),
+      engineV2Evidence: z.array(z.object({
+        title: text,
+        url: text.optional(),
+        views: z.number().finite().nonnegative().optional(),
+        source: text,
+      })).optional(),
+      engineV2Claims: z.array(z.object({
+        text: text,
+        source: text,
+        url: text.optional(),
+      })).optional(),
+      engineV2Risk: text.optional(),
+      engineV2BestTime: text.optional(),
+      engineV2RevenueLabel: text.optional(),
+      dataSufficient: z.boolean().optional(),
     }),
   ),
   links: z.array(

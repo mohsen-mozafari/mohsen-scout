@@ -5,114 +5,40 @@ import { Search } from 'lucide-react-native';
 import { router } from 'expo-router';
 import {
   Page, Panel, Heading, Txt, Action, Fold, Field, styles,
-  SourceHeading, SourceText, BadgeText, MetricCard,
+  SourceHeading, BadgeText,
 } from '@/components/ScoutUI';
 import { useScout } from '@/lib/store';
 import { palette as p } from '@/lib/theme';
 import { useShallow } from 'zustand/react/shallow';
 import { uid, type Idea } from '@/lib/types';
 import { SPACE_NICHES, getCachedSpaceNews } from '@/lib/space';
-import { buildInternalResearch, rankNewsForTopic, type InternalResearchResult } from '@/lib/engine';
-import { buildResearchInterestProfile, normalizeResearchText, scoreResearchText } from '@/lib/intelligence';
 import { getTopicDossier } from '@/lib/topic-dossier';
 import { VideoRow } from '@/components/VideoRow';
-import { buildUnifiedDashboardBrief, collectEngineVideoEvidence, engineReviewCacheKey, findCachedEngineReview, selectDashboardIdeas, selectDashboardVideos, type UnifiedDashboardBrief } from '@/lib/dashboard';
-import { engineV2ReviewPrompt, fingerprintText, getFreeModels, getOpenRouterDailyQuota, getStructuredOpinion, localDateKey, nextOpenRouterUsage, selectFreeModel, validateEngineV2Opinion, type EngineV2Opinion, type YouTubeSampleVideo } from '@/lib/api';
+import {
+  buildUnifiedDashboardBrief, collectEngineVideoEvidence, engineReviewCacheKey,
+  findCachedEngineReview, rankDashboardIdeas, selectDashboardVideos,
+} from '@/lib/dashboard';
+import {
+  engineV2ReviewPrompt, fingerprintText, getFreeModels, getOpenRouterDailyQuota,
+  getStructuredOpinion, localDateKey, nextOpenRouterUsage, selectFreeModel,
+  validateEngineV2Opinion, type EngineV2Opinion, type YouTubeSampleVideo,
+} from '@/lib/api';
 import { getKey } from '@/lib/vault';
 import { ResearchOverviewChart } from '@/components/ResearchOverviewChart';
 import { recordRuntimeFinish, recordRuntimeStart, runtimeErrorHint, useRuntimeMetrics } from '@/lib/runtime-metrics';
 import { useSelectedIdeaId } from '@/lib/idea-selection';
+import type { UnifiedBrief } from '@/lib/engine-v2-adapter';
+
+type BriefState = { id: string; updatedAt: number; cached: boolean; brief: UnifiedBrief };
 
 const automaticReviewStarted = new Set<string>();
 const NO_IDEAS: Idea[] = [];
 
-
-function AnalysisSignals({ result }: { result: InternalResearchResult }) {
-  const language = useScout((state) => state.data.preferences.uiLanguage ?? 'fa');
-  const fa = language === 'fa';
-  const audit = result.intelligence.selfEvaluation;
-  const confidence = result.intelligence.confidence.level;
-  const confidenceLabel = fa
-    ? confidence === 'high' ? 'بالا' : confidence === 'moderate' ? 'متوسط' : 'پایین'
-    : confidence;
-  return (
-    <Fold title={fa ? 'کیفیت شواهد و گام‌های بعدی' : 'Evidence quality & next steps'} summary={(fa ? 'اطمینان ' : 'Confidence ') + confidenceLabel + ' · ' + result.intelligence.sourceQuality.uniqueStories + (fa ? ' خبر یکتا' : ' unique stories')}>
-      <Heading>{fa ? 'حد و حدود اطمینان تحلیل' : 'Confidence and evidence scope'}</Heading>
-      <BadgeText>{(fa ? 'میزان اطمینان: ' : 'Confidence: ') + confidenceLabel}</BadgeText>
-      <Txt muted>{result.intelligence.confidence.reason}</Txt>
-      <Heading>{fa ? 'تطبیق نمونه با موضوع' : 'Topic match in the sample'}</Heading>
-      <Txt muted>{fa
-        ? 'خبر هم‌موضوع: ' + audit.topicMatchedNewsCount + ' از ' + audit.uniqueNewsCount + ' · ویدئوی هم‌موضوع در کل نمونه: ' + audit.allTimeMatchedVideoCount + ' · ویدئوی تازه هم‌موضوع: ' + audit.recentMatchedVideoCount + ' از ' + audit.recentVideoCandidateCount + ' · زمینه تاریخی/بی‌تاریخ: ' + audit.outsideVideoWindowCount + ' · تاریخ آینده: ' + audit.futureDatedVideoCount + ' · بازه: ' + audit.videoWindowDays + ' روز · دارای آمار بازدید: ' + audit.videoViewCountsAvailable
-        : 'Topic-matched news: ' + audit.topicMatchedNewsCount + '/' + audit.uniqueNewsCount + ' · All-time matched videos: ' + audit.allTimeMatchedVideoCount + ' · Recent matched videos: ' + audit.recentMatchedVideoCount + '/' + audit.recentVideoCandidateCount + ' · Historical/undated context: ' + audit.outsideVideoWindowCount + ' · Future-dated: ' + audit.futureDatedVideoCount + ' · Window: ' + audit.videoWindowDays + ' days · With view counts: ' + audit.videoViewCountsAvailable}</Txt>
-      <Txt muted>{fa
-        ? 'خوراک‌های حاضر: ' + result.intelligence.sourceQuality.feedsRepresented +
-          ' · گروه‌های مستقل ناشر: ' + result.intelligence.sourceQuality.independentPublishers +
-          ' · خبرهای تکراری ادغام‌شده: ' + result.intelligence.sourceQuality.duplicateStoriesMerged
-        : 'Feeds represented: ' + result.intelligence.sourceQuality.feedsRepresented +
-          ' · Independent publisher groups: ' + result.intelligence.sourceQuality.independentPublishers +
-          ' · Duplicate stories merged: ' + result.intelligence.sourceQuality.duplicateStoriesMerged}</Txt>
-      {result.intelligence.gaps.length > 0 && (
-        <View style={{ gap: 5 }}>
-          <Heading>{fa ? 'خلأهای تحقیق' : 'Research gaps'}</Heading>
-          {result.intelligence.gaps.map((gap) => <Txt muted key={gap}>{gap}</Txt>)}
-        </View>
-      )}
-      {result.intelligence.sharedConcepts.length > 0 && (
-        <View style={{ gap: 5 }}>
-          <Heading>{fa ? 'واژه‌های مشترک میان نمونه‌ها' : 'Shared concepts in the sample'}</Heading>
-          <SourceText>{result.intelligence.sharedConcepts.join(fa ? '، ' : ', ')}</SourceText>
-          <Txt muted>{fa
-            ? 'این بخش هم‌پوشانی واژگانی نمونه دریافت‌شده را نشان می‌دهد، نه اثبات توافق معنایی یا تقاضا.'
-            : 'This is wording overlap in the returned sample, not proof of semantic agreement or audience demand.'}</Txt>
-        </View>
-      )}
-      {result.entityCandidates.length > 0 && (
-        <View style={{ gap: 5 }}>
-          <Heading>{fa ? 'موجودیت‌های شناخته‌شده در شواهد' : 'Recognized entities in evidence'}</Heading>
-          {result.entityCandidates.slice(0, 12).map((entity) => (
-            <View key={entity.id} style={{ gap: 2 }}>
-              <SourceText>{entity.name}</SourceText>
-              <Txt muted>{entity.kind} · {entity.mentionCount} {fa ? 'ذکر' : 'mentions'} · {entity.evidenceIds.length} {fa ? 'رکورد شاهد' : 'evidence records'}</Txt>
-            </View>
-          ))}
-          <Txt muted>{fa
-            ? 'این فهرست از تطبیق نام‌ها و نام‌های جایگزین شناخته‌شده ساخته شده است؛ به‌معنای تشخیص جامع همه موجودیت‌ها یا اثبات رابطه علّی نیست.'
-            : 'These are exact matches against a bounded alias catalogue, not exhaustive entity recognition or proof of causal relationships.'}</Txt>
-          {result.entityRelations.length > 0 && (
-            <Txt muted>{fa
-              ? 'هم‌ذکری‌های ثبت‌شده: ' + result.entityRelations.length + '؛ هر رابطه فقط هم‌وقوعی در یک رکورد شاهد است.'
-              : 'Recorded co-mentions: ' + result.entityRelations.length + '; each link means co-occurrence in an evidence record only.'}</Txt>
-          )}
-        </View>
-      )}
-      <Txt muted>{fa
-        ? 'زمان پردازش موتور: ' + result.intelligence.selfEvaluation.processingMs + ' میلی‌ثانیه'
-        : 'Engine processing time: ' + result.intelligence.selfEvaluation.processingMs + ' ms'}</Txt>
-      {result.intelligence.potentialContradictions.length > 0 && (
-        <View style={{ gap: 5 }}>
-          <Heading>{fa ? 'اختلاف‌هایی که باید بررسی شوند' : 'Discrepancies to verify'}</Heading>
-          {result.intelligence.potentialContradictions.map((item) => <Txt muted key={item}>{item}</Txt>)}
-        </View>
-      )}
-      {result.intelligence.followUpQueries.length > 0 && (
-        <View style={{ gap: 5 }}>
-          <Heading>{fa ? 'جست‌وجوهای تکمیلی پیشنهادی' : 'Suggested follow-up searches'}</Heading>
-          {result.intelligence.followUpQueries.map((query) => <SourceText key={query}>{query}</SourceText>)}
-        </View>
-      )}
-      {result.intelligence.scenarios.length > 0 && (
-        <View style={{ gap: 5 }}>
-          <Heading>{fa ? 'سناریوهای مشروط' : 'Conditional scenarios'}</Heading>
-          {result.intelligence.scenarios.map((scenario) => <Txt muted key={scenario}>{scenario}</Txt>)}
-        </View>
-      )}
-    </Fold>
-  );
-}
-
-function EngineStatusStrip({ brief, updatedAt, fa }: {
-  brief?: UnifiedDashboardBrief;
+function EngineStatusStrip({ brief, updatedAt, cached, totalMs, fa }: {
+  brief?: UnifiedBrief;
   updatedAt?: number;
+  cached?: boolean;
+  totalMs?: number;
   fa: boolean;
 }) {
   const coverage = (brief?.coverage ?? [])
@@ -122,21 +48,29 @@ function EngineStatusStrip({ brief, updatedAt, fa }: {
         : entry.source === 'youtube'
           ? 'YouTube'
           : (fa ? 'ویکی' : 'Wiki');
-      return label + ' ' + entry.normalized + '/' + entry.fetched;
+      const fetched = Number.isFinite(entry.fetched) ? entry.fetched : 0;
+      const normalized = Number.isFinite(entry.normalized) ? entry.normalized : 0;
+      return label + ' ' + normalized + '/' + fetched;
     })
     .join(' · ');
   const state = !brief
     ? (fa ? 'در انتظار' : 'pending')
-    : brief.fallback
-      ? (fa ? 'حالت جایگزین' : 'fallback')
-      : (fa ? 'تازه' : 'fresh');
+    : cached
+      ? (fa ? 'کششده' : 'cached')
+      : brief.fallback
+        ? (fa ? 'حالت جایگزین' : 'fallback')
+        : (fa ? 'تازه' : 'fresh');
   const time = updatedAt
     ? new Date(updatedAt).toLocaleTimeString(fa ? 'fa-IR' : 'en-US', { hour: '2-digit', minute: '2-digit' })
+    : '';
+  const timing = typeof totalMs === 'number' && Number.isFinite(totalMs) && totalMs > 0
+    ? (fa ? ' · موتور ' : ' · engine ') + Math.round(totalMs) + (fa ? ' میلیثانیه' : ' ms')
     : '';
   return (
     <Txt muted>
       {(time ? (fa ? 'آخرین بهروزرسانی ' : 'Updated ') + time + ' · ' : '') +
         (coverage || (fa ? 'پوشش منبعی ثبت نشده' : 'No source coverage yet')) +
+        timing +
         ' · ' + (fa ? 'موتور: ' : 'Engine: ') + state}
     </Txt>
   );
@@ -144,7 +78,7 @@ function EngineStatusStrip({ brief, updatedAt, fa }: {
 
 function EngineAIReview({ topic, brief, idea }: {
   topic: string;
-  brief?: UnifiedDashboardBrief;
+  brief?: UnifiedBrief;
   idea?: Idea;
 }) {
   const preferences = useScout(useShallow((state) => ({
@@ -155,8 +89,8 @@ function EngineAIReview({ topic, brief, idea }: {
   const opinions = useScout((state) => state.data.opinions);
   const fa = preferences.uiLanguage === 'fa';
 
-  // Single source of truth: the same unified brief that produced the chart and
-  // ideas supplies the topics, scores and real evidence for the second AI.
+  // The single unified brief that produced the chart and ideas also supplies
+  // topics, scores and real evidence to the second, optional AI review.
   const prompt = useMemo(() => {
     if (!brief?.result?.topics?.length) return '';
     return engineV2ReviewPrompt({
@@ -210,13 +144,17 @@ function EngineAIReview({ topic, brief, idea }: {
     setReviewStatus('');
     let reviewSucceeded = false;
     let reviewFromCache = false;
+    let reviewSkipped = false;
     let reviewFailure = '';
     try {
       // Give the native UI a frame to paint progress before network work.
       await new Promise<void>((resolve) => setTimeout(resolve, 32));
       const key = await getKey('openrouter');
       setExternalKeyAvailable(Boolean(key));
-      if (!key) throw new Error('OpenRouter key unavailable.');
+      if (!key) {
+        reviewSkipped = true;
+        throw new Error('OpenRouter key unavailable.');
+      }
 
       const current = useScout.getState().data;
       const storedModel = current.preferences.model;
@@ -238,7 +176,10 @@ function EngineAIReview({ topic, brief, idea }: {
 
       const models = await getFreeModels();
       const model = selectFreeModel(models, storedModel ?? '');
-      if (!model) throw new Error('No free model available.');
+      if (!model) {
+        reviewSkipped = true;
+        throw new Error('No free model available.');
+      }
 
       if (model !== storedModel) {
         await useScout.getState().commit((data) => ({
@@ -264,8 +205,10 @@ function EngineAIReview({ topic, brief, idea }: {
       const quota = model.toLowerCase().endsWith(':free')
         ? await getOpenRouterDailyQuota(key).catch(() => undefined)
         : undefined;
-      if (quota && quota.remaining <= 0)
+      if (quota && quota.remaining <= 0) {
+        reviewSkipped = true;
         throw new Error('OpenRouter free-model daily quota is exhausted (' + quota.used + '/' + quota.limit + ' UTC).');
+      }
       const response = await getStructuredOpinion(key, model, prompt, async () => {
         const currentPreferences = useScout.getState().data.preferences;
         const usage = nextOpenRouterUsage(
@@ -301,14 +244,25 @@ function EngineAIReview({ topic, brief, idea }: {
     } catch (error) {
       reviewFailure = error instanceof Error ? error.message : String(error);
       // Never surface a scary/empty error: the engine-only result stays intact.
-      setReviewStatus(fa
-        ? 'بازبینی AI در دسترس نیست؛ نتیجه موتور محلی بدون تغییر است.'
-        : 'AI review unavailable — engine result unchanged.');
+      setReviewStatus(reviewSkipped
+        ? (fa
+          ? 'بازبینی AI اختیاری است و انجام نشد؛ نتیجه موتور محلی بدون تغییر است.'
+          : 'Optional AI review was skipped — engine result unchanged.')
+        : (fa
+          ? 'بازبینی AI در دسترس نیست؛ نتیجه موتور محلی بدون تغییر است.'
+          : 'AI review unavailable — engine result unchanged.'));
     } finally {
-      recordRuntimeFinish('AI', reviewFromCache ? 'partial' : reviewSucceeded ? 'success' : 'error', reviewFailure);
+      // A missing optional key or an exhausted free quota is a neutral skip,
+      // never a failure recorded against Session Health.
+      recordRuntimeFinish(
+        'AI',
+        reviewFromCache ? 'partial' : reviewSucceeded ? 'success' : reviewSkipped ? 'skipped' : 'error',
+        reviewSkipped ? '' : reviewFailure,
+      );
       reviewInFlightRef.current = false;
       setReviewBusy(false);
-      if (automaticTriggerKey && !reviewSucceeded) automaticReviewStarted.delete(automaticTriggerKey);
+      // Always release the auto-trigger key so it cannot accumulate forever.
+      if (automaticTriggerKey) automaticReviewStarted.delete(automaticTriggerKey);
     }
   };
 
@@ -348,7 +302,7 @@ function EngineAIReview({ topic, brief, idea }: {
         ? 'مدل فقط خلاصه امتیاز موضوعات و شواهد واقعی موتور محلی را میبیند؛ پیوند خام و عدد ساختگی ارسال نمیشود. نتیجه موتور تغییری نمیکند.'
         : 'The model sees only compact topic scores and the real evidence already used by the engine — never raw links or invented numbers. The engine result stays unchanged.'}</Txt>
       {reviewBusy ? (
-        <Txt muted>{fa ? 'دریافت بازبینی AI؛ میتوانی همزمان در بخشهای دیگر کار کنی.' : 'Getting the AI review. You can keep using other sections.'}</Txt>
+        <Txt muted>{fa ? 'دریافت بازبینی AI؛ میتوانی همزمان در بخشهای مختلف کار کنی.' : 'Getting the AI review. You can keep using other sections.'}</Txt>
       ) : null}
       {review ? (
         <View style={{ gap: 6 }}>
@@ -371,6 +325,7 @@ function EngineAIReview({ topic, brief, idea }: {
     </View>
   );
 }
+
 export default function DiscoveryDashboard() {
   const ready = useScout((state) => state.ready);
   if (!ready) {
@@ -394,32 +349,19 @@ function DiscoveryDashboardReady() {
     region: state.data.preferences.region,
     languages: state.data.preferences.languages,
   })));
-  const ideas = useScout((state) => state.data.ideas);
   const reports = useScout((state) => state.data.reports);
   const storedVideos = useScout((state) => state.data.videos);
   const feedRegistry = useScout((state) => state.data.feedRegistry);
   const runtimeMetrics = useRuntimeMetrics();
   const selectedIdeaId = useSelectedIdeaId();
   const [healthExpanded, setHealthExpanded] = useState(false);
-  const completedOperations = runtimeMetrics.succeeded + runtimeMetrics.partial + runtimeMetrics.failed;
-  const sessionSuccessRate = completedOperations
-    ? Math.round(runtimeMetrics.succeeded * 100 / completedOperations)
-    : undefined;
-  const feedHealth = useMemo(() => ({
-    registered: feedRegistry.length,
-    healthy: feedRegistry.filter((item) => item.status === 'healthy').length,
-    stale: feedRegistry.filter((item) => item.status === 'stale').length,
-    unavailable: feedRegistry.filter((item) => item.status === 'unavailable').length,
-    unknown: feedRegistry.filter((item) => item.status === 'unknown').length,
-    failures: feedRegistry.reduce((sum, item) => sum + (item.failureCount ?? 0), 0),
-    cachedItems: feedRegistry.reduce((sum, item) => sum + item.cachedItems.length, 0),
-    lastSuccessAt: feedRegistry.reduce((latest, item) => Math.max(latest, item.lastSuccessAt ?? 0), 0),
-  }), [feedRegistry]);
-  const fa = preferences.uiLanguage === 'fa';
-  const [warnings, setWarnings] = useState<string[]>([]);
+  const [briefState, setBriefState] = useState<BriefState>();
+  const [analysisError, setAnalysisError] = useState('');
   const [dashboardNow] = useState(() => Date.now());
-  const [reportAnalysisState, setReportAnalysisState] = useState<{ id: string; result: InternalResearchResult }>();
-  const [unifiedBriefState, setUnifiedBriefState] = useState<({ id: string; updatedAt: number } & UnifiedDashboardBrief)>();
+  const [quickTopicDraft, setQuickTopicDraft] = useState<string | undefined>(undefined);
+
+  const fa = preferences.uiLanguage === 'fa';
+  const label = (english: string, persian: string) => fa ? persian : english;
 
   const niche = SPACE_NICHES.find((item) => item.id === preferences.selectedSpaceNiche);
   const discoveryTopic = preferences.selectedSpaceNiche === 'all'
@@ -432,20 +374,16 @@ function DiscoveryDashboardReady() {
     () => getCachedSpaceNews(feedRegistry, preferences.spaceNewsSources),
     [feedRegistry, preferences.spaceNewsSources],
   );
-  const topicDossier = getTopicDossier(discoveryTopic);
-  const cachedTopicAnalysis = topicDossier?.internalAnalysis;
-  const topicWiki = topicDossier?.wiki;
 
   const latestReport = reports[0];
-  const [quickTopicDraft, setQuickTopicDraft] = useState<string | undefined>(undefined);
-  const quickTopic = quickTopicDraft ?? preferences.lastInput?.topic ?? latestReport?.input.topic ?? '';
   const latestReportId = latestReport?.id ?? '';
   const latestReportSignature = latestReport
     ? latestReport.videos.map((video) => video.id + ':' + video.fetchedAt).join('|')
     : '';
   const latestReportVideoRecords = latestReport?.videos;
+  // Data layer enforces ENGINE_VIDEO_EVIDENCE_CAP (300); 300 is passed explicitly.
   const engineVideoEvidence = useMemo(
-    () => collectEngineVideoEvidence(reports, storedVideos, dashboardNow, 1000),
+    () => collectEngineVideoEvidence(reports, storedVideos, dashboardNow, 300),
     [reports, storedVideos, dashboardNow],
   );
   const engineVideoSignature = useMemo(
@@ -466,39 +404,20 @@ function DiscoveryDashboardReady() {
     channelVideoCount: null,
     url: 'https://www.youtube.com/watch?v=' + video.id,
   })), [engineVideoEvidence]);
+
+  // Exactly ONE analysis pass, deferred exactly as before. Every number on
+  // this screen reads the single unified brief stored below.
   useEffect(() => {
-    if (!latestReportId || !engineVideoSignature) return;
+    if (!latestReportId || !latestReportSignature || !engineVideoSignature) return;
     let active = true;
     const timer = setTimeout(() => {
       if (!active) return;
       const report = useScout.getState().data.reports.find((item) => item.id === latestReportId);
       if (!report || !engineVideoSamples.length) return;
+      recordRuntimeStart('Engine');
       try {
-        const videos = engineVideoSamples;
-        const currentNews = engineNews.map((item) => ({
-          title: item.title,
-          summary: item.summary,
-          sourceName: item.sourceName,
-          sourceUrl: item.url,
-          publishedAt: item.publishedAt,
-          sourceId: item.sourceId,
-        }));
-        const currentData = useScout.getState().data;
         const reportWiki = getTopicDossier(report.input.topic)?.wiki;
-        const priorMemory = currentData.researchMemory.find((entry) => normalizeResearchText(entry.topic) === normalizeResearchText(report.input.topic));
-        const result = buildInternalResearch({
-          topic: report.input.topic,
-          videos,
-          news: currentNews,
-          feedback: buildResearchInterestProfile(currentData.ideas),
-          priorMemory,
-          language: preferences.uiLanguage ?? 'fa',
-          ...(reportWiki ? { wiki: reportWiki } : {}),
-          videoWindowDays: report.input.days,
-        });
-        // The ideas card and the chart must use the same accounting: one
-        // engine-v2 brief supplies both the idea numbers and their scores.
-        const unifiedBrief = buildUnifiedDashboardBrief(
+        const dashboard = buildUnifiedDashboardBrief(
           report.input.topic,
           engineNews,
           engineVideoSamples,
@@ -509,35 +428,83 @@ function DiscoveryDashboardReady() {
             language: preferences.uiLanguage ?? 'fa',
             region: report.input.region,
             languages: report.input.languages,
+            reportId: report.id,
           },
         );
-        if (active) {
-          setReportAnalysisState({ id: report.id, result });
-          setUnifiedBriefState({
+        if (!active) return;
+        recordRuntimeFinish(
+          'Engine',
+          dashboard.fallback ? 'partial' : 'success',
+          dashboard.fallback ? 'Engine fell back to cached or reduced evidence.' : '',
+        );
+        setAnalysisError('');
+        setBriefState((previous) => {
+          // On fallback or failure keep the last good brief and mark it cached
+          // instead of blanking the page.
+          if (dashboard.fallback && previous) {
+            return previous.cached ? previous : { ...previous, cached: true };
+          }
+          if (!dashboard.result) return previous;
+          return {
             id: report.id,
             updatedAt: Date.now(),
-            ...unifiedBrief,
-          });
-          if (unifiedBrief.warnings.length) setWarnings(unifiedBrief.warnings.slice(0, 2));
-        }
-      } catch {
-        if (active) setWarnings([fa
-          ? 'تحلیل محلی آخرین جست‌وجو کامل نشد؛ گزارش و ویدئوهای ذخیره‌شده همچنان در دسترس‌اند.'
-          : 'The latest local analysis could not be completed. The saved report and videos remain available.']);
+            cached: dashboard.fallback,
+            brief: {
+              result: dashboard.result,
+              ideas: dashboard.ideas,
+              coverage: dashboard.coverage,
+              timings: dashboard.timings,
+              warnings: dashboard.warnings,
+              fallback: dashboard.fallback,
+              angles: dashboard.angles ?? [],
+            },
+          };
+        });
+      } catch (error) {
+        // Keep the last good brief; the saved report and videos remain intact.
+        recordRuntimeFinish('Engine', 'error', error instanceof Error ? error.message : String(error));
+        if (active) setAnalysisError('The latest local analysis could not be completed. The cached brief and saved report remain available.');
       }
     }, 160);
     return () => {
       active = false;
       clearTimeout(timer);
     };
-  }, [latestReportId, latestReportSignature, engineVideoSignature, engineVideoSamples, engineNews, preferences.uiLanguage, preferences.selectedSpaceNiche, dashboardNow, fa]);
+  }, [
+    latestReportId, latestReportSignature, engineVideoSignature, engineVideoSamples,
+    engineNews, preferences.uiLanguage, preferences.selectedSpaceNiche, dashboardNow,
+  ]);
 
-  const latestReportAnalysis = reportAnalysisState?.id === latestReportId
-    ? reportAnalysisState.result
+  const briefForReview = briefState?.brief;
+  const briefIsCached = Boolean(briefState && (briefState.cached || briefState.id !== latestReportId));
+  const chartTopic = latestReport?.input.topic ?? preferences.lastInput?.topic ?? discoveryTopic;
+  const rankedIdeas = useMemo(() => rankDashboardIdeas(briefForReview?.ideas ?? NO_IDEAS), [briefForReview]);
+  const bestIdea = rankedIdeas[0];
+  const pageOneIdeas = rankedIdeas.slice(0, 5);
+
+  const completedOperations = runtimeMetrics.succeeded + runtimeMetrics.partial + runtimeMetrics.failed;
+  const sessionSuccessRate = completedOperations
+    ? Math.round(runtimeMetrics.succeeded * 100 / completedOperations)
     : undefined;
-  const showYouTubeResearch = engineVideoEvidence.length > 0;
-  const deskTopic = latestReport?.input.topic ?? preferences.lastInput?.topic ?? discoveryTopic;
-  const deskAnalysis = showYouTubeResearch ? latestReportAnalysis : undefined;
+  const feedHealth = useMemo(() => ({
+    registered: feedRegistry.length,
+    healthy: feedRegistry.filter((item) => item.status === 'healthy').length,
+    stale: feedRegistry.filter((item) => item.status === 'stale').length,
+    unavailable: feedRegistry.filter((item) => item.status === 'unavailable').length,
+    unknown: feedRegistry.filter((item) => item.status === 'unknown').length,
+    cachedItems: feedRegistry.reduce((sum, item) => sum + item.cachedItems.length, 0),
+  }), [feedRegistry]);
+  const advisoryWarnings = useMemo(
+    () => Array.from(new Set(briefForReview?.warnings ?? [])).filter(Boolean).slice(0, 4),
+    [briefForReview],
+  );
+  const totalBriefMs = useMemo(
+    () => (briefForReview?.timings ?? []).reduce((sum, timing) =>
+      sum + (Number.isFinite(timing.ms) ? timing.ms : 0), 0),
+    [briefForReview],
+  );
+
+  const quickTopic = quickTopicDraft ?? preferences.lastInput?.topic ?? latestReport?.input.topic ?? '';
   const nicheTerms = useMemo<string[]>(() => {
     if (preferences.selectedSpaceNiche === 'custom') {
       return preferences.customSpaceNiche.split(/[,;\n]+/).map((term) => term.trim()).filter(Boolean);
@@ -552,40 +519,13 @@ function DiscoveryDashboardReady() {
     [latestReportVideoRecords, feedTopic, nicheTerms, dashboardNow],
   );
 
-  const audit = deskAnalysis?.intelligence.selfEvaluation;
-  const sharedTerms = deskAnalysis?.intelligence.sharedConcepts ?? [];
-  const nextGap = deskAnalysis?.intelligence.gaps[0];
-  const nextQuery = deskAnalysis?.intelligence.followUpQueries[0];
-  const chartAnalysis = latestReportAnalysis ?? cachedTopicAnalysis;
-  const chartTopic = latestReportAnalysis ? deskTopic : cachedTopicAnalysis ? discoveryTopic : deskTopic;
-  const chartDossier = getTopicDossier(chartTopic);
-  const chartWiki = chartDossier?.wiki ?? (chartTopic === discoveryTopic ? topicWiki : undefined);
-  const chartNews = useMemo(
-    () => rankNewsForTopic(chartTopic, engineNews, Math.max(1, engineNews.length)),
-    [chartTopic, engineNews],
+  // Stable element identity keeps ResearchOverviewChart's memo effective.
+  const secondOpinion = useMemo(
+    () => briefForReview
+      ? <EngineAIReview topic={chartTopic} brief={briefForReview} idea={bestIdea} />
+      : undefined,
+    [briefForReview, chartTopic, bestIdea],
   );
-  const chartVideos = useMemo(
-    () => engineVideoSamples,
-    [engineVideoSamples],
-  );
-  const briefForReview = unifiedBriefState?.id === latestReportId ? unifiedBriefState : undefined;
-  const unifiedIdeas = briefForReview?.ideas ?? NO_IDEAS;
-  const chartIdeas = useMemo(() => unifiedIdeas.length ? unifiedIdeas : selectDashboardIdeas(ideas, {
-    reportId: latestReport?.id,
-    videoIds: new Set(latestReport?.videos.map((video) => video.id) ?? []),
-    sourceUrls: new Set(chartNews.filter((item) => scoreResearchText(chartTopic, item.title, item.summary) > 0).map((item) => item.url)),
-    topic: chartTopic,
-  }), [unifiedIdeas, ideas, latestReport?.id, latestReport?.videos, chartNews, chartTopic]);
-  const bestIdea = chartIdeas[0];
-  const ideaLinkage = useMemo(() => ({
-    active: ideas.filter((idea) => !idea.archived && idea.status !== 'Rejected Ideas' && idea.status !== 'Completed Research').length,
-    generated: ideas.filter((idea) => idea.engineGenerated === true).length,
-    sourceLinked: ideas.filter((idea) => Boolean(idea.sourceUrl)).length,
-    reportLinked: ideas.filter((idea) => Boolean(idea.reportId)).length,
-    videoLinked: ideas.filter((idea) => idea.videoIds.length > 0).length,
-  }), [ideas]);
-  const deskIdeas = chartIdeas;
-  const recommendations = chartIdeas.slice(1, 4);
 
   return (
     <Page
@@ -596,27 +536,75 @@ function DiscoveryDashboardReady() {
         : 'Enter a focused topic and inspect real YouTube results, evidence quality and sample limits.'}
     >
       <View style={{ gap: 15 }}>
-        <EngineStatusStrip brief={briefForReview} updatedAt={briefForReview?.updatedAt} fa={fa} />
+        <EngineStatusStrip
+          brief={briefForReview}
+          updatedAt={briefState?.updatedAt}
+          cached={briefIsCached}
+          totalMs={totalBriefMs}
+          fa={fa}
+        />
+        {analysisError ? <Txt muted>{analysisError}</Txt> : null}
         <ResearchOverviewChart
-          analysis={chartAnalysis}
-          ideas={chartIdeas}
+          brief={briefForReview}
+          ideas={rankedIdeas}
           topic={chartTopic}
-          news={chartNews}
-          wiki={chartWiki}
-          videos={chartVideos}
           language={preferences.uiLanguage ?? 'fa'}
           selectedIdeaId={selectedIdeaId}
-          secondOpinion={chartAnalysis
-            ? <EngineAIReview topic={chartTopic} brief={briefForReview} idea={bestIdea} />
-            : undefined}
+          secondOpinion={secondOpinion}
         />
+
+        <Panel>
+          <View style={{ gap: 10 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 }}>
+              <BadgeText>{label('REAL IDEAS FROM THIS BRIEF', 'ایدههای واقعی از این تحلیل')}</BadgeText>
+              {briefIsCached ? <BadgeText>{label('CACHED BRIEF', 'تحلیل کششده')}</BadgeText> : null}
+            </View>
+            {pageOneIdeas.length ? pageOneIdeas.map((idea) => {
+              const why = (idea.engineV2Why ?? idea.engineScoreReason ?? idea.decision ?? idea.concept ?? '').trim();
+              return (
+                <Pressable
+                  key={idea.id}
+                  onPress={() => router.push({ pathname: '/detail', params: { idea: idea.id } })}
+                  accessibilityRole="button"
+                  style={styles.softCard}
+                >
+                  <View style={{ gap: 6 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 }}>
+                      <SourceHeading>{idea.topic}</SourceHeading>
+                      {typeof idea.engineScore === 'number' && Number.isFinite(idea.engineScore)
+                        ? <Text style={{ color: p.accent, fontSize: 12, fontWeight: '800' }}>{idea.engineScore}/100</Text>
+                        : null}
+                    </View>
+                    {why ? <Txt>{why}</Txt> : null}
+                    {(idea.engineV2Evidence ?? []).slice(0, 2).map((item, index) => {
+                      const views = typeof item.views === 'number' && Number.isFinite(item.views) && item.views > 0
+                        ? new Intl.NumberFormat(fa ? 'fa-IR' : 'en-US').format(Math.round(item.views)) + (fa ? ' بازدید' : ' views')
+                        : '';
+                      const line = [item.title, item.source, views].filter(Boolean).join(' · ');
+                      return <Txt muted key={index}>{line}</Txt>;
+                    })}
+                    {(idea.engineV2Claims ?? []).slice(0, 1).map((claim, index) => (
+                      <Txt muted key={index}>{(fa ? 'ادعای مستند: ' : 'Source claim: ') + claim.text + ' · ' + claim.source}</Txt>
+                    ))}
+                    <Txt muted>{fa ? 'برای جزئیات کامل لمس کن' : 'Tap for the full breakdown'}</Txt>
+                  </View>
+                </Pressable>
+              );
+            }) : (
+              <Txt muted>{label(
+                'No evidence-backed ideas are available yet. Run a YouTube research pass to create them.',
+                'هنوز ایدهای مبتنی بر شواهد در دسترس نیست. برای ساخت آنها یک تحقیق YouTube اجرا کن.',
+              )}</Txt>
+            )}
+          </View>
+        </Panel>
 
         <Panel variant="hero">
           <View style={{ gap: 11 }}>
             <BadgeText>{fa ? 'شروع تحقیق' : 'START A RESEARCH RUN'}</BadgeText>
-            <Heading>{fa ? 'موضوع ویدئوی بعدی‌ات را پیدا کن' : 'Find your next video topic'}</Heading>
+            <Heading>{fa ? 'موضوع ویدئوی بعدیات را پیدا کن' : 'Find your next video topic'}</Heading>
             <Txt muted>{fa
-              ? 'جست‌وجو فقط پس از اقدام تو انجام می‌شود. نتایج نامرتبط حذف می‌شوند و موتور ایده فقط از شواهد همین نمونه استفاده می‌کند.'
+              ? 'جستوجو فقط پس از اقدام تو انجام میشود. نتایج نامرتبط حذف میشوند و موتور ایده فقط از شواهد همین نمونه استفاده میکند.'
               : 'Search runs only after you start it. Weakly related results are excluded, and ideas are tied to evidence in the returned sample.'}</Txt>
             <Field
               label={fa ? 'موضوع یا کلیدواژه' : 'Topic or keyword'}
@@ -641,169 +629,93 @@ function DiscoveryDashboardReady() {
               </View>
             ) : (
               <Txt muted>{fa
-                ? 'هنوز تحقیقی اجرا نشده؛ با بازکردن داشبورد هیچ درخواست YouTube یا مصرف سهمیه‌ای انجام نمی‌شود.'
+                ? 'هنوز تحقیقی اجرا نشده؛ با بازکردن داشبورد هیچ درخواست YouTube یا مصرف سهمیهای انجام نمیشود.'
                 : 'No research run yet. Opening the dashboard does not call YouTube or consume API quota.'}</Txt>
             )}
           </View>
         </Panel>
 
-        {showYouTubeResearch ? (
-          <Fold
-            title={fa ? 'خلاصه تحقیق · نتیجه و محدودیت‌ها' : 'Research brief · Findings and limits'}
-            summary={deskAnalysis
-              ? (deskAnalysis.intelligence.confidence.level.toUpperCase() + ' confidence · ' +
-                deskAnalysis.intelligence.sourceQuality.uniqueStories + ' reports · ' +
-                engineVideoEvidence.length + ' retained videos')
-              : (fa ? 'در انتظار تکمیل تحلیل نمونه' : 'Waiting for sample analysis')}
-          >
-            {deskAnalysis ? (
-              <View style={{ gap: 10 }}>
-                <View style={styles.softCard}>
-                  <Text style={styles.label}>{fa ? 'برداشت اصلی از شواهد' : 'WHAT THE EVIDENCE SAYS'}</Text>
-                  <Txt>{deskAnalysis.summary}</Txt>
-                </View>
-                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7 }}>
-                  <MetricCard label={fa ? 'خبر یکتای تحلیل‌شده' : 'UNIQUE REPORTS'} value={deskAnalysis.intelligence.sourceQuality.uniqueStories} />
-                  <MetricCard label={fa ? 'خوراک حاضر' : 'FEEDS REPRESENTED'} value={deskAnalysis.intelligence.sourceQuality.feedsRepresented} />
-                  <MetricCard label={fa ? 'ویدئوی نگهداری‌شده' : 'RETAINED VIDEOS'} value={engineVideoEvidence.length} />
-                  <MetricCard label={fa ? 'پرسش/خلأ باز' : 'OPEN GAPS'} value={deskAnalysis.intelligence.gaps.length + deskAnalysis.intelligence.potentialContradictions.length} />
-                </View>
-                <View style={styles.softCard}>
-                  <Text style={styles.label}>{fa ? 'چه چیزی هنوز معلوم نیست؟' : 'WHAT IS STILL UNKNOWN'}</Text>
-                  <Txt muted>{nextGap ?? (fa
-                    ? 'خلأ مشخصی ثبت نشده؛ ادعاهای مهم را پیش از تولید با منبع اصلی بررسی کن.'
-                    : 'No specific gap was flagged. Verify important claims against original sources before production.')}</Txt>
-                </View>
-                {sharedTerms.length ? (
-                  <Txt muted>{(fa ? 'عبارت‌های تکرارشده در نمونه: ' : 'Repeated wording in this sample: ') + sharedTerms.slice(0, 4).join(fa ? '، ' : ', ') + (fa ? '؛ تکرار به‌تنهایی اثبات روند یا تقاضا نیست.' : '; repetition alone does not prove a trend or audience demand.')}</Txt>
-                ) : null}
-                {warnings.slice(0, 2).map((warning) => <Txt muted key={warning}>{warning}</Txt>)}
-                {nextQuery ? (
-                  <Action secondary onPress={() => router.push({ pathname: '/youtube', params: { topic: nextQuery } })}>
-                    {fa ? 'بررسی پرسش پیشنهادی در YouTube' : 'Research the suggested question on YouTube'}
-                  </Action>
-                ) : null}
-                <Action onPress={() => router.push({ pathname: '/deep-research', params: { topic: deskTopic } })}>
-                  {fa ? 'ادامه در تحقیق عمیق' : 'Continue in Deep Research'}
-                </Action>
-              </View>
-            ) : (
-              <View style={{ gap: 8 }}>
-                <Txt muted>{fa
-                  ? 'نمونه ویدئویی ذخیره شده است، اما تحلیل موضوع‌محور هنوز آماده نیست. گزارش و ویدئوها حفظ شده‌اند.'
-                  : 'A saved video sample exists, but its topic-specific analysis is not ready yet. The report and video records remain available.'}</Txt>
-                <Action secondary onPress={() => router.push({ pathname: '/youtube', params: { topic: deskTopic } })}>
-                  {fa ? 'بازبینی نمونه YouTube' : 'Review the YouTube sample'}
-                </Action>
-              </View>
-            )}
-          </Fold>
-        ) : null}
-
-
-        <Fold title="Evidence quality and source audit" summary={deskAnalysis ? deskAnalysis.intelligence.sourceQuality.uniqueStories + ' stories · ' + deskAnalysis.intelligence.sourceQuality.feedsRepresented + ' feeds' : 'No analyzed sample yet'}>
-          {deskAnalysis ? (
-            <View style={{ gap: 12 }}>
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7 }}>
-                <MetricCard label="UNIQUE STORIES" value={deskAnalysis.intelligence.sourceQuality.uniqueStories} />
-                <MetricCard label="FEEDS REPRESENTED" value={deskAnalysis.intelligence.sourceQuality.feedsRepresented} />
-                <MetricCard label="STALE / UNDATED" value={deskAnalysis.intelligence.sourceQuality.staleItems + deskAnalysis.intelligence.sourceQuality.undatedItems} />
-                <MetricCard label="WIKIMEDIA MONTHS" value={audit?.wikimediaMonthlyObservations ?? 0} />
-              </View>
-              {deskAnalysis.evidence
-                .filter((item) => ['publisher-news', 'wikimedia', 'youtube-sample', 'cross-source-overlap'].includes(item.id))
-                .map((item) => (
-                  <View key={item.id} style={{ gap: 4 }}>
-                    <BadgeText>{item.label}</BadgeText>
-                    <Txt muted>{item.detail}</Txt>
-                  </View>
-                ))}
-              <AnalysisSignals result={deskAnalysis} />
-            </View>
-          ) : (
-            <Txt muted>Source-quality details appear after a sample is available.</Txt>
-          )}
-        </Fold>
-
-        <Fold title="Editorial angles and verification" summary={deskAnalysis ? deskAnalysis.angles.length + ' angles · ' + deskAnalysis.verificationQuestions.length + ' checks' : 'Waiting for analysis'}>
-          {deskAnalysis ? deskAnalysis.angles.slice(0, 3).map((angle) => (
-            <View key={angle.id} style={{ gap: 5, paddingBottom: 10 }}>
-              <Heading>{angle.title}</Heading>
-              <Txt>{angle.hook}</Txt>
-              <Txt muted>{angle.approach}</Txt>
-              <Txt muted>{'Verify: ' + angle.verification}</Txt>
-            </View>
-          )) : <Txt muted>Research angles are generated from the available evidence.</Txt>}
-        </Fold>
-
-        <Fold title="Recent research and saved results" summary={reports.length + ' reports · ' + deskIdeas.length + ' ideas'}>
+        <Fold
+          title={fa ? 'تحقیق و نتایج ذخیرهشده' : 'Recent research and saved results'}
+          summary={reports.length + ' reports · ' + rankedIdeas.length + ' ideas'}
+        >
           <View style={{ gap: 12 }}>
             {feedVideos.length ? (
               <View style={{ gap: 8 }}>
-                <Heading>Related videos</Heading>
+                <Heading>{fa ? 'ویدئوهای مرتبط' : 'Related videos'}</Heading>
                 {feedVideos.slice(0, 5).map((video) => <VideoRow key={video.id} video={video} topic={feedTopic} />)}
               </View>
-            ) : <Txt muted>No saved video matched this focus. Unrelated results are intentionally hidden.</Txt>}
-            {recommendations.length ? (
-              <View style={{ gap: 8 }}>
-                <Heading>Other editorial ideas</Heading>
-                {recommendations.slice(0, 3).map((idea) => {
-                  const whyLine = (idea.engineV2Why ?? idea.engineScoreReason ?? idea.concept ?? '').split(';')[0].trim();
-                  return (
-                    <View key={idea.id} style={styles.softCard}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 }}>
-                        <SourceHeading>{idea.topic}</SourceHeading>
-                        {typeof idea.engineScore === 'number' && Number.isFinite(idea.engineScore)
-                          ? <Text style={{ color: p.accent, fontSize: 12, fontWeight: '800' }}>{idea.engineScore}/100</Text>
-                          : null}
-                      </View>
-                      <Txt muted>{whyLine.slice(0, 160)}{whyLine.length > 160 ? '…' : ''}</Txt>
-                      <Action secondary onPress={() => router.push({ pathname: '/detail', params: { idea: idea.id } })}>
-                        Open idea
-                      </Action>
-                    </View>
-                  );
-                })}
-              </View>
-            ) : null}
+            ) : <Txt muted>{fa
+              ? 'هیچ ویدئوی ذخیرهای با این تمرکز مطابقت نداشت.'
+              : 'No saved video matched this focus. Unrelated results are intentionally hidden.'}</Txt>}
             {reports.length ? (
               <View style={{ gap: 7 }}>
-                <Heading>Saved research runs</Heading>
+                <Heading>{fa ? 'اجراهای ذخیرهشده' : 'Saved research runs'}</Heading>
                 {reports.slice(0, 4).map((report) => (
                   <Action key={report.id} secondary onPress={() => router.push({ pathname: '/youtube', params: { topic: report.input.topic, report: report.id } })}>
-                    {report.input.topic + ' · ' + new Date(report.createdAt).toLocaleDateString(preferences.uiLanguage === 'fa' ? 'fa-IR' : 'en-US')}
+                    {report.input.topic + ' · ' + new Date(report.createdAt).toLocaleDateString(fa ? 'fa-IR' : 'en-US')}
                   </Action>
                 ))}
               </View>
             ) : null}
-            <Action secondary onPress={() => router.push('/opportunities')}>Open all ideas</Action>
+            <Action secondary onPress={() => router.push('/opportunities')}>
+              {fa ? 'مشاهده همه ایدهها' : 'Open all ideas'}
+            </Action>
           </View>
         </Fold>
+
+        {briefForReview ? (
+          <Fold
+            title={fa ? 'یادداشتهای موتور و زمانبندی' : 'Engine notes and timing'}
+            summary={(briefForReview.angles?.length ?? 0) + ' angles · ' + Math.round(totalBriefMs) + ' ms'}
+          >
+            <View style={{ gap: 8 }}>
+              {briefForReview.angles?.length
+                ? briefForReview.angles.slice(0, 6).map((angle, index) => <Txt muted key={index}>{angle}</Txt>)
+                : <Txt muted>{label('No engine angles were produced for this brief.', 'برای این تحلیل زاویهای تولید نشد.')}</Txt>}
+              {advisoryWarnings.length ? (
+                <View style={{ gap: 4 }}>
+                  <Heading>{fa ? 'هشدارهای اطلاعی' : 'Advisory notes'}</Heading>
+                  {advisoryWarnings.map((warning) => <Txt muted key={warning}>{warning}</Txt>)}
+                </View>
+              ) : null}
+              {briefForReview.timings?.length ? (
+                <Txt muted>{label('Stages', 'مراحل') + ': ' + briefForReview.timings
+                  .map((timing) => timing.stage + ' ' + Math.round(timing.ms) + ' ms')
+                  .join(' · ')}</Txt>
+              ) : null}
+              <Txt muted>{label(
+                'These notes are informational and are not counted as Session Health failures.',
+                'این یادداشتهای اطلاعیاند و جزء خطاهای سلامت نشست محسوب نمیشوند.',
+              )}</Txt>
+            </View>
+          </Fold>
+        ) : null}
 
         <Panel>
           <Heading>{fa ? 'ابزارهای تکمیلی تحقیق' : 'Additional research tools'}</Heading>
           <Txt muted>{fa
-            ? 'ابزارهای مستقل برنامه از همین داشبورد هم در دسترس‌اند؛ هرکدام مسیر و خروجی تخصصی خود را دارند.'
+            ? 'ابزارهای مستقل برنامه از همین داشبورد هم در دسترساند؛ هرکدام مسیر و خروجی تخصصی خود را دارند.'
             : 'The app’s dedicated research tools are also accessible here, each with its own focused workflow and results.'}</Txt>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
             <View style={{ flexGrow: 1, flexBasis: 180 }}>
               <Panel variant="soft">
                 <Heading>{fa ? 'تحقیق عمیق' : 'Deep Research'}</Heading>
-                <Txt muted>{fa ? 'ساخت پرونده تحقیق با منابع و پرسش‌های قابل پیگیری.' : 'Build a source-linked research brief and follow-up questions.'}</Txt>
+                <Txt muted>{fa ? 'ساخت پرونده تحقیق با منابع و پرسشهای قابل پیگیری.' : 'Build a source-linked research brief and follow-up questions.'}</Txt>
                 <Action secondary onPress={() => router.push('/deep-research')}>{fa ? 'شروع تحقیق عمیق' : 'Open Deep Research'}</Action>
               </Panel>
             </View>
             <View style={{ flexGrow: 1, flexBasis: 180 }}>
               <Panel variant="soft">
                 <Heading>{fa ? 'هوشمندی روندها' : 'Trend Intelligence'}</Heading>
-                <Txt muted>{fa ? 'بررسی نشانه‌های موضوعی و زمینه‌های مرتبط.' : 'Inspect topic signals and related context.'}</Txt>
+                <Txt muted>{fa ? 'بررسی نشانههای موضوعی و زمینههای مرتبط.' : 'Inspect topic signals and related context.'}</Txt>
                 <Action secondary onPress={() => router.push('/trend-intelligence')}>{fa ? 'بررسی روندها' : 'Open Trend Intelligence'}</Action>
               </Panel>
             </View>
             <View style={{ flexGrow: 1, flexBasis: 180 }}>
               <Panel variant="soft">
-                <Heading>{fa ? 'تقاضای جست‌وجو' : 'Search Demand'}</Heading>
-                <Txt muted>{fa ? 'مقایسه داده‌های در دسترس جست‌وجو و محدودیت‌های آن.' : 'Compare available search signals and their data limits.'}</Txt>
+                <Heading>{fa ? 'تقاضای جستوجو' : 'Search Demand'}</Heading>
+                <Txt muted>{fa ? 'مقایسه دادههای در دسترس جستوجو و محدودیتهای آن.' : 'Compare available search signals and their data limits.'}</Txt>
                 <Action secondary onPress={() => router.push('/search-demand')}>{fa ? 'بررسی تقاضا' : 'Open Search Demand'}</Action>
               </Panel>
             </View>
@@ -814,102 +726,100 @@ function DiscoveryDashboardReady() {
           <Panel>
             <View style={{ gap: 5 }}>
               <View style={[styles.rowBetween, { flexWrap: 'wrap' }]}>
-                <BadgeText>{fa ? 'سلامت نشست · عملیات اندازه‌گیری‌شده' : 'SESSION HEALTH · MEASURED OPERATIONS'}</BadgeText>
+                <BadgeText>{label('SESSION HEALTH · MEASURED OPERATIONS', 'سلامت نشست · عملیات اندازهگیری شده')}</BadgeText>
                 <Text style={{ color: runtimeMetrics.failed ? p.danger : runtimeMetrics.partial ? p.warning : p.success, fontSize: 10, fontWeight: '800' }}>
                   {runtimeMetrics.failed
-                    ? (fa ? 'خطا ثبت شده' : 'ERRORS RECORDED')
+                    ? label('ERRORS RECORDED', 'خطای ثبتشده')
                     : runtimeMetrics.partial
-                      ? (fa ? 'نتیجه ناقص' : 'PARTIAL RESULTS')
+                      ? label('PARTIAL RESULTS', 'نتیجه ناقص')
                       : completedOperations
-                        ? (fa ? 'خطای ثبت‌شده ندارد' : 'NO RECORDED ERRORS')
-                        : (fa ? 'در انتظار نخستین اجرا' : 'AWAITING FIRST RUN')}
+                        ? label('NO RECORDED ERRORS', 'خطای ثبتشده ندارد')
+                        : label('AWAITING FIRST RUN', 'در انتظار نخستین اجرا')}
                 </Text>
               </View>
               <Heading>{sessionSuccessRate === undefined
-                ? (fa ? 'هنوز اجرای تکمیل‌شده‌ای در این نشست اندازه‌گیری نشده' : 'No completed operation has been measured this session')
-                : sessionSuccessRate + (fa ? '٪ موفقیت ثبت‌شده' : '% measured success rate')}</Heading>
+                ? label('No completed operation has been measured this session', 'هنوز اجرای تکمیلشدهاندازهگیری نشده')
+                : sessionSuccessRate + '% ' + label('measured success rate', 'موفقیت ثبتشده')}</Heading>
               <Txt muted>
-                {runtimeMetrics.failed + (fa ? ' خطا' : ' errors') + ' · ' +
-                  runtimeMetrics.partial + (fa ? ' نتیجه ناقص' : ' partial results') + ' · ' +
-                  feedHealth.healthy + '/' + feedHealth.registered + (fa ? ' خوراک سالم' : ' healthy feeds') + ' · ' +
+                {runtimeMetrics.failed + ' ' + label('errors', 'خطا') + ' · ' +
+                  runtimeMetrics.partial + ' ' + label('partial', 'ناقص') + ' · ' +
+                  runtimeMetrics.skipped + ' ' + label('skipped (optional)', 'ردشده (اختیاری)') + ' · ' +
+                  feedHealth.healthy + '/' + feedHealth.registered + ' ' + label('healthy feeds', 'خوراک سالم') +
                   (runtimeMetrics.lastCompletedAt
-                    ? (fa ? 'آخرین اجرا ' : 'Last run ') + new Date(runtimeMetrics.lastCompletedAt).toLocaleString(fa ? 'fa-IR' : 'en-US')
-                    : (fa ? 'اجرای تکمیل‌شده‌ای ثبت نشده' : 'No completed run yet'))}
+                    ? ' · ' + label('last run', 'آخرین اجرا') + ' ' + new Date(runtimeMetrics.lastCompletedAt).toLocaleString(fa ? 'fa-IR' : 'en-US')
+                    : '')}
               </Txt>
               <Txt muted>{healthExpanded
-                ? (fa ? 'برای بستن جزئیات لمس کن' : 'Tap to hide module details')
-                : (fa ? 'برای دیدن نتیجه ماژول‌ها، وضعیت خوراک‌ها و راه‌حل خطا لمس کن' : 'Tap for module outcomes, source status and the latest measured error')}</Txt>
+                ? label('Tap to hide module details', 'برای بستن جزئیات لمس کن')
+                : label('Tap for measured module outcomes and source status', 'برای دیدن نتایج ماژولها و وضعیت منابع لمس کن')}</Txt>
             </View>
           </Panel>
         </Pressable>
         {healthExpanded ? (
           <Panel>
-            <Heading>{fa ? 'نتیجهٔ واقعی اجرای ماژول‌ها' : 'Measured operation results'}</Heading>
+            <Heading>{label('Measured operation results', 'نتیجه واقعی اجرای ماژولها')}</Heading>
             {(['YouTube', 'Sources', 'Wikimedia', 'Engine', 'AI'] as const).map((name) => {
               const item = runtimeMetrics.modules[name];
               const done = item.succeeded + item.partial + item.failed;
-              const rate = done ? Math.round(item.succeeded * 100 / done) + '%' : 'not measured';
+              const rate = done ? Math.round(item.succeeded * 100 / done) + '%' : label('not measured', 'اندازهگیری نشده');
+              const moduleLabel = name === 'YouTube' && fa ? 'API یوتیوب'
+                : name === 'Sources' && fa ? 'خوراکهای رسمی'
+                  : name === 'Wikimedia' && fa ? 'صفحهنمای ویکیمدیا'
+                    : name === 'Engine' && fa ? 'موتور داخلی'
+                      : name === 'AI' && fa ? 'نظر مستقل هوش مصنوعی'
+                        : name;
               return (
                 <View key={name} style={{ gap: 2, borderBottomWidth: 1, borderBottomColor: p.borderSoft, paddingVertical: 7 }}>
                   <View style={[styles.rowBetween, { flexWrap: 'wrap' }]}>
-                    <Text style={{ color: p.text, fontSize: 12, fontWeight: '700' }}>{name === 'YouTube' && fa ? 'API یوتیوب' : name === 'Sources' && fa ? 'خوراک‌های رسمی' : name === 'Wikimedia' && fa ? 'صفحه‌نمای ویکی‌مدیا' : name === 'Engine' && fa ? 'موتور داخلی' : name === 'AI' && fa ? 'نظر مستقل هوش مصنوعی' : name}</Text>
+                    <Text style={{ color: p.text, fontSize: 12, fontWeight: '700' }}>{moduleLabel}</Text>
                     <Text style={{ color: item.failed ? p.danger : item.partial ? p.warning : p.success, fontSize: 11, fontWeight: '700' }}>{rate}</Text>
                   </View>
-                  <Txt muted>{item.attempted + (fa ? ' تلاش · ' : ' attempted · ') + item.succeeded + (fa ? ' موفق · ' : ' success · ') + item.partial + (fa ? ' ناقص · ' : ' partial · ') + item.failed + (fa ? ' خطا' : ' errors')}</Txt>
+                  <Txt muted>{item.attempted + ' ' + label('attempted', 'تلاش') + ' · ' +
+                    item.succeeded + ' ' + label('success', 'موفق') + ' · ' +
+                    item.partial + ' ' + label('partial', 'ناقص') + ' · ' +
+                    item.skipped + ' ' + label('skipped', 'ردشده') + ' · ' +
+                    item.failed + ' ' + label('errors', 'خطا')}</Txt>
                   <Txt muted>{(item.lastStartedAt
-                    ? (fa ? 'شروع آخرین تلاش: ' : 'Last attempt started: ') + new Date(item.lastStartedAt).toLocaleString(fa ? 'fa-IR' : 'en-US')
-                    : (fa ? 'هنوز اجرا نشده' : 'Not run this session')) + ' · ' +
+                    ? label('Last attempt started', 'شروع آخرین تلاش') + ': ' + new Date(item.lastStartedAt).toLocaleString(fa ? 'fa-IR' : 'en-US')
+                    : label('Not run this session', 'اجرا نشده')) + ' · ' +
                     (item.lastCompletedAt
-                      ? (fa ? 'آخرین تکمیل: ' : 'Last completed: ') + new Date(item.lastCompletedAt).toLocaleString(fa ? 'fa-IR' : 'en-US')
-                      : (fa ? 'تکمیل ثبت نشده' : 'No completed run'))}</Txt>
+                      ? label('Last completed', 'آخرین تکمیل') + ': ' + new Date(item.lastCompletedAt).toLocaleString(fa ? 'fa-IR' : 'en-US')
+                      : label('No completed run', 'تکمیل ثبت نشده'))}</Txt>
                   {item.lastError ? <Txt muted>{runtimeErrorHint(item.lastError, fa ? 'fa' : 'en')}</Txt> : null}
                 </View>
               );
             })}
-            <Heading>{fa ? 'توازن داده و اتصال ایده‌ها' : 'Evidence balance and idea links'}</Heading>
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7 }}>
-              <MetricCard label={fa ? 'خبرهای در دسترس موتور' : 'ENGINE NEWS'} value={engineNews.length} />
-              <MetricCard label={fa ? 'ویدئوهای معتبر نگهداری‌شده' : 'RETAINED VIDEOS'} value={engineVideoEvidence.length} />
-              <MetricCard label={fa ? 'ایده‌های فعال' : 'ACTIVE IDEAS'} value={ideaLinkage.active} />
-              <MetricCard label={fa ? 'ایده‌های تولیدشده توسط موتور' : 'ENGINE IDEAS'} value={ideaLinkage.generated} />
-              <MetricCard label={fa ? 'ایده‌های متصل به منبع' : 'SOURCE-LINKED IDEAS'} value={ideaLinkage.sourceLinked} />
-              <MetricCard label={fa ? 'ایده‌های متصل به گزارش' : 'REPORT-LINKED IDEAS'} value={ideaLinkage.reportLinked} />
-              <MetricCard label={fa ? 'ایده‌های متصل به ویدئو' : 'VIDEO-LINKED IDEAS'} value={ideaLinkage.videoLinked} />
-            </View>
-            {engineNews.length + engineVideoEvidence.length > 0 && ideaLinkage.generated === 0 ? (
-              <Txt muted>{fa
-                ? 'خوراک داده وجود دارد اما هنوز ایده تولیدشده توسط موتور ثبت نشده است؛ پس از تحقیق و اجرای موتور دوباره بررسی کن.'
-                : 'Source data is present, but no engine-generated idea is saved yet. Recheck after running research and idea generation.'}</Txt>
-            ) : null}
-            {ideaLinkage.generated > 0 && ideaLinkage.sourceLinked + ideaLinkage.reportLinked + ideaLinkage.videoLinked === 0 ? (
-              <Txt muted>{fa
-                ? 'ایده تولیدشده وجود دارد اما پیوند مستقیمی به URL منبع، گزارش یا شناسه ویدئو ثبت نشده است.'
-                : 'Engine-generated ideas exist, but none currently carries a direct source URL, report ID or video reference.'}</Txt>
-            ) : null}
-            <Heading>{fa ? 'نتیجه آخرین نمونه API یوتیوب' : 'Latest YouTube API sample'}</Heading>
-            <Txt muted>{latestReport
-              ? (fa ? 'نمونه ذخیره‌شده: ' : 'Saved sample: ') + latestReport.videos.length + (fa ? ' ویدئو · ' : ' videos · ') + latestReport.queries.length + (fa ? ' عبارت جست‌وجو · ' : ' search queries · ') + latestReport.warnings.length + (fa ? ' هشدار' : ' warnings') + ' · ' + new Date(latestReport.createdAt).toLocaleString(fa ? 'fa-IR' : 'en-US')
-              : (fa ? 'هنوز نمونه‌ای از API یوتیوب ذخیره نشده است.' : 'No YouTube API sample has been saved yet.')}
-            </Txt>
-            <Heading>{fa ? 'وضعیت خوراک‌های رسمی' : 'Official feed status'}</Heading>
-            <Txt muted>{feedHealth.registered + (fa ? ' ثبت‌شده · ' : ' registered · ') + feedHealth.cachedItems + (fa ? ' آیتم کش‌شده · ' : ' cached items · ') + feedHealth.healthy + (fa ? ' سالم · ' : ' healthy · ') + feedHealth.stale + (fa ? ' قدیمی · ' : ' stale · ') + feedHealth.unavailable + (fa ? ' ناموجود · ' : ' unavailable · ') + feedHealth.unknown + (fa ? ' نامشخص · ' : ' unknown · ') + feedHealth.failures + (fa ? ' خطای ثبت‌شده' : ' recorded failures')}</Txt>
-            <Txt muted>{feedHealth.lastSuccessAt
-              ? (fa ? 'آخرین پاسخ موفق خوراک: ' : 'Last successful feed response: ') + new Date(feedHealth.lastSuccessAt).toLocaleString(fa ? 'fa-IR' : 'en-US')
-              : (fa ? 'در رجیستری محلی پاسخ موفقی ثبت نشده است.' : 'No successful feed response has been recorded in the local registry.')}</Txt>
-            {feedRegistry.map((feed) => (
-              <View key={feed.sourceId} style={{ paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: p.borderSoft, gap: 2 }}>
-                <Text style={{ color: feed.status === 'healthy' ? p.success : feed.status === 'unavailable' ? p.danger : p.warning, fontSize: 11, fontWeight: '700' }}>{feed.sourceId + ' · ' + feed.status}</Text>
-                <Txt muted>{feed.cachedItems.length + ' cached items · ' + feed.failureCount + ' failures · ' + (feed.lastSuccessAt ? new Date(feed.lastSuccessAt).toLocaleString(fa ? 'fa-IR' : 'en-US') : 'no successful response') + ' · ' + (feed.lastCheckedAt ? (fa ? 'آخرین بررسی: ' : 'Last checked: ') + new Date(feed.lastCheckedAt).toLocaleString(fa ? 'fa-IR' : 'en-US') : (fa ? 'بررسی نشده' : 'not checked')) + (feed.retryAt > dashboardNow ? ' · ' + (fa ? 'تلاش مجدد پس از ' : 'retry after ') + new Date(feed.retryAt).toLocaleTimeString(fa ? 'fa-IR' : 'en-US') : '')}</Txt>
-                {feed.lastError ? <Txt muted>{runtimeErrorHint(feed.lastError, fa ? 'fa' : 'en')}</Txt> : null}
-              </View>
-            ))}
-            <Txt muted>{fa
-              ? 'درصدها فقط از عملیات ثبت‌شده از ابتدای همین نشست محاسبه می‌شوند و آمار تاریخی یا سلامت کلی سرویس‌دهنده نیستند.'
-              : 'Session percentages use completed instrumented operations since this app session began. They are not lifetime, server-wide or provider availability statistics.'}</Txt>
-            {runtimeMetrics.lastError ? <Txt muted>{(fa ? 'آخرین خطای ثبت‌شده: ' : 'Latest measured error: ') + runtimeErrorHint(runtimeMetrics.lastError, fa ? 'fa' : 'en')}</Txt> : null}
+            <Heading>{label('Official feed status', 'وضعیت خوراکهای رسمی')}</Heading>
+            <Txt muted>{feedHealth.registered + ' ' + label('registered', 'ثبتشده') + ' · ' +
+              feedHealth.cachedItems + ' ' + label('cached items', 'آیتم کششده') + ' · ' +
+              feedHealth.healthy + ' ' + label('healthy', 'سالم') + ' · ' +
+              feedHealth.stale + ' ' + label('stale', 'قدیمی') + ' · ' +
+              feedHealth.unavailable + ' ' + label('unavailable', 'ناموجود') + ' · ' +
+              feedHealth.unknown + ' ' + label('unknown (untested)', 'نامشخص (آزمایشنشده)')}</Txt>
+            {feedRegistry.map((feed) => {
+              // Untested/unknown feeds are neutral, never red as a failure.
+              const statusColor = feed.status === 'healthy'
+                ? p.success
+                : feed.status === 'unavailable'
+                  ? p.danger
+                  : feed.status === 'stale'
+                    ? p.warning
+                    : p.muted;
+              return (
+                <View key={feed.sourceId} style={{ paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: p.borderSoft, gap: 2 }}>
+                  <Text style={{ color: statusColor, fontSize: 11, fontWeight: '700' }}>{feed.sourceId + ' · ' + feed.status}</Text>
+                  <Txt muted>{feed.cachedItems.length + ' cached items · ' + feed.failureCount + ' failures · ' + (feed.lastSuccessAt ? new Date(feed.lastSuccessAt).toLocaleString(fa ? 'fa-IR' : 'en-US') : label('no successful response', 'پاسخ موفقی ثبت نشده')) + ' · ' + (feed.lastCheckedAt ? label('Last checked', 'آخرین بررسی') + ': ' + new Date(feed.lastCheckedAt).toLocaleString(fa ? 'fa-IR' : 'en-US') : label('not checked', 'بررسی نشده')) + (feed.retryAt > dashboardNow ? ' · ' + label('retry after', 'تلاش مجدد پس از') + ' ' + new Date(feed.retryAt).toLocaleTimeString(fa ? 'fa-IR' : 'en-US') : '')}</Txt>
+                  {feed.lastError ? <Txt muted>{runtimeErrorHint(feed.lastError, fa ? 'fa' : 'en')}</Txt> : null}
+                </View>
+              );
+            })}
+            <Txt muted>{label(
+              'Percentages use only completed instrumented operations since this session began. Optional skipped features and untested feeds are not failures.',
+              'درصدها فقط از عملیات اندازهگیری شده همین نشست محاسبه میشوند. قابلیتهای اختیاری ردشده و خوراکهای آزمایشنشده خطا محسوب نمیشوند.',
+            )}</Txt>
+            {runtimeMetrics.lastError ? <Txt muted>{(fa ? 'آخرین خطای ثبتشده: ' : 'Latest measured error: ') + runtimeErrorHint(runtimeMetrics.lastError, fa ? 'fa' : 'en')}</Txt> : null}
           </Panel>
         ) : null}
-
       </View>
     </Page>
   );

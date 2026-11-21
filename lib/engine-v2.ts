@@ -34,6 +34,10 @@ export interface EvidenceItem {
   publishedAt: number;
   /** Typically 'fa' or 'en'; any string is accepted for other languages. */
   language: string;
+  /** Publisher / outlet name as supplied by the source (kept for literal claims). */
+  sourceName?: string;
+  /** Literal (case-preserving, HTML-stripped) summary text used for claims. */
+  summary?: string;
   url?: string;
   channelId?: string;
   channelTitle?: string;
@@ -157,6 +161,8 @@ export interface Topic {
   avgOutlier: number;
   /** News demand vs video supply, 0.5 = balanced (0..1). */
   supplyGap: number;
+  /** Topic-level competition (0..1), derived from supply gap + channel diversity. */
+  competition?: number;
 }
 
 export type ScoreComponentName =
@@ -242,6 +248,15 @@ export interface IdeaEvidenceRef {
   url?: string;
   views?: number;
   source: EvidenceSource;
+  /** Real publisher / channel name, when the source supplied one. */
+  sourceName?: string;
+}
+
+/** A literal, attributable statement copied from real evidence (never invented). */
+export interface IdeaClaim {
+  text: string;
+  source: string;
+  url?: string;
 }
 
 export interface IdeaNewsRef {
@@ -257,6 +272,8 @@ export interface GeneratedIdea {
   angle: string;
   evidence: IdeaEvidenceRef[];
   supportingNews: IdeaNewsRef[];
+  /** Up to three literal claims copied from real news/video titles or summaries. */
+  claims?: IdeaClaim[];
   why: string;
   score: OpportunityScore;
   risk: OpportunityScore['risk'];
@@ -275,6 +292,12 @@ export interface IdeaInput {
   now?: number;
   language?: string;
   timezoneOffsetMinutes?: number;
+}
+
+/** Split output so insufficient-evidence placeholders never masquerade as ideas. */
+export interface IdeaGenerationResult {
+  ideas: GeneratedIdea[];
+  insufficientIdeas: GeneratedIdea[];
 }
 
 export interface EngineV2Input {
@@ -308,7 +331,10 @@ export interface EngineV2Result {
   features: Map<string, ItemFeatures>;
   topics: Topic[];
   scores: OpportunityScore[];
+  /** Only ideas backed by enough real evidence; safe to publish. */
   ideas: GeneratedIdea[];
+  /** Diagnostic placeholders for topics with too little evidence; never published. */
+  insufficientIdeas: GeneratedIdea[];
   coverage: SourceCoverage[];
   dropped: number;
   timings: StageTiming[];
@@ -345,6 +371,12 @@ function round(value: number, digits = 3): number {
 
 function clamp01(value: number): number {
   return Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : 0;
+}
+
+/** Grouped, deterministic integer formatting for view counts shown to readers. */
+function formatCount(value: number | undefined): string {
+  const rounded = Math.round(safePositive(value));
+  return String(rounded).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 }
 
 function safePositive(value: number | undefined | null): number {
@@ -479,6 +511,50 @@ function emptyCoverage(): SourceCoverage[] {
   return SOURCES.map((source) => ({ source, fetched: 0, normalized: 0, deduped: 0 }));
 }
 
+/**
+ * Exact supply/demand transform used by BOTH `buildTopics` and `scoreOpportunity`.
+ *
+ *   share = (news + PRIOR) / (news + video + 2 * PRIOR)      (PRIOR = 1)
+ *   supplyGap = 1 / (1 + exp(-STEEPNESS * (share - 0.5)))    (STEEPNESS = 6)
+ *
+ * `PRIOR` is a Laplace-style prior toward a balanced 50/50 mix so a single news
+ * item cannot look like overwhelming demand. The logistic is bounded to (0, 1)
+ * and saturating: share = 0.5 -> 0.5, share -> 1 -> ~0.95, share -> 0 -> ~0.05.
+ * Unlike the old linear difference, a topic with 20 news and 2 videos is HIGH
+ * while a topic with 2 news and 1000 videos is LOW, regardless of corpus size.
+ */
+const SUPPLY_PRIOR = 1;
+const SUPPLY_STEEPNESS = 6;
+
+export function computeSupplyGap(newsCount: number, videoCount: number): number {
+  const news = safePositive(newsCount);
+  const video = safePositive(videoCount);
+  const share = (news + SUPPLY_PRIOR) / (news + video + 2 * SUPPLY_PRIOR);
+  const logistic = 1 / (1 + Math.exp(-SUPPLY_STEEPNESS * (share - 0.5)));
+  return round(clamp01(Number.isFinite(logistic) ? logistic : 0.5), 3);
+}
+
+/**
+ * Competition is derived from the SAME topic-level supply/demand relationship
+ * (`supplyGap`) plus channel fragmentation — never from the global video share.
+ *
+ *   channelDiversity = clamp(distinctChannels / 5, 0, 1)
+ *   supplyPressure   = clamp(1 - supplyGap, 0, 1)
+ *   competition      = clamp(0.15 + 0.5 * channelDiversity
+ *                            + 0.35 * supplyPressure * channelDiversity, 0, 1)
+ *
+ * The supply term is damped (<= 0.35) and gated by channel diversity, so a
+ * video-saturated topic that already scores low on supplyGap is NOT hammered
+ * twice at full strength by this negative component. Few competing channels
+ * keep competition near the 0.15 floor even in a saturated topic.
+ */
+export function computeCompetition(supplyGap: number, distinctChannels: number): number {
+  const channelDiversity = clamp01(safePositive(distinctChannels) / 5);
+  const supplyPressure = clamp01(1 - clamp01(supplyGap));
+  const competition = 0.15 + 0.5 * channelDiversity + 0.35 * supplyPressure * channelDiversity;
+  return round(clamp01(Number.isFinite(competition) ? competition : 0.15), 3);
+}
+
 // ---------------------------------------------------------------------------
 // Normalizer
 // ---------------------------------------------------------------------------
@@ -538,9 +614,15 @@ function buildEvidenceItem(raw: RawEvidenceInput, source: EvidenceSource): Evide
     language: detectLanguage(title, normalizedText, raw),
   };
   if (url) item.url = url;
+  // Literal, case-preserving text (already HTML-stripped by normalizeDisplayText).
+  if (rawText) item.summary = rawText.slice(0, 500);
   const channelTitle = typeof raw.channelTitle === 'string' ? raw.channelTitle
     : typeof raw.channel === 'string' ? raw.channel : undefined;
   if (channelTitle) item.channelTitle = channelTitle;
+  const declaredSource = typeof raw.sourceName === 'string' && raw.sourceName.trim()
+    ? raw.sourceName.trim() : undefined;
+  const sourceLabel = declaredSource ?? channelTitle;
+  if (sourceLabel) item.sourceName = sourceLabel;
   const channelId = typeof raw.channelId === 'string' ? raw.channelId.trim() : '';
   if (channelId) item.channelId = channelId;
   const subscribers = toCount(raw.channelSubscriberCount ?? raw.subscriberCount ?? raw.subscribers);
@@ -666,6 +748,31 @@ function channelMedian(item: EvidenceItem, ctx: FeatureContext): number | undefi
   return undefined;
 }
 
+/**
+ * When channel history IS supplied but an item carries no resolvable channelId
+ * (e.g. a saved video without that column), fall back to the pooled median of
+ * all supplied channel observations. The neutral 0.5 is reserved for the case
+ * where there is genuinely no channel history at all.
+ */
+function pooledChannelMedian(ctx: FeatureContext): number | undefined {
+  const values: number[] = [];
+  if (ctx.channelMedianViews) {
+    for (const value of Object.values(ctx.channelMedianViews)) {
+      if (typeof value === 'number' && Number.isFinite(value) && value > 0) values.push(value);
+    }
+  }
+  if (ctx.channelHistory) {
+    for (const history of Object.values(ctx.channelHistory)) {
+      if (!history) continue;
+      for (const value of history) {
+        if (Number.isFinite(value) && value >= 0) values.push(value);
+      }
+    }
+  }
+  const result = median(values);
+  return result != null && result > 0 ? result : undefined;
+}
+
 function titlePattern(title: string): TitlePattern {
   const lower = title.toLocaleLowerCase();
   return {
@@ -694,14 +801,16 @@ export function extractFeatures(item: EvidenceItem, ctx: FeatureContext): ItemFe
   const freshness = item.publishedAt > 0 && ageMs >= 0
     ? round(1 / (1 + ageDays / 14), 3) : 0;
 
-  const referenceMedian = channelMedian(item, ctx);
+  const exactMedian = channelMedian(item, ctx);
+  const referenceMedian = exactMedian ?? pooledChannelMedian(ctx);
   let outlierScore = 0.5;
   let outlierNote = 'no channel median (neutral default)';
   if (views > 0 && referenceMedian != null && referenceMedian > 0) {
     const ratio = Math.max(views / referenceMedian, 1e-6);
     const log2Ratio = Math.log(ratio) / Math.LN2;
     outlierScore = round(0.5 + Math.max(-0.5, Math.min(0.5, log2Ratio / 6)), 3);
-    outlierNote = 'views ' + views + ' vs channel median ' + round(referenceMedian, 1);
+    outlierNote = (exactMedian != null ? 'views ' + views + ' vs channel median '
+      : 'views ' + views + ' vs pooled channel median ') + round(referenceMedian, 1);
   }
 
   const subscribers = safePositive(item.channelSubscribers);
@@ -759,8 +868,23 @@ function recomputeCentroid(cluster: TopicCluster): void {
   );
 }
 
+/**
+ * Structural words that appear across almost every research brief but never
+ * define a topic. Filtering them here (rather than in the shared tokenizer)
+ * keeps clustering specific to this engine without changing other consumers.
+ */
+const GENERIC_TOPIC_TERMS = new Set([
+  'sample', 'samples', 'measurement', 'measurements', 'measured', 'variant', 'variants',
+  'series', 'phase', 'phases', 'number', 'creator', 'creators', 'explains', 'explainer',
+  'published', 'record', 'records', 'using', 'during', 'researchers', 'astronomers',
+  'finding', 'findings', 'report', 'reports', 'study', 'studies', 'analysis', 'bulletin',
+  'walkthrough', 'episode', 'team', 'published', 'result', 'results', 'method', 'methods',
+]);
+
 function docKeyphrases(item: EvidenceItem): string[] {
-  const tokens = tokenizeResearchText(item.title + ' ' + item.text).slice(0, 60);
+  const tokens = tokenizeResearchText(item.title + ' ' + item.text)
+    .filter((token) => !GENERIC_TOPIC_TERMS.has(token))
+    .slice(0, 60);
   const phrases: string[] = [];
   for (let index = 0; index < tokens.length && phrases.length < 70; index += 1) {
     phrases.push(tokens[index]);
@@ -808,8 +932,13 @@ export function buildTopics(
     }
   }
 
+  // Topic-defining terms are the ones SHARED by several documents in a brief.
+  // Classic IDF downweights exactly those terms (they are common inside a
+  // single-topic corpus) and lets incidental words such as "across" or "10"
+  // define clusters. Weight by document support instead so the real subject wins.
   const vocabulary = new Set(
     [...corpusFrequency.entries()]
+      .filter(([phrase]) => !/^\d+$/.test(phrase) && !phrase.split(' ').every((part) => /^\d+$/.test(part)))
       .sort((left, right) =>
         (right[1] * Math.sqrt(documentFrequency.get(right[0]) ?? 0)) -
         (left[1] * Math.sqrt(documentFrequency.get(left[0]) ?? 0)) ||
@@ -818,14 +947,13 @@ export function buildTopics(
       .map(([phrase]) => phrase),
   );
 
-  const documentCount = Math.max(1, items.length);
   const vectors: Map<string, number>[] = [];
   for (const counts of phraseCounts) {
     const entries: [string, number][] = [];
     for (const [phrase, count] of counts) {
       if (!vocabulary.has(phrase)) continue;
-      const idf = Math.log(1 + documentCount / (1 + (documentFrequency.get(phrase) ?? 0)));
-      entries.push([phrase, (1 + Math.log(count)) * idf]);
+      const support = 1 + Math.log(1 + (documentFrequency.get(phrase) ?? 0));
+      entries.push([phrase, (1 + Math.log(count)) * support]);
     }
     entries.sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]));
     const top = entries.slice(0, 12);
@@ -882,7 +1010,15 @@ export function buildTopics(
     const outlierValues = itemIds
       .map((id) => features.get(id)?.outlierScore)
       .filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
-    const supplyBase = newsCount + videoCount;
+    // Neutral 0.5 is only a fallback when NO feature data exists for this topic.
+    // When feature data exists it already carries data-derived outlier scores
+    // (including the pooled-channel fallback for items without a channelId).
+    const avgOutlier = round(mean(outlierValues.length ? outlierValues : [0.5]), 3);
+    const supplyGap = computeSupplyGap(newsCount, videoCount);
+    const distinctChannels = new Set(topicItems
+      .filter((item) => item.source === 'youtube')
+      .map((item) => item.channelId || item.channelTitle || '')
+      .filter(Boolean)).size;
     return {
       id: 'topic:' + hashText(itemIds.slice().sort().join('|')),
       label: keywords[0] ?? ('topic-' + hashText(itemIds.join('|')).slice(0, 6)),
@@ -891,8 +1027,9 @@ export function buildTopics(
       newsCount,
       videoCount,
       momentum: dated ? round(recent / dated, 3) : 0,
-      avgOutlier: round(mean(outlierValues.length ? outlierValues : [0.5]), 3),
-      supplyGap: round(0.5 + 0.5 * ((newsCount - videoCount) / Math.max(1, supplyBase)), 3),
+      avgOutlier,
+      supplyGap,
+      competition: computeCompetition(supplyGap, distinctChannels),
     };
   });
 
@@ -978,7 +1115,11 @@ export function scoreOpportunity(
     .map((item) => item.channelId || item.channelTitle || '')
     .filter(Boolean)).size;
   const videoShare = videoItems.length / Math.max(1, newsItems.length + videoItems.length);
-  const competition = clamp01(0.7 * videoShare + 0.3 * Math.min(1, distinctChannels / 5));
+  // Prefer the topic-level value computed by buildTopics; fall back for callers
+  // that construct a Topic by hand. Never derived from the global video share.
+  const competition = typeof topic.competition === 'number' && Number.isFinite(topic.competition)
+    ? round(clamp01(topic.competition), 3)
+    : computeCompetition(topic.supplyGap, distinctChannels);
   const videosWithViews = videoItems.filter((item) => item.views != null && item.views > 0).length;
 
   const weights: ScoreWeights = { ...DEFAULT_WEIGHTS, ...ctx.weights, ...opts.weights };
@@ -998,7 +1139,8 @@ export function scoreOpportunity(
     supplyGap: topic.supplyGap.toFixed(2) + ' from ' + topic.newsCount + ' news vs ' + topic.videoCount + ' video item(s)',
     freshness: 'mean item freshness ' + avgFreshness.toFixed(2),
     newsRecency: newsItems.length ? 'mean news recency ' + newsRecency.toFixed(2) + ' across ' + newsItems.length + ' item(s)' : 'no news evidence',
-    competition: 'video share ' + videoShare.toFixed(2) + ' across ' + distinctChannels + ' distinct channel(s)',
+    competition: 'topic supply gap ' + topic.supplyGap.toFixed(2) + ' + ' + distinctChannels +
+      ' distinct channel(s) (topic video share ' + videoShare.toFixed(2) + ')',
   };
   const order: readonly ScoreComponentName[] = [
     'baseline', 'momentum', 'avgOutlier', 'supplyGap', 'freshness', 'newsRecency', 'competition',
@@ -1044,29 +1186,117 @@ export function scoreOpportunity(
 // IdeaGenerator
 // ---------------------------------------------------------------------------
 
-function suggestTitle(topic: Topic, topItem: EvidenceItem, pattern: TitlePattern | undefined): string {
-  const label = topic.label.slice(0, 90);
-  const suffix = pattern?.isQuestion ? 'answering the open question in the latest reports'
-    : pattern?.hasNumber ? 'what the numbers in the latest reports actually show'
-      : pattern?.curiosityGap ? 'beyond the headline: what the sources establish'
-        : 'what the supplied evidence actually establishes';
-  const topicHint = topItem.title ? ' · grounded in “' + topItem.title.slice(0, 60) + '”' : '';
-  return (label + ': ' + suffix + topicHint).slice(0, 200);
+function isPersian(language: string | undefined): boolean {
+  return typeof language === 'string' && language.trim().toLowerCase().startsWith('fa');
 }
 
-function suggestAngle(topic: Topic, score: OpportunityScore): string {
-  const get = (name: ScoreComponentName): number =>
+/** Keeps the literal wording from real evidence while bounding display length. */
+function shortDisplay(value: string, max: number): string {
+  const clean = stripHtml(value).replace(/\s+/g, ' ').trim();
+  if (!clean) return '';
+  return clean.length > max ? clean.slice(0, max - 1).trimEnd() + '…' : clean;
+}
+
+/** A hook derived from observed numbers, never a fixed editorial suffix. */
+function evidenceHook(topic: Topic, topItem: EvidenceItem, fa: boolean): string {
+  const views = safePositive(topItem.views);
+  if (views > 0) {
+    return fa
+      ? formatCount(views) + ' بازدید واقعی در شواهد'
+      : formatCount(views) + ' real views in the supplied sample';
+  }
+  const relation = topic.newsCount >= topic.videoCount
+    ? topic.newsCount + ' news vs ' + topic.videoCount + ' videos'
+    : topic.videoCount + ' videos vs ' + topic.newsCount + ' news';
+  return fa ? 'نسبت عرضه: ' + relation : 'supply relation: ' + relation;
+}
+
+function suggestTitle(topic: Topic, topItem: EvidenceItem, language: string | undefined): string {
+  const fa = isPersian(language);
+  const headline = shortDisplay(topItem.title, 70) || (fa ? 'گزارش دریافت‌شده' : 'supplied report');
+  const hook = evidenceHook(topic, topItem, fa);
+  return (fa ? '«' + headline + '» · ' + hook : headline + ' — ' + hook).slice(0, 200);
+}
+
+function suggestAngle(
+  topic: Topic,
+  score: OpportunityScore,
+  topNews: EvidenceItem | undefined,
+  topVideo: EvidenceItem | undefined,
+  language: string | undefined,
+): string {
+  const fa = isPersian(language);
+  const headline = topNews ? shortDisplay(topNews.title, 70) : '';
+  const gap = computeSupplyGap(topic.newsCount, topic.videoCount);
+  const supply = gap >= 0.55
+    ? (fa ? 'تقاضای خبری از ' + topic.videoCount + ' ویدئوی نمونه پیشتر است'
+      : 'news demand outweighs the ' + topic.videoCount + ' supplied video(s)')
+    : (fa ? topic.videoCount + ' ویدئو در برابر ' + topic.newsCount + ' خبر است'
+      : topic.videoCount + ' supplied video(s) outnumber ' + topic.newsCount + ' news item(s)');
+  const views = topVideo && safePositive(topVideo.views) > 0
+    ? (fa ? 'پربازدیدترین ویدئو «' + shortDisplay(topVideo.title, 45) + '» با ' +
+      formatCount(topVideo.views) + ' بازدید واقعی'
+      : 'the top video “' + shortDisplay(topVideo.title, 45) + '” has ' +
+        formatCount(topVideo.views) + ' real views')
+    : (fa ? 'هیچ شمار بازدید واقعیای ثبت نشد' : 'no real video view count was supplied');
+  const momentum = topic.momentum >= 0.5
+    ? (fa ? 'بیشتر موارد تاریخدار تازهاند' : 'most dated items fall in the recent window')
+    : (fa ? 'موارد تاریخدار عمدتاً قدیمیاند' : 'dated items skew older');
+  const headlinePart = headline
+    ? (fa ? 'قویترین تیتر خبری «' + headline + '» است'
+      : 'the strongest news headline is “' + headline + '”')
+    : (fa ? 'هیچ تیتر خبریای ارائه نشد' : 'no news headline was supplied');
+  const suffix = fa
+    ? '؛ ' + topic.newsCount + ' خبر و ' + topic.videoCount + ' ویدئو، ' + supply + '، ' +
+      views + '، ' + momentum + '؛ امتیاز ' + score.value + '/100.'
+    : '; ' + topic.newsCount + ' news and ' + topic.videoCount + ' videos, ' + supply + ', ' +
+      views + ', ' + momentum + '; score ' + score.value + '/100.';
+  return (headlinePart + suffix).slice(0, 480);
+}
+
+/** Score components in words, always sourced from the real component values. */
+function componentDigest(score: OpportunityScore): string {
+  const value = (name: ScoreComponentName): number =>
     score.components.find((part) => part.name === name)?.value ?? 0;
-  if (get('supplyGap') >= 65 && get('newsRecency') >= 50) {
-    return 'A timely explainer that fills the gap between recent reporting and the limited video examples in the sample.';
+  return 'supply gap ' + value('supplyGap').toFixed(0) + ', competition ' +
+    value('competition').toFixed(0) + ', momentum ' + value('momentum').toFixed(0);
+}
+
+/** <=320 chars: a real title + source (+ real views) plus the score components. */
+function buildWhy(
+  score: OpportunityScore,
+  anchor: EvidenceItem,
+  language: string | undefined,
+): string {
+  const fa = isPersian(language);
+  const title = shortDisplay(anchor.title, 48);
+  const source = anchor.sourceName || anchor.channelTitle || anchor.source;
+  const viewsPart = safePositive(anchor.views) > 0
+    ? ', ' + formatCount(anchor.views) + (fa ? ' بازدید واقعی' : ' real views') : '';
+  const anchorPart = '“' + title + '” (' + source + viewsPart + ')';
+  const digest = componentDigest(score);
+  const text = fa
+    ? 'شاهد: ' + anchorPart + '؛ امتیاز ' + score.value + '/100، ' + digest + '؛ محدود به نمونه، نه پیشبینی.'
+    : 'Evidence: ' + anchorPart + '; score ' + score.value + '/100, ' + digest +
+      '; sample-scoped, not a forecast.';
+  return text.slice(0, 320);
+}
+
+/** Copies literal titles/summaries from real items; never paraphrases or invents. */
+function extractClaims(items: readonly EvidenceItem[]): IdeaClaim[] {
+  const claims: IdeaClaim[] = [];
+  for (const item of items) {
+    if (claims.length >= 3) break;
+    const literal = shortDisplay(item.title || item.summary || '', 240);
+    if (!literal) continue;
+    const source = item.sourceName || item.channelTitle || item.source;
+    claims.push({
+      text: literal,
+      source,
+      ...(item.url ? { url: item.url } : {}),
+    });
   }
-  if (get('momentum') >= 60) {
-    return 'Anchor the story to the newest dated reports and separate measured findings from interpretation.';
-  }
-  if (get('avgOutlier') >= 60) {
-    return 'Compare the strongest observed examples against their channel norm and explain what the sample can and cannot show.';
-  }
-  return 'An evidence-first explainer that verifies each factual claim against the cited sources before adding interpretation.';
+  return claims;
 }
 
 function publishingWindow(
@@ -1093,7 +1323,10 @@ function publishingWindow(
     '), just after the most common sourcing hour. Assumption: this audience follows the cited sources\' posting rhythm; this is not a measured viewership peak.';
 }
 
-export function generateIdeas(input: IdeaInput, opts: { limit?: number } = {}): GeneratedIdea[] {
+export function generateIdeasWithInsufficient(
+  input: IdeaInput,
+  opts: { limit?: number } = {},
+): IdeaGenerationResult {
   const limit = Math.max(1, Math.min(25, Math.floor(safePositive(opts.limit) || 5)));
   const byId = new Map<string, EvidenceItem>(
     input.items.map((item): [string, EvidenceItem] => [item.id, item]),
@@ -1101,14 +1334,15 @@ export function generateIdeas(input: IdeaInput, opts: { limit?: number } = {}): 
   const scoreByTopic = new Map<string, OpportunityScore>(
     input.scores.map((score): [string, OpportunityScore] => [score.topicId, score]),
   );
-  const features = input.features ?? new Map<string, ItemFeatures>();
   const offset = typeof input.timezoneOffsetMinutes === 'number' && Number.isFinite(input.timezoneOffsetMinutes)
     ? input.timezoneOffsetMinutes : 0;
+  const language = typeof input.language === 'string' ? input.language : 'en';
   const ordered = [...input.topics].sort((left, right) =>
     (scoreByTopic.get(right.id)?.value ?? -1) - (scoreByTopic.get(left.id)?.value ?? -1) ||
     left.id.localeCompare(right.id));
 
   const ideas: GeneratedIdea[] = [];
+  const insufficientIdeas: GeneratedIdea[] = [];
   for (const topic of ordered) {
     if (ideas.length >= limit) break;
     const score = scoreByTopic.get(topic.id);
@@ -1119,7 +1353,8 @@ export function generateIdeas(input: IdeaInput, opts: { limit?: number } = {}): 
     const newsItems = topicItems.filter((item) => item.source === 'news');
 
     if (topicItems.length < MIN_EVIDENCE) {
-      ideas.push({
+      // Diagnostic only: kept out of `ideas` so no caller can publish it.
+      insufficientIdeas.push({
         id: 'idea:' + hashText(topic.id + '|insufficient'),
         topicId: topic.id,
         titleSuggestion: 'Insufficient evidence — no idea generated',
@@ -1142,35 +1377,40 @@ export function generateIdeas(input: IdeaInput, opts: { limit?: number } = {}): 
     }
 
     const rank = (item: EvidenceItem): number => item.source === 'youtube' ? 2 : item.source === 'wikimedia' ? 1 : 0;
-    const topItems = [...topicItems].sort((left, right) =>
-      rank(right) - rank(left) ||
+    const byViews = (left: EvidenceItem, right: EvidenceItem): number =>
       safePositive(right.views) - safePositive(left.views) ||
       right.publishedAt - left.publishedAt ||
-      left.id.localeCompare(right.id));
+      left.id.localeCompare(right.id);
+    const topItems = [...topicItems].sort((left, right) =>
+      rank(right) - rank(left) || byViews(left, right));
     const topItem = topItems[0];
-    const pattern = features.get(topItem.id)?.titlePattern;
+    const topVideo = topicItems.filter((item) => item.source === 'youtube').sort(byViews)[0];
+    const topNews = [...newsItems]
+      .sort((left, right) => right.publishedAt - left.publishedAt || left.id.localeCompare(right.id))[0];
     const evidence: IdeaEvidenceRef[] = topItems.slice(0, 5).map((item) => ({
       id: item.id,
       title: item.title,
       ...(item.url ? { url: item.url } : {}),
       ...(item.views != null ? { views: item.views } : {}),
+      ...(item.sourceName ? { sourceName: item.sourceName } : {}),
       source: item.source,
     }));
     const supportingNews: IdeaNewsRef[] = [...newsItems]
       .sort((left, right) => right.publishedAt - left.publishedAt || left.id.localeCompare(right.id))
       .slice(0, 4)
       .map((item) => ({ id: item.id, title: item.title, ...(item.url ? { url: item.url } : {}) }));
-    const titleSuggestion = suggestTitle(topic, topItem, pattern);
+    const claimSources = [topNews, topVideo].filter((item): item is EvidenceItem => Boolean(item));
+    const titleSuggestion = suggestTitle(topic, topItem, language);
 
     ideas.push({
       id: 'idea:' + hashText(topic.id + '|' + titleSuggestion),
       topicId: topic.id,
       titleSuggestion,
-      angle: suggestAngle(topic, score),
+      angle: suggestAngle(topic, score, topNews, topVideo, language),
       evidence,
       supportingNews,
-      why: score.why + ' References ' + evidence.length + ' real item(s), including ' +
-        newsItems.length + ' news item(s); no reference is fabricated.',
+      claims: extractClaims(claimSources),
+      why: buildWhy(score, topItem, language),
       score,
       risk: score.risk,
       bestTimeToPublish: publishingWindow(newsItems, offset),
@@ -1178,7 +1418,12 @@ export function generateIdeas(input: IdeaInput, opts: { limit?: number } = {}): 
       dataSufficient: true,
     });
   }
-  return ideas;
+  return { ideas, insufficientIdeas };
+}
+
+/** Backwards-compatible wrapper: only publishable, data-sufficient ideas. */
+export function generateIdeas(input: IdeaInput, opts: { limit?: number } = {}): GeneratedIdea[] {
+  return generateIdeasWithInsufficient(input, opts).ideas;
 }
 
 // ---------------------------------------------------------------------------
@@ -1261,7 +1506,7 @@ export function runEngineV2(input: EngineV2Input, opts: EngineV2Options = {}): E
     checkBudget();
 
     started = clock();
-    const ideas = generateIdeas({
+    const generated = generateIdeasWithInsufficient({
       topics,
       scores,
       items: normalized.items,
@@ -1287,7 +1532,8 @@ export function runEngineV2(input: EngineV2Input, opts: EngineV2Options = {}): E
       features,
       topics,
       scores,
-      ideas,
+      ideas: generated.ideas,
+      insufficientIdeas: generated.insufficientIdeas,
       coverage: normalized.stats,
       dropped: normalized.dropped,
       timings,
@@ -1303,6 +1549,7 @@ export function runEngineV2(input: EngineV2Input, opts: EngineV2Options = {}): E
         ...opts.previous,
         timings: [...(opts.previous.timings ?? []), { stage: 'fallback', ms: 0 }],
         warnings: [...(opts.previous.warnings ?? []), ...warnings],
+        insufficientIdeas: opts.previous.insufficientIdeas ?? [],
         fallback: true,
       };
     }
@@ -1312,6 +1559,7 @@ export function runEngineV2(input: EngineV2Input, opts: EngineV2Options = {}): E
       topics: [],
       scores: [],
       ideas: [],
+      insufficientIdeas: [],
       coverage: emptyCoverage(),
       dropped: 0,
       timings,

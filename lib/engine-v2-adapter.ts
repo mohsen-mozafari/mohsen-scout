@@ -59,6 +59,8 @@ export interface UnifiedBriefInput {
   region?: Region;
   languages?: readonly string[];
   ideaLimit?: number;
+  /** Saved report this brief belongs to, propagated to each published Idea. */
+  reportId?: string;
 }
 
 export interface UnifiedBrief {
@@ -206,6 +208,7 @@ function emptyResult(warnings: string[]): EngineV2Result {
     topics: [],
     scores: [],
     ideas: [],
+    insufficientIdeas: [],
     coverage,
     dropped: 0,
     timings: [],
@@ -261,21 +264,25 @@ type IdeaContext = {
   region: Region;
   languages: string[];
   knownVideoIds: ReadonlySet<string>;
+  reportId?: string;
 };
 
-function scoreReason(idea: GeneratedIdea): string {
-  const top = [...idea.score.components]
-    .sort((left, right) => Math.abs(right.contribution) - Math.abs(left.contribution) || left.name.localeCompare(right.name))
-    .slice(0, 2)
-    .map((part) => part.name + ' ' + part.contribution + ' (' + part.evidence + ')');
-  return (idea.score.why + (top.length ? ' Top factors: ' + top.join('; ') : '')).slice(0, 1000);
+function formatViews(value: number): string {
+  return String(Math.round(value)).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 }
 
 function mapIdea(idea: GeneratedIdea, context: IdeaContext): Idea {
-  const evidenceSummary = idea.evidence
-    .map((item) => item.title + (item.url ? ' — ' + item.url : ''))
-    .filter(Boolean)
-    .join('; ');
+  // Only real evidence refs are published; at most three are shown on page one.
+  const topRefs = idea.evidence.slice(0, 3);
+  const newsRef = idea.evidence.find((item) => item.source === 'news' && item.url) ??
+    idea.supportingNews.find((item) => item.url);
+  const sourceUrl = newsRef && typeof newsRef.url === 'string' ? newsRef.url : undefined;
+  const digestLines = topRefs.map((item, index) =>
+    (index + 1) + '. ' + item.title + ' · ' + (item.sourceName || item.source) +
+    (item.views != null && item.views > 0 ? ' · ' + formatViews(item.views) + ' views' : '') +
+    (item.url ? ' · ' + item.url : ''));
+  const note = (idea.why + '\nEvidence (real refs):\n' +
+    (digestLines.length ? digestLines.join('\n') : 'none referenced.')).slice(0, MAX_NOTE_CHARS + 400);
   const refsKey = idea.evidence.map((item) => item.id).join('|');
   const videoIds = [...new Set(
     idea.evidence
@@ -291,7 +298,7 @@ function mapIdea(idea: GeneratedIdea, context: IdeaContext): Idea {
     id: 'v2:' + stableHash([context.topic, idea.titleSuggestion, idea.angle, refsKey].join('|')),
     topic: idea.titleSuggestion.slice(0, 180),
     concept: idea.angle,
-    note: (idea.why + ' Evidence: ' + (evidenceSummary || 'none referenced.').slice(0, MAX_NOTE_CHARS)).slice(0, MAX_NOTE_CHARS + 400),
+    note,
     status: 'New Discoveries',
     decision: idea.why,
     videoIds,
@@ -304,11 +311,12 @@ function mapIdea(idea: GeneratedIdea, context: IdeaContext): Idea {
     ideaCategory: categoryFor(idea),
     generationKey: 'v2:' + stableHash([context.topic, idea.topicId, refsKey, idea.score.value].join('|')),
     engineScore: idea.score.value,
-    engineScoreReason: scoreReason(idea),
+    // Full data-driven explanation; the UI may shorten it at the ';' boundary.
+    engineScoreReason: idea.why,
     engineV2Score: idea.score.value,
     engineV2Confidence: idea.confidence,
     engineV2Why: idea.why,
-    engineV2Evidence: idea.evidence.map((item) => ({
+    engineV2Evidence: topRefs.map((item) => ({
       title: item.title,
       ...(item.url ? { url: item.url } : {}),
       ...(item.views !== undefined ? { views: item.views } : {}),
@@ -317,7 +325,10 @@ function mapIdea(idea: GeneratedIdea, context: IdeaContext): Idea {
     engineV2Risk: idea.risk,
     engineV2BestTime: idea.bestTimeToPublish,
     engineV2RevenueLabel: revenueLabel,
+    engineV2Claims: idea.claims ? idea.claims.slice(0, 3) : [],
     dataSufficient: idea.dataSufficient,
+    ...(sourceUrl ? { sourceUrl } : {}),
+    ...(context.reportId ? { reportId: context.reportId } : {}),
   };
 }
 
@@ -388,7 +399,12 @@ export function buildUnifiedBrief(input: UnifiedBriefInput): UnifiedBrief {
   const angles = buildAngles(result);
   if (result.fallback) warnings.push('Unified brief used fallback evidence; use the legacy generation path when no ideas are produced.');
 
-  if (result.fallback || !result.ideas.length) {
+  // Defense in depth: never publish a placeholder, even from a fallback result.
+  const sufficient = result.ideas.filter((idea) => idea.dataSufficient !== false);
+  if (result.fallback || !sufficient.length) {
+    if (!result.fallback) {
+      warnings.push('No data-sufficient engine ideas were available; no placeholder idea was published.');
+    }
     return { result, ideas: [], coverage, timings, warnings, fallback: true, angles };
   }
 
@@ -409,8 +425,10 @@ export function buildUnifiedBrief(input: UnifiedBriefInput): UnifiedBrief {
       region: resolveRegion(input.region),
       languages,
       knownVideoIds,
+      reportId: typeof input.reportId === 'string' && input.reportId.trim()
+        ? input.reportId.trim() : undefined,
     };
-    const ideas = result.ideas
+    const ideas = sufficient
       .map((idea) => mapIdea(idea, context))
       .sort((left, right) => (right.engineScore ?? 0) - (left.engineScore ?? 0) || left.id.localeCompare(right.id));
     return { result, ideas, coverage, timings, warnings, fallback: false, angles };
