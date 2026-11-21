@@ -437,12 +437,12 @@ export async function searchYouTube(input: ResearchInput, options: YouTubeOption
     try {
       const raw = await youtube('videos', {
         part: 'statistics', id: batch.map((item) => item.id).join(','),
-        fields: 'items(id,statistics(viewCount,likeCount))',
+        fields: 'items(id,statistics(viewCount,likeCount,commentCount))',
       }, options, 1);
       const parsed = z.object({
         items: z.array(z.object({
           id: z.string(),
-          statistics: z.object({ viewCount: z.string().optional(), likeCount: z.string().optional() }).optional(),
+          statistics: z.object({ viewCount: z.string().optional(), likeCount: z.string().optional(), commentCount: z.string().optional() }).optional(),
         })),
       }).safeParse(raw);
       if (!parsed.success) throw new ApiError('Video statistics returned an invalid response.', 'invalid');
@@ -451,6 +451,7 @@ export async function searchYouTube(input: ResearchInput, options: YouTubeOption
         const stats = counts.get(video.id);
         video.viewCount = stats?.viewCount && /^\d+$/.test(stats.viewCount) ? Number(stats.viewCount) : null;
         video.likeCount = stats?.likeCount && /^\d+$/.test(stats.likeCount) ? Number(stats.likeCount) : null;
+        video.commentCount = stats?.commentCount && /^\d+$/.test(stats.commentCount) ? Number(stats.commentCount) : null;
       }
     } catch {
       warnings.push('Video titles and dates were retrieved, but raw view/like counts could not be loaded. Sorting falls back to available fields.');
@@ -519,6 +520,7 @@ export type YouTubeSampleVideo = {
   thumbnailUrl: string;
   viewCount: number | null;
   likeCount: number | null;
+  commentCount: number | null;
   channelSubscriberCount: number | null;
   channelVideoCount: number | null;
   url: string;
@@ -563,6 +565,7 @@ const spaceStatsSchema = z.object({
     statistics: z.object({
       viewCount: z.string().optional(),
       likeCount: z.string().optional(),
+      commentCount: z.string().optional(),
     }).optional(),
   })),
 });
@@ -692,20 +695,23 @@ export async function searchYouTubeSample(
   const ids = selected.map((item) => item.id.videoId);
   const views = new Map<string, number | null>();
   const likes = new Map<string, number | null>();
+  const comments = new Map<string, number | null>();
   let statisticsWarning = '';
   try {
     const statsRaw = await youtube('videos', {
       part: 'statistics',
       id: ids.join(','),
-      fields: 'items(id,statistics(viewCount,likeCount))',
+      fields: 'items(id,statistics(viewCount,likeCount,commentCount))',
     }, options, 1);
     const statistics = spaceStatsSchema.safeParse(statsRaw);
     if (!statistics.success) throw new ApiError('YouTube video statistics returned an invalid response.', 'invalid');
     for (const item of statistics.data.items) {
       const viewText = item.statistics?.viewCount;
       const likeText = item.statistics?.likeCount;
+      const commentText = item.statistics?.commentCount;
       views.set(item.id, viewText && /^\d+$/.test(viewText) ? Number(viewText) : null);
       likes.set(item.id, likeText && /^\d+$/.test(likeText) ? Number(likeText) : null);
+      comments.set(item.id, commentText && /^\d+$/.test(commentText) ? Number(commentText) : null);
     }
   } catch {
     statisticsWarning = 'Video titles and dates were retrieved, but raw view/like counts could not be loaded. Counts remain unavailable rather than estimated.';
@@ -747,6 +753,7 @@ export async function searchYouTubeSample(
     thumbnailUrl: item.snippet.thumbnails?.high?.url ?? item.snippet.thumbnails?.medium?.url ?? item.snippet.thumbnails?.default?.url ?? '',
     viewCount: views.get(item.id.videoId) ?? null,
     likeCount: likes.get(item.id.videoId) ?? null,
+    commentCount: comments.get(item.id.videoId) ?? null,
     channelSubscriberCount: channelMetrics.get(item.snippet.channelId)?.subscribers ?? null,
     channelVideoCount: channelMetrics.get(item.snippet.channelId)?.videos ?? null,
     url: 'https://www.youtube.com/watch?v=' + item.id.videoId,

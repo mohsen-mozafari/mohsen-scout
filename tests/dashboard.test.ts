@@ -95,7 +95,8 @@ void test('internal engine evidence merges retained report and global videos, de
   const many = Array.from({ length: 320 }, (_, index) =>
     video('sample-' + index, 'Sample ' + index, index, now - index),
   );
-  assert.equal(collectEngineVideoEvidence([], many, now).length, 300);
+  // Phase-1: the engine-input cap is now 500 and retains everything collected.
+  assert.equal(collectEngineVideoEvidence([], many, now).length, 320);
   assert.equal(collectEngineVideoEvidence([], many, now, 10).length, 10);
 });
 

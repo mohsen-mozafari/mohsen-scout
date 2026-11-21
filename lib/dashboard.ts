@@ -17,11 +17,21 @@ function evidenceWeight(idea: Idea): number {
 }
 
 export type EngineVideoEvidence = Omit<
-  Pick<Video, 'id' | 'title' | 'description' | 'channel' | 'publishedAt' | 'viewCount' | 'likeCount' | 'fetchedAt'>,
-  'viewCount' | 'likeCount'
+  Pick<Video, 'id' | 'title' | 'description' | 'channel' | 'publishedAt' | 'viewCount' | 'likeCount' | 'commentCount' | 'fetchedAt'>,
+  'viewCount' | 'likeCount' | 'commentCount'
 > & {
   viewCount: number | null;
   likeCount: number | null;
+  commentCount: number | null;
+};
+
+export type EngineVideoCoverageData = VideoCoverageData;
+
+export const ENGINE_VIDEO_EVIDENCE_LIMIT = 500;
+
+export type EngineVideoCoverageOut = {
+  videos: EngineVideoEvidence[];
+  coverage: VideoCoverageData;
 };
 
 /**
@@ -29,34 +39,73 @@ export type EngineVideoEvidence = Omit<
  * and report snapshots can overlap; one newest copy per video is kept. The cap bounds
  * local analysis cost without discarding the saved source records.
  */
+export function collectEngineVideoEvidenceDetailed(
+  reports: readonly Pick<Report, 'videos'>[],
+  videos: readonly Video[],
+  now = Date.now(),
+  limit = ENGINE_VIDEO_EVIDENCE_LIMIT,
+): EngineVideoCoverageOut {
+  const byId = new Map<string, EngineVideoEvidence>();
+  const storedSeen = new Set<string>();
+  let videosFromStored = 0;
+  let videosFromReports = 0;
+  let droppedMissingFields = 0;
+  let droppedAsExpired = 0;
+  const add = (video: Video) => {
+    byId.set(video.id, {
+      id: video.id,
+      title: video.title,
+      description: video.description,
+      channel: video.channel,
+      publishedAt: video.publishedAt,
+      viewCount: video.viewCount ?? null,
+      likeCount: video.likeCount ?? null,
+      commentCount: video.commentCount ?? null,
+      fetchedAt: video.fetchedAt,
+    });
+  };
+  for (const video of videos) {
+    if (!video.id || !video.title.trim() || !Number.isFinite(video.fetchedAt)) {
+      droppedMissingFields++;
+      continue;
+    }
+    storedSeen.add(video.id);
+    if (byId.has(video.id)) continue;
+    const age = now - video.fetchedAt;
+    if (age < 0 || age >= RETENTION_MS) {
+      droppedAsExpired++;
+      continue;
+    }
+    add(video);
+  }
+  videosFromStored = storedSeen.size;
+  for (const video of reports.flatMap((report) => report.videos)) {
+    if (!video.id || !video.title.trim() || !Number.isFinite(video.fetchedAt)) {
+      droppedMissingFields++;
+      continue;
+    }
+    if (!storedSeen.has(video.id)) videosFromReports++;
+    if (byId.has(video.id)) continue;
+    const age = now - video.fetchedAt;
+    if (age < 0 || age >= RETENTION_MS) {
+      droppedAsExpired++;
+      continue;
+    }
+    add(video);
+  }
+  const retained = [...byId.values()]
+    .sort((a, b) => b.fetchedAt - a.fetchedAt || a.id.localeCompare(b.id))
+    .slice(0, Math.max(0, Math.min(ENGINE_VIDEO_EVIDENCE_LIMIT, Math.floor(limit))));
+  return { videos: retained, coverage: { videosFromStored, videosFromReports, uniqueVideos: byId.size, droppedMissingFields, droppedAsExpired, coverageLimit: Math.max(0, Math.floor(limit)) } };
+}
+
 export function collectEngineVideoEvidence(
   reports: readonly Pick<Report, 'videos'>[],
   videos: readonly Video[],
   now = Date.now(),
-  limit = 300,
+  limit = ENGINE_VIDEO_EVIDENCE_LIMIT,
 ): EngineVideoEvidence[] {
-  const byId = new Map<string, EngineVideoEvidence>();
-  for (const video of [...videos, ...reports.flatMap((report) => report.videos)]) {
-    if (!video.id || !video.title.trim() || !Number.isFinite(video.fetchedAt)) continue;
-    const age = now - video.fetchedAt;
-    if (age < 0 || age >= RETENTION_MS) continue;
-    const previous = byId.get(video.id);
-    if (!previous || video.fetchedAt > previous.fetchedAt) {
-      byId.set(video.id, {
-        id: video.id,
-        title: video.title,
-        description: video.description,
-        channel: video.channel,
-        publishedAt: video.publishedAt,
-        viewCount: video.viewCount ?? null,
-        likeCount: video.likeCount ?? null,
-        fetchedAt: video.fetchedAt,
-      });
-    }
-  }
-  return [...byId.values()]
-    .sort((a, b) => b.fetchedAt - a.fetchedAt || a.id.localeCompare(b.id))
-    .slice(0, Math.max(0, Math.min(300, Math.floor(limit))));
+  return collectEngineVideoEvidenceDetailed(reports, videos, now, limit).videos;
 }
 
 /** Highest editorial assessment first, then linked evidence, then recency. */

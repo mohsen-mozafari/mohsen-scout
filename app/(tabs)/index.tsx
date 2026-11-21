@@ -10,13 +10,13 @@ import {
 import { useScout } from '@/lib/store';
 import { palette as p } from '@/lib/theme';
 import { useShallow } from 'zustand/react/shallow';
-import { uid, type Idea } from '@/lib/types';
+import { uid, type Idea, type EngineCoverage } from '@/lib/types';
 import { SPACE_NICHES, getCachedSpaceNews } from '@/lib/space';
 import { buildInternalResearch, rankNewsForTopic, type InternalResearchResult } from '@/lib/engine';
 import { buildResearchInterestProfile, normalizeResearchText, scoreResearchText } from '@/lib/intelligence';
 import { getTopicDossier } from '@/lib/topic-dossier';
 import { VideoRow } from '@/components/VideoRow';
-import { collectEngineVideoEvidence, engineReviewCacheKey, findCachedEngineReview, selectDashboardIdeas, selectDashboardVideos } from '@/lib/dashboard';
+import { collectEngineVideoEvidenceDetailed, engineReviewCacheKey, findCachedEngineReview, selectDashboardIdeas, selectDashboardVideos } from '@/lib/dashboard';
 import { fingerprintText, getFreeModels, getOpenRouterDailyQuota, getOpinion, internalEngineReviewPrompt, localDateKey, nextOpenRouterUsage, selectFreeModel, type YouTubeSampleVideo } from '@/lib/api';
 import { getKey } from '@/lib/vault';
 import { ResearchOverviewChart } from '@/components/ResearchOverviewChart';
@@ -402,8 +402,8 @@ function DiscoveryDashboardReady() {
     ? latestReport.videos.map((video) => video.id + ':' + video.fetchedAt).join('|')
     : '';
   const latestReportVideoRecords = latestReport?.videos;
-  const engineVideoEvidence = useMemo(
-    () => collectEngineVideoEvidence(reports, storedVideos),
+  const { videos: engineVideoEvidence, coverage: engineVideoCoverage } = useMemo(
+    () => collectEngineVideoEvidenceDetailed(reports, storedVideos),
     [reports, storedVideos],
   );
   const engineVideoSignature = useMemo(
@@ -420,6 +420,7 @@ function DiscoveryDashboardReady() {
     thumbnailUrl: '',
     viewCount: video.viewCount,
     likeCount: video.likeCount,
+    commentCount: video.commentCount,
     channelSubscriberCount: null,
     channelVideoCount: null,
     url: 'https://www.youtube.com/watch?v=' + video.id,
@@ -444,6 +445,15 @@ function DiscoveryDashboardReady() {
         const currentData = useScout.getState().data;
         const reportWiki = getTopicDossier(report.input.topic)?.wiki;
         const priorMemory = currentData.researchMemory.find((entry) => normalizeResearchText(entry.topic) === normalizeResearchText(report.input.topic));
+        const engineNewsBySource: Record<string, number> = {};
+        for (const item of currentNews) {
+          const sourceId = item.sourceId ?? '';
+          if (sourceId) engineNewsBySource[sourceId] = (engineNewsBySource[sourceId] ?? 0) + 1;
+        }
+        const engineCoverage: EngineCoverage = {
+          news: { total: currentNews.length, bySource: engineNewsBySource, reachingEngine: currentNews.length },
+          videos: engineVideoCoverage,
+        };
         const result = buildInternalResearch({
           topic: report.input.topic,
           videos,
@@ -453,6 +463,7 @@ function DiscoveryDashboardReady() {
           language: preferences.uiLanguage ?? 'fa',
           ...(reportWiki ? { wiki: reportWiki } : {}),
           videoWindowDays: report.input.days,
+          coverage: engineCoverage,
         });
         if (active) setReportAnalysisState({ id: report.id, result });
       } catch {

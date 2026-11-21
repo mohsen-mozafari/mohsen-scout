@@ -44,7 +44,28 @@ export type Video = {
   query: string;
   viewCount?: number | null;
   likeCount?: number | null;
+  commentCount?: number | null;
 };
+export type VideoCoverageData = {
+  videosFromReports: number;
+  videosFromStored: number;
+  uniqueVideos: number;
+  droppedMissingFields: number;
+  droppedAsExpired: number;
+  coverageLimit: number;
+};
+export type VideoCoverage = VideoCoverageData & {
+  /** Filled by the engine: how many retained videos entered the analysis. */
+  reachingEngine: number;
+  /** Filled by the engine: how many retained videos matched the topic (score > 0). */
+  retainedVideos: number;
+};
+export type NewsCoverage = {
+  total: number;
+  bySource: Record<string, number>;
+  reachingEngine: number;
+};
+export type EngineCoverage = { news: NewsCoverage; videos: VideoCoverageData };
 export type Assessment =
   | 'Strong Opportunity'
   | 'Promising'

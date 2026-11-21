@@ -74,7 +74,7 @@ export const SPACE_NICHES = [
   { id: 'cosmology', title: 'Cosmology & Dark Universe', description: 'Dark matter, dark energy, cosmic expansion and the structure of the universe.', topic: 'dark matter dark energy cosmology', keywords: ['dark matter', 'dark energy', 'cosmology', 'cosmic expansion', 'universe'] },
 ] as const;
 
-const newsItemLimitPerFeed = 80;
+const newsItemLimitPerFeed = 200;
 type NewsFeedCacheEntry = {
   at: number;
   items: SpaceNewsItem[];

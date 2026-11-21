@@ -13,11 +13,12 @@ import {
 } from '@/lib/space';
 import { buildInternalResearch } from '@/lib/engine';
 import { buildResearchInterestProfile, normalizeResearchText } from '@/lib/intelligence';
-import { collectEngineVideoEvidence, runSingleFlight } from '@/lib/dashboard';
+import { collectEngineVideoEvidence, collectEngineVideoEvidenceDetailed, runSingleFlight } from '@/lib/dashboard';
 import { generateEditorialIdeas } from '@/lib/idea-generation';
 import { createResearchMemoryEntry } from '@/lib/research-memory';
 import { rememberTopicDossier } from '@/lib/topic-dossier';
 import { uid } from '@/lib/types';
+import type { EngineCoverage } from '@/lib/types';
 import { setSelectedIdeaId } from '@/lib/idea-selection';
 import { palette as p } from '@/lib/theme';
 import { MediaPreview } from '@/components/MediaPreview';
@@ -114,10 +115,19 @@ export default function CosmicNews() {
         setRadarWiki(wiki);
 
         const currentData = useScout.getState().data;
-        const engineVideoEvidence = collectEngineVideoEvidence(currentData.reports, currentData.videos);
+        const { videos: engineVideoEvidence, coverage: engineVideoCoverage } = collectEngineVideoEvidenceDetailed(currentData.reports, currentData.videos);
         const priorMemory = currentData.researchMemory.find(
           (entry) => normalizeResearchText(entry.topic) === normalizeResearchText(discoveryTopic),
         );
+        const newsBySource: Record<string, number> = {};
+        for (const item of allEngineNews) {
+          const sourceId = item.sourceId ?? item.sourceName ?? '';
+          if (sourceId) newsBySource[sourceId] = (newsBySource[sourceId] ?? 0) + 1;
+        }
+        const engineCoverage: EngineCoverage = {
+          news: { total: allEngineNews.length, bySource: newsBySource, reachingEngine: allEngineNews.length },
+          videos: engineVideoCoverage,
+        };
         const hasEngineInput = Boolean(allEngineNews.length || wiki || engineVideoEvidence.length);
         if (hasEngineInput) {
           recordRuntimeStart('Engine');
@@ -137,6 +147,7 @@ export default function CosmicNews() {
             sourceId: item.sourceId,
           })),
           videos: engineVideoEvidence,
+          coverage: engineCoverage,
           ...(wiki ? { wiki } : {}),
         }) : undefined;
         const automaticIdeas = generateEditorialIdeas({

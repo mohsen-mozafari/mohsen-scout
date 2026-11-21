@@ -1,4 +1,4 @@
-import { type Report, type Idea, type ResearchMemoryEntry, uid } from './types';
+import { type EngineCoverage, type Report, type Idea, type ResearchMemoryEntry, type VideoCoverage, uid } from './types';
 import type { WikiSignal } from './space';
 import type { YouTubeSampleVideo } from './api';
 import {
@@ -43,6 +43,8 @@ export type InternalResearchInput = {
   videoWindowDays?: number;
   /** Injectable clock for deterministic freshness tests. */
   now?: number;
+  /** Phase-1 coverage: how many items each source delivered and how many reached the engine. */
+  coverage?: EngineCoverage;
 };
 
 export type InternalEngineEvidence = {
@@ -103,6 +105,15 @@ export type InternalResearchResult = {
       entityCandidateCount: number;
       coMentionRelationCount: number;
       processingMs: number;
+      coverage: {
+        news: {
+          total: number;
+          bySource: Record<string, number>;
+          reachingEngine: number;
+          matched: number;
+        };
+        videos: VideoCoverage;
+      };
       limitations: string[];
     };
   };
@@ -500,6 +511,24 @@ export function buildInternalResearch(input: InternalResearchInput): InternalRes
     entityCandidateCount: entityCandidates.length,
     coMentionRelationCount: entityRelations.length,
     processingMs: Math.max(0, Date.now() - startedAt),
+    coverage: {
+      news: {
+        total: originalNews.length,
+        bySource: input.coverage?.news.bySource ?? {},
+        reachingEngine: news.length,
+        matched: matchedNews.length,
+      },
+      videos: {
+        videosFromReports: input.coverage?.videos.videosFromReports ?? 0,
+        videosFromStored: input.coverage?.videos.videosFromStored ?? 0,
+        uniqueVideos: inputVideos.length,
+        droppedMissingFields: input.coverage?.videos.droppedMissingFields ?? 0,
+        droppedAsExpired: input.coverage?.videos.droppedAsExpired ?? 0,
+        coverageLimit: input.coverage?.videos.coverageLimit ?? 0,
+        reachingEngine: inputVideos.length,
+        retainedVideos: videos.length,
+      },
+    },
     limitations: [...gaps],
   };
   const intelligence = {
