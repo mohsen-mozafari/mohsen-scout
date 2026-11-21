@@ -19,6 +19,7 @@ import { createResearchMemoryEntry } from '@/lib/research-memory';
 import { rememberTopicDossier } from '@/lib/topic-dossier';
 import { uid } from '@/lib/types';
 import { setSelectedIdeaId } from '@/lib/idea-selection';
+import { palette as p } from '@/lib/theme';
 import { MediaPreview } from '@/components/MediaPreview';
 import { recordRuntimeFinish, recordRuntimeStart } from '@/lib/runtime-metrics';
 

@@ -553,7 +553,6 @@ export function ResearchKnowledgeGraph({
             </View>
           ) : null}
         </>
-      ) : (        </>
       ) : (
         <View style={{ borderRadius: 12, borderWidth: 1, borderColor: p.border, backgroundColor: p.surface, padding: 14 }}>
           <DirectionalText value={filter === 'all'

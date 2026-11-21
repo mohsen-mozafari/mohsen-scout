@@ -501,7 +501,7 @@ function DiscoveryDashboardReady() {
   );
   const chartVideos = useMemo(
     () => engineVideoSamples,
-    [engineVideoSamples, chartTopic],
+    [engineVideoSamples],
   );
   const chartIdeas = useMemo(() => selectDashboardIdeas(ideas, {
     reportId: latestReport?.id,

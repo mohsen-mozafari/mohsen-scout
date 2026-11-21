@@ -43,30 +43,8 @@ export const ResearchOverviewChart = memo(function ResearchOverviewChart({
   );
   const activeIdeaId = selectedIdeaId ?? sharedSelectedIdeaId;
   const number = (value: number) => new Intl.NumberFormat(fa ? 'fa-IR' : 'en-US').format(value);
-  const evidenceMetrics = [
-    { id: 'publisher-reports', title: label('PUBLISHER REPORTS', 'گزارش ناشران'), value: news.length },
-    { id: 'youtube-samples', title: label('YOUTUBE SAMPLES', 'نمونه‌های YouTube'), value: videos.length },
-    { id: 'wikimedia-months', title: label('WIKIMEDIA MONTHS', 'ماه‌های ویکی‌مدیا'), value: wiki?.monthlyViews.length ?? 0 },
-    { id: 'engine-evidence', title: label('ENGINE EVIDENCE', 'شواهد موتور'), value: analysis?.evidence.length ?? 0 },
-    { id: 'entities', title: label('ENTITIES', 'موجودیت‌ها'), value: analysis?.entityCandidates.length ?? 0 },
-    { id: 'editorial-angles', title: label('EDITORIAL ANGLES', 'زاویه‌های محتوایی'), value: analysis?.angles.length ?? 0 },
-    { id: 'verification-checks', title: label('VERIFICATION CHECKS', 'پرسش‌های راستی‌آزمایی'), value: analysis?.verificationQuestions.length ?? 0 },
-    { id: 'research-gaps', title: label('RESEARCH GAPS', 'خلأهای تحقیق'), value: (analysis?.intelligence.gaps.length ?? 0) + (analysis?.intelligence.potentialContradictions.length ?? 0) },
-  ];
-  const maxEvidenceMetric = Math.max(1, ...evidenceMetrics.map((metric) => metric.value));
-
   return (
     <Panel variant="hero">
-      <View style={{ gap: 5 }}>
-        <BadgeText>{label('MULTI-SOURCE RESEARCH GRAPH · EVIDENCE ONLY', 'گراف تحقیق چندمنبعی · مبتنی بر شواهد')}</BadgeText>
-        <Heading>{label('Research graph: ', 'نمودار تحقیق: ') + topic}</Heading>
-        <Txt muted>
-          {label(
-            'All retained source records feed this map: publisher reports, YouTube samples, Wikimedia observations, engine findings and idea links. Editorial priority is not a view forecast.',
-            'همه رکوردهای نگهداری‌شده در این نقشه وارد می‌شوند: خبرها، نمونه‌های YouTube، داده ویکی‌مدیا، یافته‌های موتور و پیوند ایده‌ها. اولویت تحریری پیش‌بینی بازدید نیست.',
-          )}
-        </Txt>
-      </View>
       {topRecommendations.length ? (
         <View style={{ borderRadius: 11, borderWidth: 1, borderColor: p.accent, backgroundColor: p.surface, padding: 11, gap: 6 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 }}>
