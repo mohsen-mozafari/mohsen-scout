@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { computeVideoFeatures, median, percentile } from '../lib/engine/features';
 import { estimateIncomeByNiche, findNicheByTopic } from '../lib/engine/income';
+import { getEngineV2Complement } from '../lib/engine/complement';
+import type { EngineV2Opportunity } from '../lib/engine/types';
 import { runEngineV2 } from '../lib/engine/orchestrator';
 import type { EngineV2NewsInput, EngineV2VideoInput } from '../lib/engine/types';
 
@@ -124,4 +126,45 @@ void test('budget fallback returns partial result without throwing', () => {
   const result = runEngineV2({ videos: makeVideos(10), news: [], topic: 'budget topic', budgetMs: 0, language: 'en' });
   assert.equal(result.version, 2);
   assert.ok(result.stageFallbacks.length >= 1);
+});
+
+const fakeOpportunity: EngineV2Opportunity = {
+  id: 'e2-test',
+  title: 'T',
+  hook: 'H',
+  angleId: 'topic-a',
+  riskLevel: 'low',
+  score: 55,
+  reasons: ['balanced'],
+  componentScores: {},
+  videos: [{ id: 'v1', url: 'https://www.youtube.com/watch?v=v1', title: 't', channel: 'c', views: 100, publishedAt: '2026-01-01T00:00:00.000Z' }],
+  news: [],
+  estimatedIncome: null,
+  publishWindow: { bestTime: 'within two weeks', horizonDays: 14 },
+  topicTerms: ['topic a'],
+};
+
+void test('getEngineV2Complement: schema-valid JSON parses; failures yield empty', async () => {
+  const opportunities = [fakeOpportunity];
+  const okFetcher = async () => ({
+    ok: true,
+    json: async () => ({ choices: [{ message: { content: '{"opportunities":[{"id":"e2-test","suggestedTitle":"Идея А","suggestedAngle":"Угол Б"}]}' } }] }),
+  }) as unknown as Response;
+  const complement = await getEngineV2Complement({ key: 'k', model: 'openai/m', opportunities, fetcher: okFetcher });
+  assert.equal(complement.opportunities.length, 1);
+  assert.equal(complement.opportunities[0]?.id, 'e2-test');
+  assert.equal(complement.opportunities[0]?.suggestedTitle, 'Идея А');
+  assert.equal(complement.opportunities[0]?.suggestedAngle, 'Угол Б');
+
+  const badJsonFetcher = async () => ({ ok: true, json: async () => ({ choices: [{ message: { content: 'not json' } }] }) }) as unknown as Response;
+  assert.deepEqual(await getEngineV2Complement({ key: 'k', model: 'm', opportunities, fetcher: badJsonFetcher }), { opportunities: [] });
+
+  const errFetcher = async () => ({ ok: false, json: async () => ({ error: { code: 401 } }) }) as unknown as Response;
+  assert.deepEqual(await getEngineV2Complement({ key: 'k', model: 'm', opportunities, fetcher: errFetcher }), { opportunities: [] });
+
+  const emptyFetcher = async () => ({ ok: true, json: async () => ({ choices: [{ message: { content: '{"opportunities":[]}' } }] }) }) as unknown as Response;
+  assert.deepEqual(await getEngineV2Complement({ key: 'k', model: 'm', opportunities, fetcher: emptyFetcher }), { opportunities: [] });
+
+  const noKey = await getEngineV2Complement({ key: '   ', model: 'm', opportunities });
+  assert.deepEqual(noKey, { opportunities: [] });
 });

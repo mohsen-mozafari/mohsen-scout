@@ -11,6 +11,7 @@ import { useScout } from '@/lib/store';
 import { palette as p } from '@/lib/theme';
 import { useShallow } from 'zustand/react/shallow';
 import { uid, type Idea, type EngineCoverage } from '@/lib/types';
+import type { EngineV2Opportunity } from '@/lib/engine/types';
 import { SPACE_NICHES, getCachedSpaceNews } from '@/lib/space';
 import { buildInternalResearch, rankNewsForTopic, type InternalResearchResult } from '@/lib/engine';
 import { buildResearchInterestProfile, normalizeResearchText, scoreResearchText } from '@/lib/intelligence';
@@ -19,6 +20,7 @@ import { VideoRow } from '@/components/VideoRow';
 import { collectEngineVideoEvidenceDetailed, engineReviewCacheKey, findCachedEngineReview, selectDashboardIdeas, selectDashboardVideos } from '@/lib/dashboard';
 import { fingerprintText, getFreeModels, getOpenRouterDailyQuota, getOpinion, internalEngineReviewPrompt, localDateKey, nextOpenRouterUsage, selectFreeModel, type YouTubeSampleVideo } from '@/lib/api';
 import { getKey } from '@/lib/vault';
+import { getEngineV2Complement, type EngineV2Complement } from '@/lib/engine/complement';
 import { ResearchOverviewChart } from '@/components/ResearchOverviewChart';
 import { recordRuntimeFinish, recordRuntimeStart, runtimeErrorHint, useRuntimeMetrics } from '@/lib/runtime-metrics';
 import { useSelectedIdeaId } from '@/lib/idea-selection';
@@ -534,6 +536,25 @@ function DiscoveryDashboardReady() {
     .filter((idea) => idea.engineV2)
     .sort((a, b) => (b.engineV2?.score ?? 0) - (a.engineV2?.score ?? 0))
     .slice(0, 5), [ideas]);
+  const engineV2Opportunities = useMemo(
+    () => engineV2Top.map((idea) => idea.engineV2).filter((opportunity): opportunity is EngineV2Opportunity => Boolean(opportunity)),
+    [engineV2Top],
+  );
+  const [engineV2Complement, setEngineV2Complement] = useState<EngineV2Complement | null>(null);
+  useEffect(() => {
+    if (!engineV2Opportunities.length) return;
+    let active = true;
+    void getKey('openrouter').then(async (key) => {
+      if (!key || !active) return;
+      const complement = await getEngineV2Complement({ key, opportunities: engineV2Opportunities });
+      if (active) setEngineV2Complement(complement);
+    }).catch(() => {
+      if (active) setEngineV2Complement(null);
+    });
+    return () => {
+      active = false;
+    };
+  }, [engineV2Opportunities]);
 
   return (
     <Page
@@ -658,14 +679,19 @@ function DiscoveryDashboardReady() {
                 const v2 = idea.engineV2;
                 if (!v2) return null;
                 const income = v2.estimatedIncome;
+                const complement = engineV2Complement
+                  ? engineV2Complement.opportunities.find((item) => item.id === idea.id)
+                  : undefined;
+                const displayTitle = complement?.suggestedTitle?.trim() || idea.topic;
+                const displayConcept = complement?.suggestedAngle?.trim() || idea.concept;
                 return (
                   <View key={idea.id} style={styles.softCard}>
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 8 }}>
                       <BadgeText>{(fa ? 'Оценка ' : 'Score ') + v2.score}</BadgeText>
                       {v2.riskLevel === 'high' ? <BadgeText>{fa ? 'Высокий риск' : 'High risk'}</BadgeText> : null}
                     </View>
-                    <Heading>{idea.topic}</Heading>
-                    <Txt muted>{idea.concept.slice(0, 220)}</Txt>
+                    <Heading>{displayTitle}</Heading>
+                    <Txt muted>{displayConcept.slice(0, 220)}</Txt>
                     {income ? <Txt muted>{(fa ? 'Оценка дохода: ≈ ' + income.estimate + ' USD/мес' : 'Est. income: ≈ ' + income.estimate + ' USD/mo')}</Txt> : null}
                     <Action secondary onPress={() => router.push({ pathname: '/detail', params: { idea: idea.id } })}>{fa ? 'Детали' : 'Details'}</Action>
                   </View>
