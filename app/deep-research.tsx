@@ -14,7 +14,7 @@ import { MediaPreview } from '@/components/MediaPreview';
 import { ResearchOverviewChart } from '@/components/ResearchOverviewChart';
 import { getTopicDossier, rememberTopicDossier } from '@/lib/topic-dossier';
 import { generateEditorialIdeas } from '@/lib/idea-generation';
-import { buildUnifiedBrief } from '@/lib/engine-v2-adapter';
+import { buildUnifiedBrief, type UnifiedBrief } from '@/lib/engine-v2-adapter';
 import { createResearchMemoryEntry } from '@/lib/research-memory';
 import { recordRuntimeFinish, recordRuntimeStart } from '@/lib/runtime-metrics';
 import { searchYouTubeSample, type YouTubeSampleVideo } from '@/lib/api';
@@ -37,6 +37,7 @@ type Brief = {
   internalAnalysis: InternalResearchResult;
   generatedIdeas: Idea[];
   unifiedAngles: string[];
+  unifiedBrief: UnifiedBrief;
 };
 
 export default function DeepResearch() {
@@ -255,6 +256,7 @@ export default function DeepResearch() {
       internalAnalysis,
       generatedIdeas,
       unifiedAngles,
+      unifiedBrief: unified,
       ...outline,
       scriptDraft: preferences.uiLanguage === 'fa' ? [
         'قلاب — با پرسش اصلی شروع کن: ' + outline.titleIdeas[0],
@@ -351,11 +353,8 @@ export default function DeepResearch() {
             <Heading>Internal Research Engine</Heading>
             <ResearchOverviewChart
               topic={brief.topic}
-              news={brief.news}
-              wiki={brief.wiki}
-              videos={brief.videos}
-              analysis={brief.internalAnalysis}
               ideas={brief.generatedIdeas}
+              brief={brief.unifiedBrief}
               language={preferences.uiLanguage ?? 'fa'}
             />
             <Txt muted>{brief.internalAnalysis.summary}</Txt>
