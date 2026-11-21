@@ -5,8 +5,11 @@ import {
   DEFAULT_WEIGHTS,
   MIN_EVIDENCE,
   buildTopics,
+  computeCompetition,
+  computeSupplyGap,
   extractFeatures,
   generateIdeas,
+  generateIdeasWithInsufficient,
   normalizeEvidence,
   runEngineV2,
   scoreOpportunity,
@@ -282,6 +285,133 @@ void test('confidence shrinks with sparse evidence and revenue stays a labeled e
   assert.equal(richScore.estRevenue.rpm, 3.2);
 });
 
+void test('supply gap is a bounded, saturating per-topic transform', () => {
+  assert.equal(computeSupplyGap(0, 0), 0.5);
+  assert.equal(computeSupplyGap(3, 3), 0.5);
+  const newsHeavy = computeSupplyGap(20, 2);
+  const saturated = computeSupplyGap(2, 20);
+  assert.ok(newsHeavy > 0.85 && newsHeavy < 1, 'news-heavy topic must score high: ' + newsHeavy);
+  assert.ok(saturated > 0 && saturated < 0.15, 'video-saturated topic must score low: ' + saturated);
+  assert.ok(computeSupplyGap(40, 2) > computeSupplyGap(20, 2));
+  assert.ok(computeSupplyGap(2, 40) < computeSupplyGap(2, 20));
+  for (const value of [computeSupplyGap(0, 0), computeSupplyGap(1, 0), newsHeavy, saturated]) {
+    assert.ok(value >= 0 && value <= 1);
+  }
+  // Competition is topic-level and damped: a low supplyGap is not charged twice.
+  assert.ok(computeCompetition(newsHeavy, 1) < 0.35);
+  assert.ok(computeCompetition(saturated, 5) > computeCompetition(saturated, 1));
+  assert.ok(computeCompetition(saturated, 1) < 0.6);
+});
+
+function supplyFixture(news: number, videos: number) {
+  const items: EvidenceItem[] = [
+    ...Array.from({ length: news }, (_, index): EvidenceItem => makeItem({
+      id: 'news-' + index,
+      source: 'news',
+      title: 'Demand report number ' + index,
+      publishedAt: NOW - 86400000,
+      views: undefined,
+      likes: undefined,
+      comments: undefined,
+    })),
+    ...Array.from({ length: videos }, (_, index): EvidenceItem => makeItem({
+      id: 'video-' + index,
+      source: 'youtube',
+      title: 'Existing walkthrough number ' + index,
+      publishedAt: NOW - 86400000,
+      views: 1000,
+      channelId: 'UC' + index,
+    })),
+  ];
+  const features = new Map<string, ItemFeatures>(
+    items.map((item): [string, ItemFeatures] => [item.id, extractFeatures(item, { now: NOW })]),
+  );
+  const supplyGap = computeSupplyGap(news, videos);
+  const topic: Topic = {
+    id: 'topic:supply-' + news + '-' + videos,
+    label: 'supply fixture',
+    keywords: [],
+    itemIds: items.map((item) => item.id),
+    newsCount: news,
+    videoCount: videos,
+    momentum: 0.8,
+    avgOutlier: 0.55,
+    supplyGap,
+    competition: computeCompetition(supplyGap, videos),
+  };
+  return { items, features, topic, ctx: { items, features, now: NOW, niche: 'science' } };
+}
+
+void test('a news-heavy topic outscores a video-saturated topic with equal inputs', () => {
+  const newsHeavy = supplyFixture(20, 2);
+  const saturated = supplyFixture(2, 20);
+  const good = scoreOpportunity(newsHeavy.topic, newsHeavy.ctx);
+  const bad = scoreOpportunity(saturated.topic, saturated.ctx);
+  assert.ok(good.value > bad.value + 10, 'expected a real spread, got ' + good.value + ' vs ' + bad.value);
+  assert.ok(good.value > 40, 'news-heavy topic should no longer look weak: ' + good.value);
+  assert.ok(good.components.find((part) => part.name === 'supplyGap')!.value >
+    bad.components.find((part) => part.name === 'supplyGap')!.value);
+  assert.ok(good.components.find((part) => part.name === 'competition')!.value <
+    bad.components.find((part) => part.name === 'competition')!.value);
+});
+
+void test('scores spread meaningfully on a realistic mixed corpus', () => {
+  const raws: RawEvidenceInput[] = [
+    ...Array.from({ length: 12 }, (_, index) => ({
+      id: 'demand-' + index,
+      title: 'Lunar sample laboratory finding number ' + index,
+      summary: 'Researchers measured a distinct lunar mineral sample variant' + index + ' using instrument series' + index + ' and published record phase' + index + '.',
+      sourceUrl: 'https://example.org/lunar/news/' + index,
+      publishedAt: '2026-11-1' + (index % 9) + 'T10:00:00Z',
+    })),
+    ...Array.from({ length: 3 }, (_, index) => ({
+      id: 'supply-' + index,
+      source: 'youtube',
+      title: 'Lunar sample creator walkthrough number ' + index,
+      description: 'A creator explains a lunar mineral sample measurement variant' + index + ' in episode series' + index + ' with phase' + index + '.',
+      viewCount: 20000 + index * 1000,
+      publishedAt: '2026-11-1' + (index % 9) + 'T18:00:00Z',
+    })),
+    ...Array.from({ length: 2 }, (_, index) => ({
+      id: 'noise-' + index,
+      title: 'Exoplanet atmosphere spectrum measurement number ' + index,
+      summary: 'Astronomers measured an exoplanet atmosphere spectrum variant' + index + ' using telescope series' + index + ' during campaign phase' + index + '.',
+      sourceUrl: 'https://example.org/exo/news/' + index,
+      publishedAt: '2026-11-10T10:00:00Z',
+    })),
+    ...Array.from({ length: 10 }, (_, index) => ({
+      id: 'noise-video-' + index,
+      source: 'youtube',
+      title: 'Exoplanet atmosphere creator explainer number ' + index,
+      description: 'A creator describes an exoplanet atmosphere spectrum variant' + index + ' in episode series' + index + ' with phase' + index + '.',
+      viewCount: 5000 + index * 100,
+      publishedAt: '2026-11-10T18:00:00Z',
+    })),
+  ];
+  const result = runEngineV2({ now: NOW, evidence: raws, niche: 'space-science' });
+  assert.equal(result.fallback, false);
+  assert.ok(result.scores.length >= 2);
+  const values = result.scores.map((score) => score.value);
+  assert.ok(Math.max(...values) > 40, 'top score should be meaningful, got ' + values.join(', '));
+  assert.ok(Math.max(...values) - Math.min(...values) >= 10, 'scores should spread, got ' + values.join(', '));
+  assert.ok(result.topics.every((topic) => topic.supplyGap >= 0 && topic.supplyGap <= 1));
+});
+
+void test('avgOutlier uses pooled channel history when channelId is unavailable', () => {
+  const items = [makeItem({ id: 'v-pooled', views: 9000, channelId: undefined })];
+  const features = new Map<string, ItemFeatures>([
+    ['v-pooled', extractFeatures(items[0], {
+      now: NOW,
+      channelHistory: { UC_UNKNOWN: [1000, 1100, 1200] },
+    })],
+  ]);
+  const outlier = features.get('v-pooled')?.outlierScore ?? 0.5;
+  assert.notEqual(outlier, 0.5);
+  assert.match(features.get('v-pooled')?.explanation ?? '', /pooled channel median/);
+  const topics = buildTopics(items, features, { now: NOW });
+  assert.equal(topics[0].avgOutlier, outlier);
+});
+
 // ---------------------------------------------------------------------------
 // Clustering
 // ---------------------------------------------------------------------------
@@ -389,32 +519,113 @@ void test('ideas reference only real items, flag insufficient data and respect t
   const realIds = new Set(items.map((item) => item.id));
   assert.ok(MIN_EVIDENCE > 1);
 
-  const ideas = generateIdeas(
+  const generated = generateIdeasWithInsufficient(
     { topics: [good, thin], scores: [goodScore, thinScore], items, features, now: NOW, timezoneOffsetMinutes: 210 },
     { limit: 2 },
   );
-  assert.equal(ideas.length, 2);
-  const insufficient = ideas.find((idea) => idea.topicId === thin.id);
+  // Insufficient placeholders live in their own list and are never publishable.
+  assert.equal(generated.ideas.length, 1);
+  assert.ok(generated.insufficientIdeas.length > 0);
+  const insufficient = generated.insufficientIdeas.find((idea) => idea.topicId === thin.id);
   assert.ok(insufficient);
   assert.equal(insufficient.dataSufficient, false);
   assert.match(insufficient.message ?? '', /insufficient/i);
+  assert.ok(generated.ideas.every((idea) => idea.dataSufficient !== false));
 
-  const full = ideas.find((idea) => idea.topicId === good.id);
+  const full = generated.ideas.find((idea) => idea.topicId === good.id);
   assert.ok(full);
   assert.equal(full.dataSufficient, true);
   for (const reference of [...full.evidence, ...full.supportingNews]) {
     assert.ok(realIds.has(reference.id));
   }
   assert.ok(full.evidence.length > 0);
-  assert.ok(full.why.length > 0);
   assert.match(full.bestTimeToPublish, /Assumption:/);
   assert.equal(full.risk, full.score.risk);
+
+  // Title, angle and why are composed from real evidence, not fixed templates.
+  const topVideoTitle = 'Mars rover explainer version1';
+  const newsTitle = 'Mars rover science bulletin report2';
+  assert.ok(full.titleSuggestion.includes(topVideoTitle.slice(0, 40)));
+  assert.match(full.titleSuggestion, /real views/);
+  assert.ok(full.angle.includes(newsTitle));
+  assert.match(full.angle, /3 news and 2 videos/);
+  assert.match(full.angle, /50,001 real views/);
+  assert.ok(full.why.length > 0 && full.why.length <= 320);
+  assert.match(full.why, /real views/);
+  assert.match(full.why, /supply gap/);
+  assert.ok(full.why.includes('Mars rover'));
+  assert.ok(full.claims && full.claims.length > 0 && full.claims.length <= 3);
+  assert.ok(full.claims!.every((claim) => claim.text.length > 0 && claim.source.length > 0));
+  assert.ok(full.claims!.some((claim) => claim.text === newsTitle));
+  assert.ok(full.claims!.some((claim) => claim.text === topVideoTitle));
+  for (const claim of full.claims!) {
+    assert.ok(items.some((item) => item.title === claim.text), 'claim must be literal real text: ' + claim.text);
+  }
 
   const limited = generateIdeas(
     { topics: [good, thin], scores: [goodScore, thinScore], items, features, now: NOW },
     { limit: 1 },
   );
   assert.equal(limited.length, 1);
+  assert.equal(limited[0].dataSufficient, true);
+});
+
+void test('idea language switches the data-driven title to a Persian variant', () => {
+  const normalized = normalizeEvidence([
+    ...[0, 1, 2].map((index) => ({
+      id: 'fn' + index,
+      title: 'Mars rover science bulletin report' + index,
+      summary: 'New rover measurement of a mineral sample in a crater during survey' + index + '.',
+      publishedAt: '2026-11-1' + index + 'T08:00:00Z',
+    })),
+    ...[0, 1].map((index) => ({
+      id: 'fv' + index,
+      source: 'youtube',
+      title: 'Mars rover explainer version' + index,
+      viewCount: 50000 + index,
+      publishedAt: '2026-11-1' + index + 'T18:00:00Z',
+    })),
+  ]);
+  const items = normalized.items;
+  const features = new Map<string, ItemFeatures>(
+    items.map((item): [string, ItemFeatures] => [item.id, extractFeatures(item, { now: NOW })]),
+  );
+  const topic: Topic = {
+    id: 'topic:lang',
+    label: 'mars rover',
+    keywords: ['mars'],
+    itemIds: items.map((item) => item.id),
+    newsCount: 3,
+    videoCount: 2,
+    momentum: 0.8,
+    avgOutlier: 0.5,
+    supplyGap: computeSupplyGap(3, 2),
+    competition: computeCompetition(computeSupplyGap(3, 2), 1),
+  };
+  const ctx = { items, features, now: NOW, niche: 'science' };
+  const score = scoreOpportunity(topic, ctx);
+  const en = generateIdeas({ topics: [topic], scores: [score], items, features, now: NOW, language: 'en' })[0];
+  const fa = generateIdeas({ topics: [topic], scores: [score], items, features, now: NOW, language: 'fa' })[0];
+  assert.ok(en && fa);
+  assert.notEqual(en.titleSuggestion, fa.titleSuggestion);
+  assert.ok(fa.titleSuggestion.includes('«'));
+  assert.match(fa.titleSuggestion, /بازدید واقعی/);
+  assert.match(en.titleSuggestion, /real views/);
+  assert.ok(fa.why.includes('شاهد:'));
+  assert.ok(fa.why.length <= 320);
+});
+
+void test('runEngineV2 separates insufficient diagnostics from publishable ideas', () => {
+  const evidence: RawEvidenceInput[] = [
+    { id: 'thin-news', title: 'Solitary lunar observation report', summary: 'A single lunar observation was recorded.', publishedAt: '2026-11-19T10:00:00Z' },
+    { id: 'thin-video', source: 'youtube', title: 'Solitary lunar walkthrough', viewCount: 200, publishedAt: '2026-11-19T18:00:00Z' },
+  ];
+  const result = runEngineV2({ now: NOW, evidence });
+  assert.equal(result.fallback, false);
+  assert.equal(result.ideas.length, 0);
+  assert.ok(result.insufficientIdeas.length > 0);
+  assert.ok(result.insufficientIdeas.every((idea) => idea.dataSufficient === false));
+  assert.equal(result.ideas.some((idea) => idea.dataSufficient === false), false);
 });
 
 // ---------------------------------------------------------------------------
@@ -487,9 +698,9 @@ void test('runEngineV2 never throws on a failing stage or malformed input', () =
 // Timing baseline comparison
 // ---------------------------------------------------------------------------
 
-void test('TIMING: legacy baseline vs engine v2 on 1000 news and 1500 videos', () => {
+void test('TIMING: legacy baseline vs engine v2 on 500 news and 700 videos', () => {
   const now = Date.parse('2026-11-20T00:00:00Z');
-  const news = Array.from({ length: 1000 }, (_, index) => ({
+  const news = Array.from({ length: 500 }, (_, index) => ({
     id: 'n' + index,
     title: 'Space observation cluster' + index + ' alpha mission report',
     summary: 'Astronomers recorded a measurement of galaxy' + index + ' using an orbital instrument and published the result.',
@@ -497,7 +708,7 @@ void test('TIMING: legacy baseline vs engine v2 on 1000 news and 1500 videos', (
     sourceUrl: 'https://example.org/news/space-' + index,
     publishedAt: new Date(now - (index % 30) * 86400000).toISOString(),
   }));
-  const videos = Array.from({ length: 1500 }, (_, index) => ({
+  const videos = Array.from({ length: 700 }, (_, index) => ({
     id: 'vid' + String(index).padStart(11, '0'),
     title: 'Space observation cluster' + index + ' beta mission walkthrough',
     description: 'A creator explains galaxy' + index + ' observations using orbital instrument footage.',

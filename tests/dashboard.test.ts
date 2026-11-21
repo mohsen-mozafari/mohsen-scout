@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { getOpinion, selectFreeModel } from '../lib/api';
 import {
+  ENGINE_VIDEO_EVIDENCE_CAP,
   chooseBestIdea,
   collectEngineVideoEvidence,
   engineReviewCacheKey,
@@ -46,6 +47,25 @@ function video(id: string, title: string, viewCount: number | null, fetchedAt = 
     viewCount,
     likeCount: null,
   };
+}
+
+type SavedVideoWithStats = Video & {
+  channelId?: string | null;
+  channelTitle?: string | null;
+  channelSubscriberCount?: number | null;
+  subscriberCount?: number | null;
+  channelVideoCount?: number | null;
+  commentCount?: number | null;
+  url?: string | null;
+};
+
+function videoWithStats(
+  id: string,
+  title: string,
+  fetchedAt: number,
+  overrides: Partial<SavedVideoWithStats> = {},
+): SavedVideoWithStats {
+  return { ...video(id, title, 100, fetchedAt), ...overrides };
 }
 
 void test('dashboard chooses the strongest active idea and excludes archived, rejected and completed items', () => {
@@ -97,6 +117,60 @@ void test('internal engine evidence merges retained report and global videos, de
   );
   assert.equal(collectEngineVideoEvidence([], many, now).length, 300);
   assert.equal(collectEngineVideoEvidence([], many, now, 10).length, 10);
+});
+
+void test('engine evidence mapping preserves channel stats, metrics, bucket, url and description', () => {
+  assert.equal(ENGINE_VIDEO_EVIDENCE_CAP, 300);
+  const rich = videoWithStats('rich', 'JWST observation report', now - 1, {
+    channelId: 'UC123',
+    channelTitle: 'Space Lab',
+    channelSubscriberCount: 500000,
+    subscriberCount: 500000,
+    channelVideoCount: 340,
+    commentCount: 12,
+    url: 'https://youtube.com/watch?v=rich0000000',
+    viewCount: 4200,
+    likeCount: 130,
+    description: 'A JWST observation description.',
+    publishedAt: '2026-11-16T12:00:00Z',
+    query: 'JWST observation',
+  });
+  const collected = collectEngineVideoEvidence([{ videos: [rich] }], [], now);
+  assert.equal(collected.length, 1);
+  const [item] = collected;
+  assert.equal(item.channelId, 'UC123');
+  assert.equal(item.channelTitle, 'Space Lab');
+  assert.equal(item.channelSubscriberCount, 500000);
+  assert.equal(item.subscriberCount, 500000);
+  assert.equal(item.channelVideoCount, 340);
+  assert.equal(item.commentCount, 12);
+  assert.equal(item.url, 'https://youtube.com/watch?v=rich0000000');
+  assert.equal(item.query, 'JWST observation');
+  assert.equal(item.viewCount, 4200);
+  assert.equal(item.likeCount, 130);
+  assert.equal(item.description, 'A JWST observation description.');
+  assert.equal(item.publishedAt, '2026-11-16T12:00:00Z');
+  assert.equal(item.fetchedAt, now - 1);
+});
+
+void test('topic pre-ranking retains the most relevant recent evidence inside the 300-item cap', () => {
+  // The relevant item is intentionally the OLDEST fetched record: only relevance
+  // pre-ranking (not arbitrary recency) can keep it inside the bounded list.
+  const relevant = videoWithStats('relevant', 'JWST deep field observation', now - 1000, {
+    description: 'JWST deep field image analysis of an early galaxy.',
+  });
+  const unrelated = Array.from({ length: 310 }, (_, index) => videoWithStats(
+    'other-' + index,
+    'Unrelated cooking recipe number ' + index,
+    now - index,
+    { description: 'A cooking recipe with flour and sugar, variant ' + index + '.' },
+  ));
+  const ranked = collectEngineVideoEvidence([], [...unrelated, relevant], now, 300, {
+    topic: 'JWST deep field',
+  });
+  assert.equal(ranked.length, 300);
+  assert.equal(ranked[0].id, 'relevant');
+  assert.ok(ranked.every((item) => item.id !== 'other-300'));
 });
 
 void test('dashboard video feed filters strictly to the selected niche and sorts by raw views', () => {

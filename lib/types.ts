@@ -94,6 +94,8 @@ export type Idea = {
   engineV2Confidence?: number;
   engineV2Why?: string;
   engineV2Evidence?: { title: string; url?: string; views?: number; source: string }[];
+  /** Literal, attributable claims copied from real evidence titles/summaries. */
+  engineV2Claims?: { text: string; source: string; url?: string }[];
   engineV2Risk?: string;
   engineV2BestTime?: string;
   engineV2RevenueLabel?: string;
