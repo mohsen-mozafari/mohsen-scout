@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import { FlatList, View, Text, Pressable } from 'react-native';
+import { memo, useCallback, useDeferredValue, useMemo, useState } from 'react';
+import { FlatList, Platform, View, Text, Pressable } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Button } from 'heroui-native';
 import { ArrowUpRight, Plus, Archive, Lightbulb } from 'lucide-react-native';
@@ -21,7 +21,7 @@ import {
   ScreenIntro,
 } from '@/components/ScoutUI';
 import { useScout } from '@/lib/store';
-import { statuses } from '@/lib/types';
+import { statuses, type Idea } from '@/lib/types';
 import { getIdeaDisplayTitle, isIdeaDisplayable } from '@/lib/idea-research';
 import { createManualIdea } from '@/lib/engine';
 import { deduplicateDisplayIdeas, generateEditorialIdeas, IDEA_GENERATION_CATEGORIES, type IdeaGenerationCategory } from '@/lib/idea-generation';
@@ -37,12 +37,86 @@ function numberLabel(value: number, fa: boolean) {
   return new Intl.NumberFormat(fa ? 'fa-IR' : 'en-US').format(value);
 }
 
+function ideaCategoryLabel(value: string | undefined, fa: boolean): string {
+  if (!value) return fa ? 'ایده تحریری' : 'Editorial angle';
+  const labels: Record<IdeaGenerationCategory, string> = {
+    Explainer: 'توضیحی',
+    'Evidence audit': 'بررسی شواهد',
+    Comparison: 'مقایسه',
+    Timeline: 'خط زمانی',
+    'Open question': 'پرسش بی‌پاسخ',
+    'Cross-source': 'ارتباط میان منابع',
+    Storytelling: 'روایت مستند',
+  };
+  const category = IDEA_GENERATION_CATEGORIES.find((item) => item === value);
+  return fa && category ? labels[category] : value;
+}
+
+const IdeaListItem = memo(function IdeaListItem({
+  item,
+  fa,
+  language,
+}: {
+  item: Idea;
+  fa: boolean;
+  language: 'fa' | 'en';
+}) {
+  const band = typeof item.engineScore === 'number' && Number.isFinite(item.engineScore)
+    ? getEditorialPriorityBand(item.engineScore)
+    : undefined;
+  const tint = band === 'strong' ? p.success : band === 'moderate' ? p.cyan : p.danger;
+  return (
+    <View style={[styles.listCard, { marginBottom: 12 }]}>
+      {item.imageUrl ? <MediaPreview uri={item.imageUrl} aspectRatio={16 / 9} viewer alt={item.topic} /> : null}
+      <Button
+        variant="tertiary"
+        className="h-auto min-w-0 justify-start rounded-2xl px-4 py-3"
+        onPress={() => {
+          setSelectedIdeaId(item.id);
+          router.push({ pathname: '/detail', params: { idea: item.id } });
+        }}
+      >
+        <View style={{ flex: 1, minWidth: 0, gap: 8 }}>
+          <BadgeText>{(item.engineGenerated
+            ? (fa ? 'تولید موتور · ' : 'ENGINE GENERATED · ') + ideaCategoryLabel(item.ideaCategory, fa)
+            : (fa ? 'ایده شخصی' : 'PERSONAL IDEA')) + ' · ' + item.status}</BadgeText>
+          <SourceHeading>{getIdeaDisplayTitle(item, language)}</SourceHeading>
+          {band ? (
+            <>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                <Text style={{ color: tint, fontSize: 11, fontWeight: '800' }}>
+                  {(band === 'strong' ? (fa ? 'قوی' : 'STRONG') : band === 'moderate' ? (fa ? 'متوسط' : 'MEDIUM') : (fa ? 'ضعیف' : 'WEAK')) + ' · ' + item.engineScore + '/100'}
+                </Text>
+                <Text style={{ color: p.muted, fontSize: 9 }}>{fa ? 'اولویت تحریری' : 'EDITORIAL PRIORITY'}</Text>
+              </View>
+              <Text numberOfLines={1} style={{ color: p.muted, fontSize: 10 }}>
+                {item.engineScoreReason?.split(';').slice(0, 2).join(' • ') || (fa ? 'شواهد کافی برای دلیل تفصیلی موجود نیست' : 'Detailed rationale unavailable')}
+              </Text>
+            </>
+          ) : (
+            <Text style={{ color: p.muted, fontSize: 10 }}>{fa ? 'هنوز امتیاز شواهد ثبت نشده' : 'Not scored · evidence required'}</Text>
+          )}
+          {item.concept
+            ? <SourceText muted numberOfLines={3}>{item.concept}</SourceText>
+            : <Txt muted>Concept missing — open the editor to complete this draft before requesting an AI opinion.</Txt>}
+          {item.sourceName ? <View style={styles.row}><Txt muted>Source:</Txt><SourceText>{item.sourceName}</SourceText></View> : null}
+          {item.decision ? <SourceText muted>{item.decision}</SourceText> : null}
+        </View>
+        <ArrowUpRight color={p.purple} size={20} />
+      </Button>
+    </View>
+  );
+});
+
+const ideaKeyExtractor = (idea: Idea) => idea.id;
+
 export default function Opportunities() {
   const params = useLocalSearchParams<{ idea?: string }>();
   const selectedIdeaId = useSelectedIdeaId();
   const ideas = useScout((s) => s.data.ideas);
   const [status, setStatus] = useState('All');
   const [search, setSearch] = useState('');
+  const deferredSearch = useDeferredValue(search);
   const [archive, setArchive] = useState(false);
   const [category, setCategory] = useState('All angles');
   const [sort, setSort] = useState<'Score' | 'Newest' | 'Oldest' | 'A-Z' | 'Z-A'>('Score');
@@ -55,21 +129,8 @@ export default function Opportunities() {
   const preferences = useScout((s) => s.data.preferences);
   const op = useOperation();
   const fa = preferences.uiLanguage === 'fa';
-  const faCategoryLabels: Record<IdeaGenerationCategory, string> = {
-    Explainer: 'توضیحی',
-    'Evidence audit': 'بررسی شواهد',
-    Comparison: 'مقایسه',
-    Timeline: 'خط زمانی',
-    'Open question': 'پرسش بی‌پاسخ',
-    'Cross-source': 'ارتباط میان منابع',
-    Storytelling: 'روایت مستند',
-  };
   const allCategoryLabel = fa ? 'همه زاویه‌ها' : 'All angles';
-  const categoryLabel = (value?: string) => {
-    if (!value) return fa ? 'ایده تحریری' : 'Editorial angle';
-    const matchingCategory = IDEA_GENERATION_CATEGORIES.find((option) => option === value);
-    return fa && matchingCategory ? faCategoryLabels[matchingCategory] : value;
-  };
+  const categoryLabel = (value?: string) => ideaCategoryLabel(value, fa);
   const categoryOptions = [allCategoryLabel, ...IDEA_GENERATION_CATEGORIES.map((value) => categoryLabel(value))];
   const displayableIdeas = useMemo(() => deduplicateDisplayIdeas(ideas.filter(isIdeaDisplayable)), [ideas]);
   const indexedIdeas = useMemo(() => displayableIdeas.map((idea) => {
@@ -82,7 +143,7 @@ export default function Opportunities() {
       ].join(' ')),
     };
   }), [displayableIdeas, preferences.uiLanguage]);
-  const searchQuery = useMemo(() => createSearchQuery(search), [search]);
+  const searchQuery = useMemo(() => createSearchQuery(deferredSearch), [deferredSearch]);
   const matchingResult = useMemo(() => {
     const result = {
       ideas: [] as typeof displayableIdeas,
@@ -274,11 +335,11 @@ export default function Opportunities() {
         keyExtractor={(i) => i.id}
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
-        initialNumToRender={8}
-        maxToRenderPerBatch={8}
-        updateCellsBatchingPeriod={50}
-        windowSize={7}
-        removeClippedSubviews={false}
+        initialNumToRender={5}
+        maxToRenderPerBatch={5}
+        updateCellsBatchingPeriod={32}
+        windowSize={5}
+        removeClippedSubviews={Platform.OS === 'android'}
         ListHeaderComponent={
           <View style={{ gap: 16, marginBottom: 18 }}>
             <ScreenIntro
@@ -388,24 +449,28 @@ export default function Opportunities() {
                   <Heading>{fa ? '۵ ایده برتر سنجاق‌شده' : 'Top 5 pinned ideas'}</Heading>
                   <BadgeText>{String(pinnedIdeas.length)}</BadgeText>
                 </View>
-                {pinnedIdeas.map((idea, index) => {
-                  const band = getEditorialPriorityBand(idea.engineScore ?? 0);
-                  const tint = band === 'strong' ? p.success : band === 'moderate' ? p.cyan : p.danger;
-                  return (
-                    <Pressable key={idea.id} onPress={() => {
-                      setSelectedIdeaId(idea.id);
-                      router.push({ pathname: '/detail', params: { idea: idea.id } });
-                    }} accessibilityRole="button"
-                      style={{ borderRadius: 12, borderWidth: 1, borderColor: p.border, backgroundColor: p.surface, padding: 11, gap: 5 }}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                        <Text style={{ color: tint, fontSize: 10, fontWeight: '800' }}>{(fa ? 'سنجاق‌شدهٔ ' : 'PINNED #') + (index + 1) + ' · ' + (band === 'strong' ? (fa ? 'قوی' : 'Strong') : band === 'moderate' ? (fa ? 'متوسط' : 'Medium') : (fa ? 'ضعیف' : 'Weak'))}</Text>
-                        <Text style={{ color: tint, fontSize: 14, fontWeight: '800' }}>{idea.engineScore}/100</Text>
-                      </View>
-                      <Text style={{ color: p.text, fontSize: 13, fontWeight: '700' }}>{getIdeaDisplayTitle(idea, preferences.uiLanguage ?? 'fa')}</Text>
-                      <Text numberOfLines={1} style={{ color: p.muted, fontSize: 10 }}>{idea.engineScoreReason?.split(';').slice(0, 2).join(' • ')}</Text>
-                    </Pressable>
-                  );
-                })}
+                <Fold title={fa ? '۵ ایده برتر سنجاق‌شده' : 'Top 5 pinned ideas'} summary={String(pinnedIdeas.length)}>
+                  <View style={{ gap: 8 }}>
+                    {pinnedIdeas.map((idea, index) => {
+                      const band = getEditorialPriorityBand(idea.engineScore ?? 0);
+                      const tint = band === 'strong' ? p.success : band === 'moderate' ? p.cyan : p.danger;
+                      return (
+                        <Pressable key={idea.id} onPress={() => {
+                          setSelectedIdeaId(idea.id);
+                          router.push({ pathname: '/detail', params: { idea: idea.id } });
+                        }} accessibilityRole="button"
+                          style={{ borderRadius: 12, borderWidth: 1, borderColor: p.border, backgroundColor: p.surface, padding: 11, gap: 5 }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                            <Text style={{ color: tint, fontSize: 10, fontWeight: '800' }}>{(fa ? 'سنجاق‌شدهٔ ' : 'PINNED #') + (index + 1) + ' · ' + (band === 'strong' ? (fa ? 'قوی' : 'Strong') : band === 'moderate' ? (fa ? 'متوسط' : 'Medium') : (fa ? 'ضعیف' : 'Weak'))}</Text>
+                            <Text style={{ color: tint, fontSize: 14, fontWeight: '800' }}>{idea.engineScore}/100</Text>
+                          </View>
+                          <Text style={{ color: p.text, fontSize: 13, fontWeight: '700' }}>{getIdeaDisplayTitle(idea, preferences.uiLanguage ?? 'fa')}</Text>
+                          <Text numberOfLines={1} style={{ color: p.muted, fontSize: 10 }}>{idea.engineScoreReason?.split(';').slice(0, 2).join(' • ')}</Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                </Fold>
               </View>
             ) : null}
             {draftOpen ? (
@@ -431,43 +496,9 @@ export default function Opportunities() {
           </View>
 
         }
+        keyExtractor={ideaKeyExtractor}
         renderItem={({ item }) => (
-          <View style={[styles.listCard, { marginBottom: 12 }]}>
-
-            {item.imageUrl ? <MediaPreview uri={item.imageUrl} aspectRatio={16 / 9} viewer alt={item.topic} /> : null}
-            <Button
-              variant="tertiary"
-              className="h-auto min-w-0 justify-start rounded-2xl px-4 py-3"
-              onPress={() => {
-                setSelectedIdeaId(item.id);
-                router.push({ pathname: '/detail', params: { idea: item.id } });
-              }}
-            >
-              <View style={{ flex: 1, minWidth: 0, gap: 8 }}>
-                <BadgeText>{(item.engineGenerated ? (fa ? 'تولید موتور · ' : 'ENGINE GENERATED · ') + categoryLabel(item.ideaCategory) : (fa ? 'ایده شخصی' : 'PERSONAL IDEA')) + ' · ' + item.status}</BadgeText>
-                <SourceHeading>{getIdeaDisplayTitle(item, preferences.uiLanguage ?? 'fa')}</SourceHeading>
-                {typeof item.engineScore === 'number' && Number.isFinite(item.engineScore) ? (
-                  <>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                    <Text style={{ color: getEditorialPriorityBand(item.engineScore) === 'strong' ? p.success : getEditorialPriorityBand(item.engineScore) === 'moderate' ? p.cyan : p.danger, fontSize: 11, fontWeight: '800' }}>
-                      {(getEditorialPriorityBand(item.engineScore) === 'strong' ? (fa ? 'قوی' : 'STRONG') : getEditorialPriorityBand(item.engineScore) === 'moderate' ? (fa ? 'متوسط' : 'MEDIUM') : (fa ? 'ضعیف' : 'WEAK')) + ' · ' + item.engineScore + '/100'}
-                    </Text>
-                    <Text style={{ color: p.muted, fontSize: 9 }}>{fa ? 'اولویت تحریری' : 'EDITORIAL PRIORITY'}</Text>
-                  </View>
-                  <Text numberOfLines={1} style={{ color: p.muted, fontSize: 10 }}>
-                    {item.engineScoreReason?.split(';').slice(0, 2).join(' • ') || (fa ? 'شواهد کافی برای دلیل تفصیلی موجود نیست' : 'Detailed rationale unavailable')}
-                  </Text>
-                  </>
-                ) : (
-                  <Text style={{ color: p.muted, fontSize: 10 }}>{fa ? 'هنوز امتیاز شواهد ثبت نشده' : 'Not scored · evidence required'}</Text>
-                )}
-                {item.concept ? <SourceText muted numberOfLines={3}>{item.concept}</SourceText> : <Txt muted>Concept missing — open the editor to complete this draft before requesting an AI opinion.</Txt>}
-                {item.sourceName ? <View style={styles.row}><Txt muted>Source:</Txt><SourceText>{item.sourceName}</SourceText></View> : null}
-                {item.decision ? <SourceText muted>{item.decision}</SourceText> : null}
-              </View>
-              <ArrowUpRight color={p.purple} size={20} />
-            </Button>
-          </View>
+          <IdeaListItem item={item} fa={fa} language={preferences.uiLanguage ?? 'fa'} />
         )}
         ListEmptyComponent={sortedFiltered.length ? undefined : (
           <Empty
