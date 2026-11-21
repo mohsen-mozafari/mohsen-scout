@@ -17,9 +17,10 @@ import {
   useOperation,
 } from '@/components/ScoutUI';
 import { useScout } from '@/lib/store';
-import { type Preferences, defaults, regions, languages } from '@/lib/types';
+import { type Preferences, type SecondOpinionProvider, DEFAULT_SECOND_OPINION_ORDER, defaults, regions, languages } from '@/lib/types';
 import { getKey, setKey, deleteKey, credentialPersistence, type Credential } from '@/lib/vault';
 import { getFreeModels, getOpenRouterDailyQuota, testYouTube, testOpenRouter, quotaDay, localDateKey } from '@/lib/api';
+import { discoverSecondOpinionModels, testSecondOpinionCredential } from '@/lib/ai-gateway';
 import { exportBackup, importBackup, restorePersonalData } from '@/lib/backup';
 import { shareText, readBackup, shareApk } from '@/lib/transfer';
 import { configureSchedule, enableNotifications, scheduleNotice } from '@/lib/scheduler';
@@ -70,14 +71,21 @@ function CredentialSection({
     void op.run(async () => {
       const value = await getKey(kind);
       if (!value) throw new Error('Save a key before testing.');
-      if (kind === 'youtube')
+      if (kind === 'youtube') {
         await testYouTube({
           key: value,
           charge: useScout.getState().charge,
           onQuota: () =>
             useScout.getState().commit((d) => ({ ...d, budget: { ...d.budget, exhausted: true } })),
         });
-      else await testOpenRouter(value);
+      } else if (kind === 'openrouter') {
+        await testOpenRouter(value);
+      } else if (kind === 'cloudflare-account-id') {
+        if (!/^[a-f0-9]{32}$/i.test(value.trim())) throw new Error('Cloudflare Account ID must be 32 hexadecimal characters.');
+      } else {
+        const accountId = kind === 'cloudflare' ? await getKey('cloudflare-account-id') ?? undefined : undefined;
+        await testSecondOpinionCredential(kind, { key: value, accountId });
+      }
     }, `${label} connection verified.`);
   return (
     <View style={{ gap: 14 }}>
@@ -92,8 +100,8 @@ function CredentialSection({
         label={stored ? 'Replace key' : 'API key'}
         value={key}
         onChange={setValue}
-        secret
-        placeholder="Enter your key here, never in chat"
+        secret={kind !== 'cloudflare-account-id'}
+        placeholder={kind === 'cloudflare-account-id' ? '32-character Cloudflare Account ID' : 'Enter your key here, never in chat'}
       />
       <Txt muted>{credentialPersistence}</Txt>
       <Action
@@ -148,9 +156,13 @@ export default function Settings() {
   const ready = useScout((s) => s.ready);
   const [prefs, setPrefs] = useState<Preferences>(() => normalizePreferences(data.preferences));
   const [models, setModels] = useState<{ id: string; name: string }[]>([]);
-  const [credentialStatus, setCredentialStatus] = useState<{ youtube: boolean | null; openrouter: boolean | null }>({
+  const [credentialStatus, setCredentialStatus] = useState<Record<Credential, boolean | null>>({
     youtube: null,
     openrouter: null,
+    gemini: null,
+    groq: null,
+    cloudflare: null,
+    'cloudflare-account-id': null,
   });
   const [modelBusy, setModelBusy] = useState(false);
   const [confirm, setConfirm] = useState('');
@@ -165,12 +177,16 @@ export default function Settings() {
   }, [data.preferences]);
   useEffect(() => {
     let active = true;
-    void Promise.all([getKey('youtube'), getKey('openrouter')])
-      .then(([youtube, openrouter]) => {
-        if (active) setCredentialStatus({ youtube: Boolean(youtube), openrouter: Boolean(openrouter) });
+    const kinds: Credential[] = ['youtube', 'openrouter', 'gemini', 'groq', 'cloudflare', 'cloudflare-account-id'];
+    void Promise.all(kinds.map(async (kind) => [kind, Boolean(await getKey(kind))] as const))
+      .then((entries) => {
+        if (!active) return;
+        setCredentialStatus(Object.fromEntries(entries) as Record<Credential, boolean | null>);
       })
       .catch(() => {
-        if (active) setCredentialStatus({ youtube: null, openrouter: null });
+        if (active) setCredentialStatus({
+          youtube: null, openrouter: null, gemini: null, groq: null, cloudflare: null, 'cloudflare-account-id': null,
+        });
       });
     return () => { active = false; };
   }, []);
@@ -190,16 +206,27 @@ export default function Settings() {
     void op.run(async () => {
       setModelBusy(true);
       try {
-        const available = await getFreeModels();
+        const provider = prefs.secondOpinionProvider;
+        const credentialKind: Credential = provider === 'openrouter' ? 'openrouter' : provider;
+        const key = await getKey(credentialKind);
+        if (!key) throw new Error('Save this provider key before refreshing its model list.');
+        const accountId = provider === 'cloudflare' ? await getKey('cloudflare-account-id') ?? undefined : undefined;
+        const available = provider === 'openrouter'
+          ? await getFreeModels()
+          : await discoverSecondOpinionModels(provider, { key, accountId });
         setModels(available);
-        if (!available.length)
-          throw new Error('No free models are currently available. Try later.');
-        if (!prefs.model || !available.some((m) => m.id === prefs.model))
-          setPrefs({ ...prefs, model: available[0].id });
+        if (!available.length) throw new Error('No supported models were returned by this provider.');
+        const currentModels = prefs.secondOpinionModels ?? defaults().preferences.secondOpinionModels;
+        if (!available.some((model) => model.id === currentModels[provider])) {
+          setPrefs({
+            ...prefs,
+            secondOpinionModels: { ...currentModels, [provider]: available[0].id },
+          });
+        }
       } finally {
         setModelBusy(false);
       }
-    }, 'Available free models refreshed.');
+    }, 'Provider models refreshed.');
   const refreshOpenRouterQuota = () =>
     void op.run(async () => {
       const key = await getKey('openrouter');
@@ -342,56 +369,104 @@ export default function Settings() {
           Open Google Cloud
         </Action>
       </Fold>
-      <Fold title="OpenRouter · optional" summary={(credentialStatus.openrouter === null ? 'Key status not confirmed' : credentialStatus.openrouter ? 'Key saved securely' : 'Key not set') + ' · ' + (prefs.hybridIntelligence ? 'Automatic review on' : 'Manual review only')}>
+      <Fold title="Second Opinion · Multi-provider" summary={(prefs.secondOpinionOrder ?? DEFAULT_SECOND_OPINION_ORDER).map((provider) => provider === 'cloudflare' ? 'Cloudflare' : provider[0].toUpperCase() + provider.slice(1)).join(' → ')}>
+        <Txt muted>
+          {prefs.uiLanguage === 'fa'
+            ? 'نظر دوم فقط با لمس دکمه توسط خودت اجرا می‌شود. فقط موضوع و مفهوم/عنوان پیشنهادی به Providerها ارسال می‌شود؛ هیچ خبر، اطلاعات YouTube، آمار، امتیاز یا تصمیم موتور داخلی ارسال نمی‌شود. در صورت خطا یا پاسخ نامعتبر، سرویس بعدی در ترتیب ذخیره‌شده امتحان می‌شود؛ برای هر سرویس فقط یک درخواست تولید انجام می‌شود.'
+            : 'Second opinion runs only when you press its button. Providers receive only the topic and candidate concept/title. No news, YouTube metadata, statistics, local score or internal decision is sent. On a provider failure or invalid response, the next saved provider is tried; each provider receives at most one generation request.'}
+        </Txt>
         <Choices
-          label="Automatic external AI second opinion"
-          options={['Automatic after research', 'Manual only']}
-          selected={[prefs.hybridIntelligence ? 'Automatic after research' : 'Manual only']}
-          onChange={(values) => setPrefs({ ...prefs, hybridIntelligence: values[0] === 'Automatic after research' })}
+          label="Preferred provider"
+          options={['Gemini', 'Groq', 'Cloudflare Workers AI', 'OpenRouter']}
+          selected={[prefs.secondOpinionProvider === 'cloudflare' ? 'Cloudflare Workers AI' : (prefs.secondOpinionProvider ?? 'gemini').replace(/^./, (value) => value.toUpperCase())]}
+          onChange={(values) => {
+            const selected: Record<string, SecondOpinionProvider> = {
+              Gemini: 'gemini', Groq: 'groq', 'Cloudflare Workers AI': 'cloudflare', OpenRouter: 'openrouter',
+            };
+            setPrefs({ ...prefs, secondOpinionProvider: selected[values[0]] ?? 'gemini' });
+          }}
         />
-        <Txt muted>
-          {prefs.uiLanguage === 'fa'
-            ? 'در حالت خودکار، پس از پایان تحلیل محلی، موضوع تحقیق، تیترهای عمومی خبرها و بخش کوتاهی از خلاصه آن‌ها، عنوان و نام کانال ویدئوهای عمومی YouTube و آمار عمومی بازدید/پسند به همراه یافته‌های پردازش‌شده موتور داخلی برای نظر دوم ارسال می‌شوند. متن کامل خبرها، توضیحات کامل ویدئوها، یادداشت‌های خصوصی و کلیدهای API ارسال نمی‌شوند. این ارسال فقط با فعال‌کردن حالت خودکار انجام می‌شود.'
-            : 'In automatic mode, after local analysis finishes, the topic, public news headlines with short excerpts, public YouTube video titles and channel names, available public view/like counts, and processed local findings are sent for the second opinion. Full articles, full video descriptions, private notes and API keys are not sent. This happens only while automatic review is enabled.'}
-          OpenRouter usage is limited by the existing daily cap and cached by evidence content.
-        </Txt>
-        <Action busy={op.busy} disabled={!ready} onPress={save}>Save AI automation</Action>
-        <CredentialSection kind="openrouter" label="OpenRouter" onStatusChange={handleCredentialStatus} />
-        <Txt>
-          Free-model requests today (UTC): {prefs.openRouterDailyUsed ?? prefs.openRouterRequestsToday ?? 0}
-          /{prefs.openRouterDailyLimit ?? 50} · Remaining: {prefs.openRouterDailyRemaining ?? 'not refreshed'}
-        </Txt>
-        <Action secondary busy={op.busy} onPress={refreshOpenRouterQuota}>
-          Refresh OpenRouter quota
-        </Action>
-        <Txt muted>
-          {prefs.uiLanguage === 'fa'
-            ? 'مدل‌های رایگان به‌صورت زنده شناسایی می‌شوند و دسترسی ارائه‌دهندگان ممکن است تغییر کند. در حالت خودکار، تیترهای عمومی خبرها، عنوان ویدئوهای عمومی و آمار بازدید/پسند موجود همراه تحلیل پردازش‌شده ارسال می‌شوند؛ در حالت دستی فقط هنگام درخواست خودت ارسال انجام می‌شود.'
-            : 'Free models are discovered live and provider availability may change. Automatic mode includes public news headlines, public video titles, available view/like counts and processed analysis; manual mode sends a request only when you ask.'}
-        </Txt>
-        <Txt muted>Selected model: {prefs.model || 'Auto-select an available free model'}</Txt>
-        <Action busy={modelBusy || op.busy} secondary onPress={loadModels}>
-          Refresh free models
-        </Action>
+        <Heading>Fallback order</Heading>
+        <Txt muted>Use the arrows to set the exact failover order. Providers without saved credentials are skipped.</Txt>
+        {(prefs.secondOpinionOrder ?? DEFAULT_SECOND_OPINION_ORDER).map((provider, index, order) => (
+          <View key={provider} style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}>
+            <View style={{ flex: 1 }}>
+              <Txt>{index + 1}. {provider === 'cloudflare' ? 'Cloudflare Workers AI' : provider[0].toUpperCase() + provider.slice(1)}</Txt>
+            </View>
+            <Action secondary disabled={index === 0} onPress={() => {
+              const next = [...order];
+              [next[index - 1], next[index]] = [next[index], next[index - 1]];
+              setPrefs({ ...prefs, secondOpinionOrder: next });
+            }}>↑</Action>
+            <Action secondary disabled={index === order.length - 1} onPress={() => {
+              const next = [...order];
+              [next[index + 1], next[index]] = [next[index], next[index + 1]];
+              setPrefs({ ...prefs, secondOpinionOrder: next });
+            }}>↓</Action>
+          </View>
+        ))}
+        <Field
+          label={'Gemini model'}
+          value={prefs.secondOpinionModels?.gemini ?? 'gemini-3.8-flash'}
+          onChange={(value) => setPrefs({ ...prefs, secondOpinionModels: { ...prefs.secondOpinionModels, gemini: value } })}
+          placeholder="gemini-3.8-flash"
+        />
+        <Field
+          label={'Groq model'}
+          value={prefs.secondOpinionModels?.groq ?? 'openai/gpt-oss-120b'}
+          onChange={(value) => setPrefs({ ...prefs, secondOpinionModels: { ...prefs.secondOpinionModels, groq: value } })}
+          placeholder="openai/gpt-oss-120b"
+        />
+        <Field
+          label={'Cloudflare Workers AI model'}
+          value={prefs.secondOpinionModels?.cloudflare ?? '@cf/meta/llama-3.3-70b-instruct-fp8-fast'}
+          onChange={(value) => setPrefs({ ...prefs, secondOpinionModels: { ...prefs.secondOpinionModels, cloudflare: value } })}
+          placeholder="@cf/meta/llama-3.3-70b-instruct-fp8-fast"
+        />
+        <Field
+          label={'OpenRouter model (must be in its live free-model list)'}
+          value={prefs.secondOpinionModels?.openrouter ?? ''}
+          onChange={(value) => setPrefs({ ...prefs, secondOpinionModels: { ...prefs.secondOpinionModels, openrouter: value } })}
+          placeholder="Auto-select a live free model"
+        />
+        <Action secondary busy={modelBusy || op.busy} onPress={loadModels}>Refresh models for preferred provider</Action>
         {models.map((model) => (
           <Button
-            variant={prefs.model === model.id ? 'primary' : 'secondary'}
+            variant={(prefs.secondOpinionModels?.[prefs.secondOpinionProvider] ?? '') === model.id ? 'primary' : 'secondary'}
             key={model.id}
-            className="h-auto justify-start p-4"
-            onPress={() => setPrefs({ ...prefs, model: model.id })}
+            className="h-auto justify-start p-3"
+            onPress={() => setPrefs({
+              ...prefs,
+              secondOpinionModels: { ...prefs.secondOpinionModels, [prefs.secondOpinionProvider]: model.id },
+            })}
           >
             <Button.Label numberOfLines={2}>{model.name}</Button.Label>
           </Button>
         ))}
-        <Action disabled={!ready} busy={op.busy} onPress={save}>
-          Save model
-        </Action>
-        <Action
-          secondary
-          onPress={() => void Linking.openURL('https://openrouter.ai/settings/keys')}
-        >
-          Open OpenRouter
-        </Action>
+        <Action disabled={!ready} busy={op.busy} onPress={save}>Save second-opinion settings</Action>
+        <Fold title="Gemini API key" summary={credentialStatus.gemini ? 'Key saved securely' : 'Key not set'}>
+          <CredentialSection kind="gemini" label="Gemini API key" onStatusChange={handleCredentialStatus} />
+          <Action secondary onPress={() => void Linking.openURL('https://aistudio.google.com/apikey')}>Open Google AI Studio</Action>
+        </Fold>
+        <Fold title="Groq API key" summary={credentialStatus.groq ? 'Key saved securely' : 'Key not set'}>
+          <CredentialSection kind="groq" label="Groq API key" onStatusChange={handleCredentialStatus} />
+          <Action secondary onPress={() => void Linking.openURL('https://console.groq.com/keys')}>Open Groq Console</Action>
+        </Fold>
+        <Fold title="Cloudflare Workers AI" summary={credentialStatus.cloudflare && credentialStatus['cloudflare-account-id'] ? 'Token and Account ID saved' : 'Token or Account ID missing'}>
+          <CredentialSection kind="cloudflare-account-id" label="Cloudflare Account ID" onStatusChange={handleCredentialStatus} />
+          <CredentialSection kind="cloudflare" label="Cloudflare API token" onStatusChange={handleCredentialStatus} />
+          <Txt muted>Use an API token with Workers AI Read/Run permissions. Model usage can be billable; the app does not assume a free tier.</Txt>
+          <Action secondary onPress={() => void Linking.openURL('https://dash.cloudflare.com/?to=/:account/ai/workers-ai')}>Open Workers AI dashboard</Action>
+        </Fold>
+        <Fold title="OpenRouter" summary={credentialStatus.openrouter ? 'Key saved securely' : 'Key not set'}>
+          <CredentialSection kind="openrouter" label="OpenRouter API key" onStatusChange={handleCredentialStatus} />
+          <Txt>
+            Free-model requests today (UTC): {prefs.openRouterDailyUsed ?? prefs.openRouterRequestsToday ?? 0}
+            /{prefs.openRouterDailyLimit ?? 50} · Remaining: {prefs.openRouterDailyRemaining ?? 'not refreshed'}
+          </Txt>
+          <Action secondary busy={op.busy} onPress={refreshOpenRouterQuota}>Refresh OpenRouter quota</Action>
+          <Action secondary onPress={() => void Linking.openURL('https://openrouter.ai/settings/keys')}>Open OpenRouter</Action>
+        </Fold>
       </Fold>
       <Fold title="API budget & quota" summary={(data.budget.units ?? 0) + ' units · ' + (data.budget.requests ?? 0) + ' requests today'}>
         <Txt>Estimated units today: {data.budget.date === quotaDay() ? data.budget.units : 0}</Txt>
