@@ -476,7 +476,7 @@ function DiscoveryDashboardReady() {
       active = false;
       clearTimeout(timer);
     };
-  }, [latestReportId, latestReportSignature, engineVideoSignature, engineVideoSamples, engineNews, preferences.uiLanguage, fa]);
+  }, [latestReportId, latestReportSignature, engineVideoSignature, engineVideoSamples, engineVideoCoverage, engineNews, preferences.uiLanguage, fa]);
 
   const latestReportAnalysis = reportAnalysisState?.id === latestReportId
     ? reportAnalysisState.result
@@ -530,6 +530,10 @@ function DiscoveryDashboardReady() {
   }), [ideas]);
   const deskIdeas = chartIdeas;
   const recommendations = chartIdeas.slice(1, 4);
+  const engineV2Top = useMemo(() => ideas
+    .filter((idea) => idea.engineV2)
+    .sort((a, b) => (b.engineV2?.score ?? 0) - (a.engineV2?.score ?? 0))
+    .slice(0, 5), [ideas]);
 
   return (
     <Page
@@ -643,6 +647,35 @@ function DiscoveryDashboardReady() {
           </Fold>
         ) : null}
 
+
+        <Fold
+          title={fa ? 'Предложения движка v2 · основаны на шансах' : 'Engine v2 opportunities · data-based'}
+          summary={`${engineV2Top.length} ${fa ? 'предложений' : 'ideas'}`}
+        >
+          {engineV2Top.length ? (
+            <View style={{ gap: 8 }}>
+              {engineV2Top.map((idea) => {
+                const v2 = idea.engineV2;
+                if (!v2) return null;
+                const income = v2.estimatedIncome;
+                return (
+                  <View key={idea.id} style={styles.softCard}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 8 }}>
+                      <BadgeText>{(fa ? 'Оценка ' : 'Score ') + v2.score}</BadgeText>
+                      {v2.riskLevel === 'high' ? <BadgeText>{fa ? 'Высокий риск' : 'High risk'}</BadgeText> : null}
+                    </View>
+                    <Heading>{idea.topic}</Heading>
+                    <Txt muted>{idea.concept.slice(0, 220)}</Txt>
+                    {income ? <Txt muted>{(fa ? 'Оценка дохода: ≈ ' + income.estimate + ' USD/мес' : 'Est. income: ≈ ' + income.estimate + ' USD/mo')}</Txt> : null}
+                    <Action secondary onPress={() => router.push({ pathname: '/detail', params: { idea: idea.id } })}>{fa ? 'Детали' : 'Details'}</Action>
+                  </View>
+                );
+              })}
+            </View>
+          ) : (
+            <Txt muted>{fa ? 'Движок v2 готовит предложения из данных по видео и публикациям.' : 'Engine v2 prepares opportunities from YouTube and publication data.'}</Txt>
+          )}
+        </Fold>
 
         <Fold title="Evidence quality and source audit" summary={deskAnalysis ? deskAnalysis.intelligence.sourceQuality.uniqueStories + ' stories · ' + deskAnalysis.intelligence.sourceQuality.feedsRepresented + ' feeds' : 'No analyzed sample yet'}>
           {deskAnalysis ? (

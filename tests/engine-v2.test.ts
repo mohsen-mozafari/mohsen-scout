@@ -87,7 +87,7 @@ void test('gap topics: news without video coverage', () => {
   const result = runEngineV2({ videos: makeVideos(50), news: [
     { title: 'زمرد زمرد زمرد زمرد زمرد — جدیدترین پیش‌بینی', summary: 'گزارج اول دوپامین بی‌اطمینان 2026', sourceName: 'Teardrop News', sourceUrl: 'https://example.org/teardrop/1', publishedAt: new Date(NOW - 2 * 86_400_000).toISOString() },
     { title: 'زمرد زمرد زمرد زمرد زمرد — دومین گزارج پیش‌بینی', summary: 'دوپامین بی‌اطمینان با اولین گزارج 2026', sourceName: 'Teardrop News', sourceUrl: 'https://example.org/teardrop/2', publishedAt: new Date(NOW - 1 * 86_400_000).toISOString() },
-  ], topic: 'teardrop discovery' });
+  ], topic: 'teardrop discovery', language: 'en' });
   assert.ok(result.plan.gapTopics.length >= 1);
 });
 
@@ -101,7 +101,7 @@ void test('risk topics: concentrated video competition', () => {
     viewCount: 1_000_000 + index * 1000,
     publishedAt: new Date(NOW - 10 * 86_400_000 + index * 3600_000).toISOString(),
   }));
-  const result = runEngineV2({ videos, news: [], topic: 'کالامالی' });
+  const result = runEngineV2({ videos, news: [], topic: 'کالامالی', language: 'en' });
   assert.ok(result.plan.riskTopics.length >= 1);
 });
 
@@ -121,7 +121,7 @@ void test('runEngineV2 on 300 videos + 200 news (JVM baseline)', () => {
 });
 
 void test('budget fallback returns partial result without throwing', () => {
-  const result = runEngineV2({ videos: makeVideos(10), news: [], topic: 'budget topic', budgetMs: 0 });
+  const result = runEngineV2({ videos: makeVideos(10), news: [], topic: 'budget topic', budgetMs: 0, language: 'en' });
   assert.equal(result.version, 2);
   assert.ok(result.stageFallbacks.length >= 1);
 });

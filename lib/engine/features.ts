@@ -14,8 +14,8 @@ export function median(values: number[]): number {
   return percentile(values, 50);
 }
 
-export function parseTimeMs(value: string): number {
-  const parsed = Date.parse(value);
+export function parseTimeMs(value: string | null | undefined): number {
+  const parsed = Date.parse(value ?? '');
   return Number.isFinite(parsed) ? parsed : 0;
 }
 

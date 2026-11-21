@@ -12,8 +12,10 @@ import {
   type SpaceNewsItem, type WikiSignal, type SpaceNicheSuggestion,
 } from '@/lib/space';
 import { buildInternalResearch } from '@/lib/engine';
+import { runEngineV2, type EngineV2Input } from '@/lib/engine/orchestrator';
+import { engineV2OpportunityToIdea } from '@/lib/engine/idea-mapper';
 import { buildResearchInterestProfile, normalizeResearchText } from '@/lib/intelligence';
-import { collectEngineVideoEvidence, collectEngineVideoEvidenceDetailed, runSingleFlight } from '@/lib/dashboard';
+import { collectEngineVideoEvidenceDetailed, runSingleFlight } from '@/lib/dashboard';
 import { generateEditorialIdeas } from '@/lib/idea-generation';
 import { createResearchMemoryEntry } from '@/lib/research-memory';
 import { rememberTopicDossier } from '@/lib/topic-dossier';
@@ -170,6 +172,45 @@ export default function CosmicNews() {
           skipExistingEvidence: true,
           limit: 5,
         });
+        // Engine v2 runs in the background; opportunities land as engine-generated ideas.
+        const engineV2Input: EngineV2Input = {
+          videos: engineVideoEvidence.map((video) => ({
+            id: video.id, title: video.title, description: video.description, channel: video.channel,
+            channelId: video.channelId ?? '', publishedAt: video.publishedAt, viewCount: video.viewCount,
+            likeCount: video.likeCount, commentCount: video.commentCount,
+            channelSubscriberCount: null, channelVideoCount: null, fetchedAt: Date.now(),
+          })),
+          news: allEngineNews.map((item) => ({
+            title: item.title, summary: item.summary, sourceName: item.sourceName,
+            sourceUrl: item.url, publishedAt: item.publishedAt, sourceId: item.sourceId,
+          })),
+          topic: discoveryTopic,
+          language: currentData.preferences.uiLanguage === 'fa' ? 'fa' : 'en',
+          budgetMs: 40,
+        };
+        setTimeout(() => {
+          try {
+            const engineV2 = runEngineV2(engineV2Input);
+            console.log('[engine-v2]', JSON.stringify({
+              topic: discoveryTopic,
+              stageFallbacks: engineV2.stageFallbacks,
+              processingMs: engineV2.processingMs,
+              timings: engineV2.timings,
+              opportunities: engineV2.opportunities.length,
+            }));
+            const engineV2Ideas = engineV2.opportunities.map((opportunity) => engineV2OpportunityToIdea(opportunity, {
+              region: currentData.preferences.region,
+              languages: currentData.preferences.languages,
+              language: engineV2Input.language,
+            }));
+            if (!engineV2Ideas.length) return;
+            void useScout.getState().commit((data) => ({ ...data, ideas: [...engineV2Ideas, ...data.ideas] })).catch((error) => {
+              console.warn('[engine-v2] commit failed:', error instanceof Error ? error.message : String(error));
+            });
+          } catch (error) {
+            console.warn('[engine-v2] failed:', error instanceof Error ? error.message : String(error));
+          }
+        }, 0);
         const nextMemory = nextRadarBrief ? createResearchMemoryEntry({
           topic: discoveryTopic,
           news: allEngineNews,

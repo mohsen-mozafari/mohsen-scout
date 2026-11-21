@@ -105,8 +105,8 @@ export default function DeepResearch() {
         id: video.id, title: video.title, description: video.description,
         channel: video.channel, channelId: '', publishedAt: video.publishedAt,
         thumbnailUrl: video.thumbnail, viewCount: video.viewCount ?? null,
-        likeCount: video.likeCount ?? null, channelSubscriberCount: null,
-        channelVideoCount: null, url: 'https://www.youtube.com/watch?v=' + video.id,
+        likeCount: video.likeCount ?? null, commentCount: video.commentCount ?? null,
+        channelSubscriberCount: null, channelVideoCount: null, url: 'https://www.youtube.com/watch?v=' + video.id,
       }));
       warnings.push('Reused the YouTube report already linked to this idea; no additional YouTube quota was used.');
     } else if (cachedDossier?.videos.length && cachedDossier.videoCriteria?.days === (preferences.defaultResearchDays ?? 30) && cachedDossier.videoCriteria.region === preferences.region && cachedDossier.videoCriteria.language === (preferences.languages[0] ?? '') && cachedDossier.videoCriteria.order === 'viewCount') {

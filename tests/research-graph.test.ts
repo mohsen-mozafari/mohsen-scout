@@ -40,6 +40,7 @@ const videos: YouTubeSampleVideo[] = [{
   thumbnailUrl: 'https://example.com/mock-thumbnail.jpg',
   viewCount: 1200,
   likeCount: 36,
+  commentCount: 12,
   channelSubscriberCount: 5000,
   channelVideoCount: 80,
   url: 'https://www.youtube.com/watch?v=mock-video-1',

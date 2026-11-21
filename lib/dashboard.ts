@@ -1,6 +1,6 @@
 import { fingerprintText } from './api';
 import { matchesResearchTerms } from './intelligence';
-import { RETENTION_MS, type Idea, type Opinion, type Report, type Video } from './types';
+import { RETENTION_MS, type Idea, type Opinion, type Report, type Video, type VideoCoverageData } from './types';
 
 const assessmentOrder: Record<Idea['assessment'], number> = {
   'Strong Opportunity': 5,
@@ -17,7 +17,7 @@ function evidenceWeight(idea: Idea): number {
 }
 
 export type EngineVideoEvidence = Omit<
-  Pick<Video, 'id' | 'title' | 'description' | 'channel' | 'publishedAt' | 'viewCount' | 'likeCount' | 'commentCount' | 'fetchedAt'>,
+  Pick<Video, 'id' | 'title' | 'description' | 'channel' | 'channelId' | 'publishedAt' | 'viewCount' | 'likeCount' | 'commentCount' | 'fetchedAt'>,
   'viewCount' | 'likeCount' | 'commentCount'
 > & {
   viewCount: number | null;
@@ -57,6 +57,7 @@ export function collectEngineVideoEvidenceDetailed(
       title: video.title,
       description: video.description,
       channel: video.channel,
+      channelId: video.channelId ?? '',
       publishedAt: video.publishedAt,
       viewCount: video.viewCount ?? null,
       likeCount: video.likeCount ?? null,

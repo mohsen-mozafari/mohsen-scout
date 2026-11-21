@@ -80,9 +80,9 @@ export function scoreFeatures(features: readonly EngineV2Feature[], ctx: EngineV
     if (engagement > 60) reasons.push(reasonText(lang, 'کیفیت تعامل بالا (لایک+کامنت بر بازدید).', 'Strong engagement (likes + comments per view).'));
     if (titleScore >= 40) reasons.push(reasonText(lang, 'عنوان دارای عدد یا سؤال — پتانسیل کلیک بالاتر.', 'Title uses digits or a question, a common click driver.'));
     if (channelSize > 60) reasons.push(reasonText(lang, 'کانال بزرگتر از میانه‌ی نمونه است.', 'The channel is larger than the sample median.'));
-    if (ctx.gap) reasons.push(reasonText(lang, 'شکاف خبری: این موضوع گرم اخبار است اما در نمونه یوتیوب کم وجود دارد.', 'News gap: this topic is hot in news but little covered in the YouTube sample.'));
+    if (gap) reasons.push(reasonText(lang, 'شکاف خبری: این موضوع گرم اخبار است اما در نمونه یوتیوب کم وجود دارد.', 'News gap: this topic is hot in news but little covered in the YouTube sample.'));
     if (freshness > 60) reasons.push(reasonText(lang, 'فرصت فعلی: انتشار تازه است.', 'Fresh opportunity: recently published.'));
-    if (ctx.risk) reasons.push(reasonText(lang, 'ریسک بالا: رقابت شدید در این موضوع.', 'High risk: strong competition in this topic.'));
+    if (risk) reasons.push(reasonText(lang, 'ریسک بالا: رقابت شدید در این موضوع.', 'High risk: strong competition in this topic.'));
     if (score < 30) reasons.push(reasonText(lang, 'امتیاز کلی پایین — با احتیاط ادامه دهید.', 'Overall score is low — proceed with caution.'));
     if (reasons.length === 0) reasons.push(reasonText(lang, 'نقطه متعادل: شواهد محدودی داریم.', 'Balanced: limited evidence so far.'));
     out.push({ feature, score, componentScores, reasons });

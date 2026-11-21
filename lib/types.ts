@@ -1,3 +1,5 @@
+import type { EngineV2Opportunity } from './engine/types';
+
 export const regions = ['United States', 'Worldwide', 'Iran', 'United Kingdom', 'Germany'] as const;
 export type Region = (typeof regions)[number];
 export const languages: Record<string, string> = {
@@ -38,6 +40,7 @@ export type Video = {
   title: string;
   description: string;
   channel: string;
+  channelId?: string;
   thumbnail: string;
   publishedAt: string;
   fetchedAt: number;
@@ -110,6 +113,8 @@ export type Idea = {
   /** Explainable local editorial-priority score (not a view or revenue forecast). */
   engineScore?: number;
   engineScoreReason?: string;
+  /** Engine v2 structured idea details (score, evidence refs, estimated income). */
+  engineV2?: EngineV2Opportunity;
 };
 export type Report = {
   id: string;

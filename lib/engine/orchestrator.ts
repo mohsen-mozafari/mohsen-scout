@@ -18,7 +18,7 @@ export type EngineV2Input = {
   videos: EngineV2VideoInput[];
   news: EngineV2NewsInput[];
   topic: string;
-  language?: 'fa' | 'en';
+  language: 'fa' | 'en';
   trend?: MonthlyTrend;
   coverage?: EngineV2Result['coverage'];
   weights?: Partial<EngineV2Weights>;
@@ -68,17 +68,10 @@ export function runEngineV2(input: EngineV2Input): EngineV2Result {
     const videoMap = new Map<string, EngineV2VideoInput>();
     for (const video of input.videos) if (video.id) videoMap.set(video.id, video);
     const videos = [...videoMap.values()];
-    const docs: TopicDoc[] = videos.map((video) => ({
-      id: video.id,
-      kind: 'youtube',
-      text: `${video.title} ${video.description}`,
-      publishedAt: video.publishedAt,
-    })).concat(input.news.map((news, index) => ({
-      id: news.id ?? `news:${index}`,
-      kind: 'news' as const,
-      text: `${news.title} ${news.summary}`,
-      publishedAt: news.publishedAt,
-    })));
+    const docs: TopicDoc[] = [
+      ...videos.map((video) => ({ id: video.id, kind: 'youtube' as const, text: `${video.title} ${video.description}`, publishedAt: video.publishedAt })),
+      ...input.news.map((news, index) => ({ id: news.id ?? `news:${index}`, kind: 'news' as const, text: `${news.title} ${news.summary}`, publishedAt: news.publishedAt })),
+    ];
     return { videos, docs };
   });
   const videos = setup?.videos ?? [];

@@ -195,16 +195,17 @@ const searchSchema = z.object({
   items: z.array(
     z.object({
       id: z.object({ videoId: z.string().regex(/^[\w-]{11}$/) }),
-      snippet: z.object({
-        title: z.string(),
-        description: z.string(),
-        channelTitle: z.string(),
-        publishedAt: z.string().datetime(),
-        thumbnails: z.object({
-          medium: z.object({ url: z.string() }).optional(),
-          default: z.object({ url: z.string() }).optional(),
+        snippet: z.object({
+          title: z.string(),
+          description: z.string(),
+          channelTitle: z.string(),
+          channelId: z.string().optional(),
+          publishedAt: z.string().datetime(),
+          thumbnails: z.object({
+            medium: z.object({ url: z.string() }).optional(),
+            default: z.object({ url: z.string() }).optional(),
+          }),
         }),
-      }),
     }),
   ),
 });
@@ -374,7 +375,7 @@ export async function searchYouTube(input: ResearchInput, options: YouTubeOption
         if (!candidates.has(id)) {
           candidates.set(id, {
             id, title: item.snippet.title, description: item.snippet.description,
-            channel: item.snippet.channelTitle, publishedAt: item.snippet.publishedAt,
+            channel: item.snippet.channelTitle, channelId: item.snippet.channelId, publishedAt: item.snippet.publishedAt,
             thumbnail: item.snippet.thumbnails.medium?.url ?? item.snippet.thumbnails.default?.url ?? '',
             fetchedAt: Date.now(), query: SEARCH_BUCKET_LABELS[search.bucket](topic),
           });

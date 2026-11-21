@@ -361,6 +361,7 @@ void test('Topic dossier merges local evidence, normalizes topic keys and expire
     thumbnailUrl: 'https://example.com/mock.jpg',
     viewCount: 120,
     likeCount: 8,
+    commentCount: 2,
     channelSubscriberCount: 500,
     channelVideoCount: 20,
     url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',

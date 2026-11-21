@@ -48,7 +48,7 @@ type InternalTopic = {
  * TF-IDF + n-gram (bigram) based topic engine with connected-component clustering:
  * docs that share terms form clusters; rarer, longer terms weigh more.
  */
-export function buildTopicEngine(docs: readonly TopicDoc[], options: TopicEngineOptions = {}, trendChangePercent?: number): TopicEngine {
+export function buildTopicEngine(docs: readonly TopicDoc[], options: TopicEngineOptions = {}, trendChangePercent?: number | null): TopicEngine {
   const now = Date.now();
   const N = Math.max(1, docs.length);
   const minDocs = Math.max(1, options.minDocsPerTopic ?? 2);

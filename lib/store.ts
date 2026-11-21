@@ -12,6 +12,8 @@ import {
 } from './types';
 import { readData, writeData } from './storage';
 import { getKey } from './vault';
+import { runEngineV2, type EngineV2Input } from './engine/orchestrator';
+import { engineV2OpportunityToIdea, engineV2VideoInputFromVideo } from './engine/idea-mapper';
 import { nextBudget, searchYouTube, type YouTubeQuotaKind, type YouTubeQuotaOrigin } from './api';
 import { filterVideosToSelectedResearchPeriod, generateEditorialIdeas } from './idea-generation';
 import { attachReportToIdea as attachReport, attachVideoReferenceToIdea as attachVideoReference, getOrCreateSourceIdea, type SourceIdeaInput } from './idea-research';
@@ -145,6 +147,41 @@ export const useScout = create<State>((set, get) => ({
       const availableNews = getCachedSpaceNews(currentData.feedRegistry, currentData.preferences.spaceNewsSources);
       const priorMemory = currentData.researchMemory.find((entry) => normalizeResearchText(entry.topic) === normalizeResearchText(report.input.topic));
       const currentVideos = filterVideosToSelectedResearchPeriod(result.videos, report.input.days);
+      // Engine v2 runs in the background so the UI is not blocked; it prepends
+      // real-evidence opportunities to the legacy generated ideas when it lands.
+      const engineV2Input: EngineV2Input = {
+        videos: currentVideos.map((video) => engineV2VideoInputFromVideo(video, Date.now())),
+        news: availableNews.map((item) => ({
+          title: item.title, summary: item.summary, sourceName: item.sourceName,
+          sourceUrl: item.url, publishedAt: item.publishedAt, sourceId: item.sourceId,
+        })),
+        topic: report.input.topic,
+        language: get().data.preferences.uiLanguage === 'fa' ? 'fa' : 'en',
+        budgetMs: 40,
+      };
+      setTimeout(() => {
+        try {
+          const engineV2 = runEngineV2(engineV2Input);
+          console.log('[engine-v2]', JSON.stringify({
+            topic: report.input.topic,
+            stageFallbacks: engineV2.stageFallbacks,
+            processingMs: engineV2.processingMs,
+            timings: engineV2.timings,
+            opportunities: engineV2.opportunities.length,
+          }));
+          if (!engineV2.opportunities.length) return;
+          const engineV2Ideas = engineV2.opportunities.map((opportunity) => engineV2OpportunityToIdea(opportunity, {
+            region: report.input.region,
+            languages: report.input.languages,
+            language: engineV2Input.language,
+          }));
+          void get().commit((data) => ({ ...data, ideas: [...engineV2Ideas, ...data.ideas] })).catch((error) => {
+            console.warn('[engine-v2] commit failed:', error instanceof Error ? error.message : String(error));
+          });
+        } catch (error) {
+          console.warn('[engine-v2] failed:', error instanceof Error ? error.message : String(error));
+        }
+      }, 0);
       recordRuntimeStart('Engine');
       engineStarted = true;
       const generatedIdeas = generateEditorialIdeas({
@@ -219,6 +256,39 @@ export const useScout = create<State>((set, get) => ({
       language: get().data.preferences.uiLanguage ?? 'fa',
       limit: 5,
     });
+    const engineV2Input: EngineV2Input = {
+      videos: filterVideosToSelectedResearchPeriod(report.videos, report.input.days).map((video) => engineV2VideoInputFromVideo(video, Date.now())),
+      news: availableNews.map((item) => ({
+        title: item.title, summary: item.summary, sourceName: item.sourceName,
+        sourceUrl: item.url, publishedAt: item.publishedAt, sourceId: item.sourceId,
+      })),
+      topic: report.input.topic,
+      language: get().data.preferences.uiLanguage === 'fa' ? 'fa' : 'en',
+      budgetMs: 40,
+    };
+    setTimeout(() => {
+      try {
+        const engineV2 = runEngineV2(engineV2Input);
+        console.log('[engine-v2]', JSON.stringify({
+          topic: report.input.topic,
+          stageFallbacks: engineV2.stageFallbacks,
+          processingMs: engineV2.processingMs,
+          timings: engineV2.timings,
+          opportunities: engineV2.opportunities.length,
+        }));
+        const engineV2Ideas = engineV2.opportunities.map((opportunity) => engineV2OpportunityToIdea(opportunity, {
+          region: report.input.region,
+          languages: report.input.languages,
+          language: engineV2Input.language,
+        }));
+        if (!engineV2Ideas.length) return;
+        void get().commit((data) => ({ ...data, ideas: [...engineV2Ideas, ...data.ideas] })).catch((error) => {
+          console.warn('[engine-v2] commit failed:', error instanceof Error ? error.message : String(error));
+        });
+      } catch (error) {
+        console.warn('[engine-v2] failed:', error instanceof Error ? error.message : String(error));
+      }
+    }, 0);
     await get().commit((data) => ({
       ...data,
       reports: data.reports.map((r) => (r.id === id ? { ...r, analyzed: true } : r)),
