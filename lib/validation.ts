@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { type LocalData, regions, statuses } from './types';
+import { DEFAULT_SECOND_OPINION_ORDER, type LocalData, regions, statuses } from './types';
 const id = z.string().min(1);
 const text = z.string();
 const time = z.number().finite().nonnegative();
@@ -35,6 +35,8 @@ const schema = z.object({
     budget: z.number().int().min(100).max(10000),
     model: text,
     hybridIntelligence: z.boolean().optional().default(false),
+    secondOpinionOrder: z.array(z.enum(['gemini', 'groq', 'cloudflare', 'openrouter'])).min(1).max(4).optional().default(DEFAULT_SECOND_OPINION_ORDER),
+    secondOpinionModels: z.object({ gemini: z.string().max(120).optional().default('gemini-3.8-flash'), groq: z.string().max(120).optional().default('openai/gpt-oss-120b'), cloudflare: z.string().max(160).optional().default('@cf/meta/llama-3.3-70b-instruct-fp8-fast'), openrouter: z.string().max(160).optional().default('') }).optional().default({ gemini: 'gemini-3.8-flash', groq: 'openai/gpt-oss-120b', cloudflare: '@cf/meta/llama-3.3-70b-instruct-fp8-fast', openrouter: '' }),
     openRouterUsageDay: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
     openRouterRequestsToday: z.number().int().min(0).max(10000).optional(),
     openRouterDailyLimit: z.number().int().min(0).max(10000).optional(),

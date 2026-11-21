@@ -136,6 +136,8 @@ export const DEFAULT_SPACE_NEWS_SOURCE_IDS: SpaceNewsSourceId[] = ['nasa', 'jpl'
 export type SpaceNewsSourceId = 'nasa' | 'jpl' | 'cneos' | 'esa-space' | 'esa-science' | 'space-com' | 'phys-space' | 'universe-today' | 'sky-telescope';
 export type WikiLanguage = 'en' | 'fa' | 'de' | 'fr' | 'es' | 'ja';
 export type UiLanguage = 'fa' | 'en';
+export type SecondOpinionProvider = 'gemini' | 'groq' | 'cloudflare' | 'openrouter';
+export const DEFAULT_SECOND_OPINION_ORDER: SecondOpinionProvider[] = ['gemini', 'groq', 'cloudflare', 'openrouter'];
 export type Preferences = {
   uiLanguage: UiLanguage;
   name: string;
@@ -146,7 +148,10 @@ export type Preferences = {
   budget: number;
   model: string;
   /** Automatic privacy-bounded external review after local research completes. */
+  /** Kept for backward compatibility; external review now requires an explicit manual action. */
   hybridIntelligence: boolean;
+  secondOpinionOrder: SecondOpinionProvider[];
+  secondOpinionModels: { gemini: string; groq: string; cloudflare: string; openrouter: string };
   /** Local mirror of OpenRouter free-model daily quota for this key. */
   openRouterUsageDay?: string;
   openRouterRequestsToday?: number;
@@ -245,6 +250,8 @@ export function defaults(): LocalData {
       budget: 10000,
       model: '',
       hybridIntelligence: false,
+      secondOpinionOrder: [...DEFAULT_SECOND_OPINION_ORDER],
+      secondOpinionModels: { gemini: 'gemini-3.8-flash', groq: 'openai/gpt-oss-120b', cloudflare: '@cf/meta/llama-3.3-70b-instruct-fp8-fast', openrouter: '' },
       schedule: 'Daily',
       paused: false,
       spaceNewsSources: [...DEFAULT_SPACE_NEWS_SOURCE_IDS],
