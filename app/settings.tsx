@@ -388,7 +388,10 @@ export default function Settings() {
             const selected: Record<string, SecondOpinionProvider> = {
               Gemini: 'gemini', Groq: 'groq', 'Cloudflare Workers AI': 'cloudflare', OpenRouter: 'openrouter',
             };
-            setPrefs({ ...prefs, secondOpinionProvider: selected[values[0]] ?? 'gemini' });
+            const provider = selected[values[0]] ?? 'gemini';
+            const currentOrder = prefs.secondOpinionOrder ?? DEFAULT_SECOND_OPINION_ORDER;
+            const nextOrder = [provider, ...currentOrder.filter((item) => item !== provider)];
+            setPrefs({ ...prefs, secondOpinionProvider: provider, secondOpinionOrder: nextOrder });
           }}
         />
         <Heading>Fallback order</Heading>
@@ -401,7 +404,7 @@ export default function Settings() {
             <Action secondary disabled={index === 0} onPress={() => {
               const next = [...order];
               [next[index - 1], next[index]] = [next[index], next[index - 1]];
-              setPrefs({ ...prefs, secondOpinionOrder: next });
+              setPrefs({ ...prefs, secondOpinionProvider: next[0], secondOpinionOrder: next });
             }}>↑</Action>
             <Action secondary disabled={index === order.length - 1} onPress={() => {
               const next = [...order];

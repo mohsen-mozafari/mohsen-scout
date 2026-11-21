@@ -130,7 +130,8 @@ function EngineAIReview({ topic, idea }: { topic: string; idea?: Idea }) {
   const prompt = candidateConcept.trim()
     ? structuredSecondOpinionPrompt(topic, candidateConcept, fa ? 'fa' : 'en')
     : '';
-  const order = preferences.providerOrder?.length ? preferences.providerOrder : DEFAULT_SECOND_OPINION_ORDER;
+  const savedOrder = preferences.providerOrder?.length ? preferences.providerOrder : DEFAULT_SECOND_OPINION_ORDER;
+  const order = [preferences.preferredProvider, ...savedOrder.filter((provider) => provider !== preferences.preferredProvider)];
   const modelConfig = preferences.providerModels ?? {
     gemini: 'gemini-3.8-flash',
     groq: 'openai/gpt-oss-120b',
@@ -171,9 +172,11 @@ function EngineAIReview({ topic, idea }: { topic: string; idea?: Idea }) {
       }
 
       const currentPreferences = useScout.getState().data.preferences;
-      const currentOrder = currentPreferences.secondOpinionOrder?.length
+      const savedOrder = currentPreferences.secondOpinionOrder?.length
         ? currentPreferences.secondOpinionOrder
         : DEFAULT_SECOND_OPINION_ORDER;
+      const preferredProvider = currentPreferences.secondOpinionProvider ?? savedOrder[0];
+      const currentOrder = [preferredProvider, ...savedOrder.filter((provider) => provider !== preferredProvider)];
       const currentModels = currentPreferences.secondOpinionModels ?? modelConfig;
       const configs: SecondOpinionProviderConfig[] = [];
       for (const provider of currentOrder) {
