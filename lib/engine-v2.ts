@@ -631,6 +631,7 @@ export function normalizeEvidence(input: readonly RawEvidenceInput[]): Normaliza
     if (canonicalUrl) urlIndex.set(canonicalUrl, index);
     if (normalizedTitle) exactTitleIndex.set(normalizedTitle, index);
     for (const token of titleTokens) pushIndex(titleTokenIndex, token, index);
+    titleTokenSets.push(titleTokens);
     textTokenSets.push(textTokens);
     const anchors = [...textTokens]
       .sort((left, right) =>
@@ -729,7 +730,8 @@ export function extractFeatures(item: EvidenceItem, ctx: FeatureContext): ItemFe
 // ---------------------------------------------------------------------------
 
 interface TopicCluster {
-  vectors: Map<string, number>[];
+  /** Running term sums, updated incrementally so assignment stays O(vocabulary). */
+  sums: Map<string, number>;
   centroid: Map<string, number>;
   itemIndexes: number[];
 }
@@ -746,12 +748,8 @@ function cosine(a: ReadonlyMap<string, number>, b: ReadonlyMap<string, number>):
 }
 
 function recomputeCentroid(cluster: TopicCluster): void {
-  const sums = new Map<string, number>();
-  for (const vector of cluster.vectors) {
-    for (const [key, value] of vector) sums.set(key, (sums.get(key) ?? 0) + value);
-  }
-  const divisor = Math.max(1, cluster.vectors.length);
-  const entries = [...sums.entries()]
+  const divisor = Math.max(1, cluster.itemIndexes.length);
+  const entries = [...cluster.sums.entries()]
     .map(([key, value]): [string, number] => [key, value / divisor])
     .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
     .slice(0, 12);
@@ -849,12 +847,15 @@ export function buildTopics(
       }
     }
     if (best >= 0 && (bestSimilarity >= TOPIC_SIMILARITY || clusters.length >= maxTopics)) {
-      clusters[best].vectors.push(vectors[index]);
-      clusters[best].itemIndexes.push(index);
-      recomputeCentroid(clusters[best]);
+      const cluster = clusters[best];
+      for (const [key, value] of vectors[index]) {
+        cluster.sums.set(key, (cluster.sums.get(key) ?? 0) + value);
+      }
+      cluster.itemIndexes.push(index);
+      recomputeCentroid(cluster);
     } else {
       const centroid = new Map(vectors[index]);
-      clusters.push({ vectors: [vectors[index]], centroid, itemIndexes: [index] });
+      clusters.push({ sums: new Map(vectors[index]), centroid, itemIndexes: [index] });
     }
   }
 
@@ -1135,7 +1136,7 @@ export function generateIdeas(input: IdeaInput, opts: { limit?: number } = {}): 
         bestTimeToPublish: 'Not scheduled: insufficient evidence.',
         confidence: score.confidence,
         dataSufficient: false,
-        message: 'No idea was generated: fewer than ' + MIN_EVIDENCE + ' real evidence items. No title, viewpoint or reference was invented.',
+        message: 'Insufficient evidence: fewer than ' + MIN_EVIDENCE + ' real evidence items were linked to this topic. No title, viewpoint or reference was invented.',
       });
       continue;
     }

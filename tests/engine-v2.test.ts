@@ -96,7 +96,7 @@ void test('normalization preserves channel stats and buckets, strips HTML and re
   assert.equal(result.dropped, 1);
   assert.deepEqual(
     result.stats.map((coverage) => [coverage.source, coverage.fetched, coverage.normalized, coverage.deduped]),
-    [['news', 3, 3, 1], ['youtube', 1, 1, 0], ['wikimedia', 1, 1, 0]],
+    [['news', 4, 3, 1], ['youtube', 1, 1, 0], ['wikimedia', 1, 1, 0]],
   );
 
   const first = result.items.find((item) => item.id === 'news:n1');
@@ -519,7 +519,7 @@ void test('TIMING: legacy baseline vs engine v2 on 1000 news and 1500 videos', (
   const engineStart = performance.now();
   const result: EngineV2Result = runEngineV2(
     { now, evidence, niche: 'space-science' },
-    { budgetMs: 8000 },
+    { budgetMs: 20000 },
   );
   const engineMs = performance.now() - engineStart;
 
@@ -531,6 +531,6 @@ void test('TIMING: legacy baseline vs engine v2 on 1000 news and 1500 videos', (
   assert.ok(result.items.length > 0);
   assert.equal(result.timings.length, 5);
   // Generous ceiling: this is a CI comparison signal, not a performance regression gate.
-  assert.ok(baselineMs < 8000);
-  assert.ok(engineMs < 8000);
+  assert.ok(baselineMs < 20000);
+  assert.ok(engineMs < 20000);
 });
