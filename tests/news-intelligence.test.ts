@@ -81,6 +81,18 @@ void test('publisher intelligence never changes the supplied records and labels 
 
 
 void test('large publisher samples keep exact window counts and only the latest three traceable records', async () => {
+  const descriptions = [
+    'calibration alignment reference', 'thermal profile detector',
+    'infrared atmospheric signature', 'observatory detection limits',
+    'absorption transition molecule', 'stellar irradiation chemistry',
+    'planetary atmosphere abundance', 'wavelength resolution baseline',
+    'photometric followup uncertainty', 'transit observation model',
+    'molecular line broadening', 'signal extraction residual',
+    'detector background calibration', 'laboratory spectral profile',
+    'isotope abundance estimate', 'cloud opacity retrieval',
+    'orbital phase variation', 'instrument sensitivity test',
+    'statistical confidence interval', 'spectral response comparison',
+  ];
   const input = Array.from({ length: 160 }, (_, index) => {
     const day = index % 14;
     const sourceId = index % 3 === 0 ? 'nasa' : index % 3 === 1 ? 'esa-science' : 'space-com';
@@ -89,7 +101,7 @@ void test('large publisher samples keep exact window counts and only the latest 
       'bulk-' + index,
       sourceId,
       sourceName,
-      'Methane spectroscopy report on JWST observation ' + index,
+      'Methane spectroscopy ' + descriptions[index % descriptions.length] + ' JWST observation report ' + index,
       new Date(now - day * 86400000).toISOString(),
     );
   });
