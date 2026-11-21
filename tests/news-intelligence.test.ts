@@ -101,12 +101,12 @@ void test('large publisher samples keep exact window counts and only the latest 
       'bulk-' + index,
       sourceId,
       sourceName,
-      'Methane spectroscopy ' + descriptions[index % descriptions.length] + ' JWST observation report ' + index,
+      'Aether methane spectroscopy ' + descriptions[index % descriptions.length] + ' JWST observation report ' + index,
       new Date(now - day * 86400000).toISOString(),
     );
   });
   const result = await buildPublisherIntelligence(input, now, 7);
-  const methane = result.clusters.find((cluster) => cluster.title.includes('methane'));
+  const methane = result.clusters.find((cluster) => cluster.title === 'aether');
   assert.ok(methane);
   assert.equal(result.uniqueCount, input.length);
   assert.equal(methane.articleCount, input.length);
