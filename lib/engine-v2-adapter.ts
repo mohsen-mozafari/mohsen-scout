@@ -347,7 +347,6 @@ export function buildUnifiedBrief(input: UnifiedBriefInput): UnifiedBrief {
   const warnings: string[] = [];
   let result: EngineV2Result;
   try {
-    const topic = typeof input?.topic === 'string' ? input.topic.trim().slice(0, 180) : '';
     const news = Array.isArray(input?.news) ? input.news : [];
     const videos = Array.isArray(input?.videos) ? input.videos : [];
     const videoInputs: BriefVideoInput[] = videos

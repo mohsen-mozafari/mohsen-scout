@@ -981,7 +981,7 @@ export function scoreOpportunity(
   const competition = clamp01(0.7 * videoShare + 0.3 * Math.min(1, distinctChannels / 5));
   const videosWithViews = videoItems.filter((item) => item.views != null && item.views > 0).length;
 
-  const weights: ScoreWeights = { ...DEFAULT_WEIGHTS, ...(ctx.weights ?? {}), ...(opts.weights ?? {}) };
+  const weights: ScoreWeights = { ...DEFAULT_WEIGHTS, ...ctx.weights, ...opts.weights };
   const rawValues: Record<ScoreComponentName, number> = {
     baseline: 100,
     momentum: topic.momentum * 100,
