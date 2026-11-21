@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Linking, Pressable, Text, View, useWindowDimensions, type StyleProp, type TextStyle } from 'react-native';
+import { Pressable, Text, View, useWindowDimensions, type StyleProp, type TextStyle } from 'react-native';
 import Svg, { Circle, Line, Path, Text as SvgText } from 'react-native-svg';
 import { router } from 'expo-router';
 import { resolveTextDirection } from '@/lib/i18n';
@@ -121,7 +121,7 @@ export function ResearchKnowledgeGraph({
       .filter((video) => typeof video.viewCount === 'number' && Number.isFinite(video.viewCount) && video.viewCount >= 0)
       .slice()
       .sort((a, b) => (b.viewCount ?? -1) - (a.viewCount ?? -1) || a.id.localeCompare(b.id))
-      .slice(0, 6),
+      .slice(0, 4),
     [videos],
   );
   const maxVideoViews = Math.max(1, ...topVideoSamples.map((video) => video.viewCount ?? 0));
@@ -212,8 +212,8 @@ export function ResearchKnowledgeGraph({
   const chart = useMemo(() => {
     const left = 34;
     const right = 12;
-    const top = 18;
-    const bottom = 196;
+    const top = 14;
+    const bottom = 150;
     const plotWidth = graphWidth - left - right;
     const maxRelationshipTypes = Math.max(1, ...[...connectionsByIdea.values()].map((item) => item.relationKinds));
     const points = plottedIdeas.map((idea, index) => {
@@ -278,22 +278,50 @@ export function ResearchKnowledgeGraph({
       : plottedIdeas[0]?.id;
   const selectedIdea = plottedIdeas.find((idea) => idea.id === selectedId);
   const selectedConnections = selectedIdea ? connectionsByIdea.get(selectedIdea.id) : undefined;
-  const selectedReason = selectedIdea?.engineScoreReason?.split(';').slice(0, 2).join(' • ');
-  const [detailsOpen, setDetailsOpen] = useState(false);
-  const detailsVisible = detailsOpen || Boolean(selectedIdeaId);
 
   const chooseIdea = (id: string) => {
     setLocalSelectedId(id);
     setSelectedIdeaId(id);
-    setDetailsOpen(true);
     onSelectIdea?.(id);
   };
   const selectFilter = (next: PriorityFilter) => {
     setFilter(next);
     setLocalSelectedId(undefined);
-    setDetailsOpen(false);
   };
   const unscoredCount = (generatedIdeas?.length ?? 0) - scoredIdeas.length;
+  const groupCount = (id: string) => model.groups.find((group) => group.id === id)?.items.length ?? 0;
+  const pipelineStages = [
+    {
+      id: 'inputs',
+      title: label('INPUTS', 'ورودی‌ها'),
+      tone: p.cyan,
+      items: [
+        { id: 'news', label: label('Reports', 'خبرها'), value: groupCount('sources') },
+        { id: 'youtube', label: 'YouTube', value: groupCount('youtube') },
+        { id: 'wiki', label: 'Wikimedia', value: wiki?.monthlyViews.length ?? 0 },
+      ],
+    },
+    {
+      id: 'engine',
+      title: label('ENGINE', 'موتور داخلی'),
+      tone: p.purple,
+      items: [
+        { id: 'evidence', label: label('Evidence', 'شواهد'), value: groupCount('evidence') },
+        { id: 'entities', label: label('Entities', 'موجودیت‌ها'), value: groupCount('entities') },
+        { id: 'checks', label: label('Findings & checks', 'یافته و بررسی'), value: groupCount('findings') },
+      ],
+    },
+    {
+      id: 'outputs',
+      title: label('OUTPUTS', 'خروجی‌ها'),
+      tone: p.success,
+      items: [
+        { id: 'ideas', label: label('Ideas', 'ایده‌ها'), value: groupCount('ideas') },
+        { id: 'angles', label: label('Angles', 'زاویه‌ها'), value: groupCount('angles') },
+        { id: 'links', label: label('Relations', 'پیوندها'), value: model.edges.length },
+      ],
+    },
+  ];
 
   const filters: { id: PriorityFilter; title: string; count: number }[] = [
     { id: 'all', title: label('All', 'همه'), count: scoredIdeas.length },
@@ -304,6 +332,32 @@ export function ResearchKnowledgeGraph({
 
   return (
     <View style={{ gap: 12 }}>
+      <View style={{ gap: 4 }}>
+        <DirectionalText value={label('Research flow · all retained inputs', 'جریان تحقیق · تمام ورودی‌های نگهداری‌شده')} style={{ fontSize: 15, fontWeight: '700' }} />
+        <DirectionalText
+          value={label(
+            'Reports, videos and pageviews → engine evidence and entities → ideas and cross-source links.',
+            'خبرها، ویدئوها و بازدید مقاله → شواهد و موجودیت‌های موتور → ایده‌ها و پیوندهای میان‌منبعی.',
+          )}
+          style={{ color: p.muted, fontSize: 10 }}
+        />
+      </View>
+      <View style={{ flexDirection: 'row', gap: 6, alignItems: 'stretch' }}>
+        {pipelineStages.map((stage, index) => (
+          <View key={stage.id} style={{ flex: 1, minWidth: 0, borderRadius: 10, borderWidth: 1, borderColor: stage.tone, backgroundColor: p.surface, paddingHorizontal: 7, paddingVertical: 8, gap: 6 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 3 }}>
+              <Text style={{ color: stage.tone, fontSize: 9, fontWeight: '800' }}>{stage.title}</Text>
+              {index < 2 ? <Text style={{ color: p.muted, fontSize: 11 }}>›</Text> : null}
+            </View>
+            {stage.items.map((item) => (
+              <View key={item.id} style={{ gap: 1 }}>
+                <Text numberOfLines={1} style={{ color: p.muted, fontSize: 8 }}>{item.label}</Text>
+                <Text style={{ color: p.text, fontSize: 13, fontWeight: '800' }}>{number(item.value)}</Text>
+              </View>
+            ))}
+          </View>
+        ))}
+      </View>
       <View style={{ gap: 4 }}>
         <DirectionalText value={label('Editorial evidence map', 'نقشه شواهد و اولویت تحریری')} style={{ fontSize: 17, fontWeight: '700' }} />
         <DirectionalText
@@ -330,8 +384,8 @@ export function ResearchKnowledgeGraph({
       {plottedIdeas.length ? (
         <>
           <View style={{ alignItems: 'center' }}>
-            <View style={{ width: graphWidth, height: 232 }}>
-              <Svg width={graphWidth} height={232}>
+            <View style={{ width: graphWidth, height: 182 }}>
+              <Svg width={graphWidth} height={182}>
                 {[0, 50, 100].map((tick) => {
                   const y = chart.top + (1 - tick / 100) * (chart.bottom - chart.top);
                   return (
@@ -386,19 +440,13 @@ export function ResearchKnowledgeGraph({
             <DirectionalText value={label('1 relationship type', '۱ نوع ارتباط')} style={{ color: p.muted, fontSize: 10 }} />
             <DirectionalText value={number(chart.maxRelationshipTypes) + ' ' + label('relationship types', 'نوع ارتباط')} style={{ color: p.muted, fontSize: 10 }} />
           </View>
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7 }}>
-            {model.groups.map((group) => (
-              <View key={group.id} style={{ borderRadius: 8, borderWidth: 1, borderColor: p.border, backgroundColor: p.surface, paddingHorizontal: 7, paddingVertical: 4 }}>
-                <DirectionalText value={group.title + ' · ' + number(group.items.length)} style={{ color: p.muted, fontSize: 9, lineHeight: 13 }} />
-              </View>
-            ))}
-            <View style={{ borderRadius: 8, borderWidth: 1, borderColor: p.border, backgroundColor: p.surface, paddingHorizontal: 7, paddingVertical: 4 }}>
-              <DirectionalText value={label('Publishers', 'ناشرها') + ' · ' + number(model.nodes.filter((node) => node.type === 'publisher').length)} style={{ color: p.muted, fontSize: 9, lineHeight: 13 }} />
-            </View>
-            <View style={{ borderRadius: 8, borderWidth: 1, borderColor: p.border, backgroundColor: p.surface, paddingHorizontal: 7, paddingVertical: 4 }}>
-              <DirectionalText value={label('Graph relations retained', 'روابط حفظ‌شده در گراف') + ' · ' + number(model.edges.length)} style={{ color: p.muted, fontSize: 9, lineHeight: 13 }} />
-            </View>
-          </View>
+          <DirectionalText
+            value={label(
+              number(model.nodes.length) + ' records · ' + number(model.edges.length) + ' stored relations · every source remains in the graph model.',
+              number(model.nodes.length) + ' رکورد · ' + number(model.edges.length) + ' پیوند ذخیره‌شده · همه منابع در مدل گراف حفظ شده‌اند.',
+            )}
+            style={{ color: p.muted, fontSize: 9 }}
+          />
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
             {(['strong', 'moderate', 'weak'] as const).map((band) => (
               <View key={band} style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
@@ -406,7 +454,7 @@ export function ResearchKnowledgeGraph({
                 <DirectionalText value={band === 'strong' ? label('Strong', 'قوی') : band === 'moderate' ? label('Medium', 'متوسط') : label('Weak', 'ضعیف')} style={{ color: p.muted, fontSize: 10 }} />
               </View>
             ))}
-            <DirectionalText value={label('Color = score band · number = score / 100 · lines = shared evidence', 'رنگ = سطح امتیاز · عدد = امتیاز از ۱۰۰ · خطوط = شواهد مشترک')} style={{ color: p.muted, fontSize: 10 }} />
+            <DirectionalText value={label('Bubble = editorial score · size = direct evidence · lines = shared source links', 'حباب = امتیاز تحریری · اندازه = شواهد مستقیم · خط = پیوند منبع مشترک')} style={{ color: p.muted, fontSize: 10 }} />
           </View>
           {monthlyChart ? (
             <View style={{ gap: 7, borderTopWidth: 1, borderTopColor: p.borderSoft, paddingTop: 12 }}>
@@ -485,38 +533,22 @@ export function ResearchKnowledgeGraph({
               </Action>
             </View>
           ) : null}
-          {detailsVisible && selectedIdea ? (
-            <View style={{ borderRadius: 14, borderWidth: 1, borderColor: p.border, backgroundColor: p.raised, padding: 13, gap: 8 }}>
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                <DirectionalText value={label('Selected idea', 'ایده انتخاب‌شده')} style={{ color: p.muted, fontSize: 10 }} />
-                <DirectionalText value={number(selectedIdea.engineScore ?? 0) + '/100'} style={{ color: BAND_COLORS[getEditorialPriorityBand(selectedIdea.engineScore ?? 0)], fontWeight: '800', fontSize: 15 }} />
+          {selectedIdea ? (
+            <View style={{ borderRadius: 10, borderWidth: 1, borderColor: p.border, backgroundColor: p.raised, padding: 10, gap: 6 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                <DirectionalText value={label('Selected in graph', 'انتخاب‌شده در نمودار')} style={{ color: p.muted, fontSize: 10 }} />
+                <DirectionalText value={number(selectedIdea.engineScore ?? 0) + '/100'} style={{ color: BAND_COLORS[getEditorialPriorityBand(selectedIdea.engineScore ?? 0)], fontWeight: '800', fontSize: 13 }} />
               </View>
-              <DirectionalText value={selectedIdea.topic} style={{ fontSize: 15, fontWeight: '700' }} />
-              {selectedReason ? <DirectionalText value={selectedReason} style={{ color: p.muted, fontSize: 11 }} /> : null}
+              <DirectionalText value={selectedIdea.topic} style={{ fontSize: 12, fontWeight: '700' }} />
               <DirectionalText
                 value={label(
-                  (selectedConnections?.directEvidenceCount ?? 0) + ' direct evidence item(s) · ' + (selectedConnections?.nodes.length ?? 0) + ' connected graph node(s)',
-                  (selectedConnections?.directEvidenceCount ?? 0) + ' شاهد مستقیم · ' + (selectedConnections?.nodes.length ?? 0) + ' گره مرتبط',
+                  (selectedConnections?.directEvidenceCount ?? 0) + ' direct source records · ' + (selectedConnections?.relationKinds ?? 0) + ' relation types',
+                  (selectedConnections?.directEvidenceCount ?? 0) + ' رکورد منبع مستقیم · ' + (selectedConnections?.relationKinds ?? 0) + ' نوع پیوند',
                 )}
-                style={{ color: p.muted, fontSize: 11 }}
+                style={{ color: p.muted, fontSize: 10 }}
               />
-              {selectedConnections?.nodes.length ? (
-                <View style={{ gap: 5, borderTopWidth: 1, borderTopColor: p.borderSoft, paddingTop: 8 }}>
-                  <DirectionalText value={label('Mapped source / entity relations', 'منابع و موجودیت‌های مرتبط')} style={{ fontWeight: '700', fontSize: 11 }} />
-                  {selectedConnections.nodes.slice(0, 8).map((node) => (
-                    <Pressable key={node.id} onPress={() => node.url ? void Linking.openURL(node.url).catch(() => {}) : undefined}
-                      accessibilityRole={node.url ? 'link' : 'text'} style={{ paddingVertical: 2 }}>
-                      <DirectionalText value={(node.type === 'news' ? label('Publisher report', 'گزارش ناشر') : node.type === 'youtube' ? 'YouTube' : node.type === 'entity' ? label('Entity', 'موجودیت') : node.type === 'context' ? label('Context', 'زمینه') : node.type === 'publisher' ? label('Publisher', 'ناشر') : node.type === 'evidence' ? label('Engine evidence', 'شاهد موتور') : node.type === 'finding' ? label('Finding / gap', 'یافته / شکاف') : label('Relation', 'ارتباط')) + ' · ' + node.title}
-                        style={{ color: node.url ? p.accent : p.muted, fontSize: 11 }} />
-                    </Pressable>
-                  ))}
-                  {selectedConnections.nodes.length > 8 ? (
-                    <DirectionalText value={label('+' + (selectedConnections.nodes.length - 8) + ' more connected nodes are retained in the graph model.', '+' + (selectedConnections.nodes.length - 8) + ' گره مرتبط دیگر در مدل گراف حفظ شده‌اند.')} style={{ color: p.muted, fontSize: 10 }} />
-                  ) : null}
-                </View>
-              ) : null}
-              <Action secondary onPress={() => router.push({ pathname: '/detail', params: { idea: selectedIdea.id } })}>
-                {label('Open idea and full evidence', 'بازکردن ایده و همه شواهد')}
+              <Action secondary onPress={() => router.push({ pathname: '/opportunities', params: { idea: selectedIdea.id } })}>
+                {label('Open full idea in Ideas', 'مشاهده جزئیات کامل در بخش ایده‌ها')}
               </Action>
             </View>
           ) : null}

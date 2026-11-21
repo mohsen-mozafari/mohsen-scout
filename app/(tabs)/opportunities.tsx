@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { FlatList, View, Text, Pressable } from 'react-native';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { Button } from 'heroui-native';
 import { ArrowUpRight, Plus, Archive, Lightbulb } from 'lucide-react-native';
 import {
@@ -30,7 +30,7 @@ import { fetchSpaceNews, getCachedSpaceNews, SPACE_NICHES } from '@/lib/space';
 import { matchesSearchText, normalizeSearchText } from '@/lib/search';
 import { palette as p } from '@/lib/theme';
 import { getEditorialPriorityBand, EDITORIAL_PRIORITY_CONFIG, type EditorialPriorityBand } from '@/lib/editorial-priority';
-import { setSelectedIdeaId } from '@/lib/idea-selection';
+import { setSelectedIdeaId, useSelectedIdeaId } from '@/lib/idea-selection';
 import { recordRuntimeFinish, recordRuntimeStart } from '@/lib/runtime-metrics';
 import { MediaPreview } from '@/components/MediaPreview';
 function numberLabel(value: number, fa: boolean) {
@@ -38,6 +38,8 @@ function numberLabel(value: number, fa: boolean) {
 }
 
 export default function Opportunities() {
+  const params = useLocalSearchParams<{ idea?: string }>();
+  const selectedIdeaId = useSelectedIdeaId();
   const ideas = useScout((s) => s.data.ideas);
   const [status, setStatus] = useState('All');
   const [search, setSearch] = useState('');
@@ -110,6 +112,10 @@ export default function Opportunities() {
     .sort((a, b) => (b.engineScore ?? -1) - (a.engineScore ?? -1) || b.createdAt - a.createdAt)
     .slice(0, EDITORIAL_PRIORITY_CONFIG.pinnedIdeas), [filtered]);
   const pinnedIds = useMemo(() => new Set(pinnedIdeas.map((idea) => idea.id)), [pinnedIdeas]);
+  const requestedIdeaId = typeof params.idea === 'string' ? params.idea : selectedIdeaId;
+  const featuredIdea = displayableIdeas.find((idea) =>
+    idea.id === requestedIdeaId && idea.archived === archive,
+  ) ?? pinnedIdeas[0];
   const remainingIdeas = useMemo(() => sortedFiltered.filter((idea) => !pinnedIds.has(idea.id)), [sortedFiltered, pinnedIds]);
   const sortOptions = fa
     ? ['امتیاز اولویت', 'جدیدترین', 'قدیمی‌ترین', 'عنوان صعودی', 'عنوان نزولی']
@@ -316,6 +322,38 @@ export default function Opportunities() {
               </Fold>
             </View>
             {generationMessage ? <Txt muted>{generationMessage}</Txt> : null}
+            {featuredIdea ? (
+              <View style={{ borderRadius: 13, borderWidth: 1, borderColor: p.accent, backgroundColor: p.surface, padding: 12, gap: 7 }}>
+                <View style={styles.rowBetween}>
+                  <BadgeText>{featuredIdea.id === requestedIdeaId
+                    ? (fa ? 'ایده انتخاب‌شده از نمودار' : 'SELECTED FROM RESEARCH GRAPH')
+                    : (fa ? 'ایده با بالاترین اولویت' : 'HIGHEST-PRIORITY IDEA')}</BadgeText>
+                  {typeof featuredIdea.engineScore === 'number' && Number.isFinite(featuredIdea.engineScore) ? (
+                    <Text style={{ color: p.accent, fontSize: 13, fontWeight: '800' }}>{numberLabel(featuredIdea.engineScore, fa)}/100</Text>
+                  ) : <Text style={{ color: p.muted, fontSize: 10 }}>{fa ? 'بدون امتیاز' : 'NOT SCORED'}</Text>}
+                </View>
+                <SourceHeading>{getIdeaDisplayTitle(featuredIdea, preferences.uiLanguage ?? 'fa')}</SourceHeading>
+                {featuredIdea.engineScoreReason ? <Txt muted>{featuredIdea.engineScoreReason}</Txt> : null}
+                {featuredIdea.concept ? <SourceText muted>{featuredIdea.concept}</SourceText> : null}
+                {featuredIdea.note ? <Txt muted>{featuredIdea.note}</Txt> : null}
+                {featuredIdea.decision ? <Txt muted>{(fa ? 'تصمیم ثبت‌شده: ' : 'Saved decision: ') + featuredIdea.decision}</Txt> : null}
+                {featuredIdea.sourceName ? <Txt muted>{(fa ? 'منبع: ' : 'Source: ') + featuredIdea.sourceName}</Txt> : null}
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7 }}>
+                  <View style={{ flexGrow: 1, flexBasis: 140 }}>
+                    <Action onPress={() => {
+                      setSelectedIdeaId(featuredIdea.id);
+                      router.push({ pathname: '/detail', params: { idea: featuredIdea.id } });
+                    }}>{fa ? 'بازکردن پرونده کامل ایده' : 'Open complete idea'}</Action>
+                  </View>
+                  <View style={{ flexGrow: 1, flexBasis: 140 }}>
+                    <Action secondary disabled={!featuredIdea.topic.trim()} onPress={() => {
+                      setSelectedIdeaId(featuredIdea.id);
+                      router.push({ pathname: '/youtube', params: { topic: featuredIdea.topic, idea: featuredIdea.id } });
+                    }}>{fa ? 'ادامه تحقیق در YouTube' : 'Continue on YouTube'}</Action>
+                  </View>
+                </View>
+              </View>
+            ) : null}
             {pinnedIdeas.length ? (
               <View style={{ gap: 8 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>

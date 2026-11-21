@@ -369,7 +369,9 @@ function DiscoveryDashboardReady() {
     healthy: feedRegistry.filter((item) => item.status === 'healthy').length,
     stale: feedRegistry.filter((item) => item.status === 'stale').length,
     unavailable: feedRegistry.filter((item) => item.status === 'unavailable').length,
+    unknown: feedRegistry.filter((item) => item.status === 'unknown').length,
     failures: feedRegistry.reduce((sum, item) => sum + (item.failureCount ?? 0), 0),
+    cachedItems: feedRegistry.reduce((sum, item) => sum + item.cachedItems.length, 0),
     lastSuccessAt: feedRegistry.reduce((latest, item) => Math.max(latest, item.lastSuccessAt ?? 0), 0),
   }), [feedRegistry]);
   const fa = preferences.uiLanguage === 'fa';
@@ -471,9 +473,6 @@ function DiscoveryDashboardReady() {
   const showYouTubeResearch = engineVideoEvidence.length > 0;
   const deskTopic = latestReport?.input.topic ?? preferences.lastInput?.topic ?? discoveryTopic;
   const deskAnalysis = showYouTubeResearch ? latestReportAnalysis : undefined;
-  const allDeskNews = useMemo(() => rankNewsForTopic(deskTopic, engineNews, Math.max(1, engineNews.length)), [deskTopic, engineNews]);
-  // The local engine receives the full retained corpus; only the visual graph is bounded.
-  const deskNews = useMemo(() => allDeskNews.slice(0, 60), [allDeskNews]);
   const nicheTerms = useMemo<string[]>(() => {
     if (preferences.selectedSpaceNiche === 'custom') {
       return preferences.customSpaceNiche.split(/[,;\n]+/).map((term) => term.trim()).filter(Boolean);
@@ -492,29 +491,32 @@ function DiscoveryDashboardReady() {
   const sharedTerms = deskAnalysis?.intelligence.sharedConcepts ?? [];
   const nextGap = deskAnalysis?.intelligence.gaps[0];
   const nextQuery = deskAnalysis?.intelligence.followUpQueries[0];
-  const primaryNews = deskNews[0];
   const chartAnalysis = latestReportAnalysis ?? cachedTopicAnalysis;
   const chartTopic = latestReportAnalysis ? deskTopic : cachedTopicAnalysis ? discoveryTopic : deskTopic;
   const chartDossier = getTopicDossier(chartTopic);
   const chartWiki = chartDossier?.wiki ?? (chartTopic === discoveryTopic ? topicWiki : undefined);
   const chartNews = useMemo(
-    () => rankNewsForTopic(chartTopic, engineNews, Math.max(1, engineNews.length)).slice(0, 60),
+    () => rankNewsForTopic(chartTopic, engineNews, Math.max(1, engineNews.length)),
     [chartTopic, engineNews],
   );
   const chartVideos = useMemo(
-    () => engineVideoSamples
-      .filter((video) => scoreResearchText(chartTopic, video.title, video.description) > 0)
-      .sort((a, b) => (b.viewCount ?? -1) - (a.viewCount ?? -1))
-      .slice(0, 80),
-    [engineVideoSamples, chartTopic],
+    () => engineVideoSamples,
+    [engineVideoSamples],
   );
   const chartIdeas = useMemo(() => selectDashboardIdeas(ideas, {
     reportId: latestReport?.id,
     videoIds: new Set(latestReport?.videos.map((video) => video.id) ?? []),
-    sourceUrls: new Set(chartNews.map((item) => item.url)),
+    sourceUrls: new Set(chartNews.filter((item) => scoreResearchText(chartTopic, item.title, item.summary) > 0).map((item) => item.url)),
     topic: chartTopic,
   }), [ideas, latestReport?.id, latestReport?.videos, chartNews, chartTopic]);
   const bestIdea = chartIdeas[0];
+  const ideaLinkage = useMemo(() => ({
+    active: ideas.filter((idea) => !idea.archived && idea.status !== 'Rejected Ideas' && idea.status !== 'Completed Research').length,
+    generated: ideas.filter((idea) => idea.engineGenerated === true).length,
+    sourceLinked: ideas.filter((idea) => Boolean(idea.sourceUrl)).length,
+    reportLinked: ideas.filter((idea) => Boolean(idea.reportId)).length,
+    videoLinked: ideas.filter((idea) => idea.videoIds.length > 0).length,
+  }), [ideas]);
   const deskIdeas = chartIdeas;
   const recommendations = chartIdeas.slice(1, 4);
 
@@ -578,58 +580,58 @@ function DiscoveryDashboardReady() {
         </Panel>
 
         {showYouTubeResearch ? (
-          <View style={{ gap: 10 }}>
-            <View style={[styles.rowBetween, { flexWrap: 'wrap' }]}>
-              <Heading>{fa ? 'خلاصه تحقیق · شواهد چه چیزی را پشتیبانی می‌کنند؟' : 'Research brief · What this evidence supports'}</Heading>
-            {deskAnalysis ? <BadgeText>{`${deskAnalysis.intelligence.confidence.level.toUpperCase()} CONFIDENCE`}</BadgeText> : null}
-          </View>
-          {deskAnalysis ? (
-            <Panel>
-              <Txt>{deskAnalysis.summary}</Txt>
-              <Txt muted>{fa
-                ? 'این بخش مشاهدات واقعی نمونه، برداشت‌های محتمل و داده‌هایی را که هنوز باید بررسی شوند جدا می‌کند؛ این پیش‌بینی بازدید نیست.'
-                : 'This brief separates observations in the returned sample, plausible interpretations and details that still need verification. It is not a view forecast.'}</Txt>
-              {warnings[0] ? <Txt muted>{warnings[0]}</Txt> : null}
-              {primaryNews ? (
+          <Fold
+            title={fa ? 'خلاصه تحقیق · نتیجه و محدودیت‌ها' : 'Research brief · Findings and limits'}
+            summary={deskAnalysis
+              ? (deskAnalysis.intelligence.confidence.level.toUpperCase() + ' confidence · ' +
+                deskAnalysis.intelligence.sourceQuality.uniqueStories + ' reports · ' +
+                engineVideoEvidence.length + ' retained videos')
+              : (fa ? 'در انتظار تکمیل تحلیل نمونه' : 'Waiting for sample analysis')}
+          >
+            {deskAnalysis ? (
+              <View style={{ gap: 10 }}>
                 <View style={styles.softCard}>
-                  <Text style={styles.label}>RELEVANT PUBLISHER ITEM</Text>
-                  <SourceHeading>{primaryNews.title}</SourceHeading>
-                  <Txt muted>
-                    {primaryNews.sourceName}
-                    {primaryNews.publishedAt ? ' · ' + new Date(primaryNews.publishedAt).toLocaleDateString(preferences.uiLanguage === 'fa' ? 'fa-IR' : 'en-US') : ''}
-                  </Txt>
+                  <Text style={styles.label}>{fa ? 'برداشت اصلی از شواهد' : 'WHAT THE EVIDENCE SAYS'}</Text>
+                  <Txt>{deskAnalysis.summary}</Txt>
                 </View>
-              ) : sharedTerms.length ? (
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7 }}>
+                  <MetricCard label={fa ? 'خبر یکتای تحلیل‌شده' : 'UNIQUE REPORTS'} value={deskAnalysis.intelligence.sourceQuality.uniqueStories} />
+                  <MetricCard label={fa ? 'خوراک حاضر' : 'FEEDS REPRESENTED'} value={deskAnalysis.intelligence.sourceQuality.feedsRepresented} />
+                  <MetricCard label={fa ? 'ویدئوی نگهداری‌شده' : 'RETAINED VIDEOS'} value={engineVideoEvidence.length} />
+                  <MetricCard label={fa ? 'پرسش/خلأ باز' : 'OPEN GAPS'} value={deskAnalysis.intelligence.gaps.length + deskAnalysis.intelligence.potentialContradictions.length} />
+                </View>
                 <View style={styles.softCard}>
-                  <Text style={styles.label}>RECURRING WORDING IN THIS SAMPLE</Text>
-                  <SourceHeading>{sharedTerms.slice(0, 4).join(', ')}</SourceHeading>
-                  <Txt muted>Repeated wording is not proof of demand, agreement or trend strength.</Txt>
+                  <Text style={styles.label}>{fa ? 'چه چیزی هنوز معلوم نیست؟' : 'WHAT IS STILL UNKNOWN'}</Text>
+                  <Txt muted>{nextGap ?? (fa
+                    ? 'خلأ مشخصی ثبت نشده؛ ادعاهای مهم را پیش از تولید با منبع اصلی بررسی کن.'
+                    : 'No specific gap was flagged. Verify important claims against original sources before production.')}</Txt>
                 </View>
-              ) : null}
-              <View style={{ gap: 6 }}>
-                <Text style={styles.label}>NEXT RESEARCH STEP</Text>
-                <Txt muted>{nextGap ?? 'No additional gap was flagged. Verify important claims against original sources before production.'}</Txt>
+                {sharedTerms.length ? (
+                  <Txt muted>{(fa ? 'عبارت‌های تکرارشده در نمونه: ' : 'Repeated wording in this sample: ') + sharedTerms.slice(0, 4).join(fa ? '، ' : ', ') + (fa ? '؛ تکرار به‌تنهایی اثبات روند یا تقاضا نیست.' : '; repetition alone does not prove a trend or audience demand.')}</Txt>
+                ) : null}
+                {warnings.slice(0, 2).map((warning) => <Txt muted key={warning}>{warning}</Txt>)}
                 {nextQuery ? (
                   <Action secondary onPress={() => router.push({ pathname: '/youtube', params: { topic: nextQuery } })}>
-                    Research suggested question
+                    {fa ? 'بررسی پرسش پیشنهادی در YouTube' : 'Research the suggested question on YouTube'}
                   </Action>
                 ) : null}
                 <Action onPress={() => router.push({ pathname: '/deep-research', params: { topic: deskTopic } })}>
-                  Build a research brief
+                  {fa ? 'ادامه در تحقیق عمیق' : 'Continue in Deep Research'}
                 </Action>
               </View>
-            </Panel>
-          ) : (
-            <Panel>
-              <Heading>No topic-specific brief yet</Heading>
-              <Txt muted>Publisher headlines alone are not enough for a useful recommendation. Collect a real topic-linked sample first.</Txt>
-              <Action onPress={() => router.push({ pathname: '/youtube', params: { topic: discoveryTopic } })}>
-                Research the selected topic
-              </Action>
-            </Panel>
-          )}
-          </View>
+            ) : (
+              <View style={{ gap: 8 }}>
+                <Txt muted>{fa
+                  ? 'نمونه ویدئویی ذخیره شده است، اما تحلیل موضوع‌محور هنوز آماده نیست. گزارش و ویدئوها حفظ شده‌اند.'
+                  : 'A saved video sample exists, but its topic-specific analysis is not ready yet. The report and video records remain available.'}</Txt>
+                <Action secondary onPress={() => router.push({ pathname: '/youtube', params: { topic: deskTopic } })}>
+                  {fa ? 'بازبینی نمونه YouTube' : 'Review the YouTube sample'}
+                </Action>
+              </View>
+            )}
+          </Fold>
         ) : null}
+
 
         <Fold title="Evidence quality and source audit" summary={deskAnalysis ? deskAnalysis.intelligence.sourceQuality.uniqueStories + ' stories · ' + deskAnalysis.intelligence.sourceQuality.feedsRepresented + ' feeds' : 'No analyzed sample yet'}>
           {deskAnalysis ? (
@@ -778,24 +780,50 @@ function DiscoveryDashboardReady() {
                     <Text style={{ color: item.failed ? p.danger : item.partial ? p.warning : p.success, fontSize: 11, fontWeight: '700' }}>{rate}</Text>
                   </View>
                   <Txt muted>{item.attempted + (fa ? ' تلاش · ' : ' attempted · ') + item.succeeded + (fa ? ' موفق · ' : ' success · ') + item.partial + (fa ? ' ناقص · ' : ' partial · ') + item.failed + (fa ? ' خطا' : ' errors')}</Txt>
+                  <Txt muted>{(item.lastStartedAt
+                    ? (fa ? 'شروع آخرین تلاش: ' : 'Last attempt started: ') + new Date(item.lastStartedAt).toLocaleString(fa ? 'fa-IR' : 'en-US')
+                    : (fa ? 'هنوز اجرا نشده' : 'Not run this session')) + ' · ' +
+                    (item.lastCompletedAt
+                      ? (fa ? 'آخرین تکمیل: ' : 'Last completed: ') + new Date(item.lastCompletedAt).toLocaleString(fa ? 'fa-IR' : 'en-US')
+                      : (fa ? 'تکمیل ثبت نشده' : 'No completed run'))}</Txt>
                   {item.lastError ? <Txt muted>{runtimeErrorHint(item.lastError, fa ? 'fa' : 'en')}</Txt> : null}
                 </View>
               );
             })}
+            <Heading>{fa ? 'توازن داده و اتصال ایده‌ها' : 'Evidence balance and idea links'}</Heading>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7 }}>
+              <MetricCard label={fa ? 'خبرهای در دسترس موتور' : 'ENGINE NEWS'} value={engineNews.length} />
+              <MetricCard label={fa ? 'ویدئوهای معتبر نگهداری‌شده' : 'RETAINED VIDEOS'} value={engineVideoEvidence.length} />
+              <MetricCard label={fa ? 'ایده‌های فعال' : 'ACTIVE IDEAS'} value={ideaLinkage.active} />
+              <MetricCard label={fa ? 'ایده‌های تولیدشده توسط موتور' : 'ENGINE IDEAS'} value={ideaLinkage.generated} />
+              <MetricCard label={fa ? 'ایده‌های متصل به منبع' : 'SOURCE-LINKED IDEAS'} value={ideaLinkage.sourceLinked} />
+              <MetricCard label={fa ? 'ایده‌های متصل به گزارش' : 'REPORT-LINKED IDEAS'} value={ideaLinkage.reportLinked} />
+              <MetricCard label={fa ? 'ایده‌های متصل به ویدئو' : 'VIDEO-LINKED IDEAS'} value={ideaLinkage.videoLinked} />
+            </View>
+            {engineNews.length + engineVideoEvidence.length > 0 && ideaLinkage.generated === 0 ? (
+              <Txt muted>{fa
+                ? 'خوراک داده وجود دارد اما هنوز ایده تولیدشده توسط موتور ثبت نشده است؛ پس از تحقیق و اجرای موتور دوباره بررسی کن.'
+                : 'Source data is present, but no engine-generated idea is saved yet. Recheck after running research and idea generation.'}</Txt>
+            ) : null}
+            {ideaLinkage.generated > 0 && ideaLinkage.sourceLinked + ideaLinkage.reportLinked + ideaLinkage.videoLinked === 0 ? (
+              <Txt muted>{fa
+                ? 'ایده تولیدشده وجود دارد اما پیوند مستقیمی به URL منبع، گزارش یا شناسه ویدئو ثبت نشده است.'
+                : 'Engine-generated ideas exist, but none currently carries a direct source URL, report ID or video reference.'}</Txt>
+            ) : null}
             <Heading>{fa ? 'نتیجه آخرین نمونه API یوتیوب' : 'Latest YouTube API sample'}</Heading>
             <Txt muted>{latestReport
               ? (fa ? 'نمونه ذخیره‌شده: ' : 'Saved sample: ') + latestReport.videos.length + (fa ? ' ویدئو · ' : ' videos · ') + latestReport.queries.length + (fa ? ' عبارت جست‌وجو · ' : ' search queries · ') + latestReport.warnings.length + (fa ? ' هشدار' : ' warnings') + ' · ' + new Date(latestReport.createdAt).toLocaleString(fa ? 'fa-IR' : 'en-US')
               : (fa ? 'هنوز نمونه‌ای از API یوتیوب ذخیره نشده است.' : 'No YouTube API sample has been saved yet.')}
             </Txt>
             <Heading>{fa ? 'وضعیت خوراک‌های رسمی' : 'Official feed status'}</Heading>
-            <Txt muted>{feedHealth.registered + (fa ? ' ثبت‌شده · ' : ' registered · ') + feedHealth.healthy + (fa ? ' سالم · ' : ' healthy · ') + feedHealth.stale + (fa ? ' قدیمی · ' : ' stale · ') + feedHealth.unavailable + (fa ? ' ناموجود · ' : ' unavailable · ') + feedHealth.failures + (fa ? ' خطای ثبت‌شده' : ' recorded failures')}</Txt>
+            <Txt muted>{feedHealth.registered + (fa ? ' ثبت‌شده · ' : ' registered · ') + feedHealth.cachedItems + (fa ? ' آیتم کش‌شده · ' : ' cached items · ') + feedHealth.healthy + (fa ? ' سالم · ' : ' healthy · ') + feedHealth.stale + (fa ? ' قدیمی · ' : ' stale · ') + feedHealth.unavailable + (fa ? ' ناموجود · ' : ' unavailable · ') + feedHealth.unknown + (fa ? ' نامشخص · ' : ' unknown · ') + feedHealth.failures + (fa ? ' خطای ثبت‌شده' : ' recorded failures')}</Txt>
             <Txt muted>{feedHealth.lastSuccessAt
               ? (fa ? 'آخرین پاسخ موفق خوراک: ' : 'Last successful feed response: ') + new Date(feedHealth.lastSuccessAt).toLocaleString(fa ? 'fa-IR' : 'en-US')
               : (fa ? 'در رجیستری محلی پاسخ موفقی ثبت نشده است.' : 'No successful feed response has been recorded in the local registry.')}</Txt>
             {feedRegistry.map((feed) => (
               <View key={feed.sourceId} style={{ paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: p.borderSoft, gap: 2 }}>
                 <Text style={{ color: feed.status === 'healthy' ? p.success : feed.status === 'unavailable' ? p.danger : p.warning, fontSize: 11, fontWeight: '700' }}>{feed.sourceId + ' · ' + feed.status}</Text>
-                <Txt muted>{feed.cachedItems.length + ' cached items · ' + feed.failureCount + ' failures · ' + (feed.lastSuccessAt ? new Date(feed.lastSuccessAt).toLocaleString(fa ? 'fa-IR' : 'en-US') : 'no successful response')}</Txt>
+                <Txt muted>{feed.cachedItems.length + ' cached items · ' + feed.failureCount + ' failures · ' + (feed.lastSuccessAt ? new Date(feed.lastSuccessAt).toLocaleString(fa ? 'fa-IR' : 'en-US') : 'no successful response') + ' · ' + (feed.lastCheckedAt ? (fa ? 'آخرین بررسی: ' : 'Last checked: ') + new Date(feed.lastCheckedAt).toLocaleString(fa ? 'fa-IR' : 'en-US') : (fa ? 'بررسی نشده' : 'not checked')) + (feed.retryAt > dashboardNow ? ' · ' + (fa ? 'تلاش مجدد پس از ' : 'retry after ') + new Date(feed.retryAt).toLocaleTimeString(fa ? 'fa-IR' : 'en-US') : '')}</Txt>
                 {feed.lastError ? <Txt muted>{runtimeErrorHint(feed.lastError, fa ? 'fa' : 'en')}</Txt> : null}
               </View>
             ))}

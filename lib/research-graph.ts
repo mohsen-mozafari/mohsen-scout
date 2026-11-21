@@ -344,16 +344,40 @@ export function buildResearchGraphModel(input: BuildResearchGraphInput): Researc
     addEdge('wikimedia-article', 'evidence-wikimedia', text('context for', 'زمینه برای'));
   }
 
-  const shared = input.analysis.intelligence.sharedConcepts;
+  const shared = input.analysis.intelligence.sharedConcepts
+    .map((term) => term.trim())
+    .filter((term) => term.length >= 3)
+    .slice(0, 24);
   if (shared.length && input.news.length && input.videos.length) {
-    for (const story of input.news) {
-      for (const video of input.videos) {
-        const term = shared.find((candidate) =>
-          matchesResearchTerms(story.title + ' ' + story.summary, [candidate]) &&
-          matchesResearchTerms(video.title + ' ' + video.description, [candidate]));
-        if (term) addEdge('source-' + story.id, 'video-' + video.id,
-          text('word overlap only: ', 'فقط هم‌پوشانی واژگانی: ') + term);
+    // Index matches once per shared term. A bounded edge budget prevents a large
+    // retained corpus from producing a quadratic graph rebuild or a UI freeze.
+    const newsByTerm = new Map<string, SpaceNewsItem[]>();
+    const videosByTerm = new Map<string, YouTubeSampleVideo[]>();
+    for (const term of shared) {
+      const matchedNews = input.news.filter((story) =>
+        matchesResearchTerms(story.title + ' ' + story.summary, [term]));
+      const matchedVideos = input.videos.filter((video) =>
+        matchesResearchTerms(video.title + ' ' + video.description, [term]));
+      if (matchedNews.length && matchedVideos.length) {
+        newsByTerm.set(term, matchedNews);
+        videosByTerm.set(term, matchedVideos);
       }
+    }
+    let crossSourceEdges = 0;
+    const maxCrossSourceEdges = 1200;
+    for (const term of shared) {
+      const matchedNews = newsByTerm.get(term) ?? [];
+      const matchedVideos = videosByTerm.get(term) ?? [];
+      for (const story of matchedNews) {
+        for (const video of matchedVideos) {
+          if (crossSourceEdges >= maxCrossSourceEdges) break;
+          addEdge('source-' + story.id, 'video-' + video.id,
+            text('word overlap only: ', 'فقط هم‌پوشانی واژگانی: ') + term);
+          crossSourceEdges += 1;
+        }
+        if (crossSourceEdges >= maxCrossSourceEdges) break;
+      }
+      if (crossSourceEdges >= maxCrossSourceEdges) break;
     }
   }
   for (const idea of input.generatedIdeas ?? []) {

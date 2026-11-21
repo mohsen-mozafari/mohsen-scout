@@ -3,7 +3,7 @@ import { Newspaper } from 'lucide-react-native';
 import { Linking, View, Text, FlatList } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { Button } from 'heroui-native';
-import { Page, Panel, Heading, Txt, Action, Choices, styles, ErrorBox, useOperation, ScreenIntro, MetricCard, BadgeText, SourceHeading } from '@/components/ScoutUI';
+import { Page, Panel, Heading, Txt, Action, Choices, Fold, styles, ErrorBox, useOperation, ScreenIntro, BadgeText, SourceHeading } from '@/components/ScoutUI';
 import { useScout } from '@/lib/store';
 import { useShallow } from 'zustand/react/shallow';
 import {
@@ -18,6 +18,8 @@ import { generateEditorialIdeas } from '@/lib/idea-generation';
 import { createResearchMemoryEntry } from '@/lib/research-memory';
 import { rememberTopicDossier } from '@/lib/topic-dossier';
 import { uid } from '@/lib/types';
+import { setSelectedIdeaId } from '@/lib/idea-selection';
+import { palette as p } from '@/lib/theme';
 import { MediaPreview } from '@/components/MediaPreview';
 import { recordRuntimeFinish, recordRuntimeStart } from '@/lib/runtime-metrics';
 
@@ -185,7 +187,7 @@ export default function CosmicNews() {
           recordRuntimeFinish('Engine', nextRadarBrief ? 'success' : 'partial');
           engineRecorded = true;
         }
-        setNicheSuggestions(buildNicheSuggestions(result.items, 8).filter((suggestion) => !suggestion.id.startsWith('story:')));
+        setNicheSuggestions(buildNicheSuggestions(allEngineNews, 8).filter((suggestion) => !suggestion.id.startsWith('story:')));
         if (force && !result.items.length && result.warnings.length) {
           throw new Error(result.warnings.join(' '));
         }
@@ -237,6 +239,29 @@ export default function CosmicNews() {
     await useScout.getState().commit((data) => ({ ...data, notes: [note, ...data.notes] }));
   }, 'Source saved to the Space Research folder in Notes.');
 
+  const researchSuggestion = (suggestion: SpaceNicheSuggestion, destination: 'youtube' | 'deep') => void op.run(async () => {
+    const sourceCorpus = engineNews.length ? engineNews : items;
+    const source = newsForNiche(sourceCorpus, suggestion.id, preferences.customSpaceNiche)
+      .slice()
+      .sort((a, b) => (Date.parse(b.publishedAt ?? '') || 0) - (Date.parse(a.publishedAt ?? '') || 0))[0];
+    if (!source) throw new Error('The selected feed no longer contains a source for this topic. Refresh Space Radar and try again.');
+    const idea = await useScout.getState().ensureSourceIdea({
+      topic: suggestion.topic,
+      concept: [suggestion.description, source.title, source.summary].filter(Boolean).join('\n\n'),
+      sourceUrl: source.url,
+      sourceName: source.sourceName,
+      imageUrl: source.imageUrl,
+      region: preferences.region,
+      languages: preferences.languages,
+    });
+    setSelectedIdeaId(idea.id);
+    if (destination === 'youtube') {
+      router.push({ pathname: '/youtube', params: { topic: suggestion.topic, idea: idea.id } });
+    } else {
+      router.push({ pathname: '/deep-research', params: { topic: suggestion.topic, niche: nicheId, idea: idea.id } });
+    }
+  }, fa ? 'موضوع به پرونده ایده متصل شد.' : 'Topic connected to a source-backed idea.');
+
   const researchStory = (item: SpaceNewsItem) => void op.run(async () => {
     const idea = await useScout.getState().ensureSourceIdea({
       topic: item.title,
@@ -275,12 +300,20 @@ export default function CosmicNews() {
                 <BadgeText>{scanning ? 'REFRESHING' : lastScannedAt ? 'UPDATED' : 'NOT REFRESHED'}</BadgeText>
               </View>
               <Txt muted>Official publisher feeds and Wikimedia monthly article pageviews. Pageviews are an attention proxy, not YouTube search volume, trend velocity or a view forecast.</Txt>
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7 }}>
-                <MetricCard label="MATCHED PUBLISHER REPORTS" value={radarNews.length} hint="Reports for the selected space scope" />
-                <MetricCard label="ALL RETAINED REPORTS" value={engineNews.length} hint="Unique publisher records retained for engine analysis" />
-                <MetricCard label="WIKIMEDIA MONTHS" value={radarWiki?.monthlyViews.length ?? 0} hint="Monthly article pageview observations" />
-                <MetricCard label="TOPIC CLUSTERS" value={nicheSuggestions.length} hint="Clusters from returned reports" />
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                {[
+                  { label: fa ? 'گزارش منطبق' : 'MATCHED', value: radarNews.length },
+                  { label: fa ? 'کل نگهداری‌شده' : 'RETAINED', value: engineNews.length },
+                  { label: fa ? 'ماه‌های ویکی' : 'WIKI MONTHS', value: radarWiki?.monthlyViews.length ?? 0 },
+                  { label: fa ? 'موضوع‌ها' : 'TOPICS', value: nicheSuggestions.length },
+                ].map((metric) => (
+                  <View key={metric.label} style={{ flexGrow: 1, flexBasis: '21%', minWidth: 62, borderRadius: 9, borderWidth: 1, borderColor: p.border, backgroundColor: p.surface, paddingHorizontal: 7, paddingVertical: 6, gap: 2 }}>
+                    <Text style={{ color: p.text, fontSize: 15, fontWeight: '800' }}>{metric.value}</Text>
+                    <Text style={{ color: p.muted, fontSize: 8, fontWeight: '700' }}>{metric.label}</Text>
+                  </View>
+                ))}
               </View>
+              <Fold title={fa ? 'جزئیات رادار' : 'Radar details'} summary={fa ? (radarWiki ? 'نمونه بازدید مقاله و ' : 'بدون نمونه ویکی‌مدیا · ') + nicheSuggestions.length + ' گروه موضوعی' : (radarWiki ? 'Wikimedia pageview sample · ' : 'No Wikimedia sample · ') + nicheSuggestions.length + ' topic groups'}>
               {radarWiki ? (
                 <View style={styles.softCard}>
                   <BadgeText>WIKIMEDIA ARTICLE ATTENTION</BadgeText>
@@ -296,22 +329,25 @@ export default function CosmicNews() {
               )}
               {nicheSuggestions.length ? (
                 <View style={{ gap: 7 }}>
-                  <Heading>Topics appearing across reports</Heading>
+                  <Heading>{fa ? 'موضوعات پوشش‌داده‌شده در خوراک‌های انتخابی' : 'Topics covered by selected feeds'}</Heading>
+                  <Txt muted>{fa ? 'تعدادها، گزارش‌های منطبق با هر موضوع در خوراک‌های فعال را نشان می‌دهند؛ امتیاز ترند یا تقاضای YouTube نیستند.' : 'Counts are matching publisher reports from your enabled feeds. They are not YouTube trend or audience-demand scores.'}</Txt>
                   {nicheSuggestions.slice(0, 3).map((suggestion) => (
                     <View key={suggestion.id} style={styles.softCard}>
                       <View style={styles.rowBetween}>
                         <SourceHeading>{suggestion.title}</SourceHeading>
-                        <BadgeText>{suggestion.matchedStories + ' reports'}</BadgeText>
+                        <BadgeText>{fa ? suggestion.matchedStories + ' گزارش منطبق' : suggestion.matchedStories + ' matching reports'}</BadgeText>
                       </View>
                       <Txt muted>{suggestion.description}</Txt>
+                      {suggestion.newestAt ? <Txt muted>{(fa ? 'جدیدترین گزارش: ' : 'Most recent: ') + new Date(suggestion.newestAt).toLocaleDateString(fa ? 'fa-IR' : 'en-US')}</Txt> : null}
                       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7 }}>
-                        <Action secondary onPress={() => router.push({ pathname: '/youtube', params: { topic: suggestion.topic } })}>Research on YouTube</Action>
-                        <Action secondary onPress={() => router.push({ pathname: '/deep-research', params: { topic: suggestion.topic, niche: nicheId } })}>Deep Research</Action>
+                        <Action secondary onPress={() => researchSuggestion(suggestion, 'youtube')}>Research on YouTube</Action>
+                        <Action secondary onPress={() => researchSuggestion(suggestion, 'deep')}>Deep Research</Action>
                       </View>
                     </View>
                   ))}
                 </View>
               ) : null}
+              </Fold>
               <View style={styles.rowBetween}>
                 <Txt muted>{lastUpdatedAt > 0
                   ? 'Last successful publisher response: ' + new Date(lastUpdatedAt).toLocaleString()
