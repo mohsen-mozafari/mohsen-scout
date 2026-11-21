@@ -10,15 +10,16 @@ import {
 import { useScout } from '@/lib/store';
 import { palette as p } from '@/lib/theme';
 import { useShallow } from 'zustand/react/shallow';
-import { uid, type Idea } from '@/lib/types';
+import { uid, type Idea, DEFAULT_SECOND_OPINION_ORDER } from '@/lib/types';
 import { SPACE_NICHES, getCachedSpaceNews } from '@/lib/space';
 import { buildInternalResearch, rankNewsForTopic, type InternalResearchResult } from '@/lib/engine';
 import { buildResearchInterestProfile, normalizeResearchText, scoreResearchText } from '@/lib/intelligence';
 import { getTopicDossier } from '@/lib/topic-dossier';
 import { VideoRow } from '@/components/VideoRow';
 import { collectEngineVideoEvidence, engineReviewCacheKey, findCachedEngineReview, selectDashboardIdeas, selectDashboardVideos } from '@/lib/dashboard';
-import { fingerprintText, getFreeModels, getOpenRouterDailyQuota, getOpinion, formatStructuredSecondOpinion, parseStructuredSecondOpinion, structuredSecondOpinionPrompt, localDateKey, nextOpenRouterUsage, selectFreeModel } from '@/lib/api';
+import { fingerprintText, getFreeModels, getOpenRouterDailyQuota, formatStructuredSecondOpinion, structuredSecondOpinionPrompt, localDateKey, nextOpenRouterUsage, selectFreeModel } from '@/lib/api';
 import { getKey } from '@/lib/vault';
+import { requestSecondOpinionWithFallback, type SecondOpinionProviderConfig } from '@/lib/ai-gateway';
 import { ResearchOverviewChart } from '@/components/ResearchOverviewChart';
 import { recordRuntimeFinish, recordRuntimeStart, runtimeErrorHint, useRuntimeMetrics } from '@/lib/runtime-metrics';
 import { useSelectedIdeaId } from '@/lib/idea-selection';
@@ -109,11 +110,14 @@ function AnalysisSignals({ result }: { result: InternalResearchResult }) {
   );
 }
 
-function EngineAIReview({ topic, result, idea }: { topic: string; result: InternalResearchResult; idea?: Idea }) {
+function EngineAIReview({ topic, idea }: { topic: string; idea?: Idea }) {
   const preferences = useScout(useShallow((state) => ({
-    model: state.data.preferences.model,
-    hybridIntelligence: state.data.preferences.hybridIntelligence,
+    preferredProvider: state.data.preferences.secondOpinionProvider ?? 'gemini',
+    providerOrder: state.data.preferences.secondOpinionOrder,
+    providerModels: state.data.preferences.secondOpinionModels,
     uiLanguage: state.data.preferences.uiLanguage,
+    openRouterUsageDay: state.data.preferences.openRouterUsageDay,
+    openRouterRequestsToday: state.data.preferences.openRouterRequestsToday,
   })));
   const opinions = useScout((state) => state.data.opinions);
   const fa = preferences.uiLanguage === 'fa';
@@ -124,26 +128,32 @@ function EngineAIReview({ topic, result, idea }: { topic: string; result: Intern
         idea.ideaCategory ? 'Editorial format: ' + idea.ideaCategory : '',
         centralQuestion ? 'Central question: ' + centralQuestion : '',
       ].filter(Boolean).join('\n')
-    : [result.angles[0]?.title, result.angles[0]?.hook].filter(Boolean).join('\n');
-  const prompt = candidateConcept.trim() ? structuredSecondOpinionPrompt(topic, candidateConcept, fa ? 'fa' : 'en') : '';
-  const researchFingerprint = fingerprintText(topic + '|' + prompt);
-  const visibleCacheKey = preferences.model
-    ? engineReviewCacheKey(preferences.model, prompt, researchFingerprint)
+    : 'Editorial angle to independently assess for the user-provided topic: ' + topic;
+  const prompt = candidateConcept.trim()
+    ? structuredSecondOpinionPrompt(topic, candidateConcept, fa ? 'fa' : 'en')
     : '';
-  const savedReview = findCachedEngineReview(opinions, preferences.model ?? '', prompt, researchFingerprint);
+  const order = preferences.providerOrder?.length ? preferences.providerOrder : DEFAULT_SECOND_OPINION_ORDER;
+  const modelConfig = preferences.providerModels ?? {
+    gemini: 'gemini-3.8-flash',
+    groq: 'openai/gpt-oss-120b',
+    cloudflare: '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
+    openrouter: '',
+  };
+  const providerIdentity = order.map((provider) => provider + ':' + modelConfig[provider]).join('|');
+  const researchFingerprint = fingerprintText(topic + '|' + prompt);
+  const visibleCacheKey = prompt.trim()
+    ? engineReviewCacheKey(providerIdentity, prompt, researchFingerprint)
+    : '';
+  const savedReview = findCachedEngineReview(opinions, providerIdentity, prompt, researchFingerprint);
   const [reviewState, setReviewState] = useState({ key: visibleCacheKey, text: savedReview?.text ?? '' });
-  const [externalKeyAvailable, setExternalKeyAvailable] = useState<boolean | null>(null);
   const [reviewBusy, setReviewBusy] = useState(false);
   const [reviewError, setReviewError] = useState('');
   const [reviewMessage, setReviewMessage] = useState('');
   const review = reviewState.key === visibleCacheKey ? reviewState.text : savedReview?.text ?? '';
   const reviewInFlightRef = useRef(false);
 
-  const runReview = async (automaticTriggerKey?: string) => {
-    if (reviewInFlightRef.current) {
-      if (automaticTriggerKey) automaticReviewStarted.delete(automaticTriggerKey);
-      return;
-    }
+  const runReview = async () => {
+    if (reviewInFlightRef.current || !prompt.trim()) return;
     reviewInFlightRef.current = true;
     recordRuntimeStart('AI');
     setReviewBusy(true);
@@ -153,137 +163,145 @@ function EngineAIReview({ topic, result, idea }: { topic: string; result: Intern
     let reviewFromCache = false;
     let reviewFailure = '';
     try {
-      // Give the native UI a frame to paint progress before network work.
-      await new Promise<void>((resolve) => setTimeout(resolve, 32));
-      const key = await getKey('openrouter');
-      setExternalKeyAvailable(Boolean(key));
-      if (!key) throw new Error(fa ? 'ابتدا کلید OpenRouter را در تنظیمات ذخیره کن.' : 'Save your OpenRouter key in Settings first.');
-
-      const current = useScout.getState().data;
-      const storedModel = current.preferences.model;
-      const cachedStoredModel = findCachedEngineReview(current.opinions, storedModel ?? '', prompt, researchFingerprint);
-      if (cachedStoredModel && storedModel) {
-        setReviewState({ key: engineReviewCacheKey(storedModel, prompt, researchFingerprint), text: cachedStoredModel.text });
-        reviewSucceeded = true;
-        reviewFromCache = true;
-        setReviewMessage(fa ? 'نظر ذخیره‌شده بارگذاری شد.' : 'Saved second opinion loaded.');
-        return;
-      }
-
-      // Every new generation still requires a live zero-price model selection.
-      const models = await getFreeModels();
-      const model = selectFreeModel(models, storedModel ?? '');
-      if (!model) throw new Error(fa
-        ? 'هیچ مدل رایگان و فعالی از OpenRouter در دسترس نیست. بعداً دوباره تلاش کن.'
-        : 'No currently available free OpenRouter model was found. Try again later.');
-
-      if (model !== storedModel) {
-        await useScout.getState().commit((data) => ({
-          ...data,
-          preferences: { ...data.preferences, model },
-        }));
-      }
-
-      const cacheKey = engineReviewCacheKey(model, prompt, researchFingerprint);
-      const cached = findCachedEngineReview(useScout.getState().data.opinions, model, prompt, researchFingerprint);
+      const cached = findCachedEngineReview(useScout.getState().data.opinions, providerIdentity, prompt, researchFingerprint);
       if (cached) {
-        setReviewState({ key: cacheKey, text: cached.text });
+        setReviewState({ key: visibleCacheKey, text: cached.text });
         reviewSucceeded = true;
         reviewFromCache = true;
         setReviewMessage(fa ? 'نظر ذخیره‌شده بارگذاری شد.' : 'Saved second opinion loaded.');
         return;
       }
 
-      // Refresh the free-model daily counter separately from the generation request.
-      const quota = model.toLowerCase().endsWith(':free')
-        ? await getOpenRouterDailyQuota(key).catch(() => undefined)
-        : undefined;
-      if (quota && quota.remaining <= 0)
-        throw new Error('OpenRouter free-model daily quota is exhausted (' + quota.used + '/' + quota.limit + ' UTC).');
-      // The generation POST remains a single request; quota status is a separate GET.
-      const rawResponse = await getOpinion(key, model, prompt, async () => {
-        const currentPreferences = useScout.getState().data.preferences;
-        const usage = nextOpenRouterUsage(
-          currentPreferences.openRouterUsageDay,
-          currentPreferences.openRouterRequestsToday,
-          localDateKey(),
-          quota?.limit ?? (model.toLowerCase().endsWith(':free') ? 50 : 10000),
-          quota?.used,
-        );
-        await useScout.getState().commit((data) => ({
-          ...data,
-          preferences: {
-            ...data.preferences,
-            model,
-            ...usage,
-            ...(quota ? {
-              openRouterDailyLimit: quota.limit,
-              openRouterDailyUsed: quota.used + 1,
-              openRouterDailyRemaining: Math.max(0, quota.remaining - 1),
-              openRouterQuotaCheckedAt: Date.now(),
-            } : {}),
-          },
-        }));
-      });
-      const validatedResponse = parseStructuredSecondOpinion(rawResponse);
-      const response = formatStructuredSecondOpinion(validatedResponse, fa ? 'fa' : 'en');
-      const opinion = { id: uid(), ideaId: cacheKey, text: response, model, createdAt: Date.now() };
-      setReviewState({ key: cacheKey, text: response });
+      const currentPreferences = useScout.getState().data.preferences;
+      const currentOrder = currentPreferences.secondOpinionOrder?.length
+        ? currentPreferences.secondOpinionOrder
+        : DEFAULT_SECOND_OPINION_ORDER;
+      const currentModels = currentPreferences.secondOpinionModels ?? modelConfig;
+      const configs: SecondOpinionProviderConfig[] = [];
+      for (const provider of currentOrder) {
+        const kind = provider === 'openrouter' ? 'openrouter' : provider;
+        const key = await getKey(kind);
+        if (!key) continue;
+        if (provider === 'cloudflare') {
+          const accountId = await getKey('cloudflare-account-id');
+          configs.push({
+            provider,
+            key,
+            accountId: accountId ?? undefined,
+            model: currentModels.cloudflare || modelConfig.cloudflare,
+          });
+          continue;
+        }
+        if (provider === 'openrouter') {
+          let available: Awaited<ReturnType<typeof getFreeModels>> = [];
+          try {
+            available = await getFreeModels();
+          } catch {
+            continue;
+          }
+          const model = selectFreeModel(available, currentModels.openrouter || currentPreferences.model || '');
+          if (!model) continue;
+          configs.push({ provider, key, model });
+          continue;
+        }
+        configs.push({
+          provider,
+          key,
+          model: currentModels[provider] || modelConfig[provider],
+        });
+      }
+      if (!configs.length) {
+        throw new Error(fa
+          ? 'هیچ Provider فعالی پیدا نشد. حداقل یک کلید را در تنظیمات ذخیره و آزمایش کن.'
+          : 'No configured provider is available. Save and test at least one provider key in Settings.');
+      }
+
+      const resultFromProvider = await requestSecondOpinionWithFallback(
+        configs,
+        prompt,
+        fetch,
+        async (config) => {
+          if (config.provider !== 'openrouter') return;
+          const quota = config.model.toLowerCase().endsWith(':free')
+            ? await getOpenRouterDailyQuota(config.key).catch(() => undefined)
+            : undefined;
+          if (quota && quota.remaining <= 0) {
+            throw new Error('OpenRouter free-model daily quota is exhausted (' + quota.used + '/' + quota.limit + ' UTC).');
+          }
+          const latest = useScout.getState().data.preferences;
+          const usage = nextOpenRouterUsage(
+            latest.openRouterUsageDay,
+            latest.openRouterRequestsToday,
+            localDateKey(),
+            quota?.limit ?? (config.model.toLowerCase().endsWith(':free') ? 50 : 10000),
+            quota?.used,
+          );
+          await useScout.getState().commit((data) => ({
+            ...data,
+            preferences: {
+              ...data.preferences,
+              model: config.model,
+              secondOpinionModels: {
+                ...(data.preferences.secondOpinionModels ?? modelConfig),
+                openrouter: config.model,
+              },
+              ...usage,
+              ...(quota ? {
+                openRouterDailyLimit: quota.limit,
+                openRouterDailyUsed: quota.used + 1,
+                openRouterDailyRemaining: Math.max(0, quota.remaining - 1),
+                openRouterQuotaCheckedAt: Date.now(),
+              } : {}),
+            },
+          }));
+        },
+      );
+      const providerLabel = resultFromProvider.provider === 'cloudflare'
+        ? 'Cloudflare Workers AI'
+        : resultFromProvider.provider[0].toUpperCase() + resultFromProvider.provider.slice(1);
+      const response = (fa
+        ? 'ارائه‌دهنده: ' + providerLabel + ' · مدل: ' + resultFromProvider.model + '\n\n'
+        : 'Provider: ' + providerLabel + ' · Model: ' + resultFromProvider.model + '\n\n') +
+        formatStructuredSecondOpinion(resultFromProvider.opinion, fa ? 'fa' : 'en');
+      const opinion = {
+        id: uid(),
+        ideaId: visibleCacheKey,
+        text: response,
+        model: providerIdentity,
+        createdAt: Date.now(),
+      };
+      setReviewState({ key: visibleCacheKey, text: response });
       await useScout.getState().commit((data) => ({
         ...data,
         opinions: [opinion, ...data.opinions],
       }));
       reviewSucceeded = true;
-      setReviewMessage(fa ? 'نظر دوم ذخیره شد.' : 'Second opinion saved.');
+      const failedCount = resultFromProvider.attempts.filter((attempt) => attempt.status !== 'success' && attempt.status !== 'disabled').length;
+      setReviewMessage(fa
+        ? providerLabel + ' نظر ساختاریافته را تأیید کرد.' + (failedCount ? ' · ' + failedCount + ' سرویس قبلی ناموفق بود.' : '')
+        : providerLabel + ' returned a validated structured opinion.' + (failedCount ? ' · ' + failedCount + ' earlier provider attempt(s) failed.' : ''));
     } catch (error) {
-      reviewFailure = error instanceof Error ? error.message : String(error);
-      setReviewError(error instanceof Error
-        ? error.message
-        : (fa ? 'دریافت نظر دوم ناموفق بود؛ اتصال یا تنظیمات مدل را بررسی کن.' : 'The second opinion failed. Check connectivity and model settings.'));
+      reviewFailure = error instanceof Error ? error.message : 'Second opinion failed.';
+      setReviewError(reviewFailure);
     } finally {
       recordRuntimeFinish('AI', reviewFromCache ? 'partial' : reviewSucceeded ? 'success' : 'error', reviewFailure);
       reviewInFlightRef.current = false;
       setReviewBusy(false);
-      if (automaticTriggerKey && !reviewSucceeded) automaticReviewStarted.delete(automaticTriggerKey);
     }
   };
 
-  const runReviewRef = useRef(runReview);
-  useEffect(() => {
-    runReviewRef.current = runReview;
-  });
-
-  useEffect(() => {
-    if (!preferences.hybridIntelligence || savedReview || externalKeyAvailable === false || !prompt.trim()) return;
-    const triggerKey = fingerprintText(prompt + '\n' + researchFingerprint);
-    if (automaticReviewStarted.has(triggerKey) || reviewInFlightRef.current) return;
-    automaticReviewStarted.add(triggerKey);
-    void getKey('openrouter').then((key) => {
-      setExternalKeyAvailable(Boolean(key));
-      if (!key) {
-        automaticReviewStarted.delete(triggerKey);
-        return;
-      }
-      void runReviewRef.current(triggerKey);
-    }).catch(() => automaticReviewStarted.delete(triggerKey));
-  }, [preferences.hybridIntelligence, savedReview, prompt, researchFingerprint, externalKeyAvailable]);
-
   return (
     <View style={{ gap: 8 }}>
-      <BadgeText>{review ? 'SECOND OPINION · SAVED' : 'SECOND OPINION · OPTIONAL'}</BadgeText>
-      <Heading>{fa ? 'بازبینی مستقل با AI' : 'Independent AI review'}</Heading>
+      <BadgeText>{review ? 'SECOND OPINION · SAVED' : 'SECOND OPINION · MANUAL'}</BadgeText>
+      <Heading>{fa ? 'بازبینی مستقل چندارائه‌دهنده‌ای' : 'Independent multi-provider review'}</Heading>
       <Txt muted>{fa
-        ? 'مدل فقط موضوع و مفهوم پیشنهادی را می‌بیند؛ هیچ خبر، ویدئو، آمار یا امتیاز داخلی برای آن ارسال نمی‌شود.'
-        : 'The model receives only the topic and candidate concept. No news, YouTube data, statistics, local score or engine decision is sent.'}</Txt>
-      {savedReview ? <Txt muted>{'Model: ' + savedReview.model + ' · ' + new Date(savedReview.createdAt).toLocaleString()}</Txt> : null}
+        ? 'فقط موضوع و عنوان/مفهوم پیشنهادی ارسال می‌شود. خبرها، داده YouTube، آمار، امتیاز و تصمیم موتور داخلی ارسال نمی‌شوند. ارسال به سرویس‌ها فقط پس از لمس دکمه انجام می‌شود و ممکن است تا رسیدن اولین پاسخ معتبر، به ارائه‌دهنده بعدی در ترتیب تنظیمات منتقل شود.'
+        : 'Only the topic and candidate title/concept are sent. News, YouTube data, statistics, local scores and the engine decision are excluded. Nothing is sent until you press the button; the approved prompt may pass to the next configured provider until one returns a valid response.'}</Txt>
+      {savedReview ? <Txt muted>{'Saved review · ' + new Date(savedReview.createdAt).toLocaleString()}</Txt> : null}
       <Txt muted>{reviewBusy
-        ? (fa ? 'در حال دریافت نظر دوم؛ می‌توانی هم‌زمان در بخش‌های دیگر کار کنی.' : 'Getting the second opinion. You can keep using other sections.')
-        : preferences.hybridIntelligence
-          ? externalKeyAvailable === false
-            ? (fa ? 'برای اجرای خودکار، کلید OpenRouter را در تنظیمات ذخیره کن.' : 'Save an OpenRouter key in Settings to enable automatic review.')
-            : (fa ? 'نظر دوم پس از تحلیل داخلی اجرا می‌شود؛ نتیجه بعد از تکمیل نمایش داده خواهد شد.' : 'The second opinion runs after local analysis; its result appears when complete.')
-          : (fa ? 'اجرای خودکار خاموش است؛ می‌توانی نظر دوم را دستی دریافت کنی.' : 'Automatic review is off. You can request a second opinion manually.')}</Txt>
-      <Action busy={reviewBusy} onPress={() => void runReview()}>
+        ? (fa ? 'در حال دریافت و اعتبارسنجی نظر دوم…' : 'Requesting and validating the second opinion…')
+        : (fa ? 'اولویت فعلی: ' + order.map((provider) => provider === 'cloudflare' ? 'Cloudflare' : provider).join(' ← ') : 'Fallback order: ' + order.map((provider) => provider === 'cloudflare' ? 'Cloudflare' : provider).join(' → '))}</Txt>
+      <Action busy={reviewBusy} disabled={!prompt.trim()} onPress={() => void runReview()}>
         {fa ? 'دریافت نظر دوم' : 'Get second opinion'}
       </Action>
       {reviewError ? <ErrorBox message={reviewError} onRetry={() => void runReview()} /> : null}
@@ -476,7 +494,7 @@ function DiscoveryDashboardReady() {
           language={preferences.uiLanguage ?? 'fa'}
           selectedIdeaId={selectedIdeaId}
           secondOpinion={chartAnalysis
-            ? <EngineAIReview topic={chartTopic} result={chartAnalysis} idea={bestIdea} />
+            ? <EngineAIReview topic={chartTopic} idea={bestIdea} />
             : undefined}
         />
 

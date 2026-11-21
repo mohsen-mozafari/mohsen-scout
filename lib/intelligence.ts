@@ -49,16 +49,23 @@ export function extractResearchEntityCandidates(
   documents: readonly ResearchEntityDocument[],
 ): ResearchEntityCandidate[] {
   const results: ResearchEntityCandidate[] = [];
+  // Normalization is invariant for this extraction pass. Prepare each document
+  // once instead of repeating Unicode normalization for every known entity.
+  const searchableDocuments = documents.map((document) => ({
+    ...document,
+    normalizedText: ' ' + normalizeResearchText(document.text) + ' ',
+  }));
   for (const entity of RESEARCH_ENTITY_ALIASES) {
     const evidenceIds: string[] = [];
     const sourceIds = new Set<string>();
+    const aliases = entity.aliases
+      .map((alias) => ' ' + normalizeResearchText(alias) + ' ')
+      .filter((needle) => needle.length > 4);
     let mentionCount = 0;
-    for (const document of documents) {
-      const normalizedText = ' ' + normalizeResearchText(document.text) + ' ';
+    for (const document of searchableDocuments) {
+      const normalizedText = document.normalizedText;
       let documentMentions = 0;
-      for (const alias of entity.aliases) {
-        const needle = ' ' + normalizeResearchText(alias) + ' ';
-        if (needle.trim().length <= 2) continue;
+      for (const needle of aliases) {
         let offset = 0;
         while ((offset = normalizedText.indexOf(needle, offset)) >= 0) {
           documentMentions += 1;
@@ -88,9 +95,11 @@ export function buildResearchEntityRelations(
   entities: readonly ResearchEntityCandidate[],
 ): ResearchEntityRelation[] {
   const relations: ResearchEntityRelation[] = [];
+  const evidenceSets = entities.map((entity) => new Set(entity.evidenceIds));
   for (let left = 0; left < entities.length; left += 1) {
     for (let right = left + 1; right < entities.length; right += 1) {
-      const evidenceIds = entities[left].evidenceIds.filter((id) => entities[right].evidenceIds.includes(id));
+      const rightEvidence = evidenceSets[right];
+      const evidenceIds = entities[left].evidenceIds.filter((id) => rightEvidence.has(id));
       if (!evidenceIds.length) continue;
       relations.push({
         id: 'co-mention:' + entities[left].id + ':' + entities[right].id,

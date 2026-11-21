@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import { FlatList, View, Text, Pressable } from 'react-native';
+import { memo, useDeferredValue, useMemo, useState } from 'react';
+import { FlatList, Platform, View, Text, Pressable } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Button } from 'heroui-native';
 import { ArrowUpRight, Plus, Archive, Lightbulb } from 'lucide-react-native';
@@ -21,13 +21,13 @@ import {
   ScreenIntro,
 } from '@/components/ScoutUI';
 import { useScout } from '@/lib/store';
-import { statuses } from '@/lib/types';
+import { statuses, type Idea } from '@/lib/types';
 import { getIdeaDisplayTitle, isIdeaDisplayable } from '@/lib/idea-research';
 import { createManualIdea } from '@/lib/engine';
 import { deduplicateDisplayIdeas, generateEditorialIdeas, IDEA_GENERATION_CATEGORIES, type IdeaGenerationCategory } from '@/lib/idea-generation';
 import { getTopicDossier } from '@/lib/topic-dossier';
 import { fetchSpaceNews, getCachedSpaceNews, SPACE_NICHES } from '@/lib/space';
-import { matchesSearchText, normalizeSearchText } from '@/lib/search';
+import { createSearchQuery, indexSearchText, matchesSearchIndex, normalizeSearchText } from '@/lib/search';
 import { palette as p } from '@/lib/theme';
 import { getEditorialPriorityBand, EDITORIAL_PRIORITY_CONFIG, type EditorialPriorityBand } from '@/lib/editorial-priority';
 import { setSelectedIdeaId, useSelectedIdeaId } from '@/lib/idea-selection';
@@ -37,12 +37,86 @@ function numberLabel(value: number, fa: boolean) {
   return new Intl.NumberFormat(fa ? 'fa-IR' : 'en-US').format(value);
 }
 
+function ideaCategoryLabel(value: string | undefined, fa: boolean): string {
+  if (!value) return fa ? 'ایده تحریری' : 'Editorial angle';
+  const labels: Record<IdeaGenerationCategory, string> = {
+    Explainer: 'توضیحی',
+    'Evidence audit': 'بررسی شواهد',
+    Comparison: 'مقایسه',
+    Timeline: 'خط زمانی',
+    'Open question': 'پرسش بی‌پاسخ',
+    'Cross-source': 'ارتباط میان منابع',
+    Storytelling: 'روایت مستند',
+  };
+  const category = IDEA_GENERATION_CATEGORIES.find((item) => item === value);
+  return fa && category ? labels[category] : value;
+}
+
+const IdeaListItem = memo(function IdeaListItem({
+  item,
+  fa,
+  language,
+}: {
+  item: Idea;
+  fa: boolean;
+  language: 'fa' | 'en';
+}) {
+  const band = typeof item.engineScore === 'number' && Number.isFinite(item.engineScore)
+    ? getEditorialPriorityBand(item.engineScore)
+    : undefined;
+  const tint = band === 'strong' ? p.success : band === 'moderate' ? p.cyan : p.danger;
+  return (
+    <View style={[styles.listCard, { marginBottom: 12 }]}>
+      {item.imageUrl ? <MediaPreview uri={item.imageUrl} aspectRatio={16 / 9} viewer alt={item.topic} /> : null}
+      <Button
+        variant="tertiary"
+        className="h-auto min-w-0 justify-start rounded-2xl px-4 py-3"
+        onPress={() => {
+          setSelectedIdeaId(item.id);
+          router.push({ pathname: '/detail', params: { idea: item.id } });
+        }}
+      >
+        <View style={{ flex: 1, minWidth: 0, gap: 8 }}>
+          <BadgeText>{(item.engineGenerated
+            ? (fa ? 'تولید موتور · ' : 'ENGINE GENERATED · ') + ideaCategoryLabel(item.ideaCategory, fa)
+            : (fa ? 'ایده شخصی' : 'PERSONAL IDEA')) + ' · ' + item.status}</BadgeText>
+          <SourceHeading>{getIdeaDisplayTitle(item, language)}</SourceHeading>
+          {band ? (
+            <>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                <Text style={{ color: tint, fontSize: 11, fontWeight: '800' }}>
+                  {(band === 'strong' ? (fa ? 'قوی' : 'STRONG') : band === 'moderate' ? (fa ? 'متوسط' : 'MEDIUM') : (fa ? 'ضعیف' : 'WEAK')) + ' · ' + item.engineScore + '/100'}
+                </Text>
+                <Text style={{ color: p.muted, fontSize: 9 }}>{fa ? 'اولویت تحریری' : 'EDITORIAL PRIORITY'}</Text>
+              </View>
+              <Text numberOfLines={1} style={{ color: p.muted, fontSize: 10 }}>
+                {item.engineScoreReason?.split(';').slice(0, 2).join(' • ') || (fa ? 'شواهد کافی برای دلیل تفصیلی موجود نیست' : 'Detailed rationale unavailable')}
+              </Text>
+            </>
+          ) : (
+            <Text style={{ color: p.muted, fontSize: 10 }}>{fa ? 'هنوز امتیاز شواهد ثبت نشده' : 'Not scored · evidence required'}</Text>
+          )}
+          {item.concept
+            ? <SourceText muted numberOfLines={3}>{item.concept}</SourceText>
+            : <Txt muted>Concept missing — open the editor to complete this draft before requesting an AI opinion.</Txt>}
+          {item.sourceName ? <View style={styles.row}><Txt muted>Source:</Txt><SourceText>{item.sourceName}</SourceText></View> : null}
+          {item.decision ? <SourceText muted>{item.decision}</SourceText> : null}
+        </View>
+        <ArrowUpRight color={p.purple} size={20} />
+      </Button>
+    </View>
+  );
+});
+
+const ideaKeyExtractor = (idea: Idea) => idea.id;
+
 export default function Opportunities() {
   const params = useLocalSearchParams<{ idea?: string }>();
   const selectedIdeaId = useSelectedIdeaId();
   const ideas = useScout((s) => s.data.ideas);
   const [status, setStatus] = useState('All');
   const [search, setSearch] = useState('');
+  const deferredSearch = useDeferredValue(search);
   const [archive, setArchive] = useState(false);
   const [category, setCategory] = useState('All angles');
   const [sort, setSort] = useState<'Score' | 'Newest' | 'Oldest' | 'A-Z' | 'Z-A'>('Score');
@@ -55,39 +129,43 @@ export default function Opportunities() {
   const preferences = useScout((s) => s.data.preferences);
   const op = useOperation();
   const fa = preferences.uiLanguage === 'fa';
-  const faCategoryLabels: Record<IdeaGenerationCategory, string> = {
-    Explainer: 'توضیحی',
-    'Evidence audit': 'بررسی شواهد',
-    Comparison: 'مقایسه',
-    Timeline: 'خط زمانی',
-    'Open question': 'پرسش بی‌پاسخ',
-    'Cross-source': 'ارتباط میان منابع',
-    Storytelling: 'روایت مستند',
-  };
   const allCategoryLabel = fa ? 'همه زاویه‌ها' : 'All angles';
-  const categoryLabel = (value?: string) => {
-    if (!value) return fa ? 'ایده تحریری' : 'Editorial angle';
-    const matchingCategory = IDEA_GENERATION_CATEGORIES.find((option) => option === value);
-    return fa && matchingCategory ? faCategoryLabels[matchingCategory] : value;
-  };
+  const categoryLabel = (value?: string) => ideaCategoryLabel(value, fa);
   const categoryOptions = [allCategoryLabel, ...IDEA_GENERATION_CATEGORIES.map((value) => categoryLabel(value))];
   const displayableIdeas = useMemo(() => deduplicateDisplayIdeas(ideas.filter(isIdeaDisplayable)), [ideas]);
-  const matchingIdeas = useMemo(() => displayableIdeas.filter((i) => {
-    const searchable = [
-      getIdeaDisplayTitle(i, preferences.uiLanguage ?? 'fa'),
-      i.concept, i.note, i.decision, i.sourceName ?? '', i.sourceUrl ?? '', i.ideaCategory ?? '',
-    ].join(' ');
-    return i.archived === archive &&
-      (status === 'All' || i.status === status) &&
-      (category === 'All angles' || (i.engineGenerated && i.ideaCategory === category)) &&
-      matchesSearchText(searchable, search);
-  }), [displayableIdeas, archive, status, category, search, preferences.uiLanguage]);
-  const scoreCounts = useMemo(() => ({
-    strong: matchingIdeas.filter((idea) => typeof idea.engineScore === 'number' && getEditorialPriorityBand(idea.engineScore) === 'strong').length,
-    moderate: matchingIdeas.filter((idea) => typeof idea.engineScore === 'number' && getEditorialPriorityBand(idea.engineScore) === 'moderate').length,
-    weak: matchingIdeas.filter((idea) => typeof idea.engineScore === 'number' && getEditorialPriorityBand(idea.engineScore) === 'weak').length,
-    unscored: matchingIdeas.filter((idea) => typeof idea.engineScore !== 'number' || !Number.isFinite(idea.engineScore)).length,
-  }), [matchingIdeas]);
+  const indexedIdeas = useMemo(() => displayableIdeas.map((idea) => {
+    const title = getIdeaDisplayTitle(idea, preferences.uiLanguage ?? 'fa');
+    return {
+      idea,
+      searchIndex: indexSearchText([
+        title, idea.concept, idea.note, idea.decision,
+        idea.sourceName ?? '', idea.sourceUrl ?? '', idea.ideaCategory ?? '',
+      ].join(' ')),
+    };
+  }), [displayableIdeas, preferences.uiLanguage]);
+  const searchQuery = useMemo(() => createSearchQuery(deferredSearch), [deferredSearch]);
+  const matchingResult = useMemo(() => {
+    const result = {
+      ideas: [] as typeof displayableIdeas,
+      scoreCounts: { strong: 0, moderate: 0, weak: 0, unscored: 0 },
+    };
+    for (const entry of indexedIdeas) {
+      const idea = entry.idea;
+      if (idea.archived !== archive ||
+        (status !== 'All' && idea.status !== status) ||
+        (category !== 'All angles' && (!idea.engineGenerated || idea.ideaCategory !== category)) ||
+        !matchesSearchIndex(entry.searchIndex, searchQuery)) continue;
+      result.ideas.push(idea);
+      if (typeof idea.engineScore !== 'number' || !Number.isFinite(idea.engineScore)) {
+        result.scoreCounts.unscored += 1;
+      } else {
+        result.scoreCounts[getEditorialPriorityBand(idea.engineScore)] += 1;
+      }
+    }
+    return result;
+  }, [indexedIdeas, archive, status, category, searchQuery]);
+  const matchingIdeas = matchingResult.ideas;
+  const scoreCounts = matchingResult.scoreCounts;
   const filtered = useMemo(() => scoreFilter === 'all'
     ? matchingIdeas
     : matchingIdeas.filter((idea) => {
@@ -107,10 +185,21 @@ export default function Opportunities() {
       .localeCompare(getIdeaDisplayTitle(b, preferences.uiLanguage ?? 'fa'), undefined, { numeric: true, sensitivity: 'base' });
     return sort === 'A-Z' ? comparison : -comparison;
   }), [filtered, sort, preferences.uiLanguage]);
-  const pinnedIdeas = useMemo(() => filtered
-    .filter((idea) => typeof idea.engineScore === 'number' && Number.isFinite(idea.engineScore))
-    .sort((a, b) => (b.engineScore ?? -1) - (a.engineScore ?? -1) || b.createdAt - a.createdAt)
-    .slice(0, EDITORIAL_PRIORITY_CONFIG.pinnedIdeas), [filtered]);
+  const pinnedIdeas = useMemo(() => {
+    const top: typeof filtered = [];
+    const compare = (left: (typeof filtered)[number], right: (typeof filtered)[number]) =>
+      (right.engineScore ?? -1) - (left.engineScore ?? -1) ||
+      right.createdAt - left.createdAt;
+    for (const idea of filtered) {
+      if (typeof idea.engineScore !== 'number' || !Number.isFinite(idea.engineScore)) continue;
+      let position = 0;
+      while (position < top.length && compare(top[position], idea) <= 0) position += 1;
+      if (position >= EDITORIAL_PRIORITY_CONFIG.pinnedIdeas) continue;
+      top.splice(position, 0, idea);
+      if (top.length > EDITORIAL_PRIORITY_CONFIG.pinnedIdeas) top.pop();
+    }
+    return top;
+  }, [filtered]);
   const pinnedIds = useMemo(() => new Set(pinnedIdeas.map((idea) => idea.id)), [pinnedIdeas]);
   const requestedIdeaId = typeof params.idea === 'string' ? params.idea : selectedIdeaId;
   const featuredIdea = displayableIdeas.find((idea) =>
@@ -198,7 +287,7 @@ export default function Opportunities() {
       languages: current.preferences.languages,
       language: current.preferences.uiLanguage ?? 'fa',
       ...(requestedCategory ? { category: requestedCategory } : {}),
-      limit: 8,
+      limit: 5,
     });
     if (!generated.length) {
       recordRuntimeFinish('Engine', 'partial');
@@ -243,14 +332,14 @@ export default function Opportunities() {
       <FlatList
         style={{ flex: 1 }}
         data={remainingIdeas}
-        keyExtractor={(i) => i.id}
+        keyExtractor={ideaKeyExtractor}
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
-        initialNumToRender={8}
-        maxToRenderPerBatch={8}
-        updateCellsBatchingPeriod={50}
-        windowSize={7}
-        removeClippedSubviews={false}
+        initialNumToRender={5}
+        maxToRenderPerBatch={5}
+        updateCellsBatchingPeriod={32}
+        windowSize={5}
+        removeClippedSubviews={Platform.OS === 'android'}
         ListHeaderComponent={
           <View style={{ gap: 16, marginBottom: 18 }}>
             <ScreenIntro
@@ -355,30 +444,28 @@ export default function Opportunities() {
               </View>
             ) : null}
             {pinnedIdeas.length ? (
-              <View style={{ gap: 8 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <Heading>{fa ? '۵ ایده برتر سنجاق‌شده' : 'Top 5 pinned ideas'}</Heading>
-                  <BadgeText>{String(pinnedIdeas.length)}</BadgeText>
+              <Fold title={fa ? '۵ ایده برتر سنجاق‌شده' : 'Top 5 pinned ideas'} summary={String(pinnedIdeas.length)}>
+                <View style={{ gap: 8 }}>
+                    {pinnedIdeas.map((idea, index) => {
+                      const band = getEditorialPriorityBand(idea.engineScore ?? 0);
+                      const tint = band === 'strong' ? p.success : band === 'moderate' ? p.cyan : p.danger;
+                      return (
+                        <Pressable key={idea.id} onPress={() => {
+                          setSelectedIdeaId(idea.id);
+                          router.push({ pathname: '/detail', params: { idea: idea.id } });
+                        }} accessibilityRole="button"
+                          style={{ borderRadius: 12, borderWidth: 1, borderColor: p.border, backgroundColor: p.surface, padding: 11, gap: 5 }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                            <Text style={{ color: tint, fontSize: 10, fontWeight: '800' }}>{(fa ? 'سنجاق‌شدهٔ ' : 'PINNED #') + (index + 1) + ' · ' + (band === 'strong' ? (fa ? 'قوی' : 'Strong') : band === 'moderate' ? (fa ? 'متوسط' : 'Medium') : (fa ? 'ضعیف' : 'Weak'))}</Text>
+                            <Text style={{ color: tint, fontSize: 14, fontWeight: '800' }}>{idea.engineScore}/100</Text>
+                          </View>
+                          <Text style={{ color: p.text, fontSize: 13, fontWeight: '700' }}>{getIdeaDisplayTitle(idea, preferences.uiLanguage ?? 'fa')}</Text>
+                          <Text numberOfLines={1} style={{ color: p.muted, fontSize: 10 }}>{idea.engineScoreReason?.split(';').slice(0, 2).join(' • ')}</Text>
+                        </Pressable>
+                      );
+                    })}
                 </View>
-                {pinnedIdeas.map((idea, index) => {
-                  const band = getEditorialPriorityBand(idea.engineScore ?? 0);
-                  const tint = band === 'strong' ? p.success : band === 'moderate' ? p.cyan : p.danger;
-                  return (
-                    <Pressable key={idea.id} onPress={() => {
-                      setSelectedIdeaId(idea.id);
-                      router.push({ pathname: '/detail', params: { idea: idea.id } });
-                    }} accessibilityRole="button"
-                      style={{ borderRadius: 12, borderWidth: 1, borderColor: p.border, backgroundColor: p.surface, padding: 11, gap: 5 }}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                        <Text style={{ color: tint, fontSize: 10, fontWeight: '800' }}>{(fa ? 'سنجاق‌شدهٔ ' : 'PINNED #') + (index + 1) + ' · ' + (band === 'strong' ? (fa ? 'قوی' : 'Strong') : band === 'moderate' ? (fa ? 'متوسط' : 'Medium') : (fa ? 'ضعیف' : 'Weak'))}</Text>
-                        <Text style={{ color: tint, fontSize: 14, fontWeight: '800' }}>{idea.engineScore}/100</Text>
-                      </View>
-                      <Text style={{ color: p.text, fontSize: 13, fontWeight: '700' }}>{getIdeaDisplayTitle(idea, preferences.uiLanguage ?? 'fa')}</Text>
-                      <Text numberOfLines={1} style={{ color: p.muted, fontSize: 10 }}>{idea.engineScoreReason?.split(';').slice(0, 2).join(' • ')}</Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
+              </Fold>
             ) : null}
             {draftOpen ? (
               <View style={styles.panel}>
@@ -404,42 +491,7 @@ export default function Opportunities() {
 
         }
         renderItem={({ item }) => (
-          <View style={[styles.listCard, { marginBottom: 12 }]}>
-
-            {item.imageUrl ? <MediaPreview uri={item.imageUrl} aspectRatio={16 / 9} viewer alt={item.topic} /> : null}
-            <Button
-              variant="tertiary"
-              className="h-auto min-w-0 justify-start rounded-2xl px-4 py-3"
-              onPress={() => {
-                setSelectedIdeaId(item.id);
-                router.push({ pathname: '/detail', params: { idea: item.id } });
-              }}
-            >
-              <View style={{ flex: 1, minWidth: 0, gap: 8 }}>
-                <BadgeText>{(item.engineGenerated ? (fa ? 'تولید موتور · ' : 'ENGINE GENERATED · ') + categoryLabel(item.ideaCategory) : (fa ? 'ایده شخصی' : 'PERSONAL IDEA')) + ' · ' + item.status}</BadgeText>
-                <SourceHeading>{getIdeaDisplayTitle(item, preferences.uiLanguage ?? 'fa')}</SourceHeading>
-                {typeof item.engineScore === 'number' && Number.isFinite(item.engineScore) ? (
-                  <>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                    <Text style={{ color: getEditorialPriorityBand(item.engineScore) === 'strong' ? p.success : getEditorialPriorityBand(item.engineScore) === 'moderate' ? p.cyan : p.danger, fontSize: 11, fontWeight: '800' }}>
-                      {(getEditorialPriorityBand(item.engineScore) === 'strong' ? (fa ? 'قوی' : 'STRONG') : getEditorialPriorityBand(item.engineScore) === 'moderate' ? (fa ? 'متوسط' : 'MEDIUM') : (fa ? 'ضعیف' : 'WEAK')) + ' · ' + item.engineScore + '/100'}
-                    </Text>
-                    <Text style={{ color: p.muted, fontSize: 9 }}>{fa ? 'اولویت تحریری' : 'EDITORIAL PRIORITY'}</Text>
-                  </View>
-                  <Text numberOfLines={1} style={{ color: p.muted, fontSize: 10 }}>
-                    {item.engineScoreReason?.split(';').slice(0, 2).join(' • ') || (fa ? 'شواهد کافی برای دلیل تفصیلی موجود نیست' : 'Detailed rationale unavailable')}
-                  </Text>
-                  </>
-                ) : (
-                  <Text style={{ color: p.muted, fontSize: 10 }}>{fa ? 'هنوز امتیاز شواهد ثبت نشده' : 'Not scored · evidence required'}</Text>
-                )}
-                {item.concept ? <SourceText muted numberOfLines={3}>{item.concept}</SourceText> : <Txt muted>Concept missing — open the editor to complete this draft before requesting an AI opinion.</Txt>}
-                {item.sourceName ? <View style={styles.row}><Txt muted>Source:</Txt><SourceText>{item.sourceName}</SourceText></View> : null}
-                {item.decision ? <SourceText muted>{item.decision}</SourceText> : null}
-              </View>
-              <ArrowUpRight color={p.purple} size={20} />
-            </Button>
-          </View>
+          <IdeaListItem item={item} fa={fa} language={preferences.uiLanguage ?? 'fa'} />
         )}
         ListEmptyComponent={sortedFiltered.length ? undefined : (
           <Empty
