@@ -57,7 +57,7 @@ export class SecondOpinionProviderError extends Error {
   }
 }
 
-function retryAfterSeconds(value: string | null): number | undefined {
+function parseRetryAfterSeconds(value: string | null): number | undefined {
   if (!value) return undefined;
   const seconds = Number(value);
   if (Number.isFinite(seconds) && seconds >= 0) return Math.ceil(seconds);
@@ -84,7 +84,7 @@ async function requestOnce(
       );
     }
     if (!response.ok) {
-      const retryAfter = retryAfterSeconds(response.headers.get('Retry-After'));
+      const retryAfter = parseRetryAfterSeconds(response.headers.get('Retry-After'));
       if (response.status === 401) throw new SecondOpinionProviderError(provider + ' rejected the saved key.', 'invalid-key');
       if (response.status === 402) throw new SecondOpinionProviderError(provider + ' reports insufficient credits or billing balance.', 'credits');
       if (response.status === 403) throw new SecondOpinionProviderError(provider + ' denied this request. Check model access and token permissions.', 'permission');

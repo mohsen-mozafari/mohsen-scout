@@ -20,12 +20,28 @@ function jsonResponse(value: unknown, status = 200, headers: Record<string, stri
   return new Response(JSON.stringify(value), { status, headers: { 'Content-Type': 'application/json', ...headers } });
 }
 
+function requestUrl(input: RequestInfo | URL): string {
+  if (typeof input === 'string') return input;
+  if (input instanceof URL) return input.href;
+  return input.url;
+}
+
+function requestBody(init?: RequestInit): string {
+  const body = init?.body;
+  if (typeof body !== 'string') throw new Error('Expected a JSON string request body.');
+  return body;
+}
+
+function requestHeader(init: RequestInit | undefined, name: string): string | null {
+  return new Headers(init?.headers).get(name);
+}
+
 void test('Gemini adapter uses the API-key header and sends only the approved editorial prompt', async () => {
   let capturedUrl = '';
   let capturedInit: RequestInit | undefined;
   const prompt = structuredSecondOpinionPrompt('Mars exploration', 'A focused Mars sample-return explainer', 'en');
   const fetcher: typeof fetch = async (input, init) => {
-    capturedUrl = String(input);
+    capturedUrl = requestUrl(input);
     capturedInit = init;
     return jsonResponse({ candidates: [{ content: { parts: [{ text: validOpinion }] } }] });
   };
@@ -35,10 +51,9 @@ void test('Gemini adapter uses the API-key header and sends only the approved ed
   assert.equal(result.provider, 'gemini');
   assert.equal(result.opinion.decision, 'gather_more_evidence');
   assert.match(capturedUrl, /generativelanguage\.googleapis\.com\/v1beta\/models\/gemini-3\.8-flash:generateContent/);
-  const headers = capturedInit?.headers as Record<string, string>;
-  assert.equal(headers['x-goog-api-key'], 'gemini-secret');
+  assert.equal(requestHeader(capturedInit, 'x-goog-api-key'), 'gemini-secret');
   assert.equal(capturedUrl.includes('gemini-secret'), false);
-  const body = JSON.parse(String(capturedInit?.body));
+  const body = JSON.parse(requestBody(capturedInit));
   assert.equal(body.contents[0].parts[0].text, prompt);
   assert.equal(body.generationConfig.maxOutputTokens, 900);
   assert.doesNotMatch(JSON.stringify(body), /nasa\.gov|youtube\.com|private video description|local score 94/i);
@@ -48,7 +63,7 @@ void test('Groq adapter uses its OpenAI-compatible chat-completions contract', a
   let capturedUrl = '';
   let capturedInit: RequestInit | undefined;
   const fetcher: typeof fetch = async (input, init) => {
-    capturedUrl = String(input);
+    capturedUrl = requestUrl(input);
     capturedInit = init;
     return jsonResponse({ choices: [{ message: { content: validOpinion } }] });
   };
@@ -57,9 +72,8 @@ void test('Groq adapter uses its OpenAI-compatible chat-completions contract', a
   ], 'topic and candidate only', fetcher);
   assert.equal(result.provider, 'groq');
   assert.equal(capturedUrl, 'https://api.groq.com/openai/v1/chat/completions');
-  const headers = capturedInit?.headers as Record<string, string>;
-  assert.equal(headers.Authorization, 'Bearer groq-secret');
-  const body = JSON.parse(String(capturedInit?.body));
+  assert.equal(requestHeader(capturedInit, 'Authorization'), 'Bearer groq-secret');
+  const body = JSON.parse(requestBody(capturedInit));
   assert.equal(body.model, 'openai/gpt-oss-120b');
   assert.deepEqual(body.messages, [{ role: 'user', content: 'topic and candidate only' }]);
 });
@@ -68,7 +82,7 @@ void test('Cloudflare adapter uses the account-scoped Workers AI route and requi
   let capturedUrl = '';
   let capturedInit: RequestInit | undefined;
   const fetcher: typeof fetch = async (input, init) => {
-    capturedUrl = String(input);
+    capturedUrl = requestUrl(input);
     capturedInit = init;
     return jsonResponse({ success: true, result: { response: validOpinion } });
   };
@@ -82,9 +96,8 @@ void test('Cloudflare adapter uses the account-scoped Workers AI route and requi
   ], 'only approved text', fetcher);
   assert.equal(result.provider, 'cloudflare');
   assert.match(capturedUrl, /accounts\/023e105f4ecef8ad9ca31a8372d0c353\/ai\/run\/@cf\/meta\/llama-3\.3-70b-instruct-fp8-fast/);
-  const headers = capturedInit?.headers as Record<string, string>;
-  assert.equal(headers.Authorization, 'Bearer cloudflare-secret');
-  assert.deepEqual(JSON.parse(String(capturedInit?.body)), {
+  assert.equal(requestHeader(capturedInit, 'Authorization'), 'Bearer cloudflare-secret');
+  assert.deepEqual(JSON.parse(requestBody(capturedInit)), {
     prompt: 'only approved text', max_tokens: 900, temperature: 0.2,
   });
   let calls = 0;
@@ -105,7 +118,7 @@ void test('provider fallback advances after a rate limit and sends at most one g
     { provider: 'cloudflare', key: 'cf-key', accountId: '023e105f4ecef8ad9ca31a8372d0c353', model: '@cf/meta/llama-3.3-70b-instruct-fp8-fast' },
   ];
   const fetcher: typeof fetch = async (input) => {
-    const url = String(input);
+    const url = requestUrl(input);
     calls.push(url);
     if (url.includes('generativelanguage.googleapis.com')) {
       return new Response(JSON.stringify({ error: { message: 'redacted' } }), {
@@ -130,7 +143,7 @@ void test('an invalid structured answer is rejected and falls back to the next p
     { provider: 'gemini', key: 'g-key', model: 'gemini-3.8-flash' },
     { provider: 'groq', key: 'r-key', model: 'openai/gpt-oss-120b' },
   ], 'approved prompt', async (input) => {
-    const url = String(input);
+    const url = requestUrl(input);
     calls.push(url);
     if (url.includes('generativelanguage')) return jsonResponse({ candidates: [{ content: { parts: [{ text: '{"decision":"invented"}' }] } }] });
     return jsonResponse({ choices: [{ message: { content: validOpinion } }] });
@@ -157,8 +170,7 @@ void test('missing credentials are skipped and duplicate providers never receive
 
 void test('model discovery reads active Gemini, Groq and Cloudflare model catalog entries', async () => {
   const gemini = await discoverSecondOpinionModels('gemini', { key: 'g-key' }, async (_input, init) => {
-    const headers = init?.headers as Record<string, string>;
-    assert.equal(headers['x-goog-api-key'], 'g-key');
+    assert.equal(requestHeader(init, 'x-goog-api-key'), 'g-key');
     return jsonResponse({ models: [
       { name: 'models/gemini-3.8-flash', displayName: 'Gemini 3.8 Flash', supportedGenerationMethods: ['generateContent'] },
       { name: 'models/gemini-embedding', displayName: 'Embedding', supportedGenerationMethods: ['embedContent'] },
@@ -167,8 +179,7 @@ void test('model discovery reads active Gemini, Groq and Cloudflare model catalo
   assert.deepEqual(gemini, [{ id: 'gemini-3.8-flash', name: 'Gemini 3.8 Flash' }]);
 
   const groq = await discoverSecondOpinionModels('groq', { key: 'r-key' }, async (_input, init) => {
-    const headers = init?.headers as Record<string, string>;
-    assert.equal(headers.Authorization, 'Bearer r-key');
+    assert.equal(requestHeader(init, 'Authorization'), 'Bearer r-key');
     return jsonResponse({ data: [{ id: 'openai/gpt-oss-120b', owned_by: 'OpenAI' }] });
   });
   assert.equal(groq[0].id, 'openai/gpt-oss-120b');
@@ -176,8 +187,8 @@ void test('model discovery reads active Gemini, Groq and Cloudflare model catalo
   const cloudflare = await discoverSecondOpinionModels('cloudflare', {
     key: 'cf-key', accountId: '023e105f4ecef8ad9ca31a8372d0c353',
   }, async (input, init) => {
-    assert.match(String(input), /ai\/models\/search/);
-    assert.equal((init?.headers as Record<string, string>).Authorization, 'Bearer cf-key');
+    assert.match(requestUrl(input), /ai\/models\/search/);
+    assert.equal(requestHeader(init, 'Authorization'), 'Bearer cf-key');
     return jsonResponse({ success: true, result: [{ name: '@cf/meta/llama-3.3-70b-instruct-fp8-fast', description: 'Hosted text model' }] });
   });
   assert.equal(cloudflare[0].id, '@cf/meta/llama-3.3-70b-instruct-fp8-fast');

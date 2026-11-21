@@ -261,12 +261,13 @@ function EngineAIReview({ topic, idea }: { topic: string; idea?: Idea }) {
         ? 'ارائه‌دهنده: ' + providerLabel + ' · مدل: ' + resultFromProvider.model + '\n\n'
         : 'Provider: ' + providerLabel + ' · Model: ' + resultFromProvider.model + '\n\n') +
         formatStructuredSecondOpinion(resultFromProvider.opinion, fa ? 'fa' : 'en');
+      const opinionCreatedAt = Date.now();
       const opinion = {
         id: uid(),
         ideaId: visibleCacheKey,
         text: response,
         model: providerIdentity,
-        createdAt: Date.now(),
+        createdAt: opinionCreatedAt,
       };
       setReviewState({ key: visibleCacheKey, text: response });
       await useScout.getState().commit((data) => ({
