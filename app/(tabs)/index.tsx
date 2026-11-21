@@ -24,8 +24,6 @@ import { ResearchOverviewChart } from '@/components/ResearchOverviewChart';
 import { recordRuntimeFinish, recordRuntimeStart, runtimeErrorHint, useRuntimeMetrics } from '@/lib/runtime-metrics';
 import { useSelectedIdeaId } from '@/lib/idea-selection';
 
-const automaticReviewStarted = new Set<string>();
-
 
 function AnalysisSignals({ result }: { result: InternalResearchResult }) {
   const language = useScout((state) => state.data.preferences.uiLanguage ?? 'fa');
