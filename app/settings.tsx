@@ -375,6 +375,11 @@ export default function Settings() {
             ? 'نظر دوم فقط با لمس دکمه توسط خودت اجرا می‌شود. فقط موضوع و مفهوم/عنوان پیشنهادی به Providerها ارسال می‌شود؛ هیچ خبر، اطلاعات YouTube، آمار، امتیاز یا تصمیم موتور داخلی ارسال نمی‌شود. در صورت خطا یا پاسخ نامعتبر، سرویس بعدی در ترتیب ذخیره‌شده امتحان می‌شود؛ برای هر سرویس فقط یک درخواست تولید انجام می‌شود.'
             : 'Second opinion runs only when you press its button. Providers receive only the topic and candidate concept/title. No news, YouTube metadata, statistics, local score or internal decision is sent. On a provider failure or invalid response, the next saved provider is tried; each provider receives at most one generation request.'}
         </Txt>
+        <Txt muted>
+          {prefs.uiLanguage === 'fa'
+            ? 'نکته حریم خصوصی: طبق شرایط فعلی Google، محتوای ارسالی در سطح رایگان Gemini می‌تواند برای بهبود محصولات Google استفاده شود؛ در سطح پولی این استفاده اعلام نشده است. محدودیت، قیمت و دسترسی همه سرویس‌ها و مدل‌ها تغییرپذیر است؛ قبل از استفاده شرایط حساب خودت را بررسی کن. Groq و Cloudflare نیز ممکن است هزینه یا سهمیه مصرف داشته باشند.'
+            : 'Privacy and billing note: Google currently states that Gemini Free Tier content may be used to improve its products; the Paid Tier is listed as not used for product improvement. Provider pricing, quotas and model availability can change. Check your account terms before use. Groq and Cloudflare models may also incur charges or quota limits.'}
+        </Txt>
         <Choices
           label="Preferred provider"
           options={['Gemini', 'Groq', 'Cloudflare Workers AI', 'OpenRouter']}
