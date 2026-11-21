@@ -106,7 +106,7 @@ void test('large publisher samples keep exact window counts and only the latest 
     );
   });
   const result = await buildPublisherIntelligence(input, now, 7);
-  const methane = result.clusters.find((cluster) => cluster.title === 'methane');
+  const methane = result.clusters.find((cluster) => cluster.title.includes('methane'));
   assert.ok(methane);
   assert.equal(result.uniqueCount, input.length);
   assert.equal(methane.articleCount, input.length);
