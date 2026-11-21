@@ -412,36 +412,41 @@ export default function Opportunities() {
             </View>
             {generationMessage ? <Txt muted>{generationMessage}</Txt> : null}
             {featuredIdea ? (
-              <View style={{ borderRadius: 13, borderWidth: 1, borderColor: p.accent, backgroundColor: p.surface, padding: 12, gap: 7 }}>
-                <View style={styles.rowBetween}>
-                  <BadgeText>{featuredIdea.id === requestedIdeaId
-                    ? (fa ? 'ایده انتخاب‌شده از نمودار' : 'SELECTED FROM RESEARCH GRAPH')
-                    : (fa ? 'ایده با بالاترین اولویت' : 'HIGHEST-PRIORITY IDEA')}</BadgeText>
-                  {typeof featuredIdea.engineScore === 'number' && Number.isFinite(featuredIdea.engineScore) ? (
-                    <Text style={{ color: p.accent, fontSize: 13, fontWeight: '800' }}>{numberLabel(featuredIdea.engineScore, fa)}/100</Text>
-                  ) : <Text style={{ color: p.muted, fontSize: 10 }}>{fa ? 'بدون امتیاز' : 'NOT SCORED'}</Text>}
-                </View>
-                <SourceHeading>{getIdeaDisplayTitle(featuredIdea, preferences.uiLanguage ?? 'fa')}</SourceHeading>
-                {featuredIdea.engineScoreReason ? <Txt muted>{featuredIdea.engineScoreReason}</Txt> : null}
-                {featuredIdea.concept ? <SourceText muted>{featuredIdea.concept}</SourceText> : null}
-                {featuredIdea.note ? <Txt muted>{featuredIdea.note}</Txt> : null}
-                {featuredIdea.decision ? <Txt muted>{(fa ? 'تصمیم ثبت‌شده: ' : 'Saved decision: ') + featuredIdea.decision}</Txt> : null}
-                {featuredIdea.sourceName ? <Txt muted>{(fa ? 'منبع: ' : 'Source: ') + featuredIdea.sourceName}</Txt> : null}
-                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7 }}>
-                  <View style={{ flexGrow: 1, flexBasis: 140 }}>
-                    <Action onPress={() => {
-                      setSelectedIdeaId(featuredIdea.id);
-                      router.push({ pathname: '/detail', params: { idea: featuredIdea.id } });
-                    }}>{fa ? 'بازکردن پرونده کامل ایده' : 'Open complete idea'}</Action>
+              <Fold
+                title={fa ? 'ایده منتخب تحقیق' : 'Featured research idea'}
+                summary={getIdeaDisplayTitle(featuredIdea, preferences.uiLanguage ?? 'fa')}
+              >
+                <View style={{ borderRadius: 13, borderWidth: 1, borderColor: p.accent, backgroundColor: p.surface, padding: 12, gap: 7 }}>
+                  <View style={styles.rowBetween}>
+                    <BadgeText>{featuredIdea.id === requestedIdeaId
+                      ? (fa ? 'ایده انتخاب‌شده از نمودار' : 'SELECTED FROM RESEARCH GRAPH')
+                      : (fa ? 'ایده با بالاترین اولویت' : 'HIGHEST-PRIORITY IDEA')}</BadgeText>
+                    {typeof featuredIdea.engineScore === 'number' && Number.isFinite(featuredIdea.engineScore) ? (
+                      <Text style={{ color: p.accent, fontSize: 13, fontWeight: '800' }}>{numberLabel(featuredIdea.engineScore, fa)}/100</Text>
+                    ) : <Text style={{ color: p.muted, fontSize: 10 }}>{fa ? 'بدون امتیاز' : 'NOT SCORED'}</Text>}
                   </View>
-                  <View style={{ flexGrow: 1, flexBasis: 140 }}>
-                    <Action secondary disabled={!featuredIdea.topic.trim()} onPress={() => {
-                      setSelectedIdeaId(featuredIdea.id);
-                      router.push({ pathname: '/youtube', params: { topic: featuredIdea.topic, idea: featuredIdea.id } });
-                    }}>{fa ? 'ادامه تحقیق در YouTube' : 'Continue on YouTube'}</Action>
+                  <SourceHeading>{getIdeaDisplayTitle(featuredIdea, preferences.uiLanguage ?? 'fa')}</SourceHeading>
+                  {featuredIdea.engineScoreReason ? <Txt muted>{featuredIdea.engineScoreReason}</Txt> : null}
+                  {featuredIdea.concept ? <SourceText muted>{featuredIdea.concept}</SourceText> : null}
+                  {featuredIdea.note ? <Txt muted>{featuredIdea.note}</Txt> : null}
+                  {featuredIdea.decision ? <Txt muted>{(fa ? 'تصمیم ثبت‌شده: ' : 'Saved decision: ') + featuredIdea.decision}</Txt> : null}
+                  {featuredIdea.sourceName ? <Txt muted>{(fa ? 'منبع: ' : 'Source: ') + featuredIdea.sourceName}</Txt> : null}
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7 }}>
+                    <View style={{ flexGrow: 1, flexBasis: 140 }}>
+                      <Action onPress={() => {
+                        setSelectedIdeaId(featuredIdea.id);
+                        router.push({ pathname: '/detail', params: { idea: featuredIdea.id } });
+                      }}>{fa ? 'بازکردن پرونده کامل ایده' : 'Open complete idea'}</Action>
+                    </View>
+                    <View style={{ flexGrow: 1, flexBasis: 140 }}>
+                      <Action secondary disabled={!featuredIdea.topic.trim()} onPress={() => {
+                        setSelectedIdeaId(featuredIdea.id);
+                        router.push({ pathname: '/youtube', params: { topic: featuredIdea.topic, idea: featuredIdea.id } });
+                      }}>{fa ? 'ادامه تحقیق در YouTube' : 'Continue on YouTube'}</Action>
+                    </View>
                   </View>
                 </View>
-              </View>
+              </Fold>
             ) : null}
             {pinnedIdeas.length ? (
               <Fold title={fa ? '۵ ایده برتر سنجاق‌شده' : 'Top 5 pinned ideas'} summary={String(pinnedIdeas.length)}>
