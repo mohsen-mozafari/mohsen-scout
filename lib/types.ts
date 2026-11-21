@@ -150,6 +150,7 @@ export type Preferences = {
   /** Automatic privacy-bounded external review after local research completes. */
   /** Kept for backward compatibility; external review now requires an explicit manual action. */
   hybridIntelligence: boolean;
+  secondOpinionProvider: SecondOpinionProvider;
   secondOpinionOrder: SecondOpinionProvider[];
   secondOpinionModels: { gemini: string; groq: string; cloudflare: string; openrouter: string };
   /** Local mirror of OpenRouter free-model daily quota for this key. */
@@ -250,6 +251,7 @@ export function defaults(): LocalData {
       budget: 10000,
       model: '',
       hybridIntelligence: false,
+      secondOpinionProvider: 'gemini',
       secondOpinionOrder: [...DEFAULT_SECOND_OPINION_ORDER],
       secondOpinionModels: { gemini: 'gemini-3.8-flash', groq: 'openai/gpt-oss-120b', cloudflare: '@cf/meta/llama-3.3-70b-instruct-fp8-fast', openrouter: '' },
       schedule: 'Daily',
