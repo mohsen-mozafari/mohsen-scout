@@ -12,8 +12,9 @@ import {
   type SpaceNewsItem, type WikiSignal, type SpaceNicheSuggestion,
 } from '@/lib/space';
 import { buildInternalResearch } from '@/lib/engine';
+import { buildPublisherIntelligence, type PublisherIntelligence } from '@/lib/news-intelligence';
 import { buildResearchInterestProfile, normalizeResearchText } from '@/lib/intelligence';
-import { collectEngineVideoEvidence, runSingleFlight } from '@/lib/dashboard';
+import { runSingleFlight } from '@/lib/dashboard';
 import { generateEditorialIdeas } from '@/lib/idea-generation';
 import { createResearchMemoryEntry } from '@/lib/research-memory';
 import { rememberTopicDossier } from '@/lib/topic-dossier';
@@ -57,6 +58,7 @@ export default function CosmicNews() {
   const [radarWiki, setRadarWiki] = useState<WikiSignal>();
   const [lastScannedAt, setLastScannedAt] = useState<number | null>(null);
   const [nicheSuggestions, setNicheSuggestions] = useState<SpaceNicheSuggestion[]>([]);
+  const [publisherAnalysis, setPublisherAnalysis] = useState<PublisherIntelligence>();
   const scanInFlightRef = useRef<Promise<void> | null>(null);
   const op = useOperation();
   const fa = preferences.uiLanguage === 'fa';
@@ -114,15 +116,16 @@ export default function CosmicNews() {
         setRadarWiki(wiki);
 
         const currentData = useScout.getState().data;
-        const engineVideoEvidence = collectEngineVideoEvidence(currentData.reports, currentData.videos);
         const priorMemory = currentData.researchMemory.find(
           (entry) => normalizeResearchText(entry.topic) === normalizeResearchText(discoveryTopic),
         );
-        const hasEngineInput = Boolean(allEngineNews.length || wiki || engineVideoEvidence.length);
+        const hasEngineInput = Boolean(allEngineNews.length || wiki);
         if (hasEngineInput) {
           recordRuntimeStart('Engine');
           engineStarted = true;
         }
+        const publisherSignals = await buildPublisherIntelligence(allEngineNews, Date.now(), 7);
+        setPublisherAnalysis(publisherSignals);
         const nextRadarBrief = hasEngineInput ? buildInternalResearch({
           topic: discoveryTopic,
           feedback: buildResearchInterestProfile(currentData.ideas),
@@ -136,7 +139,6 @@ export default function CosmicNews() {
             publishedAt: item.publishedAt,
             sourceId: item.sourceId,
           })),
-          videos: engineVideoEvidence,
           ...(wiki ? { wiki } : {}),
         }) : undefined;
         const automaticIdeas = generateEditorialIdeas({
@@ -327,6 +329,30 @@ export default function CosmicNews() {
               ) : (
                 <Txt muted>{scanning ? 'Checking Wikimedia attention data…' : 'No Wikimedia pageview sample is saved for this topic yet.'}</Txt>
               )}
+              {publisherAnalysis?.clusters.length ? (
+                <View style={{ gap: 8 }}>
+                  <Heading>{fa ? 'شتاب پوشش موضوعات در خبرهای ناشران' : 'Publisher-news topic momentum'}</Heading>
+                  <Txt muted>{fa
+                    ? 'این امتیاز فقط از تعداد و تازگی گزارش‌های RSS محاسبه شده است؛ تقاضای مخاطب یا روند YouTube را اندازه نمی‌گیرد.'
+                    : 'This coverage score uses RSS report counts and publication dates only. It is not audience demand or a YouTube trend score.'}</Txt>
+                  {publisherAnalysis.clusters.slice(0, 5).map((cluster) => (
+                    <View key={cluster.id} style={styles.softCard}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                        <SourceHeading>{cluster.title}</SourceHeading>
+                        <BadgeText>{(fa ? 'پوشش خبر ' : 'NEWS COVERAGE ') + cluster.publisherCoverageScore + '/100'}</BadgeText>
+                      </View>
+                      <Txt muted>{cluster.articleCount + (fa ? ' گزارش · ' : ' reports · ') + cluster.publishers.length + (fa ? ' گروه ناشر' : ' publisher groups')}</Txt>
+                      <Txt muted>{(fa ? 'شتاب: ' : 'Momentum: ') + cluster.momentum + ' · ' + cluster.currentWindowCount + (fa ? ' گزارش در ۷ روز اخیر در برابر ' : ' reports in the latest 7 days versus ') + cluster.previousWindowCount + (fa ? ' گزارش در ۷ روز قبل' : ' in the preceding 7 days')}</Txt>
+                      <Txt muted>{cluster.reason}</Txt>
+                      {cluster.evidence.slice(0, 2).map((reference) => (
+                        <Button key={reference.url} variant="tertiary" className="h-auto justify-start px-0" onPress={() => void Linking.openURL(reference.url).catch(() => {})}>
+                          <Button.Label>{reference.sourceName + ': ' + reference.title + ' ↗'}</Button.Label>
+                        </Button>
+                      ))}
+                    </View>
+                  ))}
+                </View>
+              ) : null}
               {nicheSuggestions.length ? (
                 <View style={{ gap: 7 }}>
                   <Heading>{fa ? 'موضوعات پوشش‌داده‌شده در خوراک‌های انتخابی' : 'Topics covered by selected feeds'}</Heading>

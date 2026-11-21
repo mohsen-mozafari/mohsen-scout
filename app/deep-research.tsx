@@ -14,6 +14,7 @@ import { MediaPreview } from '@/components/MediaPreview';
 import { ResearchOverviewChart } from '@/components/ResearchOverviewChart';
 import { getTopicDossier, rememberTopicDossier } from '@/lib/topic-dossier';
 import { generateEditorialIdeas } from '@/lib/idea-generation';
+import { buildPublisherIntelligence, type PublisherIntelligence } from '@/lib/news-intelligence';
 import { createResearchMemoryEntry } from '@/lib/research-memory';
 import { recordRuntimeFinish, recordRuntimeStart } from '@/lib/runtime-metrics';
 import { searchYouTubeSample, type YouTubeSampleVideo } from '@/lib/api';
@@ -34,6 +35,7 @@ type Brief = {
   verificationQuestions: string[];
   scriptDraft: string[];
   internalAnalysis: InternalResearchResult;
+  publisherIntelligence?: PublisherIntelligence;
   generatedIdeas: Idea[];
 };
 
@@ -146,11 +148,19 @@ export default function DeepResearch() {
     if (!selectedNews.length) {
       warnings.push(preferences.uiLanguage === 'fa' ? 'مقاله ناشر با ارتباط مستقیم با این موضوع در دسترس نبود. گزارش داخلی تا زمان یافتن شواهد اولیه اکتشافی باقی می‌ماند.' : 'No directly relevant publisher article was available for this topic. The internal report will remain exploratory until primary evidence is found.');
     }
-    if (!wiki && !videos.length) {
-      warnings.push(preferences.uiLanguage === 'fa' ? 'شواهد ویکی‌مدیا یا یوتیوب در دسترس نبود. از این اجرا نمی‌توان درباره تقاضا یا رقابت نتیجه‌گیری کرد.' : 'No Wikimedia or YouTube evidence was available. No demand or competition conclusion can be drawn from this run.');
+    if (!wiki) {
+      warnings.push(preferences.uiLanguage === 'fa' ? 'نمونه توجه ویکی‌مدیا در دسترس نبود؛ داده‌های YouTube در بخش جداگانه نمایش داده می‌شوند و برای امتیازدهی ناشران استفاده نمی‌شوند.' : 'No Wikimedia attention sample was available. The separately displayed YouTube sample is not used to infer publisher momentum, demand or competition.');
     }
     recordRuntimeStart('Engine');
     try {
+    let publisherIntelligence: PublisherIntelligence | undefined;
+    try {
+      publisherIntelligence = await buildPublisherIntelligence(selectedNews, Date.now(), 7);
+    } catch {
+      warnings.push(preferences.uiLanguage === 'fa'
+        ? 'خوشه‌بندی خبرهای ناشران کامل نشد؛ تحلیل و ایده‌های اصلی ادامه پیدا می‌کنند.'
+        : 'Publisher clustering could not finish; the core analysis and idea generation will continue.');
+    }
     const outline = buildResearchOutline(query, selectedNews.map((item) => item.title), preferences.uiLanguage ?? 'fa');
     const internalAnalysis = buildInternalResearch({
       topic: query,
@@ -163,7 +173,6 @@ export default function DeepResearch() {
         sourceId: item.sourceId,
       })),
       wiki,
-      videos,
       feedback,
       priorMemory,
       language: preferences.uiLanguage ?? 'fa',
@@ -205,11 +214,6 @@ export default function DeepResearch() {
     const generatedIdeas = generateEditorialIdeas({
       topic: query,
       news: selectedNews,
-      videos: videos.map((video) => ({
-        id: video.id, title: video.title, description: video.description,
-        channel: video.channel, publishedAt: video.publishedAt,
-        viewCount: video.viewCount, likeCount: video.likeCount,
-      })),
       context: wiki ? [{ title: wiki.articleTitle, summary: wiki.summary, sourceUrl: wiki.articleUrl, sourceName: 'Wikimedia' }] : [],
       existingIdeas: useScout.getState().data.ideas,
       region: preferences.region,
@@ -235,6 +239,7 @@ export default function DeepResearch() {
       videos,
       warnings,
       internalAnalysis,
+      publisherIntelligence,
       generatedIdeas,
       ...outline,
       scriptDraft: preferences.uiLanguage === 'fa' ? [
@@ -299,7 +304,7 @@ export default function DeepResearch() {
       <Panel>
         <Heading>1 · Choose the research question</Heading>
         <Field label="What should this brief investigate?" value={topic} onChange={setTopic} placeholder="e.g. What JWST has found in exoplanet atmospheres" multiline />
-        <Txt muted>Uses selected publisher feeds, a clearly labelled Wikimedia attention proxy and a bounded YouTube sample. The brief keeps original source links and verification steps.</Txt>
+        <Txt muted>Uses selected publisher feeds and a clearly labelled Wikimedia attention proxy for the editorial engine. The separately collected YouTube sample is displayed below and is not merged into publisher scoring or idea generation.</Txt>
         <Action busy={op.busy} disabled={!topic.trim()} onPress={run}>2 · Build research brief</Action>
       </Panel>
       {brief && (
@@ -328,11 +333,31 @@ export default function DeepResearch() {
               topic={brief.topic}
               news={brief.news}
               wiki={brief.wiki}
-              videos={brief.videos}
+              videos={[]}
               analysis={brief.internalAnalysis}
               ideas={brief.generatedIdeas}
               language={preferences.uiLanguage ?? 'fa'}
             />
+            {brief.publisherIntelligence?.clusters.length ? (
+              <Fold title="Publisher-only topic clusters" summary={brief.publisherIntelligence.clusters.length + ' clusters · ' + brief.publisherIntelligence.uniqueCount + ' unique reports'}>
+                <Txt muted>Coverage and momentum are computed only from selected publisher RSS records. This is not audience demand, YouTube popularity or monetization.</Txt>
+                {brief.publisherIntelligence.clusters.slice(0, 5).map((cluster) => (
+                  <View key={cluster.id} style={{ gap: 4 }}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                      <SourceText>{cluster.title}</SourceText>
+                      <Text style={styles.badge}>{cluster.publisherCoverageScore}/100 coverage</Text>
+                    </View>
+                    <Txt muted>{cluster.articleCount} stories · {cluster.publishers.length} publisher groups · {cluster.momentum}</Txt>
+                    <Txt muted>{cluster.currentWindowCount} stories in the latest 7 days · {cluster.previousWindowCount} in the preceding 7 days</Txt>
+                    {cluster.evidence.slice(0, 2).map((reference) => (
+                      <Button key={reference.url} variant="tertiary" className="h-auto justify-start px-0" onPress={() => void Linking.openURL(reference.url).catch(() => {})}>
+                        <Button.Label>{reference.sourceName + ': ' + reference.title + ' ↗'}</Button.Label>
+                      </Button>
+                    ))}
+                  </View>
+                ))}
+              </Fold>
+            ) : null}
             <Txt muted>{brief.internalAnalysis.summary}</Txt>
             {brief.internalAnalysis.evidence.map((item) => (
               <View key={item.id} style={{ gap: 3 }}>
@@ -366,7 +391,7 @@ export default function DeepResearch() {
               {brief.internalAnalysis.intelligence.trend.anomaly ? <Txt muted>{'Potential anomaly: ' + translateText(brief.internalAnalysis.intelligence.trend.anomaly.charAt(0).toUpperCase() + brief.internalAnalysis.intelligence.trend.anomaly.slice(1), preferences.uiLanguage ?? 'fa')}</Txt> : null}
               {brief.internalAnalysis.intelligence.gaps.map((gap) => <Txt muted key={gap}>{'Research gap: ' + gap}</Txt>)}
               {brief.internalAnalysis.intelligence.followUpQueries.map((query) => <View key={query} style={{ gap: 2 }}><Txt muted>Follow-up search:</Txt><SourceText>{query}</SourceText></View>)}
-              {brief.internalAnalysis.intelligence.sharedConcepts.length ? <Txt muted>{'Shared terms across publisher and video samples: ' + brief.internalAnalysis.intelligence.sharedConcepts.join(', ') + '. This is wording overlap only.'}</Txt> : null}
+              {brief.internalAnalysis.intelligence.sharedConcepts.length ? <Txt muted>{'Shared terms across publisher records: ' + brief.internalAnalysis.intelligence.sharedConcepts.join(', ')}</Txt> : null}
               {brief.internalAnalysis.intelligence.scenarios.map((scenario) => <Txt muted key={scenario}>{scenario}</Txt>)}
               {brief.internalAnalysis.intelligence.potentialContradictions.map((item) => <Txt muted key={item}>{'Potential discrepancy: ' + item}</Txt>)}
             </View>

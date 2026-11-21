@@ -17,7 +17,7 @@ import { buildResearchInterestProfile, normalizeResearchText, scoreResearchText 
 import { getTopicDossier } from '@/lib/topic-dossier';
 import { VideoRow } from '@/components/VideoRow';
 import { collectEngineVideoEvidence, engineReviewCacheKey, findCachedEngineReview, selectDashboardIdeas, selectDashboardVideos } from '@/lib/dashboard';
-import { fingerprintText, getFreeModels, getOpenRouterDailyQuota, getOpinion, internalEngineReviewPrompt, localDateKey, nextOpenRouterUsage, selectFreeModel, type YouTubeSampleVideo } from '@/lib/api';
+import { fingerprintText, getFreeModels, getOpenRouterDailyQuota, getOpinion, formatStructuredSecondOpinion, parseStructuredSecondOpinion, structuredSecondOpinionPrompt, localDateKey, nextOpenRouterUsage, selectFreeModel } from '@/lib/api';
 import { getKey } from '@/lib/vault';
 import { ResearchOverviewChart } from '@/components/ResearchOverviewChart';
 import { recordRuntimeFinish, recordRuntimeStart, runtimeErrorHint, useRuntimeMetrics } from '@/lib/runtime-metrics';
@@ -41,8 +41,8 @@ function AnalysisSignals({ result }: { result: InternalResearchResult }) {
       <Txt muted>{result.intelligence.confidence.reason}</Txt>
       <Heading>{fa ? 'تطبیق نمونه با موضوع' : 'Topic match in the sample'}</Heading>
       <Txt muted>{fa
-        ? 'خبر هم‌موضوع: ' + audit.topicMatchedNewsCount + ' از ' + audit.uniqueNewsCount + ' · ویدئوی هم‌موضوع در کل نمونه: ' + audit.allTimeMatchedVideoCount + ' · ویدئوی تازه هم‌موضوع: ' + audit.recentMatchedVideoCount + ' از ' + audit.recentVideoCandidateCount + ' · زمینه تاریخی/بی‌تاریخ: ' + audit.outsideVideoWindowCount + ' · تاریخ آینده: ' + audit.futureDatedVideoCount + ' · بازه: ' + audit.videoWindowDays + ' روز · دارای آمار بازدید: ' + audit.videoViewCountsAvailable
-        : 'Topic-matched news: ' + audit.topicMatchedNewsCount + '/' + audit.uniqueNewsCount + ' · All-time matched videos: ' + audit.allTimeMatchedVideoCount + ' · Recent matched videos: ' + audit.recentMatchedVideoCount + '/' + audit.recentVideoCandidateCount + ' · Historical/undated context: ' + audit.outsideVideoWindowCount + ' · Future-dated: ' + audit.futureDatedVideoCount + ' · Window: ' + audit.videoWindowDays + ' days · With view counts: ' + audit.videoViewCountsAvailable}</Txt>
+        ? 'خبرهای هم‌موضوع در نمونه ناشران: ' + audit.topicMatchedNewsCount + ' از ' + audit.uniqueNewsCount + ' · بررسی تاریخ انتشار و هم‌پوشانی منبع برای جلوگیری از دوباره‌شماری انجام شده است.'
+        : 'Topic-matched publisher reports: ' + audit.topicMatchedNewsCount + '/' + audit.uniqueNewsCount + ' · Publication dates and source overlap are checked to reduce duplicate counting.'}</Txt>
       <Txt muted>{fa
         ? 'خوراک‌های حاضر: ' + result.intelligence.sourceQuality.feedsRepresented +
           ' · گروه‌های مستقل ناشر: ' + result.intelligence.sourceQuality.independentPublishers +
@@ -58,11 +58,11 @@ function AnalysisSignals({ result }: { result: InternalResearchResult }) {
       )}
       {result.intelligence.sharedConcepts.length > 0 && (
         <View style={{ gap: 5 }}>
-          <Heading>{fa ? 'واژه‌های مشترک میان نمونه‌ها' : 'Shared concepts in the sample'}</Heading>
+          <Heading>{fa ? 'مفهوم‌های تکرارشده در خبرها و زمینه تحقیق' : 'Recurring concepts in publisher and research context'}</Heading>
           <SourceText>{result.intelligence.sharedConcepts.join(fa ? '، ' : ', ')}</SourceText>
           <Txt muted>{fa
-            ? 'این بخش هم‌پوشانی واژگانی نمونه دریافت‌شده را نشان می‌دهد، نه اثبات توافق معنایی یا تقاضا.'
-            : 'This is wording overlap in the returned sample, not proof of semantic agreement or audience demand.'}</Txt>
+            ? 'این بخش فقط هم‌پوشانی واژگانی منابع ناشر و زمینه تحقیق را نشان می‌دهد، نه تقاضا یا توافق معنایی.'
+            : 'This is wording overlap in publisher sources and research context, not proof of semantic agreement or audience demand.'}</Txt>
         </View>
       )}
       {result.entityCandidates.length > 0 && (
@@ -117,52 +117,16 @@ function EngineAIReview({ topic, result, idea }: { topic: string; result: Intern
   })));
   const opinions = useScout((state) => state.data.opinions);
   const fa = preferences.uiLanguage === 'fa';
-  const quality = result.intelligence.sourceQuality;
-  const audit = result.intelligence.selfEvaluation;
-  const prompt = internalEngineReviewPrompt({
-    topic,
-    summary: result.summary,
-    ...(idea ? { recommendation: { topic: idea.topic, concept: idea.concept } } : {}),
-    evidence: [
-      { label: 'Input news / unique news', detail: audit.inputNewsCount + ' / ' + audit.uniqueNewsCount },
-      { label: 'Topic-matched / excluded news', detail: audit.topicMatchedNewsCount + ' / ' + audit.unmatchedNewsCount },
-      { label: 'YouTube input / all-time matched / recent matched', detail: audit.youtubeSampleCount + ' / ' + audit.allTimeMatchedVideoCount + ' / ' + audit.recentMatchedVideoCount },
-      { label: 'Historical / undated / future-dated context', detail: audit.outsideVideoWindowCount + ' / ' + audit.futureDatedVideoCount },
-      { label: 'Recent candidates / unmatched videos', detail: audit.recentVideoCandidateCount + ' / ' + audit.excludedVideoCount },
-      { label: 'Matched videos with raw view counts', detail: String(audit.videoViewCountsAvailable) },
-      { label: 'Publication window (days)', detail: String(audit.videoWindowDays) },
-      { label: 'Independent publisher groups', detail: String(quality.independentPublishers) },
-      { label: 'Official feeds represented', detail: String(quality.feedsRepresented) },
-      { label: 'Duplicate records merged', detail: String(quality.duplicateStoriesMerged) },
-      { label: 'Stale / undated records', detail: String(quality.staleItems + quality.undatedItems) },
-      { label: 'Research gaps / possible discrepancies', detail: String(result.intelligence.gaps.length + result.intelligence.potentialContradictions.length) },
-      { label: 'Evidence relationships', detail: String(result.entityRelations.length) },
-      { label: 'Editorial angles generated', detail: String(result.angles.length) },
-      { label: 'Verification questions', detail: String(result.verificationQuestions.length) },
-      { label: 'Known entity candidates', detail: String(result.entityCandidates.length) },
-      { label: 'Evidence relationship count', detail: String(result.entityRelations.length) },
-      { label: 'Open research questions', detail: String(audit.openResearchQuestionCount) },
-      { label: 'Wikimedia pageview observations', detail: String(result.intelligence.trend.observations) },
-      { label: 'Wikimedia pageview direction (attention proxy only)', detail: result.intelligence.trend.direction },
-      { label: 'Wikimedia pageview change (not search demand)', detail: result.intelligence.trend.changePercent == null ? 'insufficient data' : String(result.intelligence.trend.changePercent) + '%' },
-      { label: 'Latest Wikimedia month and article pageviews', detail: result.intelligence.trend.latestMonth ? result.intelligence.trend.latestMonth + ' / ' + String(result.intelligence.trend.latestViews ?? 'unavailable') : 'unavailable' },
-      { label: 'Wikimedia pageview anomaly label', detail: result.intelligence.trend.anomaly ?? 'none' },
-      { label: 'Local processing time in milliseconds', detail: String(audit.processingMs) },
-    ],
-    gaps: result.intelligence.gaps,
-    discrepancies: result.intelligence.potentialContradictions,
-    confidence: {
-      level: result.intelligence.confidence.level,
-      reason: fa
-        ? 'این سطح محلی بر اساس پوشش نمونه و تنوع ناشر محاسبه شده و تأیید صحت ادعاها نیست.'
-        : 'This local level reflects sample coverage and publisher diversity; it is not factual verification.',
-    },
-    language: fa ? 'fa' : 'en',
-  });
-  const researchFingerprint = fingerprintText(
-    result.topic + '|' + result.summary + '|' + JSON.stringify(audit) + '|' +
-    result.intelligence.gaps.join('|') + '|' + result.intelligence.potentialContradictions.join('|'),
-  );
+  const centralQuestion = idea?.concept.match(/(?:Central question:|پرسش محوری:)\s*([^\n]+)/i)?.[1] ?? '';
+  const candidateConcept = idea
+    ? [
+        'Proposed title: ' + idea.topic,
+        idea.ideaCategory ? 'Editorial format: ' + idea.ideaCategory : '',
+        centralQuestion ? 'Central question: ' + centralQuestion : '',
+      ].filter(Boolean).join('\n')
+    : [result.angles[0]?.title, result.angles[0]?.hook].filter(Boolean).join('\n');
+  const prompt = candidateConcept.trim() ? structuredSecondOpinionPrompt(topic, candidateConcept, fa ? 'fa' : 'en') : '';
+  const researchFingerprint = fingerprintText(topic + '|' + prompt);
   const visibleCacheKey = preferences.model
     ? engineReviewCacheKey(preferences.model, prompt, researchFingerprint)
     : '';
@@ -237,7 +201,7 @@ function EngineAIReview({ topic, result, idea }: { topic: string; result: Intern
       if (quota && quota.remaining <= 0)
         throw new Error('OpenRouter free-model daily quota is exhausted (' + quota.used + '/' + quota.limit + ' UTC).');
       // The generation POST remains a single request; quota status is a separate GET.
-      const response = await getOpinion(key, model, prompt, async () => {
+      const rawResponse = await getOpinion(key, model, prompt, async () => {
         const currentPreferences = useScout.getState().data.preferences;
         const usage = nextOpenRouterUsage(
           currentPreferences.openRouterUsageDay,
@@ -261,6 +225,8 @@ function EngineAIReview({ topic, result, idea }: { topic: string; result: Intern
           },
         }));
       });
+      const validatedResponse = parseStructuredSecondOpinion(rawResponse);
+      const response = formatStructuredSecondOpinion(validatedResponse, fa ? 'fa' : 'en');
       const opinion = { id: uid(), ideaId: cacheKey, text: response, model, createdAt: Date.now() };
       setReviewState({ key: cacheKey, text: response });
       await useScout.getState().commit((data) => ({
@@ -307,8 +273,8 @@ function EngineAIReview({ topic, result, idea }: { topic: string; result: Intern
       <BadgeText>{review ? 'SECOND OPINION · SAVED' : 'SECOND OPINION · OPTIONAL'}</BadgeText>
       <Heading>{fa ? 'بازبینی مستقل با AI' : 'Independent AI review'}</Heading>
       <Txt muted>{fa
-        ? 'مدل موضوع، مفهوم ایده پیشنهادی و شاخص‌های تجمیعی را می‌بیند؛ تیتر خام، پیوند و آمار تک‌تک خبرها و ویدئوها ارسال نمی‌شوند. نظر مستقل دریافت می‌شود و جابه‌جایی میان بخش‌ها را قفل نمی‌کند.'
-        : 'The model receives the topic, candidate concept and aggregate indicators — never raw headlines, links or per-item statistics. The review is independent and does not lock navigation.'}</Txt>
+        ? 'مدل فقط موضوع و مفهوم پیشنهادی را می‌بیند؛ هیچ خبر، ویدئو، آمار یا امتیاز داخلی برای آن ارسال نمی‌شود.'
+        : 'The model receives only the topic and candidate concept. No news, YouTube data, statistics, local score or engine decision is sent.'}</Txt>
       {savedReview ? <Txt muted>{'Model: ' + savedReview.model + ' · ' + new Date(savedReview.createdAt).toLocaleString()}</Txt> : null}
       <Txt muted>{reviewBusy
         ? (fa ? 'در حال دریافت نظر دوم؛ می‌توانی هم‌زمان در بخش‌های دیگر کار کنی.' : 'Getting the second opinion. You can keep using other sections.')
@@ -398,41 +364,19 @@ function DiscoveryDashboardReady() {
   const [quickTopicDraft, setQuickTopicDraft] = useState<string | undefined>(undefined);
   const quickTopic = quickTopicDraft ?? preferences.lastInput?.topic ?? latestReport?.input.topic ?? '';
   const latestReportId = latestReport?.id ?? '';
-  const latestReportSignature = latestReport
-    ? latestReport.videos.map((video) => video.id + ':' + video.fetchedAt).join('|')
-    : '';
   const latestReportVideoRecords = latestReport?.videos;
   const engineVideoEvidence = useMemo(
     () => collectEngineVideoEvidence(reports, storedVideos),
     [reports, storedVideos],
   );
-  const engineVideoSignature = useMemo(
-    () => engineVideoEvidence.map((video) => video.id + ':' + video.fetchedAt + ':' + video.title).join('|'),
-    [engineVideoEvidence],
-  );
-  const engineVideoSamples = useMemo<YouTubeSampleVideo[]>(() => engineVideoEvidence.map((video) => ({
-    id: video.id,
-    title: video.title,
-    description: video.description,
-    channel: video.channel,
-    channelId: '',
-    publishedAt: video.publishedAt,
-    thumbnailUrl: '',
-    viewCount: video.viewCount,
-    likeCount: video.likeCount,
-    channelSubscriberCount: null,
-    channelVideoCount: null,
-    url: 'https://www.youtube.com/watch?v=' + video.id,
-  })), [engineVideoEvidence]);
   useEffect(() => {
-    if (!latestReportId || !engineVideoSignature) return;
+    if (!latestReportId) return;
     let active = true;
     const timer = setTimeout(() => {
       if (!active) return;
       const report = useScout.getState().data.reports.find((item) => item.id === latestReportId);
-      if (!report || !engineVideoSamples.length) return;
+      if (!report) return;
       try {
-        const videos = engineVideoSamples;
         const currentNews = engineNews.map((item) => ({
           title: item.title,
           summary: item.summary,
@@ -446,7 +390,6 @@ function DiscoveryDashboardReady() {
         const priorMemory = currentData.researchMemory.find((entry) => normalizeResearchText(entry.topic) === normalizeResearchText(report.input.topic));
         const result = buildInternalResearch({
           topic: report.input.topic,
-          videos,
           news: currentNews,
           feedback: buildResearchInterestProfile(currentData.ideas),
           priorMemory,
@@ -465,7 +408,7 @@ function DiscoveryDashboardReady() {
       active = false;
       clearTimeout(timer);
     };
-  }, [latestReportId, latestReportSignature, engineVideoSignature, engineVideoSamples, engineNews, preferences.uiLanguage, fa]);
+  }, [latestReportId, engineNews, preferences.uiLanguage, fa]);
 
   const latestReportAnalysis = reportAnalysisState?.id === latestReportId
     ? reportAnalysisState.result
@@ -499,13 +442,7 @@ function DiscoveryDashboardReady() {
     () => rankNewsForTopic(chartTopic, engineNews, Math.max(1, engineNews.length)),
     [chartTopic, engineNews],
   );
-  const chartVideos = useMemo(
-    () => engineVideoSamples,
-    [engineVideoSamples],
-  );
   const chartIdeas = useMemo(() => selectDashboardIdeas(ideas, {
-    reportId: latestReport?.id,
-    videoIds: new Set(latestReport?.videos.map((video) => video.id) ?? []),
     sourceUrls: new Set(chartNews.filter((item) => scoreResearchText(chartTopic, item.title, item.summary) > 0).map((item) => item.url)),
     topic: chartTopic,
   }), [ideas, latestReport?.id, latestReport?.videos, chartNews, chartTopic]);
@@ -535,7 +472,7 @@ function DiscoveryDashboardReady() {
           topic={chartTopic}
           news={chartNews}
           wiki={chartWiki}
-          videos={chartVideos}
+          videos={[]}
           language={preferences.uiLanguage ?? 'fa'}
           selectedIdeaId={selectedIdeaId}
           secondOpinion={chartAnalysis

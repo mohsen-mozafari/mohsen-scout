@@ -819,6 +819,77 @@ export function fingerprintText(value: string): string {
   return (hash >>> 0).toString(16).padStart(8, '0');
 }
 
+export const structuredSecondOpinionSchema = z.object({
+  decision: z.enum(['develop', 'gather_more_evidence', 'reframe']),
+  strengths: z.array(z.string().trim().min(1).max(280)).max(3),
+  risks: z.array(z.string().trim().min(1).max(280)).max(3),
+  missingData: z.array(z.string().trim().min(1).max(280)).max(3),
+  validationSteps: z.array(z.string().trim().min(1).max(280)).max(3),
+  nextAction: z.string().trim().min(1).max(360),
+}).strict();
+
+export type StructuredSecondOpinion = z.infer<typeof structuredSecondOpinionSchema>;
+
+/**
+ * OpenRouter receives only the user's topic and candidate editorial concept.
+ * It does not receive raw sources, YouTube API data, aggregate engine scores,
+ * source counts, or the local engine's ranking decision.
+ */
+export function structuredSecondOpinionPrompt(
+  topic: string,
+  concept: string,
+  language: 'fa' | 'en' = 'en',
+): string {
+  const cleanTopic = topic.trim().slice(0, 180);
+  const cleanConcept = concept.trim().slice(0, 1200);
+  if (!cleanTopic || !cleanConcept) {
+    throw new ApiError('A topic and candidate concept are required for the second opinion.', 'input');
+  }
+  const instruction = language === 'fa'
+    ? 'فقط یک نظر مستقل درباره موضوع و مفهوم پیشنهادی ارائه کن. هیچ داده، منبع، آمار، تقاضا، رقابت یا احتمال موفقیت بیرونی در اختیار تو نیست؛ چیزی جعل نکن و امتیاز داخلی را حدس نزن. پاسخ را فقط به شکل JSON معتبر و بدون Markdown با کلیدهای دقیق زیر برگردان: decision (یکی از develop, gather_more_evidence, reframe)، strengths (آرایه حداکثر ۳ رشته)، risks (آرایه حداکثر ۳ رشته)، missingData (آرایه حداکثر ۳ رشته)، validationSteps (آرایه حداکثر ۳ رشته)، nextAction (یک رشته). تمام مقادیر متنی فارسی باشند. هیچ کلید دیگری اضافه نکن.'
+    : 'Give an independent editorial critique of the supplied topic and concept only. You have no external source, performance statistic, demand, competition or success-probability evidence; do not invent any. Return only valid JSON without Markdown using exactly these keys: decision (one of develop, gather_more_evidence, reframe), strengths (array of at most 3 strings), risks (array of at most 3 strings), missingData (array of at most 3 strings), validationSteps (array of at most 3 strings), nextAction (one string). Do not add other keys.';
+  return (instruction + '\n\n' + JSON.stringify({ topic: cleanTopic, candidateConcept: cleanConcept })).slice(0, 5000);
+}
+
+export function parseStructuredSecondOpinion(content: string): StructuredSecondOpinion {
+  const cleaned = content.trim()
+    .replace(/^\x60{3}(?:json)?\s*/i, '')
+    .replace(/\x60{3}\s*$/, '')
+    .trim();
+  let value: unknown;
+  try {
+    value = JSON.parse(cleaned);
+  } catch {
+    throw new ApiError('The second opinion was not valid JSON. The local recommendation remains available.', 'invalid');
+  }
+  const parsed = structuredSecondOpinionSchema.safeParse(value);
+  if (!parsed.success) {
+    throw new ApiError('The second opinion did not match the required response schema. The local recommendation remains available.', 'invalid');
+  }
+  return parsed.data;
+}
+
+export function formatStructuredSecondOpinion(
+  opinion: StructuredSecondOpinion,
+  language: 'fa' | 'en' = 'en',
+): string {
+  const fa = language === 'fa';
+  const decision = opinion.decision === 'develop'
+    ? (fa ? 'توسعه ایده' : 'Develop the concept')
+    : opinion.decision === 'reframe'
+      ? (fa ? 'بازتعریف موضوع' : 'Reframe the topic')
+      : (fa ? 'جمع‌آوری شواهد بیشتر' : 'Gather more evidence');
+  const sections = [
+    (fa ? 'تصمیم: ' : 'Decision: ') + decision,
+    (fa ? 'نقاط قوت: ' : 'Strengths: ') + (opinion.strengths.join(' · ') || (fa ? 'ثبت نشد' : 'None reported')),
+    (fa ? 'ریسک‌ها: ' : 'Risks: ') + (opinion.risks.join(' · ') || (fa ? 'ثبت نشد' : 'None reported')),
+    (fa ? 'داده‌های مفقود: ' : 'Missing data: ') + (opinion.missingData.join(' · ') || (fa ? 'ثبت نشد' : 'None reported')),
+    (fa ? 'راستی‌آزمایی: ' : 'Validation: ') + (opinion.validationSteps.join(' · ') || (fa ? 'ثبت نشد' : 'None reported')),
+    (fa ? 'گام بعدی: ' : 'Next action: ') + opinion.nextAction,
+  ];
+  return sections.join('\n\n');
+}
+
 export type InternalEngineReviewInput = {
   topic: string;
   summary: string;

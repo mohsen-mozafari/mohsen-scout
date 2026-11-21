@@ -13,7 +13,7 @@ import {
 import { readData, writeData } from './storage';
 import { getKey } from './vault';
 import { nextBudget, searchYouTube, type YouTubeQuotaKind, type YouTubeQuotaOrigin } from './api';
-import { filterVideosToSelectedResearchPeriod, generateEditorialIdeas } from './idea-generation';
+import { generateEditorialIdeas } from './idea-generation';
 import { attachReportToIdea as attachReport, attachVideoReferenceToIdea as attachVideoReference, getOrCreateSourceIdea, type SourceIdeaInput } from './idea-research';
 import { getCachedSpaceNews, hydrateSpaceNewsRegistry } from './space';
 import { normalizeResearchText } from './intelligence';
@@ -144,19 +144,12 @@ export const useScout = create<State>((set, get) => ({
       const currentData = get().data;
       const availableNews = getCachedSpaceNews(currentData.feedRegistry, currentData.preferences.spaceNewsSources);
       const priorMemory = currentData.researchMemory.find((entry) => normalizeResearchText(entry.topic) === normalizeResearchText(report.input.topic));
-      const currentVideos = filterVideosToSelectedResearchPeriod(result.videos, report.input.days);
       recordRuntimeStart('Engine');
       engineStarted = true;
       const generatedIdeas = generateEditorialIdeas({
         topic: report.input.topic,
         news: availableNews,
         priorMemory,
-        videos: currentVideos.map((video) => ({
-          id: video.id, title: video.title, description: video.description,
-          channel: video.channel, publishedAt: video.publishedAt,
-          viewCount: video.viewCount ?? null, likeCount: video.likeCount ?? null,
-        })),
-        reportId: report.id,
         existingIdeas: get().data.ideas,
         region: report.input.region,
         languages: report.input.languages,
@@ -205,12 +198,6 @@ export const useScout = create<State>((set, get) => ({
       topic: report.input.topic,
       news: availableNews,
       priorMemory,
-      videos: filterVideosToSelectedResearchPeriod(report.videos, report.input.days).map((video) => ({
-        id: video.id, title: video.title, description: video.description,
-        channel: video.channel, publishedAt: video.publishedAt,
-        viewCount: video.viewCount ?? null, likeCount: video.likeCount ?? null,
-      })),
-      reportId: report.id,
       existingIdeas: get().data.ideas,
       region: report.input.region,
       languages: report.input.languages,

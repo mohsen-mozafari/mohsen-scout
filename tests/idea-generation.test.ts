@@ -68,24 +68,21 @@ void test('idea engine receives the complete user-selected YouTube period, inclu
   assert.deepEqual(filterVideosToSelectedResearchPeriod(records, 0, now).map((item) => item.id), ['recent', 'older', 'too-old']);
 });
 
-void test('idea engine rejects unrelated samples and marks a single-channel hypothesis uncertain', () => {
-  const unrelated = generateEditorialIdeas({
-    ...base, news: [], videos: [{
-      id: 'dQw4w9WgXcQ', title: 'JWST gaming commentary',
-      description: 'A creator update and channel news unrelated to this topic.',
-      channel: 'MOCK Unrelated Channel', publishedAt: '2026-11-15T12:00:00Z',
-    }], limit: 8,
-  });
-  assert.equal(unrelated.length, 0);
-  const singleSource = generateEditorialIdeas({
-    ...base, news: [], videos: [{
-      id: '9bZkp7q19f0', title: 'JWST exoplanet atmosphere: measurement limits',
+void test('publisher idea generation ignores YouTube-only input', () => {
+  const generated = generateEditorialIdeas({
+    ...base,
+    news: [],
+    videos: [{
+      id: '9bZkp7q19f0',
+      title: 'JWST exoplanet atmosphere: measurement limits',
       description: 'An overview of atmospheric measurement uncertainty.',
-      channel: 'MOCK Single Channel', publishedAt: '2026-11-15T12:00:00Z',
-    }], limit: 8,
+      channel: 'MOCK Single Channel',
+      publishedAt: '2026-11-15T12:00:00Z',
+      viewCount: 1200,
+    }],
+    limit: 8,
   });
-  assert.ok(singleSource.length > 0);
-  assert.ok(singleSource.every((idea) => idea.assessment === 'Uncertain'));
+  assert.deepEqual(generated, []);
 });
 
 void test('idea generation works with official news only and links its original source',() => {
@@ -118,16 +115,12 @@ void test('editorial priority survives the validated local SQLite data shape', (
   );
 });
 
-void test('idea generation works with YouTube only without persisting raw video metadata', () => {
+void test('YouTube API samples remain separate from publisher editorial ideas', () => {
   const ideas = generateEditorialIdeas({ ...base, news: [], videos, reportId: 'report-1', limit: 4 });
-  assert.ok(ideas.length > 0);
-  assert.ok(ideas.every((idea) => idea.reportId === 'report-1'));
-  assert.ok(ideas.every((idea) => idea.videoIds.length > 0));
-  const persisted = JSON.stringify(ideas);
-  assert.doesNotMatch(persisted, /MOCK: Exoplanet methane spectroscopy explained|MOCK Science Channel|12345/);
+  assert.deepEqual(ideas, []);
 });
 
-void test('mixed research can produce a category-specific cross-source idea', () => {
+void test('the publisher editorial engine does not create cross-source YouTube ideas', () => {
   const ideas = generateEditorialIdeas({
     ...base,
     news,
@@ -135,9 +128,7 @@ void test('mixed research can produce a category-specific cross-source idea', ()
     category: 'Cross-source',
     limit: 3,
   });
-  assert.ok(ideas.length > 0);
-  assert.ok(ideas.every((idea) => idea.ideaCategory === 'Cross-source'));
-  assert.ok(ideas.some((idea) => idea.sourceName === 'NASA' || idea.sourceName === 'ESA'));
+  assert.deepEqual(ideas, []);
 });
 
 void test('refresh avoids generating titles already present in Ideas', () => {
@@ -180,7 +171,7 @@ void test('automatic ingestion does not create duplicate ideas for unchanged evi
 });
 
 
-void test('idea generation uses title and description relevance without discarding missing view metrics', () => {
+void test('YouTube sample selection is independent of publisher editorial scoring', () => {
   const selected = selectIdeaGenerationVideos('JWST exoplanet atmosphere', [
     { id: 'dQw4w9WgXcQ', title: 'Unrelated gaming highlights', viewCount: 99000000 },
     { id: 'abc123XYZ_1', title: 'Daily unrelated roundup', description: 'JWST exoplanet atmosphere discovery details', viewCount: 199000000 },
@@ -206,38 +197,14 @@ void test('repeated engine-generated cards collapse in the Ideas list without me
   assert.equal(stored.length, 3);
 });
 
-void test('video-only idea hypotheses can use relevant videos even when view statistics are unavailable', () => {
+void test('missing publisher evidence keeps YouTube-only ideas unavailable', () => {
   const generated = generateEditorialIdeas({
-    ...base, news: [],
+    ...base,
+    news: [],
     videos: [{ id: 'dQw4w9WgXcQ', title: 'Exoplanet atmosphere', viewCount: null }],
   });
-  assert.ok(generated.length > 0);
-  assert.ok(generated.every((idea) => idea.engineScore !== undefined));
-  assert.ok(generated.every((idea) => idea.engineScoreReason));
+  assert.deepEqual(generated, []);
 });
-
-const batchAnchors = Array.from({ length: 30 }, (_, index) =>
-  'astroterm' + String.fromCharCode(97 + Math.floor(index / 26)) + String.fromCharCode(97 + (index % 26)),
-);
-const batchAnchorText = batchAnchors.join(' ');
-const batchNews: SpaceNewsItem[] = Array.from({ length: 12 }, (_, index) => ({
-  id: 'batch-news-' + index,
-  sourceId: index % 2 ? 'esa-science' : 'nasa',
-  sourceName: index % 2 ? 'ESA' : 'NASA',
-  title: 'MOCK: JWST exoplanet atmosphere ' + batchAnchorText + ' mission observation record' + index,
-  summary: 'MOCK: JWST exoplanet atmosphere ' + batchAnchorText + ' measurement calibration uncertainty instrument response analysis',
-  url: 'https://' + (index % 2 ? 'esa.int' : 'nasa.gov') + '/mock-batch-' + index,
-  publishedAt: new Date(Date.UTC(2026, 10, 15 - index)).toISOString(),
-}));
-
-const batchVideos = Array.from({ length: 6 }, (_, index) => ({
-  id: ['dQw4w9WgXcQ', '9bZkp7q19f0', '3JZ_D3ELwOQ', 'L_jWHffIx5E', 'kJQP7kiw5Fk', 'fJ9rUzIMcZQ'][index],
-  title: 'MOCK: JWST exoplanet atmosphere spectroscopy sample ' + index,
-  description: 'MOCK: JWST exoplanet atmosphere ' + batchAnchorText + ' uncertainty measurement',
-  channel: 'MOCK channel ' + index,
-  publishedAt: new Date(Date.UTC(2026, 10, 10 - index)).toISOString(),
-  viewCount: 1800000 - index * 25000,
-}));
 
 void test('one batch can return more than eight ideas without duplicate IDs or titles', () => {
   const generated = generateEditorialIdeas({ ...base, topic: 'JWST exoplanet atmosphere', news: batchNews, videos: batchVideos, limit: 25 });
@@ -278,16 +245,20 @@ void test('distinct evidence anchors in the same category are not incorrectly co
   assert.equal(new Set(generated.map((idea) => idea.topic)).size, generated.length);
 });
 
-void test('video-only idea generation derives angles from the highest-ranked relevant video concepts', () => {
+void test('YouTube-only titles cannot become generated editorial ideas', () => {
   const generated = generateEditorialIdeas({
-    ...base, news: [],
-    videos: [{ id: 'dQw4w9WgXcQ', title: 'JWST exoplanet atmosphere methane spectroscopy', description: 'Detailed methane signatures and spectroscopic measurement limits.', viewCount: 2400000, publishedAt: '2026-11-15T12:00:00Z' }],
+    ...base,
+    news: [],
+    videos: [{
+      id: 'dQw4w9WgXcQ',
+      title: 'JWST exoplanet atmosphere methane spectroscopy',
+      description: 'Detailed methane signatures and spectroscopic measurement limits.',
+      viewCount: 2400000,
+      publishedAt: '2026-11-15T12:00:00Z',
+    }],
     limit: 8,
   });
-  assert.ok(generated.length > 0);
-  assert.ok(generated.some((idea) => /methane|spectroscopy/i.test(idea.topic)));
-  assert.ok(generated.every((idea) => idea.videoIds.includes('dQw4w9WgXcQ')));
-  assert.doesNotMatch(JSON.stringify(generated), /JWST exoplanet atmosphere methane spectroscopy/);
+  assert.deepEqual(generated, []);
 });
 
 void test('semantic aliases are retained by the shared relevance matcher', () => {
@@ -298,7 +269,7 @@ void test('semantic aliases are retained by the shared relevance matcher', () =>
   assert.deepEqual(selected.map((video) => video.id), ['abcdefghijk']);
 });
 
-void test('idea evidence scope reports all received records separately from detailed topic matches', () => {
+void test('publisher idea evidence scope excludes the separate YouTube sample', () => {
   const unrelatedNews: SpaceNewsItem = {
     id: 'unrelated-news',
     sourceId: 'sky-telescope',
@@ -312,13 +283,15 @@ void test('idea evidence scope reports all received records separately from deta
     ...base,
     news: [...news, unrelatedNews],
     videos,
+    reportId: 'report-from-separate-youtube-sample',
     limit: 1,
   });
   assert.ok(generated.length > 0);
-  assert.match(generated[0].concept, /3 publisher item\(s\) received; 2 topic-matched/);
-  assert.match(generated[0].concept, /2 YouTube record\(s\) received; 2 relevant sample\(s\) selected for detailed analysis/);
+  assert.ok(generated[0].concept.includes('3 publisher item(s) received; 2 topic-matched'));
+  assert.doesNotMatch(generated[0].concept, /YouTube record\(s\) received/);
+  assert.equal(generated[0].videoIds.length, 0);
+  assert.equal(generated[0].reportId, undefined);
 });
-
 
 void test('the local engine evaluates the complete retained YouTube sample without a fixed 100-record cutoff', () => {
   const records = Array.from({ length: 125 }, (_, index) => ({
