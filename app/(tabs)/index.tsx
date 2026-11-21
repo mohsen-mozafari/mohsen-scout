@@ -349,7 +349,6 @@ function DiscoveryDashboardReady() {
     region: state.data.preferences.region,
     languages: state.data.preferences.languages,
   })));
-  const ideas = useScout((state) => state.data.ideas);
   const reports = useScout((state) => state.data.reports);
   const storedVideos = useScout((state) => state.data.videos);
   const feedRegistry = useScout((state) => state.data.feedRegistry);

@@ -868,8 +868,23 @@ function recomputeCentroid(cluster: TopicCluster): void {
   );
 }
 
+/**
+ * Structural words that appear across almost every research brief but never
+ * define a topic. Filtering them here (rather than in the shared tokenizer)
+ * keeps clustering specific to this engine without changing other consumers.
+ */
+const GENERIC_TOPIC_TERMS = new Set([
+  'sample', 'samples', 'measurement', 'measurements', 'measured', 'variant', 'variants',
+  'series', 'phase', 'phases', 'number', 'creator', 'creators', 'explains', 'explainer',
+  'published', 'record', 'records', 'using', 'during', 'researchers', 'astronomers',
+  'finding', 'findings', 'report', 'reports', 'study', 'studies', 'analysis', 'bulletin',
+  'walkthrough', 'episode', 'team', 'published', 'result', 'results', 'method', 'methods',
+]);
+
 function docKeyphrases(item: EvidenceItem): string[] {
-  const tokens = tokenizeResearchText(item.title + ' ' + item.text).slice(0, 60);
+  const tokens = tokenizeResearchText(item.title + ' ' + item.text)
+    .filter((token) => !GENERIC_TOPIC_TERMS.has(token))
+    .slice(0, 60);
   const phrases: string[] = [];
   for (let index = 0; index < tokens.length && phrases.length < 70; index += 1) {
     phrases.push(tokens[index]);
@@ -917,8 +932,13 @@ export function buildTopics(
     }
   }
 
+  // Topic-defining terms are the ones SHARED by several documents in a brief.
+  // Classic IDF downweights exactly those terms (they are common inside a
+  // single-topic corpus) and lets incidental words such as "across" or "10"
+  // define clusters. Weight by document support instead so the real subject wins.
   const vocabulary = new Set(
     [...corpusFrequency.entries()]
+      .filter(([phrase]) => !/^\d+$/.test(phrase) && !phrase.split(' ').every((part) => /^\d+$/.test(part)))
       .sort((left, right) =>
         (right[1] * Math.sqrt(documentFrequency.get(right[0]) ?? 0)) -
         (left[1] * Math.sqrt(documentFrequency.get(left[0]) ?? 0)) ||
@@ -927,14 +947,13 @@ export function buildTopics(
       .map(([phrase]) => phrase),
   );
 
-  const documentCount = Math.max(1, items.length);
   const vectors: Map<string, number>[] = [];
   for (const counts of phraseCounts) {
     const entries: [string, number][] = [];
     for (const [phrase, count] of counts) {
       if (!vocabulary.has(phrase)) continue;
-      const idf = Math.log(1 + documentCount / (1 + (documentFrequency.get(phrase) ?? 0)));
-      entries.push([phrase, (1 + Math.log(count)) * idf]);
+      const support = 1 + Math.log(1 + (documentFrequency.get(phrase) ?? 0));
+      entries.push([phrase, (1 + Math.log(count)) * support]);
     }
     entries.sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]));
     const top = entries.slice(0, 12);
