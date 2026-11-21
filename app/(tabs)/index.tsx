@@ -10,7 +10,7 @@ import {
 import { useScout } from '@/lib/store';
 import { palette as p } from '@/lib/theme';
 import { useShallow } from 'zustand/react/shallow';
-import { uid, type Idea, type SecondOpinionProvider, DEFAULT_SECOND_OPINION_ORDER } from '@/lib/types';
+import { uid, type Idea, DEFAULT_SECOND_OPINION_ORDER } from '@/lib/types';
 import { SPACE_NICHES, getCachedSpaceNews } from '@/lib/space';
 import { buildInternalResearch, rankNewsForTopic, type InternalResearchResult } from '@/lib/engine';
 import { buildResearchInterestProfile, normalizeResearchText, scoreResearchText } from '@/lib/intelligence';
@@ -110,7 +110,7 @@ function AnalysisSignals({ result }: { result: InternalResearchResult }) {
   );
 }
 
-function EngineAIReview({ topic, result, idea }: { topic: string; result: InternalResearchResult; idea?: Idea }) {
+function EngineAIReview({ topic, idea }: { topic: string; idea?: Idea }) {
   const preferences = useScout(useShallow((state) => ({
     preferredProvider: state.data.preferences.secondOpinionProvider ?? 'gemini',
     providerOrder: state.data.preferences.secondOpinionOrder,
@@ -128,7 +128,7 @@ function EngineAIReview({ topic, result, idea }: { topic: string; result: Intern
         idea.ideaCategory ? 'Editorial format: ' + idea.ideaCategory : '',
         centralQuestion ? 'Central question: ' + centralQuestion : '',
       ].filter(Boolean).join('\n')
-    : [result.angles[0]?.title, result.angles[0]?.hook].filter(Boolean).join('\n');
+    : 'Editorial angle to independently assess for the user-provided topic: ' + topic;
   const prompt = candidateConcept.trim()
     ? structuredSecondOpinionPrompt(topic, candidateConcept, fa ? 'fa' : 'en')
     : '';
@@ -494,7 +494,7 @@ function DiscoveryDashboardReady() {
           language={preferences.uiLanguage ?? 'fa'}
           selectedIdeaId={selectedIdeaId}
           secondOpinion={chartAnalysis
-            ? <EngineAIReview topic={chartTopic} result={chartAnalysis} idea={bestIdea} />
+            ? <EngineAIReview topic={chartTopic} idea={bestIdea} />
             : undefined}
         />
 

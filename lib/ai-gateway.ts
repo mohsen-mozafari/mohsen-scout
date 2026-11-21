@@ -193,8 +193,11 @@ async function postOpinion(
     if (!/^[a-f0-9]{32}$/i.test(accountId)) {
       throw new SecondOpinionProviderError('Cloudflare Account ID is missing or invalid.', 'disabled');
     }
+    if (!/^@?[a-z0-9._-]+(?:\/[a-z0-9._-]+)+$/i.test(model)) {
+      throw new SecondOpinionProviderError('Cloudflare model ID contains unsupported characters.', 'unavailable');
+    }
     raw = await requestOnce(
-      'https://api.cloudflare.com/client/v4/accounts/' + accountId + '/ai/run/' + encodeURIComponent(model),
+      'https://api.cloudflare.com/client/v4/accounts/' + accountId + '/ai/run/' + model,
       {
         method: 'POST',
         headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
@@ -242,11 +245,13 @@ export async function requestSecondOpinionWithFallback(
       attempts.push({ provider: config.provider, model: config.model, status: failure.code, message: failure.message });
     }
   }
-  throw new AggregateError(
-    attempts.filter((attempt) => attempt.status !== 'disabled').map((attempt) => new Error(attempt.message)),
-    attempts.some((attempt) => attempt.status !== 'disabled')
-      ? 'All configured second-opinion providers failed or returned an invalid response.'
+  const activeAttempts = attempts.filter((attempt) => attempt.status !== 'disabled');
+  const detail = activeAttempts.map((attempt) => attempt.provider + ': ' + attempt.status).join(' · ');
+  throw new SecondOpinionProviderError(
+    activeAttempts.length
+      ? 'All configured second-opinion providers failed or returned an invalid response. ' + detail
       : 'No second-opinion provider has a saved key. Add a provider key in Settings.',
+    activeAttempts[activeAttempts.length - 1]?.status ?? 'disabled',
   );
 }
 
