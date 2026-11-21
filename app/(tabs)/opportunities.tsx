@@ -1,4 +1,4 @@
-import { memo, useCallback, useDeferredValue, useMemo, useState } from 'react';
+import { memo, useDeferredValue, useMemo, useState } from 'react';
 import { FlatList, Platform, View, Text, Pressable } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Button } from 'heroui-native';
@@ -332,7 +332,7 @@ export default function Opportunities() {
       <FlatList
         style={{ flex: 1 }}
         data={remainingIdeas}
-        keyExtractor={(i) => i.id}
+        keyExtractor={ideaKeyExtractor}
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
         initialNumToRender={5}
@@ -444,13 +444,8 @@ export default function Opportunities() {
               </View>
             ) : null}
             {pinnedIdeas.length ? (
-              <View style={{ gap: 8 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <Heading>{fa ? '۵ ایده برتر سنجاق‌شده' : 'Top 5 pinned ideas'}</Heading>
-                  <BadgeText>{String(pinnedIdeas.length)}</BadgeText>
-                </View>
-                <Fold title={fa ? '۵ ایده برتر سنجاق‌شده' : 'Top 5 pinned ideas'} summary={String(pinnedIdeas.length)}>
-                  <View style={{ gap: 8 }}>
+              <Fold title={fa ? '۵ ایده برتر سنجاق‌شده' : 'Top 5 pinned ideas'} summary={String(pinnedIdeas.length)}>
+                <View style={{ gap: 8 }}>
                     {pinnedIdeas.map((idea, index) => {
                       const band = getEditorialPriorityBand(idea.engineScore ?? 0);
                       const tint = band === 'strong' ? p.success : band === 'moderate' ? p.cyan : p.danger;
@@ -469,9 +464,8 @@ export default function Opportunities() {
                         </Pressable>
                       );
                     })}
-                  </View>
-                </Fold>
-              </View>
+                </View>
+              </Fold>
             ) : null}
             {draftOpen ? (
               <View style={styles.panel}>
@@ -496,7 +490,6 @@ export default function Opportunities() {
           </View>
 
         }
-        keyExtractor={ideaKeyExtractor}
         renderItem={({ item }) => (
           <IdeaListItem item={item} fa={fa} language={preferences.uiLanguage ?? 'fa'} />
         )}
