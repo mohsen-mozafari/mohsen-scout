@@ -20,13 +20,33 @@ export function normalizeSearchText(value: string): string {
     .replace(/\s+/g, ' ');
 }
 
+/** Immutable-by-convention token index for content that is searched repeatedly. */
+export type SearchTextIndex = ReadonlySet<string>;
+
+/** Normalize and tokenize a search target once when its underlying record changes. */
+export function indexSearchText(content: string): SearchTextIndex {
+  const normalized = normalizeSearchText(content);
+  return new Set(normalized ? normalized.split(' ') : []);
+}
+
+/** Prepare a query once so a filtered list does not normalize it for every row. */
+export function createSearchQuery(query: string): SearchTextIndex {
+  const normalized = normalizeSearchText(query);
+  return new Set(normalized ? normalized.split(' ') : []);
+}
+
 /**
  * Deterministic local matching: every query token must be present, independent
  * of order or punctuation. This is not fuzzy typo correction.
  */
+export function matchesSearchIndex(contentTokens: SearchTextIndex, queryTokens: SearchTextIndex): boolean {
+  for (const token of queryTokens) {
+    if (!contentTokens.has(token)) return false;
+  }
+  return true;
+}
+
+/** Convenience wrapper for one-off searches. */
 export function matchesSearchText(content: string, query: string): boolean {
-  const normalizedQuery = normalizeSearchText(query);
-  if (!normalizedQuery) return true;
-  const contentTokens = new Set(normalizeSearchText(content).split(' '));
-  return [...new Set(normalizedQuery.split(' '))].every((token) => contentTokens.has(token));
+  return matchesSearchIndex(indexSearchText(content), createSearchQuery(query));
 }

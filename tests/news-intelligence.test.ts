@@ -78,3 +78,29 @@ void test('publisher intelligence never changes the supplied records and labels 
   assert.ok(result.clusters.every((cluster) => cluster.reason.includes('publisher report')));
   assert.ok(result.limitations.some((line) => line.includes('not YouTube demand')));
 });
+
+
+void test('large publisher samples keep exact window counts and only the latest three traceable records', async () => {
+  const input = Array.from({ length: 160 }, (_, index) => {
+    const day = index % 14;
+    const sourceId = index % 3 === 0 ? 'nasa' : index % 3 === 1 ? 'esa-science' : 'space-com';
+    const sourceName = sourceId === 'nasa' ? 'NASA' : sourceId === 'esa-science' ? 'ESA' : 'Space.com';
+    return item(
+      'bulk-' + index,
+      sourceId,
+      sourceName,
+      'Methane spectroscopy report on JWST observation ' + index,
+      new Date(now - day * 86400000).toISOString(),
+    );
+  });
+  const result = await buildPublisherIntelligence(input, now, 7);
+  const methane = result.clusters.find((cluster) => cluster.title === 'methane');
+  assert.ok(methane);
+  assert.equal(result.uniqueCount, input.length);
+  assert.equal(methane.articleCount, input.length);
+  assert.equal(methane.currentWindowCount + methane.previousWindowCount, input.length);
+  assert.equal(methane.evidence.length, 3);
+  const evidenceDates = methane.evidence.map((entry) => Date.parse(entry.publishedAt ?? ''));
+  assert.deepEqual(evidenceDates, [...evidenceDates].sort((left, right) => right - left));
+  assert.equal(new Set(methane.publishers).size, 3);
+});

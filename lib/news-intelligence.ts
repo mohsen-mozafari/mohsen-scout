@@ -37,13 +37,20 @@ export type PublisherIntelligence = {
 type CorpusDocument = {
   item: SpaceNewsItem & { sourceCount?: number; sourceIds?: string[] };
   timestamp: number | null;
+  window: 'current' | 'previous' | null;
+  publisherFamilies: string[];
   grams: Set<string>;
 };
 
 const MAX_CLUSTERS = 12;
 const MAX_EVIDENCE_PER_CLUSTER = 3;
 const YIELD_EVERY_DOCUMENTS = 32;
+const YIELD_EVERY_TERMS = 128;
 const DAY_MS = 86400000;
+
+function yieldToEventLoop(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
 const CLUSTER_BOILERPLATE_TERMS = new Set([
   'independent', 'publisher', 'publishers', 'report', 'reports', 'article', 'articles',
   'source', 'sources', 'context', 'official', 'press', 'release', 'released',
@@ -107,16 +114,27 @@ export async function buildPublisherIntelligence(
   const normalizedWindow = Number.isFinite(windowDays)
     ? Math.max(1, Math.min(30, Math.floor(windowDays)))
     : 7;
+  const currentStart = safeNow - normalizedWindow * DAY_MS;
+  const previousStart = currentStart - normalizedWindow * DAY_MS;
   const deduplicated = deduplicateResearchEvidence(input.map((item) => ({
     ...item,
     sourceUrl: item.url,
   })));
   const documents: CorpusDocument[] = [];
+  let datedCount = 0;
 
   for (let index = 0; index < deduplicated.items.length; index += 1) {
     const item = deduplicated.items[index];
     const parsed = item.publishedAt ? Date.parse(item.publishedAt) : Number.NaN;
     const timestamp = Number.isFinite(parsed) && parsed <= safeNow ? parsed : null;
+    if (timestamp !== null) datedCount += 1;
+    const window: CorpusDocument['window'] = timestamp === null
+      ? null
+      : timestamp >= currentStart
+        ? 'current'
+        : timestamp >= previousStart
+          ? 'previous'
+          : null;
     const titleTokens = tokenizeResearchText(item.title);
     const summaryTokens = tokenizeResearchText(item.summary ?? '')
       .filter((token) => !CLUSTER_BOILERPLATE_TERMS.has(token));
@@ -125,10 +143,12 @@ export async function buildPublisherIntelligence(
     documents.push({
       item: item as CorpusDocument['item'],
       timestamp,
+      window,
+      publisherFamilies: publisherGroups(item),
       grams: makeNgrams(tokens),
     });
     if ((index + 1) % YIELD_EVERY_DOCUMENTS === 0) {
-      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      await yieldToEventLoop();
     }
   }
 
@@ -139,30 +159,55 @@ export async function buildPublisherIntelligence(
       if (previous) previous.push(index);
       else termDocuments.set(gram, [index]);
     }
+    if ((index + 1) % YIELD_EVERY_DOCUMENTS === 0) {
+      await yieldToEventLoop();
+    }
   }
 
-  const currentStart = safeNow - normalizedWindow * DAY_MS;
-  const previousStart = currentStart - normalizedWindow * DAY_MS;
   const ranked: PublisherTopicCluster[] = [];
+  const compareClusters = (a: PublisherTopicCluster, b: PublisherTopicCluster) =>
+    b.publisherCoverageScore - a.publisherCoverageScore ||
+    b.articleCount - a.articleCount ||
+    a.title.localeCompare(b.title);
+  let processedTerms = 0;
 
   for (const [phrase, indexes] of termDocuments) {
     if (indexes.length === 0) continue;
-    const relevant = indexes.map((index) => documents[index]);
-    const publishers = [...new Set(relevant.flatMap(({ item }) => publisherGroups(item)))].sort();
-    const currentWindowCount = relevant.filter(({ timestamp }) =>
-      timestamp !== null && timestamp >= currentStart,
-    ).length;
-    const previousWindowCount = relevant.filter(({ timestamp }) =>
-      timestamp !== null && timestamp >= previousStart && timestamp < currentStart,
-    ).length;
+    const publisherSet = new Set<string>();
+    const topEvidence: CorpusDocument[] = [];
+    let currentWindowCount = 0;
+    let previousWindowCount = 0;
+    let datedRelevant = 0;
+
+    for (const index of indexes) {
+      const document = documents[index];
+      for (const publisher of document.publisherFamilies) publisherSet.add(publisher);
+      if (document.window === 'current') currentWindowCount += 1;
+      else if (document.window === 'previous') previousWindowCount += 1;
+      if (document.timestamp !== null) datedRelevant += 1;
+
+      // Keep only the latest few records while aggregating; sorting every full
+      // cluster was needlessly expensive for common terms in larger RSS samples.
+      const timestamp = document.timestamp ?? 0;
+      let position = 0;
+      while (position < topEvidence.length && (topEvidence[position].timestamp ?? 0) >= timestamp) {
+        position += 1;
+      }
+      if (position < MAX_EVIDENCE_PER_CLUSTER) {
+        topEvidence.splice(position, 0, document);
+        if (topEvidence.length > MAX_EVIDENCE_PER_CLUSTER) topEvidence.pop();
+      }
+    }
+
+    const publishers = [...publisherSet].sort();
+    const articleCount = indexes.length;
     const momentum = momentumFor(currentWindowCount, previousWindowCount);
     const momentumDelta = currentWindowCount || previousWindowCount
       ? currentWindowCount - previousWindowCount
       : null;
-    const datedRelevant = relevant.filter(({ timestamp }) => timestamp !== null).length;
-    const freshness = relevant.length ? currentWindowCount / relevant.length : 0;
+    const freshness = articleCount ? currentWindowCount / articleCount : 0;
     const sourceBreadth = clamp(publishers.length * 25);
-    const evidenceBreadth = clamp(relevant.length * 18);
+    const evidenceBreadth = clamp(articleCount * 18);
     const momentumSignal = momentum === 'insufficient-data'
       ? 0
       : previousWindowCount === 0
@@ -175,29 +220,25 @@ export async function buildPublisherIntelligence(
       momentumSignal * 0.25,
     );
     const confidence: PublisherTopicCluster['confidence'] =
-      relevant.length >= 6 && publishers.length >= 3 && datedRelevant >= 3
+      articleCount >= 6 && publishers.length >= 3 && datedRelevant >= 3
         ? 'high'
-        : relevant.length >= 3 && publishers.length >= 2
+        : articleCount >= 3 && publishers.length >= 2
           ? 'moderate'
           : 'low';
-    const reason = relevant.length + ' unique publisher report(s) from ' +
+    const reason = articleCount + ' unique publisher report(s) from ' +
       publishers.length + ' publisher group(s); ' +
       currentWindowCount + ' in the latest ' + normalizedWindow + ' days versus ' +
       previousWindowCount + ' in the preceding window. This measures publisher coverage only.';
-    const evidence = relevant
-      .slice()
-      .sort((a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0))
-      .slice(0, MAX_EVIDENCE_PER_CLUSTER)
-      .map(({ item }) => ({
-        title: item.title,
-        url: item.url,
-        sourceName: item.sourceName,
-        publishedAt: item.publishedAt,
-      }));
-    ranked.push({
+    const evidence = topEvidence.map(({ item }) => ({
+      title: item.title,
+      url: item.url,
+      sourceName: item.sourceName,
+      publishedAt: item.publishedAt,
+    }));
+    const cluster: PublisherTopicCluster = {
       id: phrase,
       title: phrase,
-      articleCount: relevant.length,
+      articleCount,
       publishers,
       currentWindowCount,
       previousWindowCount,
@@ -207,17 +248,24 @@ export async function buildPublisherIntelligence(
       confidence,
       reason,
       evidence,
-    });
+    };
+
+    let insertionIndex = 0;
+    while (insertionIndex < ranked.length && compareClusters(ranked[insertionIndex], cluster) <= 0) {
+      insertionIndex += 1;
+    }
+    if (insertionIndex < MAX_CLUSTERS) {
+      ranked.splice(insertionIndex, 0, cluster);
+      if (ranked.length > MAX_CLUSTERS) ranked.pop();
+    }
+
+    processedTerms += 1;
+    if (processedTerms % YIELD_EVERY_TERMS === 0) {
+      await yieldToEventLoop();
+    }
   }
 
-  ranked.sort((a, b) =>
-    b.publisherCoverageScore - a.publisherCoverageScore ||
-    b.articleCount - a.articleCount ||
-    a.title.localeCompare(b.title),
-  );
-
   const uniqueCount = documents.length;
-  const datedCount = documents.filter((document) => document.timestamp !== null).length;
   return {
     inputCount: input.length,
     uniqueCount,

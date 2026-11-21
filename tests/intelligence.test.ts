@@ -290,3 +290,25 @@ void test('tokenization uses a bounded reusable cache without exposing mutable c
   first.push('caller-mutation');
   assert.deepEqual(tokenizeResearchText('JWST methane spectroscopy'), ['jwst', 'methane', 'spectroscopy']);
 });
+
+
+void test('entity extraction preserves provenance across a larger prepared corpus', () => {
+  const documents = Array.from({ length: 80 }, (_, index) => ({
+    id: 'entity-bulk-' + index,
+    sourceId: index % 2 ? 'nasa' : 'esa-space',
+    text: 'NASA and ESA describe Mars observations from the James Webb Space Telescope (JWST).',
+  }));
+  const entities = extractResearchEntityCandidates(documents);
+  const mars = entities.find((entity) => entity.name === 'Mars');
+  const jwst = entities.find((entity) => entity.name === 'JWST');
+  assert.ok(mars);
+  assert.ok(jwst);
+  assert.equal(mars.evidenceIds.length, documents.length);
+  assert.equal(jwst.evidenceIds.length, documents.length);
+  const relations = buildResearchEntityRelations(entities);
+  const nasaMars = relations.find((relation) =>
+    relation.fromEntityId === entities.find((entity) => entity.name === 'NASA')?.id &&
+    relation.toEntityId === mars.id,
+  );
+  assert.equal(nasaMars?.evidenceCount, documents.length);
+});

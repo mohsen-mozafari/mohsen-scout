@@ -27,7 +27,7 @@ import { createManualIdea } from '@/lib/engine';
 import { deduplicateDisplayIdeas, generateEditorialIdeas, IDEA_GENERATION_CATEGORIES, type IdeaGenerationCategory } from '@/lib/idea-generation';
 import { getTopicDossier } from '@/lib/topic-dossier';
 import { fetchSpaceNews, getCachedSpaceNews, SPACE_NICHES } from '@/lib/space';
-import { matchesSearchText, normalizeSearchText } from '@/lib/search';
+import { createSearchQuery, indexSearchText, matchesSearchIndex, normalizeSearchText } from '@/lib/search';
 import { palette as p } from '@/lib/theme';
 import { getEditorialPriorityBand, EDITORIAL_PRIORITY_CONFIG, type EditorialPriorityBand } from '@/lib/editorial-priority';
 import { setSelectedIdeaId, useSelectedIdeaId } from '@/lib/idea-selection';
@@ -72,22 +72,39 @@ export default function Opportunities() {
   };
   const categoryOptions = [allCategoryLabel, ...IDEA_GENERATION_CATEGORIES.map((value) => categoryLabel(value))];
   const displayableIdeas = useMemo(() => deduplicateDisplayIdeas(ideas.filter(isIdeaDisplayable)), [ideas]);
-  const matchingIdeas = useMemo(() => displayableIdeas.filter((i) => {
-    const searchable = [
-      getIdeaDisplayTitle(i, preferences.uiLanguage ?? 'fa'),
-      i.concept, i.note, i.decision, i.sourceName ?? '', i.sourceUrl ?? '', i.ideaCategory ?? '',
-    ].join(' ');
-    return i.archived === archive &&
-      (status === 'All' || i.status === status) &&
-      (category === 'All angles' || (i.engineGenerated && i.ideaCategory === category)) &&
-      matchesSearchText(searchable, search);
-  }), [displayableIdeas, archive, status, category, search, preferences.uiLanguage]);
-  const scoreCounts = useMemo(() => ({
-    strong: matchingIdeas.filter((idea) => typeof idea.engineScore === 'number' && getEditorialPriorityBand(idea.engineScore) === 'strong').length,
-    moderate: matchingIdeas.filter((idea) => typeof idea.engineScore === 'number' && getEditorialPriorityBand(idea.engineScore) === 'moderate').length,
-    weak: matchingIdeas.filter((idea) => typeof idea.engineScore === 'number' && getEditorialPriorityBand(idea.engineScore) === 'weak').length,
-    unscored: matchingIdeas.filter((idea) => typeof idea.engineScore !== 'number' || !Number.isFinite(idea.engineScore)).length,
-  }), [matchingIdeas]);
+  const indexedIdeas = useMemo(() => displayableIdeas.map((idea) => {
+    const title = getIdeaDisplayTitle(idea, preferences.uiLanguage ?? 'fa');
+    return {
+      idea,
+      searchIndex: indexSearchText([
+        title, idea.concept, idea.note, idea.decision,
+        idea.sourceName ?? '', idea.sourceUrl ?? '', idea.ideaCategory ?? '',
+      ].join(' ')),
+    };
+  }), [displayableIdeas, preferences.uiLanguage]);
+  const searchQuery = useMemo(() => createSearchQuery(search), [search]);
+  const matchingResult = useMemo(() => {
+    const result = {
+      ideas: [] as typeof displayableIdeas,
+      scoreCounts: { strong: 0, moderate: 0, weak: 0, unscored: 0 },
+    };
+    for (const entry of indexedIdeas) {
+      const idea = entry.idea;
+      if (idea.archived !== archive ||
+        (status !== 'All' && idea.status !== status) ||
+        (category !== 'All angles' && (!idea.engineGenerated || idea.ideaCategory !== category)) ||
+        !matchesSearchIndex(entry.searchIndex, searchQuery)) continue;
+      result.ideas.push(idea);
+      if (typeof idea.engineScore !== 'number' || !Number.isFinite(idea.engineScore)) {
+        result.scoreCounts.unscored += 1;
+      } else {
+        result.scoreCounts[getEditorialPriorityBand(idea.engineScore)] += 1;
+      }
+    }
+    return result;
+  }, [indexedIdeas, archive, status, category, searchQuery]);
+  const matchingIdeas = matchingResult.ideas;
+  const scoreCounts = matchingResult.scoreCounts;
   const filtered = useMemo(() => scoreFilter === 'all'
     ? matchingIdeas
     : matchingIdeas.filter((idea) => {
@@ -107,10 +124,21 @@ export default function Opportunities() {
       .localeCompare(getIdeaDisplayTitle(b, preferences.uiLanguage ?? 'fa'), undefined, { numeric: true, sensitivity: 'base' });
     return sort === 'A-Z' ? comparison : -comparison;
   }), [filtered, sort, preferences.uiLanguage]);
-  const pinnedIdeas = useMemo(() => filtered
-    .filter((idea) => typeof idea.engineScore === 'number' && Number.isFinite(idea.engineScore))
-    .sort((a, b) => (b.engineScore ?? -1) - (a.engineScore ?? -1) || b.createdAt - a.createdAt)
-    .slice(0, EDITORIAL_PRIORITY_CONFIG.pinnedIdeas), [filtered]);
+  const pinnedIdeas = useMemo(() => {
+    const top: typeof filtered = [];
+    const compare = (left: (typeof filtered)[number], right: (typeof filtered)[number]) =>
+      (right.engineScore ?? -1) - (left.engineScore ?? -1) ||
+      right.createdAt - left.createdAt;
+    for (const idea of filtered) {
+      if (typeof idea.engineScore !== 'number' || !Number.isFinite(idea.engineScore)) continue;
+      let position = 0;
+      while (position < top.length && compare(top[position], idea) <= 0) position += 1;
+      if (position >= EDITORIAL_PRIORITY_CONFIG.pinnedIdeas) continue;
+      top.splice(position, 0, idea);
+      if (top.length > EDITORIAL_PRIORITY_CONFIG.pinnedIdeas) top.pop();
+    }
+    return top;
+  }, [filtered]);
   const pinnedIds = useMemo(() => new Set(pinnedIdeas.map((idea) => idea.id)), [pinnedIdeas]);
   const requestedIdeaId = typeof params.idea === 'string' ? params.idea : selectedIdeaId;
   const featuredIdea = displayableIdeas.find((idea) =>
@@ -198,7 +226,7 @@ export default function Opportunities() {
       languages: current.preferences.languages,
       language: current.preferences.uiLanguage ?? 'fa',
       ...(requestedCategory ? { category: requestedCategory } : {}),
-      limit: 8,
+      limit: 5,
     });
     if (!generated.length) {
       recordRuntimeFinish('Engine', 'partial');
