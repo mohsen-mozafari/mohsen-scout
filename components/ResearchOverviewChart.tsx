@@ -1,4 +1,4 @@
-import { memo, useMemo } from 'react';
+import { memo, useCallback, useMemo } from 'react';
 import type { ReactNode } from 'react';
 import { View, Text } from 'react-native';
 import { router } from 'expo-router';
@@ -29,6 +29,10 @@ export const ResearchOverviewChart = memo(function ResearchOverviewChart({
   const fa = language === 'fa';
   const label = (english: string, persian: string) => fa ? persian : english;
   const ranked = useMemo(() => rankDashboardIdeas(ideas), [ideas]);
+  const selectIdea = useCallback((id: string) => {
+    setSelectedIdeaId(id);
+    router.push({ pathname: '/detail', params: { idea: id } });
+  }, []);
   const number = (value: number) => new Intl.NumberFormat(fa ? 'fa-IR' : 'en-US').format(value);
 
   const focusedIdea = selectedIdeaId ? ranked.find((idea) => idea.id === selectedIdeaId) : undefined;
@@ -93,10 +97,7 @@ export const ResearchOverviewChart = memo(function ResearchOverviewChart({
           ideas={ranked}
           coverage={brief.coverage}
           language={language}
-          onSelectIdea={(id) => {
-            setSelectedIdeaId(id);
-            router.push({ pathname: '/detail', params: { idea: id } });
-          }}
+          onSelectIdea={selectIdea}
         />
       ) : (
         <Txt muted>{label('The opportunity map fills in as the local engine brief becomes available. Source coverage above stays visible while it loads.', 'نقشه فرصت با آمادهشدن تحلیل موتور محلی تکمیل میشود؛ پوشش منابع تا آن زمان قابل مشاهده است.')}</Txt>

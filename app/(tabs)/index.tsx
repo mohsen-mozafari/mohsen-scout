@@ -415,6 +415,7 @@ function DiscoveryDashboardReady() {
       if (!active) return;
       const report = useScout.getState().data.reports.find((item) => item.id === latestReportId);
       if (!report || !engineVideoSamples.length) return;
+      recordRuntimeStart('Engine');
       try {
         const reportWiki = getTopicDossier(report.input.topic)?.wiki;
         const dashboard = buildUnifiedDashboardBrief(
@@ -432,6 +433,11 @@ function DiscoveryDashboardReady() {
           },
         );
         if (!active) return;
+        recordRuntimeFinish(
+          'Engine',
+          dashboard.fallback ? 'partial' : 'success',
+          dashboard.fallback ? 'Engine fell back to cached or reduced evidence.' : '',
+        );
         setAnalysisError('');
         setBriefState((previous) => {
           // On fallback or failure keep the last good brief and mark it cached
@@ -455,8 +461,9 @@ function DiscoveryDashboardReady() {
             },
           };
         });
-      } catch {
+      } catch (error) {
         // Keep the last good brief; the saved report and videos remain intact.
+        recordRuntimeFinish('Engine', 'error', error instanceof Error ? error.message : String(error));
         if (active) setAnalysisError('The latest local analysis could not be completed. The cached brief and saved report remain available.');
       }
     }, 160);
