@@ -172,11 +172,11 @@ function EngineAIReview({ topic, idea }: { topic: string; idea?: Idea }) {
       }
 
       const currentPreferences = useScout.getState().data.preferences;
-      const savedOrder = currentPreferences.secondOpinionOrder?.length
+      const currentSavedOrder = currentPreferences.secondOpinionOrder?.length
         ? currentPreferences.secondOpinionOrder
         : DEFAULT_SECOND_OPINION_ORDER;
-      const preferredProvider = currentPreferences.secondOpinionProvider ?? savedOrder[0];
-      const currentOrder = [preferredProvider, ...savedOrder.filter((provider) => provider !== preferredProvider)];
+      const preferredProvider = currentPreferences.secondOpinionProvider ?? currentSavedOrder[0];
+      const currentOrder = [preferredProvider, ...currentSavedOrder.filter((provider) => provider !== preferredProvider)];
       const currentModels = currentPreferences.secondOpinionModels ?? modelConfig;
       const configs: SecondOpinionProviderConfig[] = [];
       for (const provider of currentOrder) {
@@ -264,13 +264,14 @@ function EngineAIReview({ topic, idea }: { topic: string; idea?: Idea }) {
         ? 'ارائه‌دهنده: ' + providerLabel + ' · مدل: ' + resultFromProvider.model + '\n\n'
         : 'Provider: ' + providerLabel + ' · Model: ' + resultFromProvider.model + '\n\n') +
         formatStructuredSecondOpinion(resultFromProvider.opinion, fa ? 'fa' : 'en');
-      const opinionCreatedAt = Date.now();
+      const opinionId = uid();
+      const opinionTimestamp = Number.parseInt(opinionId.split('-')[0], 36);
       const opinion = {
-        id: uid(),
+        id: opinionId,
         ideaId: visibleCacheKey,
         text: response,
         model: providerIdentity,
-        createdAt: opinionCreatedAt,
+        createdAt: Number.isFinite(opinionTimestamp) ? opinionTimestamp : 0,
       };
       setReviewState({ key: visibleCacheKey, text: response });
       await useScout.getState().commit((data) => ({
