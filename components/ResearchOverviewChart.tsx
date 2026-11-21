@@ -2,7 +2,7 @@ import { memo, useMemo } from 'react';
 import type { ReactNode } from 'react';
 import { View, Text } from 'react-native';
 import { router } from 'expo-router';
-import { Panel, Heading, Txt, Action, BadgeText } from '@/components/ScoutUI';
+import { Panel, Txt, Action, BadgeText } from '@/components/ScoutUI';
 import { ResearchKnowledgeGraph } from '@/components/ResearchKnowledgeGraph';
 import { palette as p } from '@/lib/theme';
 import { rankDashboardIdeas } from '@/lib/dashboard';
