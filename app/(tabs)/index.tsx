@@ -445,7 +445,7 @@ function DiscoveryDashboardReady() {
   const chartIdeas = useMemo(() => selectDashboardIdeas(ideas, {
     sourceUrls: new Set(chartNews.filter((item) => scoreResearchText(chartTopic, item.title, item.summary) > 0).map((item) => item.url)),
     topic: chartTopic,
-  }), [ideas, latestReport?.id, latestReport?.videos, chartNews, chartTopic]);
+  }), [ideas, chartNews, chartTopic]);
   const bestIdea = chartIdeas[0];
   const ideaLinkage = useMemo(() => ({
     active: ideas.filter((idea) => !idea.archived && idea.status !== 'Rejected Ideas' && idea.status !== 'Completed Research').length,

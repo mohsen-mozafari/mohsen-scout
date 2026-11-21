@@ -1,4 +1,4 @@
-import { buildResearchInterestProfile, canonicalizeResearchUrl, createEditorialOpportunityScorer, matchesAnyResearchTerms, matchesResearchTerms, matchesStrongResearchTopic, normalizeResearchText, scoreResearchText, tokenizeResearchText, type ResearchFeedbackProfile } from './intelligence';
+import { buildResearchInterestProfile, canonicalizeResearchUrl, createEditorialOpportunityScorer, matchesAnyResearchTerms, matchesStrongResearchTopic, normalizeResearchText, scoreResearchText, tokenizeResearchText, type ResearchFeedbackProfile } from './intelligence';
 import type { ResearchMemoryEntry } from './types';
 import type { SpaceNewsItem } from './space';
 import { uid, type Idea, type Region } from './types';
