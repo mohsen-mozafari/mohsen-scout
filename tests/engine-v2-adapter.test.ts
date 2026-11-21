@@ -26,12 +26,17 @@ function newsItem(index: number) {
     sourceId: 'nasa' as const,
     sourceName: 'NASA',
     title: [
-      'Mars rover mineral sample analysis report',
-      'Mars rover mineral sample crater update',
-      'Mars rover mineral sample instrument findings',
-      'Mars rover mineral sample soil measurement',
+      'Mars rover sample bulletin alpha',
+      'Mars rover sample bulletin beta',
+      'Mars rover sample bulletin gamma',
+      'Mars rover sample bulletin delta',
     ][index],
-    summary: 'The Mars rover collected a mineral sample from a crater and analysed the soil with its instrument during survey ' + index + '.',
+    summary: [
+      'A crater rock was collected and its mineral composition was recorded by the survey team.',
+      'Orbital imagery mapped layered terrain and tracked seasonal dust changes over the basin.',
+      'A lander measured soil moisture and temperature across the dusty plain at noon.',
+      'Spectral readings identified hydrated minerals in an ancient riverbed near the highlands.',
+    ][index],
     url: 'https://example.org/mars/news/' + index,
     publishedAt: new Date(NOW - (index + 1) * 3600000).toISOString(),
   };
@@ -42,14 +47,14 @@ function videoItem(index: number): Video {
   return {
     id,
     title: [
-      'Mars rover mineral sample walkthrough',
-      'Mars rover mineral sample crater explained',
-      'Mars rover mineral sample instrument guide',
+      'Mars rover sample study alpha',
+      'Mars rover sample study beta',
+      'Mars rover sample study gamma',
     ][index],
     description: [
-      'A walkthrough of the rover mineral sample collected from the crater floor.',
-      'An instrument overview explaining soil measurements at the landing site.',
-      'Orbital imagery review shows layered rocks near the dusty basin.',
+      'The rover collected a crater rock and recorded its mineral composition with an onboard instrument.',
+      'An orbiter mapped layered terrain and tracked seasonal dust changes above the basin.',
+      'A lander measured soil moisture and temperature across the plain at local noon.',
     ][index],
     channel: 'Mars Lab',
     thumbnail: 'https://example.org/' + id + '.jpg',
