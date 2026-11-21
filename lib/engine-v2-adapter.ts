@@ -20,7 +20,7 @@ import {
 } from './engine-v2';
 import type { YouTubeSampleVideo } from './api';
 import type { SpaceNewsItem, WikiSignal } from './space';
-import { regions, type Assessment, type Idea, type Region } from './types';
+import { regions, type Assessment, type Idea, type Region, type Video } from './types';
 
 /** Structural video shape accepted by the adapter (Video and YouTubeSampleVideo both satisfy it). */
 export type BriefVideoInput = {

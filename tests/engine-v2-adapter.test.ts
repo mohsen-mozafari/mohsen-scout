@@ -45,7 +45,11 @@ function videoItem(index: number): Video {
       'Mars rover mineral sample crater explained',
       'Mars rover mineral sample instrument guide',
     ][index],
-    description: 'A walkthrough of the Mars rover mineral sample collected from the crater.',
+    description: [
+      'A walkthrough of the rover mineral sample collected from the crater floor.',
+      'An instrument overview explaining soil measurements at the landing site.',
+      'Orbital imagery review shows layered rocks near the dusty basin.',
+    ][index],
     channel: 'Mars Lab',
     thumbnail: 'https://example.org/' + id + '.jpg',
     publishedAt: new Date(NOW - (index + 2) * 3600000).toISOString(),
