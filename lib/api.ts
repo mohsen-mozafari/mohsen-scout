@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { type Budget, type ResearchInput, type Video, type Region } from './types';
+import type { EvidenceItem, OpportunityScore, Topic } from './engine-v2';
 import { matchesStrongResearchTopic, scoreResearchText } from './intelligence';
 export type Fetcher = typeof fetch;
 export class ApiError extends Error {
@@ -432,6 +433,7 @@ export async function searchYouTube(input: ResearchInput, options: YouTubeOption
     if (selected.size >= resultLimit) break;
   }
   const collected = [...selected.values()];
+  let statisticsBatchWarnings = 0;
   for (let offset = 0; offset < collected.length; offset += 50) {
     const batch = collected.slice(offset, offset + 50);
     try {
@@ -452,9 +454,18 @@ export async function searchYouTube(input: ResearchInput, options: YouTubeOption
         video.viewCount = stats?.viewCount && /^\d+$/.test(stats.viewCount) ? Number(stats.viewCount) : null;
         video.likeCount = stats?.likeCount && /^\d+$/.test(stats.likeCount) ? Number(stats.likeCount) : null;
       }
-    } catch {
-      warnings.push('Video titles and dates were retrieved, but raw view/like counts could not be loaded. Sorting falls back to available fields.');
-      break;
+    } catch (error) {
+      // One failed statistics batch must not discard the remaining batches.
+      // Keep the warning typed, bounded and counted; stop only on a hard
+      // quota/budget/key failure so the existing request budget is respected.
+      const detail = error instanceof Error ? error.message : 'unknown error';
+      if (statisticsBatchWarnings < 3) {
+        warnings.push(('Video statistics batch ' + (Math.floor(offset / 50) + 1) +
+          ' could not be loaded: ' + detail).slice(0, 220));
+        statisticsBatchWarnings += 1;
+      }
+      if (error instanceof ApiError && ['quota', 'budget', 'key', 'permission'].includes(error.code)) break;
+      continue;
     }
   }
   return {
@@ -857,6 +868,86 @@ export function internalEngineReviewPrompt(input: InternalEngineReviewInput): st
   return (instruction + '\n\n' + payload).slice(0, 10500);
 }
 
+/**
+ * Compact structural input for the second, schema-validated AI review. It is
+ * derived from the same unified brief that produces the dashboard ideas/chart;
+ * no raw headlines, URLs or invented metrics are added here.
+ */
+export type EngineV2ReviewInput = {
+  topic: string;
+  result: {
+    topics: readonly Topic[];
+    scores: readonly OpportunityScore[];
+    items: readonly EvidenceItem[];
+  };
+  /** The idea chosen locally; presented to the model as a candidate, not a verdict. */
+  idea?: { titleSuggestion: string; angle: string; why: string };
+  language?: 'fa' | 'en';
+};
+
+const ENGINE_V2_REVIEW_MAX_CHARS = 4000;
+
+/**
+ * Builds a bounded (<= 4000 chars) prompt from the unified brief. At most three
+ * top topics are included, each with at most three real evidence items already
+ * observed by the engine. Views are included only when actually observed.
+ */
+export function engineV2ReviewPrompt(input: EngineV2ReviewInput): string {
+  const fa = input.language === 'fa';
+  const clean = (value: unknown, limit: number) =>
+    typeof value === 'string' ? value.replace(/\s+/g, ' ').trim().slice(0, limit) : '';
+  const unit = (value: unknown) =>
+    typeof value === 'number' && Number.isFinite(value) ? Math.round(value * 100) / 100 : 0;
+
+  const scores = new Map((input.result?.scores ?? []).map((score) => [score.topicId, score]));
+  const items = new Map((input.result?.items ?? []).map((item) => [item.id, item]));
+  const topics = [...(input.result?.topics ?? [])]
+    .map((topic) => ({ topic, score: scores.get(topic.id) }))
+    .filter((entry): entry is { topic: Topic; score: OpportunityScore } => Boolean(entry.score))
+    .sort((left, right) =>
+      right.score.value - left.score.value || left.topic.id.localeCompare(right.topic.id))
+    .slice(0, 3)
+    .map(({ topic, score }) => ({
+      label: clean(topic.label, 80),
+      score: Math.round(score.value),
+      confidence: unit(score.confidence),
+      momentum: unit(topic.momentum),
+      supplyGap: unit(topic.supplyGap),
+      avgOutlier: unit(topic.avgOutlier),
+      evidence: [...(topic.itemIds ?? [])]
+        .map((id) => items.get(id))
+        .filter((item): item is EvidenceItem => Boolean(item))
+        .sort((left, right) => (right.views ?? -1) - (left.views ?? -1) || left.id.localeCompare(right.id))
+        .slice(0, 3)
+        .map((item) => ({
+          title: clean(item.title, 90),
+          source: clean(item.source, 24),
+          ...(typeof item.views === 'number' && Number.isFinite(item.views) ? { views: item.views } : {}),
+        })),
+    }));
+  const idea = input.idea
+    ? {
+        titleSuggestion: clean(input.idea.titleSuggestion, 120),
+        angle: clean(input.idea.angle, 240),
+        why: clean(input.idea.why, 300),
+      }
+    : undefined;
+
+  const instruction = fa
+    ? 'تو بازبینی مستقل دوم درباره تصمیم موتور محلی برای یک سازنده محتوا هستی. فقط خلاصه امتیاز موضوعات و شواهد واقعی که موتور محلی واقعاً دیده است در اختیار داری. هرگز بازدید، درصد، نرخ رشد، رقم رقابت، منبع، پیوند، مجموعه داده یا رابطه علّی جعل نکن. شاهدی که در داده نیست نساز. اعداد را تأیید نکن و آن‌ها را بهعنوان واقعیت تکرار نکن؛ فقط نشانه‌های محدود محلی بدان. تصمیم موتور محلی را مستقل نقد کن، نه اینکه صرفاً آن را تأیید کنی. اگر داده کافی نیست، صریحاً بگو و مهمترین داده مفقود را نام ببر.\n\nفقط JSON سختگیرانه (STRICT JSON) برگردان — یک شیء، بدون مارکداون، متن اضافی یا بلوک کد. دقیقاً پنج کلید و نه بیشتر:\n{"decision":"develop"|"gather_more"|"reframe","usefulFindings":["...","..."],"counterCritique":"حداکثر ۲ جمله","nextAction":"حداکثر ۲ جمله","missingData":"حداکثر ۲ جمله"}\nusefulFindings حداکثر ۲ رشته کوتاه دارد؛ رشته‌های counterCritique، nextAction و missingData هرکدام حداکثر ۲ جملهاند. دقیقاً یکی از develop, gather_more یا reframe را انتخاب کن.'
+    : 'You are an independent second AI reviewing a LOCAL engine decision for a creator. You receive only compact topic scores and the REAL evidence the engine actually observed. Never invent a view count, percentage, growth rate, competition figure, source, URL, dataset or causal claim. Do not invent evidence that is not in the payload. Do not endorse or restate numbers as facts; treat them only as bounded local signals. Criticize the local engine decision independently instead of agreeing with it. If the supplied data is insufficient, say so plainly and name the most important missing data.\n\nReturn STRICT JSON ONLY — one object, no markdown, no prose, no code fences. Exactly these five keys and no others:\n{"decision":"develop"|"gather_more"|"reframe","usefulFindings":["...","..."],"counterCritique":"<=2 sentences","nextAction":"<=2 sentences","missingData":"<=2 sentences"}\nusefulFindings has at most 2 short strings; counterCritique, nextAction and missingData are at most 2 sentences each. Choose exactly one of develop, gather_more or reframe.';
+
+  const payload = [
+    'Topic: ' + clean(input.topic, 120),
+    'Top local topics (bounded signals, not facts; real evidence only): ' + JSON.stringify(topics),
+    ...(idea ? ['Chosen idea (candidate, not an endorsed verdict): ' + JSON.stringify(idea)] : []),
+    'Data sufficiency: ' + (topics.length
+      ? 'partial local signals present'
+      : (fa ? 'داده محلی کافی موجود نیست' : 'insufficient local data')),
+  ].join('\n');
+  return (instruction + '\n\n' + payload).slice(0, ENGINE_V2_REVIEW_MAX_CHARS);
+}
+
 /** Stable YYYY-MM-DD key for the device's local calendar day; independent of locale formatting. */
 export function localDateKey(date = new Date()): string {
   if (!Number.isFinite(date.getTime())) throw new RangeError('A valid date is required.');
@@ -982,6 +1073,74 @@ export async function getOpinion(
     if (!parsed.success || !parsed.data.choices[0].message.content.trim())
       throw new ApiError('The AI reply was empty or could not be read. Try another free model.', 'invalid');
     return parsed.data.choices[0].message.content.trim();
+  } finally {
+    opinionRequestInFlight = false;
+  }
+}
+
+/** Strict, bounded shape for the second AI's structured complement. */
+export const engineV2OpinionSchema = z.object({
+  decision: z.enum(['develop', 'gather_more', 'reframe']),
+  usefulFindings: z.array(z.string().min(1).max(280)).max(2),
+  counterCritique: z.string().min(1).max(600),
+  nextAction: z.string().min(1).max(600),
+  missingData: z.string().min(1).max(600),
+}).strict();
+export type EngineV2Opinion = z.infer<typeof engineV2OpinionSchema>;
+
+/**
+ * Validates an untrusted structured opinion. Returns the parsed value or throws
+ * an ApiError with code 'invalid'; never throws a raw Zod/JSON error.
+ */
+export function validateEngineV2Opinion(value: unknown): EngineV2Opinion {
+  const parsed = engineV2OpinionSchema.safeParse(value);
+  if (!parsed.success)
+    throw new ApiError('The AI reply did not match the required structured format.', 'invalid');
+  return parsed.data;
+}
+
+/** Removes accidental markdown fences without touching a bare JSON object. */
+function stripMarkdownCodeFence(text: string): string {
+  return text.trim()
+    .replace(/^\x60{3}(?:json)?\s*/i, '')
+    .replace(/\s*\x60{3}$/, '')
+    .trim();
+}
+
+/** Same request path and error handling as getOpinion, plus strict JSON validation. */
+export async function getStructuredOpinion(
+  key: string,
+  model: string,
+  prompt: string,
+  beforeRequest?: (quota?: OpenRouterDailyQuota) => Promise<void>,
+  fetcher: Fetcher = fetch,
+): Promise<EngineV2Opinion> {
+  if (opinionRequestInFlight) throw new ApiError('Another OpenRouter analysis is already running. Wait for it to finish.', 'busy');
+  if (!key.trim() || !model.trim() || !prompt.trim())
+    throw new ApiError('The OpenRouter key, selected model and idea prompt are required.', 'input');
+  opinionRequestInFlight = true;
+  try {
+    await beforeRequest?.();
+    const raw = await requestJson('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model, max_tokens: 900, messages: [{ role: 'user', content: prompt }] }),
+    }, fetcher);
+    const providerError = openRouterProviderError(raw);
+    if (providerError) throw providerError;
+    const parsed = z
+      .object({ choices: z.array(z.object({ message: z.object({ content: z.string() }) })).min(1) })
+      .safeParse(raw);
+    if (!parsed.success || !parsed.data.choices[0].message.content.trim())
+      throw new ApiError('The AI reply was empty or could not be read. Try another free model.', 'invalid');
+    const text = stripMarkdownCodeFence(parsed.data.choices[0].message.content);
+    let value: unknown;
+    try {
+      value = JSON.parse(text) as unknown;
+    } catch {
+      throw new ApiError('The AI reply was not valid JSON.', 'invalid');
+    }
+    return validateEngineV2Opinion(value);
   } finally {
     opinionRequestInFlight = false;
   }

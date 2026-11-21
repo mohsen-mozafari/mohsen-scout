@@ -16,17 +16,36 @@ if (!TaskManager.isTaskDefined(TASK))
       if (prefs.paused || prefs.schedule === 'Manual' || !prefs.lastInput)
         return BackgroundTask.BackgroundTaskResult.Success;
       // Refresh selected official publisher feeds during the same scheduled cycle.
-      // Feed failures must not prevent independent YouTube research from running.
+      // Feed failures must not prevent independent YouTube research from running,
+      // but the failure is now recorded instead of being silently swallowed.
+      let feedWarning = '';
       try {
         const feeds = await fetchSpaceNews(prefs.spaceNewsSources, fetch, true);
         await useScout.getState().commit((data) => ({ ...data, feedRegistry: feeds.registry }));
-      } catch {
-        // Preserve the last saved feed registry and continue with YouTube.
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        feedWarning = ('Scheduled publisher-feed refresh failed; the last saved feeds were kept. ' + detail).slice(0, 240);
       }
       const result = await useScout.getState().research(prefs.lastInput, 'automatic', true);
       if (!result) return BackgroundTask.BackgroundTaskResult.Failed;
+      if (feedWarning) {
+        await useScout.getState().commit((data) => ({
+          ...data,
+          reports: data.reports.map((report) => report.id === result.id
+            ? { ...report, warnings: [...new Set([...report.warnings, feedWarning])] }
+            : report),
+        }));
+      }
       const permissions = await Notifications.getPermissionsAsync();
-      if (permissions.granted) await Notifications.scheduleNotificationAsync(researchNotification);
+      if (permissions.granted) await Notifications.scheduleNotificationAsync({
+        ...researchNotification,
+        content: {
+          ...researchNotification.content,
+          body: feedWarning
+            ? 'Your scheduled research is ready; some publisher feeds could not be refreshed.'
+            : researchNotification.content.body,
+        },
+      });
       return BackgroundTask.BackgroundTaskResult.Success;
     } catch {
       return BackgroundTask.BackgroundTaskResult.Failed;

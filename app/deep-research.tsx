@@ -14,6 +14,7 @@ import { MediaPreview } from '@/components/MediaPreview';
 import { ResearchOverviewChart } from '@/components/ResearchOverviewChart';
 import { getTopicDossier, rememberTopicDossier } from '@/lib/topic-dossier';
 import { generateEditorialIdeas } from '@/lib/idea-generation';
+import { buildUnifiedBrief } from '@/lib/engine-v2-adapter';
 import { createResearchMemoryEntry } from '@/lib/research-memory';
 import { recordRuntimeFinish, recordRuntimeStart } from '@/lib/runtime-metrics';
 import { searchYouTubeSample, type YouTubeSampleVideo } from '@/lib/api';
@@ -35,6 +36,7 @@ type Brief = {
   scriptDraft: string[];
   internalAnalysis: InternalResearchResult;
   generatedIdeas: Idea[];
+  unifiedAngles: string[];
 };
 
 export default function DeepResearch() {
@@ -78,7 +80,7 @@ export default function DeepResearch() {
       : nicheId === 'custom'
         ? newsForNiche(newsResult.items, nicheId, preferences.customSpaceNiche)
         : newsResult.items;
-    const selectedNews = rankNewsForTopic(query, nicheNews, 6, feedback);
+    const selectedNews = rankNewsForTopic(query, nicheNews, 30, feedback);
     let wiki: WikiSignal | undefined;
     if (cachedDossier?.wiki?.language === (preferences.spaceInterestLanguage ?? 'en')) {
       wiki = cachedDossier.wiki;
@@ -202,10 +204,23 @@ export default function DeepResearch() {
         warnings.push(latestSnapshot.changes.join(' '));
       }
     }
-    const generatedIdeas = generateEditorialIdeas({
+    const unified = buildUnifiedBrief({
       topic: query,
       news: selectedNews,
-      videos: videos.map((video) => ({
+      videos,
+      wiki,
+      now: Date.now(),
+      niche: nicheId,
+      language: preferences.uiLanguage ?? 'fa',
+      region: preferences.region,
+      languages: preferences.languages,
+    });
+    warnings.push(...unified.warnings);
+    // Bound the sample handed to the engine; the UI news list is already capped at 30.
+    const generatedIdeas = unified.ideas.length ? unified.ideas : generateEditorialIdeas({
+      topic: query,
+      news: selectedNews,
+      videos: videos.slice(0, 30).map((video) => ({
         id: video.id, title: video.title, description: video.description,
         channel: video.channel, publishedAt: video.publishedAt,
         viewCount: video.viewCount, likeCount: video.likeCount,
@@ -217,6 +232,9 @@ export default function DeepResearch() {
       language: preferences.uiLanguage ?? 'fa',
       limit: 25,
     });
+    const unifiedAngles = unified.angles.length
+      ? unified.angles
+      : internalAnalysis.angles.slice(0, 6).map((angle) => angle.title + ': ' + angle.hook);
     await useScout.getState().commit((data) => ({
       ...data,
       ideas: [...generatedIdeas, ...data.ideas],
@@ -236,6 +254,7 @@ export default function DeepResearch() {
       warnings,
       internalAnalysis,
       generatedIdeas,
+      unifiedAngles,
       ...outline,
       scriptDraft: preferences.uiLanguage === 'fa' ? [
         'قلاب — با پرسش اصلی شروع کن: ' + outline.titleIdeas[0],
@@ -321,6 +340,12 @@ export default function DeepResearch() {
                 <Action secondary onPress={() => router.push({ pathname: '/detail', params: { idea: idea.id } })}>Open idea details</Action>
               </View>
             )) : <Txt muted>No sufficiently distinct angle could be generated from the returned evidence. Add more source material or choose a narrower question.</Txt>}
+            {brief.unifiedAngles.length ? (
+              <View style={{ gap: 5, borderTopWidth: 1, borderTopColor: p.border, paddingTop: 10 }}>
+                <Heading>Engine-v2 angles from this evidence</Heading>
+                {brief.unifiedAngles.map((angle) => <Txt muted key={angle}>{angle}</Txt>)}
+              </View>
+            ) : null}
           </Panel>
 </Fold>          <Fold title="4 · Engine findings, evidence & confidence" summary={brief.internalAnalysis.evidence.length + ' evidence signals · ' + brief.internalAnalysis.angles.length + ' content angles'}>          <Panel>
             <Heading>Internal Research Engine</Heading>

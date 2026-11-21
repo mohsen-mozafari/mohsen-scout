@@ -657,6 +657,8 @@ export type WikiSignal = {
   articleUrl: string;
   apiUrl: string;
   summary: string;
+  /** Optional non-fatal limitation when the summary endpoint was unavailable. */
+  warning?: string;
   monthlyViews: { month: string; views: number }[];
 };
 const formatApiMonth = (date: Date) => String(date.getUTCFullYear()) + String(date.getUTCMonth() + 1).padStart(2, '0') + '0100';
@@ -689,15 +691,19 @@ export async function getWikipediaSignal(
   const articlePath = encodeURIComponent(articleTitle.replace(/ /g, '_'));
   const summaryUrl = 'https://' + language + '.wikipedia.org/api/rest_v1/page/summary/' + articlePath;
   let summary = '';
+  let summaryWarning: string | undefined;
   let articleUrl = 'https://' + language + '.wikipedia.org/wiki/' + articlePath;
   try {
     const parsedSummary = wikiSummarySchema.safeParse(await requestJson(summaryUrl, { headers: wikiHeaders }, fetcher));
     if (parsedSummary.success) {
       summary = parsedSummary.data.extract;
       articleUrl = parsedSummary.data.content_urls?.desktop.page ?? articleUrl;
+    } else {
+      summaryWarning = 'Wikipedia summary was unavailable; only the article title and pageview series were retained.';
     }
   } catch {
     // The pageviews series remains useful when the summary endpoint is unavailable.
+    summaryWarning = 'Wikipedia summary request failed; only the article title and pageview series were retained.';
   }
   const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 6, 1));
   const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
@@ -712,6 +718,7 @@ export async function getWikipediaSignal(
     articleUrl,
     apiUrl,
     summary,
+    ...(summaryWarning ? { warning: summaryWarning } : {}),
     monthlyViews: views.data.items.map((item) => ({
       month: item.timestamp.slice(0, 4) + '-' + item.timestamp.slice(4, 6),
       views: item.views,

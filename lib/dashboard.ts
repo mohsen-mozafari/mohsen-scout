@@ -1,6 +1,9 @@
 import { fingerprintText } from './api';
+import { buildUnifiedBrief, type BriefVideoInput } from './engine-v2-adapter';
+import type { EngineV2Result, SourceCoverage, StageTiming } from './engine-v2';
 import { matchesResearchTerms } from './intelligence';
-import { RETENTION_MS, type Idea, type Opinion, type Report, type Video } from './types';
+import type { SpaceNewsItem, WikiSignal } from './space';
+import { RETENTION_MS, type Idea, type Opinion, type Region, type Report, type Video } from './types';
 
 const assessmentOrder: Record<Idea['assessment'], number> = {
   'Strong Opportunity': 5,
@@ -23,6 +26,9 @@ export type EngineVideoEvidence = Omit<
   viewCount: number | null;
   likeCount: number | null;
 };
+
+/** Hard upper bound on locally analyzed video evidence (callers may request less). */
+export const ENGINE_VIDEO_EVIDENCE_CAP = 1000;
 
 /**
  * Merge every retained video already collected by the app. The global metadata index
@@ -56,7 +62,58 @@ export function collectEngineVideoEvidence(
   }
   return [...byId.values()]
     .sort((a, b) => b.fetchedAt - a.fetchedAt || a.id.localeCompare(b.id))
-    .slice(0, Math.max(0, Math.min(300, Math.floor(limit))));
+    .slice(0, Math.max(0, Math.min(ENGINE_VIDEO_EVIDENCE_CAP, Math.floor(limit))));
+}
+
+export type UnifiedDashboardBriefOptions = {
+  wiki?: WikiSignal | null;
+  now?: number;
+  niche?: string;
+  language?: string;
+  timezoneOffsetMinutes?: number;
+  budgetMs?: number;
+  region?: Region;
+  languages?: readonly string[];
+  previous?: EngineV2Result;
+  ideaLimit?: number;
+};
+
+export type UnifiedDashboardBrief = {
+  ideas: Idea[];
+  coverage: SourceCoverage[];
+  warnings: string[];
+  timings: StageTiming[];
+  fallback: boolean;
+  /** Additive: the underlying v2 result so the AI complement uses one source of truth. */
+  result?: EngineV2Result;
+  angles?: string[];
+};
+
+/**
+ * One engine-v2 brief for the dashboard ideas and chart path. Callers keep
+ * their legacy ideas path as a fallback when `ideas` is empty or `fallback`.
+ */
+export function buildUnifiedDashboardBrief(
+  topic: string,
+  news: readonly SpaceNewsItem[],
+  videos: readonly BriefVideoInput[],
+  opts: UnifiedDashboardBriefOptions = {},
+): UnifiedDashboardBrief {
+  const brief = buildUnifiedBrief({
+    topic,
+    news,
+    videos,
+    ...opts,
+  });
+  return {
+    ideas: brief.ideas,
+    coverage: brief.coverage,
+    warnings: brief.warnings,
+    timings: brief.timings,
+    fallback: brief.fallback,
+    result: brief.result,
+    angles: brief.angles,
+  };
 }
 
 /** Highest editorial assessment first, then linked evidence, then recency. */

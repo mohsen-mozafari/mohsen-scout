@@ -4,7 +4,7 @@ import { Search } from 'lucide-react-native';
 
 import { router } from 'expo-router';
 import {
-  Page, Panel, Heading, Txt, Action, Fold, Field, styles, ErrorBox,
+  Page, Panel, Heading, Txt, Action, Fold, Field, styles,
   SourceHeading, SourceText, BadgeText, MetricCard,
 } from '@/components/ScoutUI';
 import { useScout } from '@/lib/store';
@@ -16,14 +16,15 @@ import { buildInternalResearch, rankNewsForTopic, type InternalResearchResult } 
 import { buildResearchInterestProfile, normalizeResearchText, scoreResearchText } from '@/lib/intelligence';
 import { getTopicDossier } from '@/lib/topic-dossier';
 import { VideoRow } from '@/components/VideoRow';
-import { collectEngineVideoEvidence, engineReviewCacheKey, findCachedEngineReview, selectDashboardIdeas, selectDashboardVideos } from '@/lib/dashboard';
-import { fingerprintText, getFreeModels, getOpenRouterDailyQuota, getOpinion, internalEngineReviewPrompt, localDateKey, nextOpenRouterUsage, selectFreeModel, type YouTubeSampleVideo } from '@/lib/api';
+import { buildUnifiedDashboardBrief, collectEngineVideoEvidence, engineReviewCacheKey, findCachedEngineReview, selectDashboardIdeas, selectDashboardVideos, type UnifiedDashboardBrief } from '@/lib/dashboard';
+import { engineV2ReviewPrompt, fingerprintText, getFreeModels, getOpenRouterDailyQuota, getStructuredOpinion, localDateKey, nextOpenRouterUsage, selectFreeModel, validateEngineV2Opinion, type EngineV2Opinion, type YouTubeSampleVideo } from '@/lib/api';
 import { getKey } from '@/lib/vault';
 import { ResearchOverviewChart } from '@/components/ResearchOverviewChart';
 import { recordRuntimeFinish, recordRuntimeStart, runtimeErrorHint, useRuntimeMetrics } from '@/lib/runtime-metrics';
 import { useSelectedIdeaId } from '@/lib/idea-selection';
 
 const automaticReviewStarted = new Set<string>();
+const NO_IDEAS: Idea[] = [];
 
 
 function AnalysisSignals({ result }: { result: InternalResearchResult }) {
@@ -109,7 +110,43 @@ function AnalysisSignals({ result }: { result: InternalResearchResult }) {
   );
 }
 
-function EngineAIReview({ topic, result, idea }: { topic: string; result: InternalResearchResult; idea?: Idea }) {
+function EngineStatusStrip({ brief, updatedAt, fa }: {
+  brief?: UnifiedDashboardBrief;
+  updatedAt?: number;
+  fa: boolean;
+}) {
+  const coverage = (brief?.coverage ?? [])
+    .map((entry) => {
+      const label = entry.source === 'news'
+        ? (fa ? 'خبر' : 'News')
+        : entry.source === 'youtube'
+          ? 'YouTube'
+          : (fa ? 'ویکی' : 'Wiki');
+      return label + ' ' + entry.normalized + '/' + entry.fetched;
+    })
+    .join(' · ');
+  const state = !brief
+    ? (fa ? 'در انتظار' : 'pending')
+    : brief.fallback
+      ? (fa ? 'حالت جایگزین' : 'fallback')
+      : (fa ? 'تازه' : 'fresh');
+  const time = updatedAt
+    ? new Date(updatedAt).toLocaleTimeString(fa ? 'fa-IR' : 'en-US', { hour: '2-digit', minute: '2-digit' })
+    : '';
+  return (
+    <Txt muted>
+      {(time ? (fa ? 'آخرین بهروزرسانی ' : 'Updated ') + time + ' · ' : '') +
+        (coverage || (fa ? 'پوشش منبعی ثبت نشده' : 'No source coverage yet')) +
+        ' · ' + (fa ? 'موتور: ' : 'Engine: ') + state}
+    </Txt>
+  );
+}
+
+function EngineAIReview({ topic, brief, idea }: {
+  topic: string;
+  brief?: UnifiedDashboardBrief;
+  idea?: Idea;
+}) {
   const preferences = useScout(useShallow((state) => ({
     model: state.data.preferences.model,
     hybridIntelligence: state.data.preferences.hybridIntelligence,
@@ -117,74 +154,60 @@ function EngineAIReview({ topic, result, idea }: { topic: string; result: Intern
   })));
   const opinions = useScout((state) => state.data.opinions);
   const fa = preferences.uiLanguage === 'fa';
-  const quality = result.intelligence.sourceQuality;
-  const audit = result.intelligence.selfEvaluation;
-  const prompt = internalEngineReviewPrompt({
-    topic,
-    summary: result.summary,
-    ...(idea ? { recommendation: { topic: idea.topic, concept: idea.concept } } : {}),
-    evidence: [
-      { label: 'Input news / unique news', detail: audit.inputNewsCount + ' / ' + audit.uniqueNewsCount },
-      { label: 'Topic-matched / excluded news', detail: audit.topicMatchedNewsCount + ' / ' + audit.unmatchedNewsCount },
-      { label: 'YouTube input / all-time matched / recent matched', detail: audit.youtubeSampleCount + ' / ' + audit.allTimeMatchedVideoCount + ' / ' + audit.recentMatchedVideoCount },
-      { label: 'Historical / undated / future-dated context', detail: audit.outsideVideoWindowCount + ' / ' + audit.futureDatedVideoCount },
-      { label: 'Recent candidates / unmatched videos', detail: audit.recentVideoCandidateCount + ' / ' + audit.excludedVideoCount },
-      { label: 'Matched videos with raw view counts', detail: String(audit.videoViewCountsAvailable) },
-      { label: 'Publication window (days)', detail: String(audit.videoWindowDays) },
-      { label: 'Independent publisher groups', detail: String(quality.independentPublishers) },
-      { label: 'Official feeds represented', detail: String(quality.feedsRepresented) },
-      { label: 'Duplicate records merged', detail: String(quality.duplicateStoriesMerged) },
-      { label: 'Stale / undated records', detail: String(quality.staleItems + quality.undatedItems) },
-      { label: 'Research gaps / possible discrepancies', detail: String(result.intelligence.gaps.length + result.intelligence.potentialContradictions.length) },
-      { label: 'Evidence relationships', detail: String(result.entityRelations.length) },
-      { label: 'Editorial angles generated', detail: String(result.angles.length) },
-      { label: 'Verification questions', detail: String(result.verificationQuestions.length) },
-      { label: 'Known entity candidates', detail: String(result.entityCandidates.length) },
-      { label: 'Evidence relationship count', detail: String(result.entityRelations.length) },
-      { label: 'Open research questions', detail: String(audit.openResearchQuestionCount) },
-      { label: 'Wikimedia pageview observations', detail: String(result.intelligence.trend.observations) },
-      { label: 'Wikimedia pageview direction (attention proxy only)', detail: result.intelligence.trend.direction },
-      { label: 'Wikimedia pageview change (not search demand)', detail: result.intelligence.trend.changePercent == null ? 'insufficient data' : String(result.intelligence.trend.changePercent) + '%' },
-      { label: 'Latest Wikimedia month and article pageviews', detail: result.intelligence.trend.latestMonth ? result.intelligence.trend.latestMonth + ' / ' + String(result.intelligence.trend.latestViews ?? 'unavailable') : 'unavailable' },
-      { label: 'Wikimedia pageview anomaly label', detail: result.intelligence.trend.anomaly ?? 'none' },
-      { label: 'Local processing time in milliseconds', detail: String(audit.processingMs) },
-    ],
-    gaps: result.intelligence.gaps,
-    discrepancies: result.intelligence.potentialContradictions,
-    confidence: {
-      level: result.intelligence.confidence.level,
-      reason: fa
-        ? 'این سطح محلی بر اساس پوشش نمونه و تنوع ناشر محاسبه شده و تأیید صحت ادعاها نیست.'
-        : 'This local level reflects sample coverage and publisher diversity; it is not factual verification.',
-    },
-    language: fa ? 'fa' : 'en',
-  });
-  const researchFingerprint = fingerprintText(
-    result.topic + '|' + result.summary + '|' + JSON.stringify(audit) + '|' +
-    result.intelligence.gaps.join('|') + '|' + result.intelligence.potentialContradictions.join('|'),
-  );
-  const visibleCacheKey = preferences.model
-    ? engineReviewCacheKey(preferences.model, prompt, researchFingerprint)
+
+  // Single source of truth: the same unified brief that produced the chart and
+  // ideas supplies the topics, scores and real evidence for the second AI.
+  const prompt = useMemo(() => {
+    if (!brief?.result?.topics?.length) return '';
+    return engineV2ReviewPrompt({
+      topic,
+      result: brief.result,
+      ...(idea ? {
+        idea: {
+          titleSuggestion: idea.topic,
+          angle: idea.concept,
+          why: idea.engineV2Why ?? idea.engineScoreReason ?? idea.decision ?? '',
+        },
+      } : {}),
+      language: fa ? 'fa' : 'en',
+    });
+  }, [brief, topic, idea, fa]);
+  const fingerprint = useMemo(() => prompt ? fingerprintText(prompt) : '', [prompt]);
+  const visibleCacheKey = preferences.model && prompt
+    ? engineReviewCacheKey(preferences.model, prompt, fingerprint)
     : '';
-  const savedReview = findCachedEngineReview(opinions, preferences.model ?? '', prompt, researchFingerprint);
-  const [reviewState, setReviewState] = useState({ key: visibleCacheKey, text: savedReview?.text ?? '' });
+  const savedReview = useMemo(() => {
+    if (!preferences.model || !prompt) return undefined;
+    const cached = findCachedEngineReview(opinions, preferences.model, prompt, fingerprint);
+    if (!cached) return undefined;
+    try {
+      return {
+        opinion: validateEngineV2Opinion(JSON.parse(cached.text) as unknown),
+        model: cached.model,
+        createdAt: cached.createdAt,
+      };
+    } catch {
+      return undefined;
+    }
+  }, [opinions, preferences.model, prompt, fingerprint]);
+
+  const [reviewState, setReviewState] = useState<{ key: string; opinion?: EngineV2Opinion }>({ key: visibleCacheKey });
   const [externalKeyAvailable, setExternalKeyAvailable] = useState<boolean | null>(null);
   const [reviewBusy, setReviewBusy] = useState(false);
-  const [reviewError, setReviewError] = useState('');
-  const [reviewMessage, setReviewMessage] = useState('');
-  const review = reviewState.key === visibleCacheKey ? reviewState.text : savedReview?.text ?? '';
+  const [reviewStatus, setReviewStatus] = useState('');
   const reviewInFlightRef = useRef(false);
+  const review = reviewState.key === visibleCacheKey ? reviewState.opinion : undefined;
 
   const runReview = async (automaticTriggerKey?: string) => {
     if (reviewInFlightRef.current) {
       if (automaticTriggerKey) automaticReviewStarted.delete(automaticTriggerKey);
       return;
     }
+    if (!prompt) return;
     reviewInFlightRef.current = true;
     recordRuntimeStart('AI');
     setReviewBusy(true);
-    setReviewError('');
-    setReviewMessage('');
+    setReviewStatus('');
     let reviewSucceeded = false;
     let reviewFromCache = false;
     let reviewFailure = '';
@@ -193,25 +216,29 @@ function EngineAIReview({ topic, result, idea }: { topic: string; result: Intern
       await new Promise<void>((resolve) => setTimeout(resolve, 32));
       const key = await getKey('openrouter');
       setExternalKeyAvailable(Boolean(key));
-      if (!key) throw new Error(fa ? 'ابتدا کلید OpenRouter را در تنظیمات ذخیره کن.' : 'Save your OpenRouter key in Settings first.');
+      if (!key) throw new Error('OpenRouter key unavailable.');
 
       const current = useScout.getState().data;
       const storedModel = current.preferences.model;
-      const cachedStoredModel = findCachedEngineReview(current.opinions, storedModel ?? '', prompt, researchFingerprint);
+      const cachedStoredModel = findCachedEngineReview(current.opinions, storedModel ?? '', prompt, fingerprint);
       if (cachedStoredModel && storedModel) {
-        setReviewState({ key: engineReviewCacheKey(storedModel, prompt, researchFingerprint), text: cachedStoredModel.text });
-        reviewSucceeded = true;
-        reviewFromCache = true;
-        setReviewMessage(fa ? 'نظر ذخیره‌شده بارگذاری شد.' : 'Saved second opinion loaded.');
-        return;
+        try {
+          setReviewState({
+            key: engineReviewCacheKey(storedModel, prompt, fingerprint),
+            opinion: validateEngineV2Opinion(JSON.parse(cachedStoredModel.text) as unknown),
+          });
+          reviewSucceeded = true;
+          reviewFromCache = true;
+          setReviewStatus(fa ? 'نظر ذخیرهشده بارگذاری شد.' : 'Saved AI review loaded.');
+          return;
+        } catch {
+          // Ignore a malformed/legacy cached review and request a fresh one.
+        }
       }
 
-      // Every new generation still requires a live zero-price model selection.
       const models = await getFreeModels();
       const model = selectFreeModel(models, storedModel ?? '');
-      if (!model) throw new Error(fa
-        ? 'هیچ مدل رایگان و فعالی از OpenRouter در دسترس نیست. بعداً دوباره تلاش کن.'
-        : 'No currently available free OpenRouter model was found. Try again later.');
+      if (!model) throw new Error('No free model available.');
 
       if (model !== storedModel) {
         await useScout.getState().commit((data) => ({
@@ -220,24 +247,26 @@ function EngineAIReview({ topic, result, idea }: { topic: string; result: Intern
         }));
       }
 
-      const cacheKey = engineReviewCacheKey(model, prompt, researchFingerprint);
-      const cached = findCachedEngineReview(useScout.getState().data.opinions, model, prompt, researchFingerprint);
+      const cacheKey = engineReviewCacheKey(model, prompt, fingerprint);
+      const cached = findCachedEngineReview(useScout.getState().data.opinions, model, prompt, fingerprint);
       if (cached) {
-        setReviewState({ key: cacheKey, text: cached.text });
-        reviewSucceeded = true;
-        reviewFromCache = true;
-        setReviewMessage(fa ? 'نظر ذخیره‌شده بارگذاری شد.' : 'Saved second opinion loaded.');
-        return;
+        try {
+          setReviewState({ key: cacheKey, opinion: validateEngineV2Opinion(JSON.parse(cached.text) as unknown) });
+          reviewSucceeded = true;
+          reviewFromCache = true;
+          setReviewStatus(fa ? 'نظر ذخیرهشده بارگذاری شد.' : 'Saved AI review loaded.');
+          return;
+        } catch {
+          // Request a fresh structured review below.
+        }
       }
 
-      // Refresh the free-model daily counter separately from the generation request.
       const quota = model.toLowerCase().endsWith(':free')
         ? await getOpenRouterDailyQuota(key).catch(() => undefined)
         : undefined;
       if (quota && quota.remaining <= 0)
         throw new Error('OpenRouter free-model daily quota is exhausted (' + quota.used + '/' + quota.limit + ' UTC).');
-      // The generation POST remains a single request; quota status is a separate GET.
-      const response = await getOpinion(key, model, prompt, async () => {
+      const response = await getStructuredOpinion(key, model, prompt, async () => {
         const currentPreferences = useScout.getState().data.preferences;
         const usage = nextOpenRouterUsage(
           currentPreferences.openRouterUsageDay,
@@ -261,19 +290,20 @@ function EngineAIReview({ topic, result, idea }: { topic: string; result: Intern
           },
         }));
       });
-      const opinion = { id: uid(), ideaId: cacheKey, text: response, model, createdAt: Date.now() };
-      setReviewState({ key: cacheKey, text: response });
+      const opinion = { id: uid(), ideaId: cacheKey, text: JSON.stringify(response), model, createdAt: Date.now() };
+      setReviewState({ key: cacheKey, opinion: response });
       await useScout.getState().commit((data) => ({
         ...data,
         opinions: [opinion, ...data.opinions],
       }));
       reviewSucceeded = true;
-      setReviewMessage(fa ? 'نظر دوم ذخیره شد.' : 'Second opinion saved.');
+      setReviewStatus(fa ? 'نظر ساختاریافته ذخیره شد.' : 'Structured AI review saved.');
     } catch (error) {
       reviewFailure = error instanceof Error ? error.message : String(error);
-      setReviewError(error instanceof Error
-        ? error.message
-        : (fa ? 'دریافت نظر دوم ناموفق بود؛ اتصال یا تنظیمات مدل را بررسی کن.' : 'The second opinion failed. Check connectivity and model settings.'));
+      // Never surface a scary/empty error: the engine-only result stays intact.
+      setReviewStatus(fa
+        ? 'بازبینی AI در دسترس نیست؛ نتیجه موتور محلی بدون تغییر است.'
+        : 'AI review unavailable — engine result unchanged.');
     } finally {
       recordRuntimeFinish('AI', reviewFromCache ? 'partial' : reviewSucceeded ? 'success' : 'error', reviewFailure);
       reviewInFlightRef.current = false;
@@ -289,7 +319,7 @@ function EngineAIReview({ topic, result, idea }: { topic: string; result: Intern
 
   useEffect(() => {
     if (!preferences.hybridIntelligence || savedReview || externalKeyAvailable === false || !prompt.trim()) return;
-    const triggerKey = fingerprintText(prompt + '\n' + researchFingerprint);
+    const triggerKey = fingerprintText(prompt + '\n' + fingerprint);
     if (automaticReviewStarted.has(triggerKey) || reviewInFlightRef.current) return;
     automaticReviewStarted.add(triggerKey);
     void getKey('openrouter').then((key) => {
@@ -300,33 +330,44 @@ function EngineAIReview({ topic, result, idea }: { topic: string; result: Intern
       }
       void runReviewRef.current(triggerKey);
     }).catch(() => automaticReviewStarted.delete(triggerKey));
-  }, [preferences.hybridIntelligence, savedReview, prompt, researchFingerprint, externalKeyAvailable]);
+  }, [preferences.hybridIntelligence, savedReview, prompt, fingerprint, externalKeyAvailable]);
+
+  const decisionLabel = review
+    ? review.decision === 'develop'
+      ? (fa ? 'توسعه ایده' : 'Develop')
+      : review.decision === 'gather_more'
+        ? (fa ? 'جمعآوری شواهد بیشتر' : 'Gather more evidence')
+        : (fa ? 'بازتعریف موضوع' : 'Reframe')
+    : '';
 
   return (
     <View style={{ gap: 8 }}>
-      <BadgeText>{review ? 'SECOND OPINION · SAVED' : 'SECOND OPINION · OPTIONAL'}</BadgeText>
+      <BadgeText>{review ? 'SECOND OPINION · AI' : 'SECOND OPINION · OPTIONAL'}</BadgeText>
       <Heading>{fa ? 'بازبینی مستقل با AI' : 'Independent AI review'}</Heading>
       <Txt muted>{fa
-        ? 'مدل موضوع، مفهوم ایده پیشنهادی و شاخص‌های تجمیعی را می‌بیند؛ تیتر خام، پیوند و آمار تک‌تک خبرها و ویدئوها ارسال نمی‌شوند. نظر مستقل دریافت می‌شود و جابه‌جایی میان بخش‌ها را قفل نمی‌کند.'
-        : 'The model receives the topic, candidate concept and aggregate indicators — never raw headlines, links or per-item statistics. The review is independent and does not lock navigation.'}</Txt>
-      {savedReview ? <Txt muted>{'Model: ' + savedReview.model + ' · ' + new Date(savedReview.createdAt).toLocaleString()}</Txt> : null}
-      <Txt muted>{reviewBusy
-        ? (fa ? 'در حال دریافت نظر دوم؛ می‌توانی هم‌زمان در بخش‌های دیگر کار کنی.' : 'Getting the second opinion. You can keep using other sections.')
-        : preferences.hybridIntelligence
-          ? externalKeyAvailable === false
-            ? (fa ? 'برای اجرای خودکار، کلید OpenRouter را در تنظیمات ذخیره کن.' : 'Save an OpenRouter key in Settings to enable automatic review.')
-            : (fa ? 'نظر دوم پس از تحلیل داخلی اجرا می‌شود؛ نتیجه بعد از تکمیل نمایش داده خواهد شد.' : 'The second opinion runs after local analysis; its result appears when complete.')
-          : (fa ? 'اجرای خودکار خاموش است؛ می‌توانی نظر دوم را دستی دریافت کنی.' : 'Automatic review is off. You can request a second opinion manually.')}</Txt>
-      <Action busy={reviewBusy} onPress={() => void runReview()}>
+        ? 'مدل فقط خلاصه امتیاز موضوعات و شواهد واقعی موتور محلی را میبیند؛ پیوند خام و عدد ساختگی ارسال نمیشود. نتیجه موتور تغییری نمیکند.'
+        : 'The model sees only compact topic scores and the real evidence already used by the engine — never raw links or invented numbers. The engine result stays unchanged.'}</Txt>
+      {reviewBusy ? (
+        <Txt muted>{fa ? 'دریافت بازبینی AI؛ میتوانی همزمان در بخشهای دیگر کار کنی.' : 'Getting the AI review. You can keep using other sections.'}</Txt>
+      ) : null}
+      {review ? (
+        <View style={{ gap: 6 }}>
+          <BadgeText>{decisionLabel}</BadgeText>
+          {review.usefulFindings.map((finding) => <Txt key={finding}>{'• ' + finding}</Txt>)}
+          <Txt muted>{(fa ? 'نقد مخالف: ' : 'Counter-check: ') + review.counterCritique}</Txt>
+          <Txt muted>{(fa ? 'اقدام بعدی: ' : 'Next action: ') + review.nextAction}</Txt>
+          <Txt muted>{(fa ? 'داده مفقود: ' : 'Missing data: ') + review.missingData}</Txt>
+          {savedReview ? <Txt muted>{'Model: ' + savedReview.model + ' · ' + new Date(savedReview.createdAt).toLocaleString()}</Txt> : null}
+        </View>
+      ) : (
+        <Txt muted>{fa
+          ? 'تا زمان دردسترس بودن بازبینی AI، نتیجه موتور محلی بدون تغییر نمایش داده میشود.'
+          : 'The engine result is shown unchanged until an AI review is available.'}</Txt>
+      )}
+      {reviewStatus ? <Txt muted>{reviewStatus}</Txt> : null}
+      <Action busy={reviewBusy} disabled={!prompt} onPress={() => void runReview()}>
         {fa ? 'دریافت نظر دوم' : 'Get second opinion'}
       </Action>
-      {reviewError ? <ErrorBox message={reviewError} onRetry={() => void runReview()} /> : null}
-      {reviewMessage ? <Txt muted>{reviewMessage}</Txt> : null}
-      {review ? (
-        <Fold title={fa ? 'نمایش کامل نظر دوم' : 'View full second opinion'} summary={fa ? 'پاسخ کامل ذخیره‌شده' : 'Full saved response'}>
-          <Txt>{review}</Txt>
-        </Fold>
-      ) : null}
     </View>
   );
 }
@@ -378,6 +419,7 @@ function DiscoveryDashboardReady() {
   const [warnings, setWarnings] = useState<string[]>([]);
   const [dashboardNow] = useState(() => Date.now());
   const [reportAnalysisState, setReportAnalysisState] = useState<{ id: string; result: InternalResearchResult }>();
+  const [unifiedBriefState, setUnifiedBriefState] = useState<({ id: string; updatedAt: number } & UnifiedDashboardBrief)>();
 
   const niche = SPACE_NICHES.find((item) => item.id === preferences.selectedSpaceNiche);
   const discoveryTopic = preferences.selectedSpaceNiche === 'all'
@@ -403,8 +445,8 @@ function DiscoveryDashboardReady() {
     : '';
   const latestReportVideoRecords = latestReport?.videos;
   const engineVideoEvidence = useMemo(
-    () => collectEngineVideoEvidence(reports, storedVideos),
-    [reports, storedVideos],
+    () => collectEngineVideoEvidence(reports, storedVideos, dashboardNow, 1000),
+    [reports, storedVideos, dashboardNow],
   );
   const engineVideoSignature = useMemo(
     () => engineVideoEvidence.map((video) => video.id + ':' + video.fetchedAt + ':' + video.title).join('|'),
@@ -454,7 +496,30 @@ function DiscoveryDashboardReady() {
           ...(reportWiki ? { wiki: reportWiki } : {}),
           videoWindowDays: report.input.days,
         });
-        if (active) setReportAnalysisState({ id: report.id, result });
+        // The ideas card and the chart must use the same accounting: one
+        // engine-v2 brief supplies both the idea numbers and their scores.
+        const unifiedBrief = buildUnifiedDashboardBrief(
+          report.input.topic,
+          engineNews,
+          engineVideoSamples,
+          {
+            wiki: reportWiki,
+            now: dashboardNow,
+            niche: preferences.selectedSpaceNiche,
+            language: preferences.uiLanguage ?? 'fa',
+            region: report.input.region,
+            languages: report.input.languages,
+          },
+        );
+        if (active) {
+          setReportAnalysisState({ id: report.id, result });
+          setUnifiedBriefState({
+            id: report.id,
+            updatedAt: Date.now(),
+            ...unifiedBrief,
+          });
+          if (unifiedBrief.warnings.length) setWarnings(unifiedBrief.warnings.slice(0, 2));
+        }
       } catch {
         if (active) setWarnings([fa
           ? 'تحلیل محلی آخرین جست‌وجو کامل نشد؛ گزارش و ویدئوهای ذخیره‌شده همچنان در دسترس‌اند.'
@@ -465,7 +530,7 @@ function DiscoveryDashboardReady() {
       active = false;
       clearTimeout(timer);
     };
-  }, [latestReportId, latestReportSignature, engineVideoSignature, engineVideoSamples, engineNews, preferences.uiLanguage, fa]);
+  }, [latestReportId, latestReportSignature, engineVideoSignature, engineVideoSamples, engineNews, preferences.uiLanguage, preferences.selectedSpaceNiche, dashboardNow, fa]);
 
   const latestReportAnalysis = reportAnalysisState?.id === latestReportId
     ? reportAnalysisState.result
@@ -503,12 +568,14 @@ function DiscoveryDashboardReady() {
     () => engineVideoSamples,
     [engineVideoSamples],
   );
-  const chartIdeas = useMemo(() => selectDashboardIdeas(ideas, {
+  const briefForReview = unifiedBriefState?.id === latestReportId ? unifiedBriefState : undefined;
+  const unifiedIdeas = briefForReview?.ideas ?? NO_IDEAS;
+  const chartIdeas = useMemo(() => unifiedIdeas.length ? unifiedIdeas : selectDashboardIdeas(ideas, {
     reportId: latestReport?.id,
     videoIds: new Set(latestReport?.videos.map((video) => video.id) ?? []),
     sourceUrls: new Set(chartNews.filter((item) => scoreResearchText(chartTopic, item.title, item.summary) > 0).map((item) => item.url)),
     topic: chartTopic,
-  }), [ideas, latestReport?.id, latestReport?.videos, chartNews, chartTopic]);
+  }), [unifiedIdeas, ideas, latestReport?.id, latestReport?.videos, chartNews, chartTopic]);
   const bestIdea = chartIdeas[0];
   const ideaLinkage = useMemo(() => ({
     active: ideas.filter((idea) => !idea.archived && idea.status !== 'Rejected Ideas' && idea.status !== 'Completed Research').length,
@@ -529,6 +596,7 @@ function DiscoveryDashboardReady() {
         : 'Enter a focused topic and inspect real YouTube results, evidence quality and sample limits.'}
     >
       <View style={{ gap: 15 }}>
+        <EngineStatusStrip brief={briefForReview} updatedAt={briefForReview?.updatedAt} fa={fa} />
         <ResearchOverviewChart
           analysis={chartAnalysis}
           ideas={chartIdeas}
@@ -539,7 +607,7 @@ function DiscoveryDashboardReady() {
           language={preferences.uiLanguage ?? 'fa'}
           selectedIdeaId={selectedIdeaId}
           secondOpinion={chartAnalysis
-            ? <EngineAIReview topic={chartTopic} result={chartAnalysis} idea={bestIdea} />
+            ? <EngineAIReview topic={chartTopic} brief={briefForReview} idea={bestIdea} />
             : undefined}
         />
 
@@ -679,15 +747,23 @@ function DiscoveryDashboardReady() {
             {recommendations.length ? (
               <View style={{ gap: 8 }}>
                 <Heading>Other editorial ideas</Heading>
-                {recommendations.slice(0, 3).map((idea) => (
-                  <View key={idea.id} style={styles.softCard}>
-                    <SourceHeading>{idea.topic}</SourceHeading>
-                    <Txt muted>{idea.concept.slice(0, 180)}</Txt>
-                    <Action secondary onPress={() => router.push({ pathname: '/detail', params: { idea: idea.id } })}>
-                      Open idea
-                    </Action>
-                  </View>
-                ))}
+                {recommendations.slice(0, 3).map((idea) => {
+                  const whyLine = (idea.engineV2Why ?? idea.engineScoreReason ?? idea.concept ?? '').split(';')[0].trim();
+                  return (
+                    <View key={idea.id} style={styles.softCard}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 }}>
+                        <SourceHeading>{idea.topic}</SourceHeading>
+                        {typeof idea.engineScore === 'number' && Number.isFinite(idea.engineScore)
+                          ? <Text style={{ color: p.accent, fontSize: 12, fontWeight: '800' }}>{idea.engineScore}/100</Text>
+                          : null}
+                      </View>
+                      <Txt muted>{whyLine.slice(0, 160)}{whyLine.length > 160 ? '…' : ''}</Txt>
+                      <Action secondary onPress={() => router.push({ pathname: '/detail', params: { idea: idea.id } })}>
+                        Open idea
+                      </Action>
+                    </View>
+                  );
+                })}
               </View>
             ) : null}
             {reports.length ? (

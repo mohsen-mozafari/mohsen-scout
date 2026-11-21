@@ -43,6 +43,10 @@ export const ResearchOverviewChart = memo(function ResearchOverviewChart({
   );
   const activeIdeaId = selectedIdeaId ?? sharedSelectedIdeaId;
   const number = (value: number) => new Intl.NumberFormat(fa ? 'fa-IR' : 'en-US').format(value);
+  const topWhy = topRecommendations.length
+    ? (topRecommendations[0].engineV2Why ?? topRecommendations[0].engineScoreReason ?? topRecommendations[0].concept ?? '')
+        .split(';')[0].trim()
+    : '';
   return (
     <Panel variant="hero">
       {topRecommendations.length ? (
@@ -52,7 +56,7 @@ export const ResearchOverviewChart = memo(function ResearchOverviewChart({
             <Text style={{ color: p.accent, fontSize: 12, fontWeight: '800' }}>{number(topRecommendations[0].engineScore ?? 0) + '/100'}</Text>
           </View>
           <Text style={{ color: p.text, fontSize: 14, fontWeight: '800' }}>{topRecommendations[0].topic}</Text>
-          <Txt muted>{(topRecommendations[0].engineScoreReason?.split(';')[0] || topRecommendations[0].concept).slice(0, 150)}{(topRecommendations[0].engineScoreReason?.split(';')[0] || topRecommendations[0].concept).length > 150 ? '…' : ''}</Txt>
+          <Txt muted>{topWhy.slice(0, 150)}{topWhy.length > 150 ? '…' : ''}</Txt>
           <Action secondary onPress={() => {
             setSelectedIdeaId(topRecommendations[0].id);
             router.push({ pathname: '/opportunities', params: { idea: topRecommendations[0].id } });
