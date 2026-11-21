@@ -16,7 +16,7 @@ import { buildInternalResearch, rankNewsForTopic, type InternalResearchResult } 
 import { buildResearchInterestProfile, normalizeResearchText, scoreResearchText } from '@/lib/intelligence';
 import { getTopicDossier } from '@/lib/topic-dossier';
 import { VideoRow } from '@/components/VideoRow';
-import { collectEngineVideoEvidence, engineReviewCacheKey, findCachedEngineReview, selectDashboardIdeas, selectDashboardVideos } from '@/lib/dashboard';
+import { buildUnifiedDashboardBrief, collectEngineVideoEvidence, engineReviewCacheKey, findCachedEngineReview, selectDashboardIdeas, selectDashboardVideos } from '@/lib/dashboard';
 import { fingerprintText, getFreeModels, getOpenRouterDailyQuota, getOpinion, internalEngineReviewPrompt, localDateKey, nextOpenRouterUsage, selectFreeModel, type YouTubeSampleVideo } from '@/lib/api';
 import { getKey } from '@/lib/vault';
 import { ResearchOverviewChart } from '@/components/ResearchOverviewChart';
@@ -24,6 +24,7 @@ import { recordRuntimeFinish, recordRuntimeStart, runtimeErrorHint, useRuntimeMe
 import { useSelectedIdeaId } from '@/lib/idea-selection';
 
 const automaticReviewStarted = new Set<string>();
+const NO_IDEAS: Idea[] = [];
 
 
 function AnalysisSignals({ result }: { result: InternalResearchResult }) {
@@ -378,6 +379,12 @@ function DiscoveryDashboardReady() {
   const [warnings, setWarnings] = useState<string[]>([]);
   const [dashboardNow] = useState(() => Date.now());
   const [reportAnalysisState, setReportAnalysisState] = useState<{ id: string; result: InternalResearchResult }>();
+  const [unifiedBriefState, setUnifiedBriefState] = useState<{
+    id: string;
+    ideas: Idea[];
+    warnings: string[];
+    fallback: boolean;
+  }>();
 
   const niche = SPACE_NICHES.find((item) => item.id === preferences.selectedSpaceNiche);
   const discoveryTopic = preferences.selectedSpaceNiche === 'all'
@@ -403,8 +410,8 @@ function DiscoveryDashboardReady() {
     : '';
   const latestReportVideoRecords = latestReport?.videos;
   const engineVideoEvidence = useMemo(
-    () => collectEngineVideoEvidence(reports, storedVideos),
-    [reports, storedVideos],
+    () => collectEngineVideoEvidence(reports, storedVideos, dashboardNow, 1000),
+    [reports, storedVideos, dashboardNow],
   );
   const engineVideoSignature = useMemo(
     () => engineVideoEvidence.map((video) => video.id + ':' + video.fetchedAt + ':' + video.title).join('|'),
@@ -454,7 +461,31 @@ function DiscoveryDashboardReady() {
           ...(reportWiki ? { wiki: reportWiki } : {}),
           videoWindowDays: report.input.days,
         });
-        if (active) setReportAnalysisState({ id: report.id, result });
+        // The ideas card and the chart must use the same accounting: one
+        // engine-v2 brief supplies both the idea numbers and their scores.
+        const unifiedBrief = buildUnifiedDashboardBrief(
+          report.input.topic,
+          engineNews,
+          engineVideoSamples,
+          {
+            wiki: reportWiki,
+            now: dashboardNow,
+            niche: preferences.selectedSpaceNiche,
+            language: preferences.uiLanguage ?? 'fa',
+            region: report.input.region,
+            languages: report.input.languages,
+          },
+        );
+        if (active) {
+          setReportAnalysisState({ id: report.id, result });
+          setUnifiedBriefState({
+            id: report.id,
+            ideas: unifiedBrief.ideas,
+            warnings: unifiedBrief.warnings,
+            fallback: unifiedBrief.fallback,
+          });
+          if (unifiedBrief.warnings.length) setWarnings(unifiedBrief.warnings.slice(0, 2));
+        }
       } catch {
         if (active) setWarnings([fa
           ? 'تحلیل محلی آخرین جست‌وجو کامل نشد؛ گزارش و ویدئوهای ذخیره‌شده همچنان در دسترس‌اند.'
@@ -465,7 +496,7 @@ function DiscoveryDashboardReady() {
       active = false;
       clearTimeout(timer);
     };
-  }, [latestReportId, latestReportSignature, engineVideoSignature, engineVideoSamples, engineNews, preferences.uiLanguage, fa]);
+  }, [latestReportId, latestReportSignature, engineVideoSignature, engineVideoSamples, engineNews, preferences.uiLanguage, preferences.selectedSpaceNiche, dashboardNow, fa]);
 
   const latestReportAnalysis = reportAnalysisState?.id === latestReportId
     ? reportAnalysisState.result
@@ -503,12 +534,13 @@ function DiscoveryDashboardReady() {
     () => engineVideoSamples,
     [engineVideoSamples],
   );
-  const chartIdeas = useMemo(() => selectDashboardIdeas(ideas, {
+  const unifiedIdeas = unifiedBriefState?.id === latestReportId ? unifiedBriefState.ideas : NO_IDEAS;
+  const chartIdeas = useMemo(() => unifiedIdeas.length ? unifiedIdeas : selectDashboardIdeas(ideas, {
     reportId: latestReport?.id,
     videoIds: new Set(latestReport?.videos.map((video) => video.id) ?? []),
     sourceUrls: new Set(chartNews.filter((item) => scoreResearchText(chartTopic, item.title, item.summary) > 0).map((item) => item.url)),
     topic: chartTopic,
-  }), [ideas, latestReport?.id, latestReport?.videos, chartNews, chartTopic]);
+  }), [unifiedIdeas, ideas, latestReport?.id, latestReport?.videos, chartNews, chartTopic]);
   const bestIdea = chartIdeas[0];
   const ideaLinkage = useMemo(() => ({
     active: ideas.filter((idea) => !idea.archived && idea.status !== 'Rejected Ideas' && idea.status !== 'Completed Research').length,

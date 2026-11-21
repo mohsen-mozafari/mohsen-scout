@@ -14,6 +14,7 @@ import {
 import { buildInternalResearch } from '@/lib/engine';
 import { buildResearchInterestProfile, normalizeResearchText } from '@/lib/intelligence';
 import { collectEngineVideoEvidence, runSingleFlight } from '@/lib/dashboard';
+import { buildUnifiedBrief } from '@/lib/engine-v2-adapter';
 import { generateEditorialIdeas } from '@/lib/idea-generation';
 import { createResearchMemoryEntry } from '@/lib/research-memory';
 import { rememberTopicDossier } from '@/lib/topic-dossier';
@@ -114,7 +115,7 @@ export default function CosmicNews() {
         setRadarWiki(wiki);
 
         const currentData = useScout.getState().data;
-        const engineVideoEvidence = collectEngineVideoEvidence(currentData.reports, currentData.videos);
+        const engineVideoEvidence = collectEngineVideoEvidence(currentData.reports, currentData.videos, Date.now(), 1000);
         const priorMemory = currentData.researchMemory.find(
           (entry) => normalizeResearchText(entry.topic) === normalizeResearchText(discoveryTopic),
         );
@@ -139,7 +140,22 @@ export default function CosmicNews() {
           videos: engineVideoEvidence,
           ...(wiki ? { wiki } : {}),
         }) : undefined;
-        const automaticIdeas = generateEditorialIdeas({
+        const unified = buildUnifiedBrief({
+          topic: discoveryTopic,
+          news: relevantNews,
+          videos: engineVideoEvidence,
+          wiki,
+          now: Date.now(),
+          niche: preferences.selectedSpaceNiche,
+          language: currentData.preferences.uiLanguage ?? 'fa',
+          region: currentData.preferences.region,
+          languages: currentData.preferences.languages,
+        });
+        if (unified.warnings.length) {
+          setWarnings((previous) => [...new Set([...previous, ...unified.warnings])].slice(0, 12));
+        }
+        // Keep the legacy radar ideas when the unified brief has no usable idea.
+        const automaticIdeas = unified.ideas.length ? unified.ideas : generateEditorialIdeas({
           topic: discoveryTopic,
           news: relevantNews,
           context: wiki ? [{

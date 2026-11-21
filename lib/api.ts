@@ -432,6 +432,7 @@ export async function searchYouTube(input: ResearchInput, options: YouTubeOption
     if (selected.size >= resultLimit) break;
   }
   const collected = [...selected.values()];
+  let statisticsBatchWarnings = 0;
   for (let offset = 0; offset < collected.length; offset += 50) {
     const batch = collected.slice(offset, offset + 50);
     try {
@@ -452,9 +453,18 @@ export async function searchYouTube(input: ResearchInput, options: YouTubeOption
         video.viewCount = stats?.viewCount && /^\d+$/.test(stats.viewCount) ? Number(stats.viewCount) : null;
         video.likeCount = stats?.likeCount && /^\d+$/.test(stats.likeCount) ? Number(stats.likeCount) : null;
       }
-    } catch {
-      warnings.push('Video titles and dates were retrieved, but raw view/like counts could not be loaded. Sorting falls back to available fields.');
-      break;
+    } catch (error) {
+      // One failed statistics batch must not discard the remaining batches.
+      // Keep the warning typed, bounded and counted; stop only on a hard
+      // quota/budget/key failure so the existing request budget is respected.
+      const detail = error instanceof Error ? error.message : 'unknown error';
+      if (statisticsBatchWarnings < 3) {
+        warnings.push(('Video statistics batch ' + (Math.floor(offset / 50) + 1) +
+          ' could not be loaded: ' + detail).slice(0, 220));
+        statisticsBatchWarnings += 1;
+      }
+      if (error instanceof ApiError && ['quota', 'budget', 'key', 'permission'].includes(error.code)) break;
+      continue;
     }
   }
   return {

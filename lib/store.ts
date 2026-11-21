@@ -15,6 +15,8 @@ import { getKey } from './vault';
 import { nextBudget, searchYouTube, type YouTubeQuotaKind, type YouTubeQuotaOrigin } from './api';
 import { filterVideosToSelectedResearchPeriod, generateEditorialIdeas } from './idea-generation';
 import { attachReportToIdea as attachReport, attachVideoReferenceToIdea as attachVideoReference, getOrCreateSourceIdea, type SourceIdeaInput } from './idea-research';
+import { buildUnifiedBrief } from './engine-v2-adapter';
+import { getTopicDossier } from './topic-dossier';
 import { getCachedSpaceNews, hydrateSpaceNewsRegistry } from './space';
 import { normalizeResearchText } from './intelligence';
 import { recordRuntimeFinish, recordRuntimeStart } from './runtime-metrics';
@@ -145,9 +147,29 @@ export const useScout = create<State>((set, get) => ({
       const availableNews = getCachedSpaceNews(currentData.feedRegistry, currentData.preferences.spaceNewsSources);
       const priorMemory = currentData.researchMemory.find((entry) => normalizeResearchText(entry.topic) === normalizeResearchText(report.input.topic));
       const currentVideos = filterVideosToSelectedResearchPeriod(result.videos, report.input.days);
+      const topicWiki = getTopicDossier(report.input.topic)?.wiki;
+      const unified = buildUnifiedBrief({
+        topic: report.input.topic,
+        news: availableNews,
+        videos: currentVideos,
+        wiki: topicWiki,
+        now: report.createdAt,
+        niche: currentData.preferences.selectedSpaceNiche,
+        language: currentData.preferences.uiLanguage ?? 'fa',
+        region: report.input.region,
+        languages: report.input.languages,
+      });
+      // Report.warnings is the existing persisted warnings channel; engine coverage
+      // limits are merged there instead of adding a new required report field.
+      const reportForSave: Report = {
+        ...report,
+        warnings: [...new Set([...report.warnings, ...unified.warnings])],
+      };
       recordRuntimeStart('Engine');
       engineStarted = true;
-      const generatedIdeas = generateEditorialIdeas({
+      // Keep the legacy generator as the fallback; the unified brief wins when it
+      // produced at least one real, evidence-linked idea.
+      const generatedIdeas = unified.ideas.length ? unified.ideas : generateEditorialIdeas({
         topic: report.input.topic,
         news: availableNews,
         priorMemory,
@@ -160,20 +182,20 @@ export const useScout = create<State>((set, get) => ({
         existingIdeas: get().data.ideas,
         region: report.input.region,
         languages: report.input.languages,
-        language: get().data.preferences.uiLanguage ?? 'fa',
+        language: currentData.preferences.uiLanguage ?? 'fa',
         limit: 5,
       });
       recordRuntimeFinish('Engine', 'success');
       engineRecorded = true;
       await get().commit((data) => ({
         ...data,
-        reports: [report, ...data.reports],
+        reports: [reportForSave, ...data.reports],
         ideas: [...generatedIdeas, ...data.ideas],
         videos: [...new Map([...data.videos, ...result.videos].map((v) => [v.id, v])).values()],
         preferences: { ...data.preferences, lastInput: input },
       }));
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      return report;
+      return reportForSave;
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Research could not finish. Try again.';
       if (engineStarted && !engineRecorded) {
@@ -201,11 +223,23 @@ export const useScout = create<State>((set, get) => ({
     const currentData = get().data;
     const availableNews = getCachedSpaceNews(currentData.feedRegistry, currentData.preferences.spaceNewsSources);
     const priorMemory = currentData.researchMemory.find((entry) => normalizeResearchText(entry.topic) === normalizeResearchText(report.input.topic));
-    const generatedIdeas = generateEditorialIdeas({
+    const currentVideos = filterVideosToSelectedResearchPeriod(report.videos, report.input.days);
+    const unified = buildUnifiedBrief({
+      topic: report.input.topic,
+      news: availableNews,
+      videos: currentVideos,
+      wiki: getTopicDossier(report.input.topic)?.wiki,
+      now: report.createdAt,
+      niche: currentData.preferences.selectedSpaceNiche,
+      language: currentData.preferences.uiLanguage ?? 'fa',
+      region: report.input.region,
+      languages: report.input.languages,
+    });
+    const generatedIdeas = unified.ideas.length ? unified.ideas : generateEditorialIdeas({
       topic: report.input.topic,
       news: availableNews,
       priorMemory,
-      videos: filterVideosToSelectedResearchPeriod(report.videos, report.input.days).map((video) => ({
+      videos: currentVideos.map((video) => ({
         id: video.id, title: video.title, description: video.description,
         channel: video.channel, publishedAt: video.publishedAt,
         viewCount: video.viewCount ?? null, likeCount: video.likeCount ?? null,
@@ -214,12 +248,14 @@ export const useScout = create<State>((set, get) => ({
       existingIdeas: get().data.ideas,
       region: report.input.region,
       languages: report.input.languages,
-      language: get().data.preferences.uiLanguage ?? 'fa',
+      language: currentData.preferences.uiLanguage ?? 'fa',
       limit: 5,
     });
     await get().commit((data) => ({
       ...data,
-      reports: data.reports.map((r) => (r.id === id ? { ...r, analyzed: true } : r)),
+      reports: data.reports.map((r) => (r.id === id
+        ? { ...r, analyzed: true, warnings: [...new Set([...r.warnings, ...unified.warnings])] }
+        : r)),
       ideas: [...generatedIdeas, ...data.ideas],
     }));
     recordRuntimeFinish('Engine', 'success');

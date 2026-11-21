@@ -89,6 +89,15 @@ export type Idea = {
   /** Explainable local editorial-priority score (not a view or revenue forecast). */
   engineScore?: number;
   engineScoreReason?: string;
+  /** Optional engine-v2 explainability fields; additive only, no required shape changes. */
+  engineV2Score?: number;
+  engineV2Confidence?: number;
+  engineV2Why?: string;
+  engineV2Evidence?: { title: string; url?: string; views?: number; source: string }[];
+  engineV2Risk?: string;
+  engineV2BestTime?: string;
+  engineV2RevenueLabel?: string;
+  dataSufficient?: boolean;
 };
 export type Report = {
   id: string;
