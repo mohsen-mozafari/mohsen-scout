@@ -111,3 +111,32 @@ void test('research graph does not invent empty source, video or public-interest
   assert.equal(model.nodes.filter((node) => node.type === 'news').length, 0);
   assert.equal(model.edges.some((edge) => edge.relation.includes('word overlap')), false);
 });
+
+void test('research graph retains every source node while bounding cross-source overlap edges', () => {
+  const analysis = buildInternalResearch({
+    topic: 'JWST exoplanet atmosphere',
+    news: news.map((item) => ({
+      title: item.title, summary: item.summary, sourceName: item.sourceName,
+      sourceUrl: item.url, publishedAt: item.publishedAt, sourceId: item.sourceId,
+    })),
+    wiki, videos, language: 'en',
+  });
+  const manyNews = Array.from({ length: 90 }, (_, index) => ({
+    ...news[0],
+    id: 'news-' + index,
+    title: 'MOCK: NASA JWST exoplanet observation ' + index,
+    url: 'https://science.nasa.gov/mock-story-' + index,
+  }));
+  const manyVideos = Array.from({ length: 90 }, (_, index) => ({
+    ...videos[0],
+    id: 'mock-video-' + index,
+    title: 'MOCK: JWST exoplanet atmosphere video ' + index,
+    url: 'https://www.youtube.com/watch?v=mockvideo' + String(index).padStart(4, '0'),
+  }));
+  const model = buildResearchGraphModel({
+    topic: 'JWST exoplanet atmosphere', news: manyNews, videos: manyVideos, analysis, language: 'en',
+  });
+  assert.equal(model.groups.find((group) => group.id === 'sources')?.items.length, manyNews.length);
+  assert.equal(model.groups.find((group) => group.id === 'youtube')?.items.length, manyVideos.length);
+  assert.ok(model.edges.length < 5000, 'cross-source edge growth must stay bounded');
+});
