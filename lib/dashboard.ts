@@ -84,6 +84,9 @@ export type UnifiedDashboardBrief = {
   warnings: string[];
   timings: StageTiming[];
   fallback: boolean;
+  /** Additive: the underlying v2 result so the AI complement uses one source of truth. */
+  result?: EngineV2Result;
+  angles?: string[];
 };
 
 /**
@@ -108,6 +111,8 @@ export function buildUnifiedDashboardBrief(
     warnings: brief.warnings,
     timings: brief.timings,
     fallback: brief.fallback,
+    result: brief.result,
+    angles: brief.angles,
   };
 }
 
