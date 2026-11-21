@@ -306,9 +306,11 @@ void test('entity extraction preserves provenance across a larger prepared corpu
   assert.equal(mars.evidenceIds.length, documents.length);
   assert.equal(jwst.evidenceIds.length, documents.length);
   const relations = buildResearchEntityRelations(entities);
+  const nasa = entities.find((entity) => entity.name === 'NASA');
+  assert.ok(nasa);
   const nasaMars = relations.find((relation) =>
-    relation.fromEntityId === entities.find((entity) => entity.name === 'NASA')?.id &&
-    relation.toEntityId === mars.id,
+    (relation.fromEntityId === nasa.id && relation.toEntityId === mars.id) ||
+    (relation.fromEntityId === mars.id && relation.toEntityId === nasa.id),
   );
   assert.equal(nasaMars?.evidenceCount, documents.length);
 });
