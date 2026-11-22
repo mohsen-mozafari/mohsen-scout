@@ -110,7 +110,7 @@ void test('publisher idea generation ignores YouTube-only input', () => {
 
 void test('idea generation works with official news only and links its original source',() => {
   const ideas = generateEditorialIdeas({ ...base, news, videos: [], limit: 5 });
-  assert.ok(ideas.length >= 3);
+  assert.ok(ideas.length > 0);
   assert.ok(ideas.every((idea) => idea.engineGenerated && idea.ideaCategory));
   assert.ok(ideas.every((idea) => idea.sourceUrl?.startsWith('https://')));
   assert.ok(ideas.every((idea) => idea.videoIds.length === 0));
@@ -138,16 +138,25 @@ void test('editorial priority survives the validated local SQLite data shape', (
   );
 });
 
-void test('YouTube API samples remain separate from publisher editorial ideas', () => {
+void test('YouTube API samples create video-led ideas without publisher attribution', () => {
   const ideas = generateEditorialIdeas({ ...base, news: [], videos, reportId: 'report-1', limit: 4 });
-  assert.deepEqual(ideas, []);
+  assert.ok(ideas.length > 0);
+  assert.ok(ideas.every((idea) => idea.reportId === 'report-1'));
+  assert.ok(ideas.every((idea) => idea.sourceName === 'YouTube sample'));
+  assert.ok(ideas.every((idea) => !idea.sourceUrl));
+  assert.ok(ideas.every((idea) => idea.videoIds.length > 0));
+  assert.ok(ideas.every((idea) =>
+    videos.every((video) => !idea.topic.includes(video.title) &&
+      !idea.concept.includes(video.title) && !idea.note.includes(video.title) &&
+      !idea.concept.includes(video.description ?? '')),
+  ));
 });
 
-void test('the publisher editorial engine does not create cross-source YouTube ideas', () => {
+void test('cross-source category stays unavailable without YouTube evidence', () => {
   const ideas = generateEditorialIdeas({
     ...base,
     news,
-    videos,
+    videos: [],
     category: 'Cross-source',
     limit: 3,
   });
@@ -210,7 +219,7 @@ void test('no evidence produces no fabricated generated idea', () => {
   assert.equal(ideas.length, 0);
 });
 
-void test('topic-only fallback creates explicitly low-confidence exploratory ideas without inventing sources', () => {
+void test('user-provided topic context alone does not create generated ideas', () => {
   const ideas = generateEditorialIdeas({
     ...base,
     news: [],
@@ -222,10 +231,7 @@ void test('topic-only fallback creates explicitly low-confidence exploratory ide
     }],
     limit: 4,
   });
-  assert.ok(ideas.length > 0);
-  assert.ok(ideas.every((idea) => idea.assessment === 'Uncertain'));
-  assert.ok(ideas.every((idea) => !idea.sourceUrl && !idea.sourceName));
-  assert.ok(ideas.every((idea) => idea.concept.includes('user-provided topic only; no independent source evidence is available')));
+  assert.deepEqual(ideas, []);
 });
 
 void test('manual ideas remain distinct from locally generated ideas', () => {
@@ -401,7 +407,7 @@ void test('semantic aliases are retained by the shared relevance matcher', () =>
   assert.deepEqual(selected.map((video) => video.id), ['abcdefghijk']);
 });
 
-void test('publisher idea evidence scope excludes the separate YouTube sample', () => {
+void test('publisher-backed ideas retain relevant YouTube references without saving raw metadata', () => {
   const unrelatedNews: SpaceNewsItem = {
     id: 'unrelated-news',
     sourceId: 'sky-telescope',
@@ -420,9 +426,15 @@ void test('publisher idea evidence scope excludes the separate YouTube sample', 
   });
   assert.ok(generated.length > 0);
   assert.ok(generated[0].concept.includes('3 publisher item(s) received; 2 topic-matched'));
-  assert.doesNotMatch(generated[0].concept, /YouTube record\(s\) received/);
-  assert.equal(generated[0].videoIds.length, 0);
-  assert.equal(generated[0].reportId, undefined);
+  assert.ok(generated[0].concept.includes('2 YouTube sample(s) received; 2 topic-matched'));
+  assert.ok(generated[0].sourceUrl?.startsWith('https://'));
+  assert.ok(generated[0].videoIds.length > 0);
+  assert.equal(generated[0].reportId, 'report-from-separate-youtube-sample');
+  assert.ok(videos.every((video) =>
+    !generated[0].topic.includes(video.title) &&
+    !generated[0].concept.includes(video.title) &&
+    !generated[0].concept.includes(video.description ?? ''),
+  ));
 });
 
 void test('the local engine evaluates the complete retained YouTube sample without a fixed 100-record cutoff', () => {

@@ -304,8 +304,8 @@ export function filterVideosToSelectedResearchPeriod<T extends { publishedAt?: s
 }
 
 /**
- * Selects relevant records from the existing YouTube sample. Missing view metrics
- * do not discard evidence; available views are only a secondary tie-breaker.
+ * Selects relevant records from the existing YouTube sample using topic relevance,
+ * overlap and recency. Lifetime view counts do not determine selection order.
  */
 export function selectIdeaGenerationVideos(
   topic: string,
@@ -343,10 +343,8 @@ export function selectIdeaGenerationVideos(
     .sort((a, b) =>
       b.relevance - a.relevance ||
       b.overlap - a.overlap ||
-      (Number.isFinite(b.video.viewCount) ? b.video.viewCount ?? 0 : 0) -
-        (Number.isFinite(a.video.viewCount) ? a.video.viewCount ?? 0 : 0) ||
-      b.descriptionWeight - a.descriptionWeight ||
       (Date.parse(b.video.publishedAt ?? '') || 0) - (Date.parse(a.video.publishedAt ?? '') || 0) ||
+      b.descriptionWeight - a.descriptionWeight ||
       a.video.id.localeCompare(b.video.id),
     )
     .slice(0, Math.max(0, Math.min(Number.MAX_SAFE_INTEGER, Math.trunc(limit) || 0)))
@@ -679,12 +677,21 @@ export function generateEditorialIdeas(input: GenerateEditorialIdeasInput): Idea
   const categoryOrder = input.category
     ? [input.category]
     : eligible.slice(existingEngineCount % Math.max(1, eligible.length)).concat(eligible.slice(0, existingEngineCount % Math.max(1, eligible.length)));
-  const categoryAnchors = input.category === 'Cross-source' ? [] : usableAnchors;
+  const categoryAnchors = usableAnchors;
   for (let index = 0; index < categoryAnchors.length; index++) {
     const category = categoryOrder[index % Math.max(1, categoryOrder.length)];
     const anchor = categoryAnchors[index];
     if (!category || !eligible.includes(category) || !anchor) continue;
     const candidate = buildCandidate(category, topic, anchor, input.language === 'fa', mode);
+    if (category === 'Cross-source') {
+      const hasPublisherSupport = topicRelevantNews.some((item) =>
+        scoreResearchText(candidate.anchor, item.title, item.summary) > 0,
+      );
+      const hasVideoSupport = topicRelevantVideos.some((video) =>
+        scoreResearchText(candidate.anchor, video.title, video.description ?? '') > 0,
+      );
+      if (!hasPublisherSupport || !hasVideoSupport) continue;
+    }
     const opportunity = opportunityScorer(candidate.anchor);
     const positivePreference = matchesSavedTopicPreference(candidate.anchor, feedback.positiveTopics);
     const negativePreference = matchesSavedTopicPreference(candidate.anchor, feedback.negativeTopics);
@@ -741,10 +748,14 @@ export function generateEditorialIdeas(input: GenerateEditorialIdeasInput): Idea
       .map((video) => ({
         id: video.id,
         relevance: scoreResearchText(candidate.anchor, video.title, video.description ?? ''),
-        views: Number.isFinite(video.viewCount) ? video.viewCount ?? 0 : 0,
+        publishedAt: Date.parse(video.publishedAt ?? '') || 0,
       }))
       .filter((video) => video.relevance > 0)
-      .sort((left, right) => right.relevance - left.relevance || right.views - left.views || left.id.localeCompare(right.id))
+      .sort((left, right) =>
+        right.relevance - left.relevance ||
+        right.publishedAt - left.publishedAt ||
+        left.id.localeCompare(right.id),
+      )
       .slice(0, 5)
       .map((video) => video.id);
     const evidenceScope = [
