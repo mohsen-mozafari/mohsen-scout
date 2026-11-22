@@ -98,10 +98,20 @@ export const useScout = create<State>((set, get) => ({
   },
   boot: async () => {
     try {
-      const data = await readData();
-      lastRetentionSweepAt = Date.now();
+      const loaded = await readData();
+      const now = Date.now();
+      const data = purgeExpired(loaded, now);
+      let retentionError = '';
+      if (data !== loaded) {
+        try {
+          await writeData(data, loaded);
+        } catch {
+          retentionError = 'Local data opened, but expired YouTube metadata could not be pruned. Check available device storage.';
+        }
+      }
+      lastRetentionSweepAt = retentionError ? 0 : now;
       hydrateSpaceNewsRegistry(data.feedRegistry);
-      set({ data, ready: true, error: '' });
+      set({ data, ready: true, error: retentionError });
     } catch {
       set({ error: 'Could not open local data. Retry before making changes.', ready: false });
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);

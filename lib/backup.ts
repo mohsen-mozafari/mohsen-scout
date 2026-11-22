@@ -170,7 +170,7 @@ export function exportBackup(data: LocalData) {
         })),
         notes: data.notes,
         researchMemory: data.researchMemory,
-        researchActivity: data.researchActivity,
+        researchActivity: data.researchActivity.map(({ reportId: _reportId, ...event }) => event),
         ideas: data.ideas.map(({ reportId: _reportId, ...value }) => ({
           ...value,
           videoIds: value.videoIds.filter((id) =>
@@ -224,6 +224,7 @@ export function importBackup(raw: string): LocalData {
   return {
     ...fresh,
     ...result.data.personal,
+    researchActivity: result.data.personal.researchActivity.map(({ reportId: _reportId, ...event }) => event),
     ideas: result.data.personal.ideas.map((idea) => ({
       ...idea,
       videoIds: idea.videoIds.filter((id) =>
@@ -251,7 +252,7 @@ export function restorePersonalData(current: LocalData, restored: LocalData): Lo
     links: restored.links,
     notes: restored.notes,
     researchMemory: restored.researchMemory,
-    researchActivity: restored.researchActivity,
+    researchActivity: restored.researchActivity.map(({ reportId: _reportId, ...event }) => event),
     opinions: current.opinions.filter((opinion) => {
       const before = current.ideas.find((idea) => idea.id === opinion.ideaId);
       const after = restored.ideas.find((idea) => idea.id === opinion.ideaId);

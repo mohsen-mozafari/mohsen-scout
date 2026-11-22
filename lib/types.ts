@@ -340,7 +340,6 @@ export function purgeExpired(data: LocalData, now = Date.now()): LocalData {
     Boolean(idea.reportId && !originalReportIds.has(idea.reportId)) ||
     idea.videoIds.some((id) => !originalVideoIds.has(id)),
   );
-  if (!hasExpiredVideo && !hasExpiredReport && !hasOrphanedIdeaReference) return data;
 
   const videos = hasExpiredVideo
     ? data.videos.filter((video) => now - video.fetchedAt < RETENTION_MS)
@@ -353,6 +352,19 @@ export function purgeExpired(data: LocalData, now = Date.now()): LocalData {
         return keptVideos.length === report.videos.length ? report : { ...report, videos: keptVideos };
       })
     : data.reports;
+
+  // Keep automated activity links only while the referenced report has live
+  // YouTube API metadata. The detailed raw sample remains in the 29-day domain.
+  const liveYoutubeReportIds = new Set(reports
+    .filter((report) => report.videos.some((video) =>
+      video.fetchedAt > 0 && now >= video.fetchedAt && now - video.fetchedAt < RETENTION_MS,
+    ))
+    .map((report) => report.id));
+  const hasOrphanedActivityReference = data.researchActivity.some((event) =>
+    Boolean(event.reportId && !liveYoutubeReportIds.has(event.reportId)),
+  );
+  if (!hasExpiredVideo && !hasExpiredReport && !hasOrphanedIdeaReference && !hasOrphanedActivityReference) return data;
+
   const reportIds = new Set(reports.map((report) => report.id));
   const retainedIds = new Set([...videos.map((video) => video.id), ...data.links.map((link) => link.id)]);
   let ideasChanged = false;
@@ -363,5 +375,18 @@ export function purgeExpired(data: LocalData, now = Date.now()): LocalData {
     ideasChanged = true;
     return { ...idea, videoIds, reportId };
   });
-  return { ...data, videos, reports, ideas: ideasChanged ? ideas : data.ideas };
+  const researchActivity = hasOrphanedActivityReference
+    ? data.researchActivity.map((event) =>
+      event.reportId && !liveYoutubeReportIds.has(event.reportId)
+        ? { ...event, reportId: undefined }
+        : event,
+    )
+    : data.researchActivity;
+  return {
+    ...data,
+    videos,
+    reports,
+    ideas: ideasChanged ? ideas : data.ideas,
+    researchActivity,
+  };
 }

@@ -581,6 +581,8 @@ void test('Backup: round trip preserves personal data and strips all API metadat
   assert.equal(imported.preferences.hybridIntelligence, false);
   assert.equal(imported.researchMemory.length, 1);
   assert.equal(imported.researchMemory[0].sources[0].title, 'Exoplanet atmosphere observed at 40 km');
+  d.researchActivity = [{ id: 'unbacked', engine: 'YouTube Data API', query: 'sample', topic: 'topic', niche: 'niche', startedAt: now, status: 'success', resultCount: 1, analyzedCount: 0, results: [], warnings: [], reportId: 'temporary-report' }];
+  assert.equal(importBackup(exportBackup(d)).researchActivity[0].reportId, undefined);
   assert.deepEqual(imported.preferences.spaceNewsSources, defaults().preferences.spaceNewsSources);
   assert.equal(imported.preferences.spaceNewsSourcesVersion, 2);
 });
@@ -617,7 +619,8 @@ void test('Backup preserves bounded research activity without exporting raw YouT
   const raw = exportBackup(data);
   assert(!raw.includes('RAW YOUTUBE VIDEO TITLE MUST NOT BE EXPORTED'));
   const restored = importBackup(raw);
-  assert.deepEqual(restored.researchActivity, data.researchActivity);
+  assert.equal(restored.researchActivity[0].query, data.researchActivity[0].query);
+  assert.equal(restored.researchActivity[0].reportId, undefined);
   assert.equal(restored.videos.length, 0);
 
   const legacy = JSON.parse(raw);
