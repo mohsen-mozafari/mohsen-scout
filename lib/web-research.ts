@@ -145,7 +145,7 @@ export async function fetchWebResearch(
       headers,
       signal: controller.signal,
       body: JSON.stringify({
-        query: cleanQuery + ' space science astronomy NASA ESA research',
+        query: cleanQuery,
         limit: perSourceLimit,
         sources: ['web', 'news'],
         excludeDomains: ['youtube.com', 'youtu.be', 'youtube-nocookie.com'],

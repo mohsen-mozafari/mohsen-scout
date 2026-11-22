@@ -50,3 +50,10 @@ Do not assume the optional audited analytics amendment applies to this app or th
 - Deep Research must preserve source URLs and uncertainty. No scientific claim is validated solely because a news headline or encyclopedia summary states it. Do not send news text, YouTube metadata or statistics to OpenRouter; the only news-content exception is a user-tapped translation of one selected RSS title and summary.
 - Existing persisted preferences and version-1 backups must migrate with defaults for any new optional Space settings. Do not change the personal/youtube SQLite table separation.
 - Android Release must retain R8. The local config plugin plugins/with-workmanager-proguard.js keeps the no-arg Room/WorkManager constructors needed by reflection; verify both keep rules are present and referenced by android/app/build.gradle after prebuild.
+
+## 1.11.0 independent-research boundary (supersedes conflicting v1.10 notes above)
+
+- Editorial idea generation, engine scores, source evidence, research memory and automatic external critique use only selected publisher feeds, independent web/news results and Wikimedia context. YouTube API data is an isolated raw-display lane; never pass video metadata or statistics into idea generation, research scoring, source summaries or external model prompts.
+- Firecrawl is optional. Keyless Search can be rate-limited; the research flow must preserve RSS/Wikimedia results when it is unavailable. A user key is held only in SecureStore and never sent with YouTube data.
+- Automatic critique is controlled by the persisted Settings preference. It may send the idea title/concept and independent source summaries/links to the configured provider fallback chain. Never include YouTube metadata, scores, identifiers, thumbnails or personal notes.
+- Do not derive custom metrics from YouTube API data unless the owner has explicitly accepted the applicable YouTube Derived Metrics Policy amendment for the project and the allowed use case. Until then, do not calculate ratios, growth scores, rankings, demand forecasts or composite scores from API data.
