@@ -62,8 +62,6 @@ export type InternalEngineAngle = {
 };
 
 export type InternalResearchResult = {
-  /** Exact transient YouTube API input; raw pass-through only, never used to derive analysis or scores. */
-  youtubeSample: NonNullable<InternalResearchInput['videos']>;
   topic: string;
   entityCandidates: ResearchEntityCandidate[];
   entityRelations: ResearchEntityRelation[];
@@ -300,7 +298,7 @@ export function buildInternalResearch(input: InternalResearchInput): InternalRes
       id: 'youtube-sample',
       label: text('YouTube sample', 'نمونه یوتیوب'),
       detail: youtubeSample.length
-        ? text('A raw YouTube API sample reached the engine through its isolated pass-through field. Under the current project policy it is not scored, summarized, correlated with independent sources or sent to external models.', 'نمونه خام API یوتیوب از مسیر مستقل و بدون تحلیل به موتور رسیده است. طبق سیاست فعلی پروژه، این داده امتیازدهی، خلاصه، با منابع مستقل ترکیب یا به مدل بیرونی ارسال نمی‌شود.')
+        ? text('A raw YouTube API sample reached the internal engine as transient input through its isolated field and is intentionally excluded from scoring, summarization, source correlation and external model requests under the current project policy.', 'نمونه خام API یوتیوب از مسیر مستقل و بدون تحلیل به موتور رسیده است. طبق سیاست فعلی پروژه، این داده امتیازدهی، خلاصه، با منابع مستقل ترکیب یا به مدل بیرونی ارسال نمی‌شود.')
         : text('No YouTube API sample was supplied to this engine run. The raw sample remains available in its separate report view.', 'در این اجرای موتور نمونه‌ای از API یوتیوب دریافت نشد. نمونه خام در صفحه گزارش جداگانه در دسترس است.')
     });
   }
@@ -557,7 +555,7 @@ export function buildInternalResearch(input: InternalResearchInput): InternalRes
       'سناریوی مشروط سوم: اگر جهت سری زمانی عوض شود، نباید الگوی فعلی را به آینده تعمیم داد.',
     ].slice(0, trend.scenarios.length) : trend.scenarios,
   };
-  return { youtubeSample, topic, entityCandidates, entityRelations, summary, evidence, angles, verificationQuestions, limitations: limitationsList, intelligence };
+  return { topic, entityCandidates, entityRelations, summary, evidence, angles, verificationQuestions, limitations: limitationsList, intelligence };
 }
 export function buildIdeas(_report: Report, _language: 'fa' | 'en' = 'en'): Idea[] {
   // This legacy helper receives only a Report, which has raw YouTube records but no

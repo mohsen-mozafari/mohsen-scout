@@ -18,8 +18,9 @@ void test('internal engine receives the YouTube sample as an isolated raw pass-t
     now: Date.parse('2026-11-23T00:00:00.000Z'),
   });
 
-  assert.deepEqual(result.youtubeSample, sample);
   assert.equal(result.intelligence.selfEvaluation.youtubeRawSampleReceived, true);
+  const serializedAnalysis = JSON.stringify(result);
+  assert.doesNotMatch(serializedAnalysis, /Raw YouTube title|Raw description stays unchanged|123456|789/);
   assert.equal(result.intelligence.selfEvaluation.youtubeSampleCount, 0);
   assert.equal(result.intelligence.selfEvaluation.matchedVideoCount, 0);
   assert.equal(result.intelligence.selfEvaluation.videoViewCountsAvailable, 0);
