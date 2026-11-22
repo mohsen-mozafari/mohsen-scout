@@ -302,7 +302,7 @@ void test('one isolated YouTube video is insufficient evidence for an automated 
   assert.deepEqual(generated, []);
 });
 
-void test('multiple independent YouTube channels can support locally generated video-led ideas', () => {
+void test('YouTube-only videos cannot support generated editorial ideas', () => {
   const rawTitles = [
     'MOCK: JWST exoplanet atmosphere methane spectroscopy signals',
     'MOCK: James Webb exoplanet atmosphere water vapor analysis',
@@ -335,11 +335,7 @@ void test('multiple independent YouTube channels can support locally generated v
     ],
     limit: 5,
   });
-  assert.ok(generated.length > 0);
-  assert.ok(generated.every((idea) => idea.reportId === 'report-video-test'));
-  assert.ok(generated.some((idea) => idea.videoIds.length > 0));
-  assert.ok(generated.every((idea) => idea.sourceName === 'YouTube sample'));
-  assert.doesNotMatch(JSON.stringify(generated), /2400000|1200000|MOCK Science Channel|JWST exoplanet atmosphere methane spectroscopy signals/);
+  assert.deepEqual(generated, []);
 });
 
 void test('user-provided topic text alone is not treated as independent evidence', () => {
@@ -419,7 +415,7 @@ void test('semantic aliases are retained by the shared relevance matcher', () =>
   assert.deepEqual(selected.map((video) => video.id), ['abcdefghijk']);
 });
 
-void test('publisher-backed ideas retain relevant YouTube references without saving raw metadata', () => {
+void test('publisher-backed ideas use publisher evidence and ignore the separate YouTube sample', () => {
   const unrelatedNews: SpaceNewsItem = {
     id: 'unrelated-news',
     sourceId: 'sky-telescope',
@@ -438,9 +434,12 @@ void test('publisher-backed ideas retain relevant YouTube references without sav
   });
   assert.ok(generated.length > 0);
   assert.ok(generated[0].concept.includes('3 publisher item(s) received; 2 topic-matched'));
-  assert.ok(generated[0].concept.includes('2 YouTube sample(s) received; 2 topic-matched'));
+  assert.ok(!generated[0].concept.includes('YouTube sample'));
   assert.ok(generated[0].sourceUrl?.startsWith('https://'));
-  assert.ok(generated[0].videoIds.length > 0);
+  assert.equal(generated[0].videoIds.length, 0);
+  assert.equal(generated[0].engineScoreBasis, 'publisher-web-only-v2');
+  assert.ok((generated[0].evidenceSources ?? []).length > 0);
+  assert.ok((generated[0].evidenceSources ?? []).every((source) => source.sourceType === 'publisher'));
   assert.equal(generated[0].reportId, 'report-from-separate-youtube-sample');
   assert.ok(videos.every((video) =>
     !generated[0].topic.includes(video.title) &&
