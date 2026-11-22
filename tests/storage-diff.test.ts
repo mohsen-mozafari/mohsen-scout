@@ -31,3 +31,13 @@ void test('full restore/write without a previous snapshot includes all persisted
   const data = defaults();
   assert.deepEqual(changedLocalDataEntries(data).map((entry) => entry.key), LOCAL_DATA_KEYS);
 });
+
+void test('record domains are compared by stable record ID rather than serializing whole arrays', () => {
+  const previous = defaults();
+  previous.ideas = [
+    { id: 'keep', topic: 'Keep', concept: '', note: '', status: 'New Discoveries', decision: '', videoIds: [], createdAt: 1, archived: false, assessment: 'Uncertain', region: 'Germany', languages: ['en'] },
+    { id: 'remove', topic: 'Remove', concept: '', note: '', status: 'New Discoveries', decision: '', videoIds: [], createdAt: 2, archived: false, assessment: 'Uncertain', region: 'Germany', languages: ['en'] },
+  ];
+  const next = { ...previous, ideas: [previous.ideas[0], { ...previous.ideas[1], topic: 'Changed' }] };
+  assert.deepEqual(changedLocalDataEntries(next, previous).map((entry) => entry.key), ['ideas']);
+});

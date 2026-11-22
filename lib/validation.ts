@@ -1,5 +1,8 @@
 import { z } from 'zod';
 import { DEFAULT_SECOND_OPINION_ORDER, type LocalData, regions, statuses } from './types';
+import type { RecordDomain } from './storage-records';
+import type { RecordDomain } from './storage-records';
+
 const id = z.string().min(1);
 const text = z.string();
 const time = z.number().finite().nonnegative();
@@ -209,4 +212,18 @@ export function validateLocalEntry<K extends keyof LocalData>(key: K, value: unk
   const parsed = schema.shape[key].safeParse(value);
   if (!parsed.success) throw new Error('Saved ' + String(key) + ' data is unreadable. Retry the last change.');
   return parsed.data as LocalData[K];
+}
+
+/** Validate a single SQLite record rather than parsing a potentially huge collection. */
+export function validateLocalRecord(domain: RecordDomain, value: unknown): unknown {
+  const parsed = schema.shape[domain].safeParse([value]);
+  if (!parsed.success) throw new Error('Saved ' + domain + ' record is unreadable. Retry the last change.');
+  return (parsed.data as unknown[])[0];
+}
+
+/** Validate one normalized SQLite row without parsing its whole collection. */
+export function validateLocalRecord(domain: RecordDomain, value: unknown): unknown {
+  const parsed = schema.shape[domain].safeParse([value]);
+  if (!parsed.success) throw new Error('Saved ' + domain + ' record is unreadable. Retry the last change.');
+  return (parsed.data as unknown[])[0];
 }
