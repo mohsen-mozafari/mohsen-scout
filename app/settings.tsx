@@ -12,6 +12,7 @@ import {
   Choices,
   Action,
   Fold,
+  BadgeText,
   styles,
   ErrorBox,
   useOperation,
@@ -29,6 +30,11 @@ import { router, type ErrorBoundaryProps } from 'expo-router';
 import { palette as p } from '@/lib/theme';
 import { translateText } from '@/lib/i18n';
 import { SPACE_NICHES, SPACE_NEWS_SOURCES, type WikiLanguage } from '@/lib/space';
+function providerName(provider: SecondOpinionProvider): string {
+  return provider === 'cloudflare'
+    ? 'Cloudflare Workers AI'
+    : provider[0].toUpperCase() + provider.slice(1);
+}
 function normalizePreferences(value?: Partial<Preferences>): Preferences {
   const fallback = defaults().preferences;
   return {
@@ -170,9 +176,6 @@ export default function Settings() {
   const op = useOperation();
   const fa = prefs.uiLanguage === 'fa';
   const providerOrder = prefs.secondOpinionOrder ?? DEFAULT_SECOND_OPINION_ORDER;
-  const providerName = (provider: SecondOpinionProvider) => provider === 'cloudflare'
-    ? 'Cloudflare Workers AI'
-    : provider[0].toUpperCase() + provider.slice(1);
   const moveProvider = (index: number, direction: -1 | 1) => {
     const nextIndex = index + direction;
     if (nextIndex < 0 || nextIndex >= providerOrder.length) return;

@@ -1,4 +1,4 @@
-import { memo, useDeferredValue, useEffect, useMemo, useState } from 'react';
+import { memo, useDeferredValue, useMemo, useState } from 'react';
 import { FlatList, Platform, View, Text, Pressable } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Button } from 'heroui-native';
@@ -115,9 +115,6 @@ export default function Opportunities() {
   const [featuredOverrideId, setFeaturedOverrideId] = useState<string | undefined>(
     typeof params.idea === 'string' ? params.idea : undefined,
   );
-  useEffect(() => {
-    setFeaturedOverrideId(typeof params.idea === 'string' ? params.idea : undefined);
-  }, [params.idea]);
   const ideas = useScout((s) => s.data.ideas);
   const [status, setStatus] = useState('All');
   const [search, setSearch] = useState('');

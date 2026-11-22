@@ -68,7 +68,9 @@ const mockResponse = (body: unknown, status = 200, headers: Record<string, strin
 } as Response);
 const mock = (body: unknown, status = 200) => mockResponse(body, status);
 const mockText = (text: string, status = 200, headers: Record<string, string> = {}): Response => ({
-  ...mockResponse(null, status, headers),
+  ok: status >= 200 && status < 300,
+  status,
+  headers: { get: (name: string) => headers[name.toLowerCase()] ?? headers[name] ?? null } as Headers,
   json: async () => { throw new SyntaxError('Invalid synthetic JSON: ' + text.slice(0, 40)); },
 } as Response);
 const fetcher =
