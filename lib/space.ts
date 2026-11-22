@@ -767,7 +767,7 @@ export function buildResearchOutline(
       'Context: give only the background needed to understand the mission, instrument or scientific method.',
       ...(lead.length ? ['What the sources report: examine these headlines — ' + lead.join('; ') + '. Keep a headline separate from a confirmed scientific result.'] : ['Evidence: introduce the strongest available primary source and state what it does—and does not—show.']),
       'The key detail: choose one verified finding and explain it in plain language.',
-      'Open questions: separate what researchers have confirmed from what they are still investigating.',
+      'What remains unknown: separate open scientific questions from confirmed observations.',
       'Why it matters: place the finding in the wider story of astronomy and space exploration.',
       'Ending: leave viewers with one precise question that a future observation or mission could answer.',
     ],

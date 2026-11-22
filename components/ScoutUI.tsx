@@ -3,7 +3,6 @@ import {
   isolateMixedDirectionNode,
   resolveNodeDirection,
   resolveParagraphDirection,
-  resolveTextDirection,
   translateNode,
   translateText,
 } from '@/lib/i18n';
@@ -503,11 +502,12 @@ function PageError({ message, onRetry }: { message: string; onRetry: () => void 
   const language = useScout((s) => s.data.preferences.uiLanguage ?? 'fa');
   const translatedMessage = translateText(message, language);
   const direction = resolveParagraphDirection(translatedMessage, language);
+  const isolatedMessage = isolateMixedDirectionText(translatedMessage, direction);
   return (
     <View style={styles.errorBox}>
       <View style={styles.row}>
         <AlertCircle size={19} color={p.danger} />
-        <Text style={[styles.text, { flex: 1, color: p.danger, writingDirection: direction, textAlign: direction === 'rtl' ? 'right' : 'left' }]}>{translatedMessage}</Text>
+        <Text style={[styles.text, { flex: 1, color: p.danger, writingDirection: direction, textAlign: direction === 'rtl' ? 'right' : 'left' }]}>{isolatedMessage}</Text>
       </View>
       <Pressable onPress={onRetry} accessibilityRole="button" style={styles.errorAction}>
         <Text style={styles.errorActionText}>Retry / dismiss</Text>
@@ -650,7 +650,7 @@ export function Action({
       ) : Icon ? (
         <Icon size={17} color={danger ? p.danger : foreground} strokeWidth={2} />
       ) : null}
-      <Text numberOfLines={2} style={[styles.actionLabel, { color: danger ? p.danger : foreground, writingDirection: direction, textAlign: Icon ? direction === 'rtl' ? 'right' : 'left' : 'center', flex: 1 }]}>{busy ? translateText('Working…', language) : isolatedLabel}</Text>
+      <Text numberOfLines={2} style={[styles.actionLabel, { color: danger ? p.danger : foreground, writingDirection: direction, textAlign: Icon ? direction === 'rtl' ? 'right' : 'left' : 'center', flex: 1 }]}>{busy ? isolateMixedDirectionText(translateText('Working…', language), direction) : isolatedLabel}</Text>
     </Pressable>
   );
 }
@@ -723,7 +723,8 @@ export function Choices<T extends string>({
         {options.map((option) => {
           const active = selected.includes(option);
           const title = translateText(option, language);
-          const itemDirection = resolveTextDirection(title);
+          const itemDirection = resolveParagraphDirection(title, language);
+          const itemLabel = isolateMixedDirectionText(title, itemDirection);
           return (
             <Pressable
               key={option}
@@ -744,7 +745,7 @@ export function Choices<T extends string>({
               ]}
             >
               {active ? <Check size={13} color={p.accent} strokeWidth={2.6} /> : null}
-              <Text style={[styles.choiceLabel, { color: active ? p.accentStrong : p.text, writingDirection: itemDirection, textAlign: itemDirection === 'rtl' ? 'right' : 'left' }]}>{title}</Text>
+              <Text style={[styles.choiceLabel, { color: active ? p.accentStrong : p.text, writingDirection: itemDirection, textAlign: itemDirection === 'rtl' ? 'right' : 'left' }]}>{itemLabel}</Text>
             </Pressable>
           );
         })}
@@ -768,11 +769,15 @@ export function MetricCard({
   const language = useScout((s) => s.data.preferences.uiLanguage ?? 'fa');
   const title = translateText(label, language);
   const description = hint ? translateText(hint, language) : '';
+  const titleDirection = resolveParagraphDirection(title, language);
+  const valueText = String(value);
+  const valueDirection = resolveParagraphDirection(valueText, language);
+  const descriptionDirection = resolveParagraphDirection(description, language);
   return (
     <View style={[styles.metricCard, { backgroundColor: colors.soft, borderColor: colors.line }]}>
-      <Text style={[styles.metricLabel, { color: colors.fill }]}>{title}</Text>
-      <Text style={styles.metricValue}>{value}</Text>
-      {description ? <Text style={styles.muted}>{description}</Text> : null}
+      <Text style={[styles.metricLabel, { color: colors.fill, writingDirection: titleDirection, textAlign: titleDirection === 'rtl' ? 'right' : 'left' }]}>{isolateMixedDirectionText(title, titleDirection)}</Text>
+      <Text style={[styles.metricValue, { writingDirection: valueDirection, textAlign: valueDirection === 'rtl' ? 'right' : 'left' }]}>{isolateMixedDirectionText(valueText, valueDirection)}</Text>
+      {description ? <Text style={[styles.muted, { writingDirection: descriptionDirection, textAlign: descriptionDirection === 'rtl' ? 'right' : 'left' }]}>{isolateMixedDirectionText(description, descriptionDirection)}</Text> : null}
     </View>
   );
 }
@@ -794,6 +799,8 @@ export function QuickAction({
   const language = useScout((s) => s.data.preferences.uiLanguage ?? 'fa');
   const name = translateText(title, language);
   const detail = translateText(description, language);
+  const nameDirection = resolveParagraphDirection(name, language);
+  const detailDirection = resolveParagraphDirection(detail, language);
   return (
     <Pressable
       onPress={() => { void Haptics.selectionAsync(); onPress(); }}
@@ -804,8 +811,8 @@ export function QuickAction({
         <Icon size={19} color={colors.fill} strokeWidth={1.9} />
       </View>
       <View style={{ gap: 3, flex: 1 }}>
-        <Text style={styles.heading}>{name}</Text>
-        <Text style={styles.muted}>{detail}</Text>
+        <Text style={[styles.heading, { writingDirection: nameDirection, textAlign: nameDirection === 'rtl' ? 'right' : 'left' }]}>{isolateMixedDirectionText(name, nameDirection)}</Text>
+        <Text style={[styles.muted, { writingDirection: detailDirection, textAlign: detailDirection === 'rtl' ? 'right' : 'left' }]}>{isolateMixedDirectionText(detail, detailDirection)}</Text>
       </View>
       <ArrowUpRight size={15} color={colors.fill} />
     </Pressable>
@@ -860,6 +867,7 @@ export function Fold({
   const translatedTitle = translateText(title, language);
   const translatedSummary = summary ? translateText(summary, language) : '';
   const direction = resolveParagraphDirection(translatedTitle, language);
+  const summaryDirection = resolveParagraphDirection(translatedSummary, language);
   return (
     <View style={styles.fold}>
       <Pressable
@@ -868,10 +876,10 @@ export function Fold({
         accessibilityState={{ expanded }}
         style={({ pressed }) => [styles.foldTrigger, pressed ? { opacity: 0.72 } : null]}
       >
-        <Text style={[styles.foldLabel, { writingDirection: direction, textAlign: direction === 'rtl' ? 'right' : 'left', flex: 1 }]}>{translatedTitle}</Text>
+        <Text style={[styles.foldLabel, { writingDirection: direction, textAlign: direction === 'rtl' ? 'right' : 'left', flex: 1 }]}>{isolateMixedDirectionText(translatedTitle, direction)}</Text>
         {translatedSummary && !expanded ? (
           <View style={{ maxWidth: '46%', borderRadius: 999, borderWidth: 1, borderColor: p.border, backgroundColor: p.surfaceAlt, paddingHorizontal: 8, paddingVertical: 4 }}>
-            <Text numberOfLines={1} style={{ color: p.muted, fontFamily: 'Inter_600SemiBold', fontSize: 9, lineHeight: 13 }}>{translatedSummary}</Text>
+            <Text numberOfLines={1} style={{ color: p.muted, fontFamily: 'Inter_600SemiBold', fontSize: 9, lineHeight: 13, writingDirection: summaryDirection, textAlign: summaryDirection === 'rtl' ? 'right' : 'left' }}>{isolateMixedDirectionText(translatedSummary, summaryDirection)}</Text>
           </View>
         ) : null}
         <View style={styles.foldIcon}>

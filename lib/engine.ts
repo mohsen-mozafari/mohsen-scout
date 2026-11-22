@@ -290,7 +290,7 @@ export function buildInternalResearch(input: InternalResearchInput): InternalRes
   } else {
     evidence.push({
       id: 'youtube-sample',
-      label: 'YouTube sample',
+      label: text('YouTube sample', 'نمونه یوتیوب'),
       detail: text('No YouTube sample was supplied. Competition has not been checked and no YouTube quota was used by this local analysis.', 'نمونه‌ای از یوتیوب ارائه نشده است. رقابت بررسی نشده و این تحلیل محلی هیچ سهمیه‌ای از یوتیوب مصرف نکرده است.')
     });
   }
@@ -321,7 +321,7 @@ export function buildInternalResearch(input: InternalResearchInput): InternalRes
       title: text('What the latest report actually tells us', 'از تازه‌ترین گزارش چه چیزی می‌دانیم؟') ,
       hook: newestNews
         ? 'با خود گزارش شروع کن: «' + newestNews.title + '». گزارش دقیقاً چه چیزی را ثبت کرده و چه بخشی هنوز برداشت یا تفسیر است؟'
-        : 'برای ساخت ویدئویی مستند درباره ' + topic + '، اول باید یک گزارش یا سند اولیه پیدا کنیم.',
+        : 'برای تبدیل ' + topic + ' به یک ویدئوی مستند، اول باید یک گزارش یا سند اولیه پیدا کنیم.',
       approach: newestNews
         ? 'روایت را از همان گزارش و تاریخ انتشارش شروع کن. آنچه واقعاً اندازه‌گیری شده را از برداشت‌ها جدا نگه دار و عددی که در منبع نیست اضافه نکن.'
         : 'پیش از نگارش، صفحه مأموریت، مقاله یا اطلاعیه رسمی را پیدا کن و مشاهده مستقیم، تاریخ و روش آن را مشخص کن.',
