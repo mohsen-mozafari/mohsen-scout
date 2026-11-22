@@ -62,6 +62,8 @@ export type InternalEngineAngle = {
 };
 
 export type InternalResearchResult = {
+  /** Exact transient YouTube API input; raw pass-through only, never used to derive analysis or scores. */
+  youtubeSample: NonNullable<InternalResearchInput['videos']>;
   topic: string;
   entityCandidates: ResearchEntityCandidate[];
   entityRelations: ResearchEntityRelation[];
@@ -89,6 +91,7 @@ export type InternalResearchResult = {
       undatedNewsCount: number;
       staleNewsCount: number;
       youtubeSampleCount: number;
+      youtubeRawSampleReceived: boolean;
       matchedVideoCount: number;
       allTimeMatchedVideoCount: number;
       recentMatchedVideoCount: number;
@@ -162,6 +165,9 @@ export function buildInternalResearch(input: InternalResearchInput): InternalRes
   const videoWindowDays = Number.isFinite(input.videoWindowDays) ? Math.max(0, Math.min(90, Math.floor(input.videoWindowDays!))) : 30;
   const videoWindowStart = videoWindowDays === 0 ? Number.NEGATIVE_INFINITY : now - videoWindowDays * 86400000;
   const topic = cleanTopic(input.topic);
+  // Preserve the user's current YouTube sample as an isolated raw payload. All
+  // analytical paths below deliberately continue to use independent evidence only.
+  const youtubeSample = input.videos ?? [];
   const fa = input.language === 'fa';
   const text = (english: string, persian: string) => fa ? persian : english;
   const originalNews = [...(input.news ?? [])];
@@ -187,8 +193,8 @@ export function buildInternalResearch(input: InternalResearchInput): InternalRes
   const declaredPublisherCount = Math.max(0, ...news.map((item) => item.sourceCount ?? 0));
   const publisherCount = Math.max(publisherNames.length, declaredPublisherCount);
 
-  // YouTube API records belong to the separate raw-results display only. Ignore legacy
-  // callers that still pass videos so no metadata or derived metrics enter this engine.
+  // Strict derived-data firewall: only `youtubeSample` above receives API records.
+  // Keep every analysis input empty so API metadata/statistics cannot affect findings.
   const inputVideos: NonNullable<InternalResearchInput['videos']> = [];
   const recentVideoCandidates = inputVideos.filter((video) => {
     const published = Date.parse(video.publishedAt);
@@ -293,7 +299,9 @@ export function buildInternalResearch(input: InternalResearchInput): InternalRes
     evidence.push({
       id: 'youtube-sample',
       label: text('YouTube sample', 'نمونه یوتیوب'),
-      detail: text('YouTube API samples and raw metrics are displayed separately and intentionally excluded from this research analysis, entity extraction, confidence and scores.', 'نمونه‌ها و آمار خام API یوتیوب جداگانه نمایش داده می‌شوند و عمداً از تحلیل پژوهش، استخراج موجودیت، confidence و امتیازهای موتور کنار گذاشته شده‌اند.')
+      detail: youtubeSample.length
+        ? text('A raw YouTube API sample reached the engine through its isolated pass-through field. Under the current project policy it is not scored, summarized, correlated with independent sources or sent to external models.', 'نمونه خام API یوتیوب از مسیر مستقل و بدون تحلیل به موتور رسیده است. طبق سیاست فعلی پروژه، این داده امتیازدهی، خلاصه، با منابع مستقل ترکیب یا به مدل بیرونی ارسال نمی‌شود.')
+        : text('No YouTube API sample was supplied to this engine run. The raw sample remains available in its separate report view.', 'در این اجرای موتور نمونه‌ای از API یوتیوب دریافت نشد. نمونه خام در صفحه گزارش جداگانه در دسترس است.')
     });
   }
 
@@ -365,14 +373,14 @@ export function buildInternalResearch(input: InternalResearchInput): InternalRes
   const limitationsList = [
     ...(fa ? [
       'این موتور به‌صورت محلی و بر پایه شواهد بارگذاری‌شده در برنامه اجرا می‌شود و در این مرحله منبع تازه‌ای دریافت نمی‌کند.',
-      'داده‌های API یوتیوب فقط در بخش خام جداگانه نمایش داده می‌شوند و وارد استخراج موجودیت، confidence یا نتیجه‌گیری این موتور نمی‌شوند.',
+      'داده‌های API یوتیوب به فیلد مستقل youtubeSample می‌رسند، اما وارد استخراج موجودیت، confidence یا نتیجه‌گیری این موتور نمی‌شوند.',
       'زاویه‌های محتوایی فرضیه‌اند، نه یافته علمی و نه پیش‌بینی بازدید، رشد یا وایرال شدن.',
-      'پوشش ناشران و بازدید مقاله‌های ویکی‌مدیا فقط زمینه مستقل هستند؛ نمونه خام YouTube از تحلیل و امتیازهای این موتور کنار گذاشته شده است.',
+      'پوشش ناشران و بازدید مقاله‌های ویکی‌مدیا زمینه مستقل هستند؛ نمونه خام YouTube فقط در مسیر دریافت جداگانه می‌ماند و در تحلیل و امتیازها دخالت ندارد.',
     ] : [
       'This engine runs locally on evidence already loaded in the app; it does not fetch new sources.',
-      'YouTube API records are displayed only in their separate raw-results view and are excluded from entity extraction, confidence and engine conclusions.',
+      'YouTube API records are received in the isolated youtubeSample pass-through only and are excluded from entity extraction, confidence and engine conclusions.',
       'Editorial angles are hypotheses, not scientific findings or predictions of views, growth or virality.',
-      'Publisher coverage and Wikimedia article pageviews are independent context signals; raw YouTube samples are excluded from this engine and its scores.',
+      'Publisher coverage and Wikimedia article pageviews are independent context signals; raw YouTube samples reach only the isolated pass-through and remain excluded from scores.',
     ]),
     ...(matchedNews.length < allNews.length
       ? [text('Unmatched publisher records remain in contextual evidence and source audits; they are not treated as direct support for the requested topic.', 'خبرهای بدون تطبیق مستقیم در شواهد زمینه‌ای و ممیزی منابع باقی می‌مانند، اما پشتیبانی مستقیم از موضوع محسوب نمی‌شوند.')]
@@ -488,6 +496,7 @@ export function buildInternalResearch(input: InternalResearchInput): InternalRes
     undatedNewsCount: sourceQuality.undatedItems,
     staleNewsCount: sourceQuality.staleItems,
     youtubeSampleCount: inputVideos.length,
+    youtubeRawSampleReceived: youtubeSample.length > 0,
     matchedVideoCount: recentMatchedVideoCount,
     allTimeMatchedVideoCount: videos.length,
     recentMatchedVideoCount,
@@ -548,7 +557,7 @@ export function buildInternalResearch(input: InternalResearchInput): InternalRes
       'سناریوی مشروط سوم: اگر جهت سری زمانی عوض شود، نباید الگوی فعلی را به آینده تعمیم داد.',
     ].slice(0, trend.scenarios.length) : trend.scenarios,
   };
-  return { topic, entityCandidates, entityRelations, summary, evidence, angles, verificationQuestions, limitations: limitationsList, intelligence };
+  return { youtubeSample, topic, entityCandidates, entityRelations, summary, evidence, angles, verificationQuestions, limitations: limitationsList, intelligence };
 }
 export function buildIdeas(_report: Report, _language: 'fa' | 'en' = 'en'): Idea[] {
   // This legacy helper receives only a Report, which has raw YouTube records but no

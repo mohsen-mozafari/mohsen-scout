@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { getEditorialPriorityBand, selectTopCurrentEditorialPriorities, summarizeEditorialPriority } from '../lib/editorial-priority';
+import { compareEditorialPriority, getEditorialPriorityBand, selectTopCurrentEditorialPriorities, summarizeEditorialPriority } from '../lib/editorial-priority';
 
 void test('editorial priority summary counts scored and unscored active ideas in the visible bands', () => {
   const summary = summarizeEditorialPriority([
@@ -42,6 +42,20 @@ void test('editorial priority summary handles an empty dashboard', () => {
   });
 });
 
+
+void test('dashboard and Ideas use one shared tie-break order for identical scores', () => {
+  const items = [
+    { id: 'newest', engineScore: 80, assessment: 'Worth Exploring', createdAt: 300 },
+    { id: 'strong-evidence', engineScore: 80, assessment: 'Strong Opportunity', videoIds: ['v1'], reportId: 'r1', createdAt: 100 },
+    { id: 'weak-evidence', engineScore: 80, assessment: 'Promising', createdAt: 200 },
+  ];
+  assert.deepEqual([...items].sort(compareEditorialPriority).map((item) => item.id), [
+    'strong-evidence', 'weak-evidence', 'newest',
+  ]);
+  assert.deepEqual(selectTopCurrentEditorialPriorities(items, 3).map((item) => item.id), [
+    'strong-evidence', 'weak-evidence', 'newest',
+  ]);
+});
 
 void test('live top opportunities immediately replace completed, rejected and archived cards', () => {
   const ranked = selectTopCurrentEditorialPriorities([

@@ -500,6 +500,9 @@ export const useScout = create<State>((set, get) => ({
         topic,
         news: engineNews,
         wiki,
+        // The raw API sample reaches the engine's isolated pass-through slot;
+        // the engine must not derive scores, summaries or editorial ideas from it.
+        videos: youtubeResult?.videos ?? [],
         priorMemory,
         language: currentData.preferences.uiLanguage ?? 'fa',
       });

@@ -842,14 +842,25 @@ export function Empty({
   );
 }
 
-export function ErrorBox({ message, onRetry }: { message: string; onRetry: () => void }) {
+export function ErrorBox({
+  message,
+  onRetry,
+  onDismiss,
+}: {
+  message: string;
+  onRetry?: () => void;
+  onDismiss?: () => void;
+}) {
   return (
     <View style={styles.errorBox}>
       <View style={styles.row}>
         <AlertCircle size={18} color={p.danger} />
         <Txt>{message}</Txt>
       </View>
-      <Action danger secondary onPress={onRetry}>Retry / dismiss</Action>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+        {onRetry ? <Action danger secondary onPress={onRetry}>Retry</Action> : null}
+        {onDismiss ? <Action secondary onPress={onDismiss}>Dismiss</Action> : null}
+      </View>
     </View>
   );
 }

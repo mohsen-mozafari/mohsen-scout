@@ -751,7 +751,7 @@ export default function Settings() {
           Run mock regression checks
         </Action>
       </Fold>
-      {Boolean(op.error) && <ErrorBox message={op.error} onRetry={op.clear} />}
+      {Boolean(op.error) && <ErrorBox message={op.error} onDismiss={op.clear} />}
       {Boolean(op.message) && <Txt muted>{op.message}</Txt>}
     </Page>
   );

@@ -80,6 +80,7 @@ function engineText(engine: ResearchActivityEvent['engine'], fa: boolean): strin
 function statusColor(status: ResearchActivityEvent['status']): string {
   if (status === 'success') return p.success;
   if (status === 'running') return p.cyan;
+  if (status === 'partial' || status === 'empty') return p.warning;
   if (status === 'error') return p.danger;
   return p.muted;
 }

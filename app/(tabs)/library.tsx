@@ -161,7 +161,7 @@ export default function Library() {
                 </View>
               </View>
             ) : null}
-            {Boolean(op.error) && <ErrorBox message={op.error} onRetry={op.clear} />}
+            {Boolean(op.error) && <ErrorBox message={op.error} onDismiss={op.clear} />}
             {Boolean(op.message) && <Txt muted>{op.message}</Txt>}
             {editing ? (
               <View style={styles.panel}>

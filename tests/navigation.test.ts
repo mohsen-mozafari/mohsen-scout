@@ -10,6 +10,7 @@ void test('Settings is a root route, not a bottom tab, and remains reachable fro
   const rootLayout = readFileSync(resolve(root, 'app/_layout.tsx'), 'utf8');
   const dashboard = readFileSync(resolve(root, 'app/(tabs)/index.tsx'), 'utf8');
   const sharedUi = readFileSync(resolve(root, 'components/ScoutUI.tsx'), 'utf8');
+  const trendIntelligence = readFileSync(resolve(root, 'app/trend-intelligence.tsx'), 'utf8');
 
   assert.equal(SETTINGS_ROUTE, '/settings');
   assert.equal(isSettingsRoute('/settings'), true);
@@ -23,4 +24,6 @@ void test('Settings is a root route, not a bottom tab, and remains reachable fro
   assert.doesNotMatch(tabsLayout, /<Tabs\.Screen\s+name="settings"/);
   assert.doesNotMatch(dashboard, /SETTINGS_ROUTE|router\.(?:push|navigate)\(['"]\/settings/);
   assert.match(sharedUi, /router\.navigate\(SETTINGS_ROUTE\)/);
+  assert.match(trendIntelligence, /router\.push\(SETTINGS_ROUTE\)/);
+  assert.doesNotMatch(trendIntelligence, /\(tabs\)\/settings/);
 });

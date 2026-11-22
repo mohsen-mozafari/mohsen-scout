@@ -1,20 +1,7 @@
 import { fingerprintText } from './api';
+import { compareEditorialPriority } from './editorial-priority';
 import { matchesResearchTerms } from './intelligence';
 import { RETENTION_MS, type Idea, type Opinion, type Report, type Video } from './types';
-
-const assessmentOrder: Record<Idea['assessment'], number> = {
-  'Strong Opportunity': 5,
-  Promising: 4,
-  'Worth Exploring': 3,
-  Uncertain: 2,
-  'Highly Competitive': 1,
-};
-
-function evidenceWeight(idea: Idea): number {
-  return (idea.videoIds.length ? idea.videoIds.length : 0) +
-    (idea.reportId ? 1 : 0) +
-    (idea.sourceUrl ? 1 : 0);
-}
 
 export type EngineVideoEvidence = Omit<
   Pick<Video, 'id' | 'title' | 'description' | 'channel' | 'publishedAt' | 'viewCount' | 'likeCount' | 'fetchedAt'>,
@@ -68,12 +55,7 @@ export function rankDashboardIdeas(ideas: readonly Idea[]): Idea[] {
       idea.status !== 'Completed Research',
     )
     .slice()
-    .sort((a, b) =>
-      (b.engineScore ?? -1) - (a.engineScore ?? -1) ||
-      assessmentOrder[b.assessment] - assessmentOrder[a.assessment] ||
-      evidenceWeight(b) - evidenceWeight(a) ||
-      b.createdAt - a.createdAt,
-    );
+    .sort(compareEditorialPriority);
 }
 
 export function chooseBestIdea(ideas: readonly Idea[]): Idea | undefined {

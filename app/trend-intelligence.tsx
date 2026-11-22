@@ -3,6 +3,7 @@ import { Linking, View, Text } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { Page, Panel, Heading, Txt, Field, Action, Choices, styles, ErrorBox, useOperation } from '@/components/ScoutUI';
 import { useScout } from '@/lib/store';
+import { SETTINGS_ROUTE } from '@/lib/routes';
 import { searchYouTubeSample, type YouTubeSampleVideo } from '@/lib/api';
 import { getKey } from '@/lib/vault';
 import { MediaPreview } from '@/components/MediaPreview';
@@ -170,7 +171,7 @@ export default function TrendIntelligence() {
       {videos.length > 0 && !nextPageToken && <Txt muted>YouTube has no next page for this query and filter set.</Txt>}
       {Boolean(op.error) && <ErrorBox message={op.error} onRetry={run} />}
       {Boolean(op.message) && <Txt muted>{op.message}</Txt>}
-      <Action secondary onPress={() => router.push('/(tabs)/settings')}>Manage YouTube API key and research defaults</Action>
+      <Action secondary onPress={() => router.push(SETTINGS_ROUTE)}>Manage YouTube API key and research defaults</Action>
     </Page>
   );
 }

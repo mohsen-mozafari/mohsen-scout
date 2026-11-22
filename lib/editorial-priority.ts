@@ -25,10 +25,34 @@ export function getEditorialPriorityBand(score: number): EditorialPriorityBand {
 
 export type EditorialPriorityCandidate = {
   engineScore?: number | null;
+  assessment?: string;
+  videoIds?: readonly string[];
+  reportId?: string;
+  sourceUrl?: string;
   archived?: boolean;
   status?: string;
   createdAt?: number;
 };
+
+const assessmentOrder: Record<string, number> = {
+  'Strong Opportunity': 5,
+  Promising: 4,
+  'Worth Exploring': 3,
+  Uncertain: 2,
+  'Highly Competitive': 1,
+};
+
+function evidenceWeight(idea: EditorialPriorityCandidate): number {
+  return (idea.videoIds?.length ?? 0) + (idea.reportId ? 1 : 0) + (idea.sourceUrl ? 1 : 0);
+}
+
+/** One deterministic ordering shared by the dashboard, featured idea and Ideas list. */
+export function compareEditorialPriority<T extends EditorialPriorityCandidate>(left: T, right: T): number {
+  return (right.engineScore ?? -1) - (left.engineScore ?? -1) ||
+    (assessmentOrder[right.assessment ?? ''] ?? 0) - (assessmentOrder[left.assessment ?? ''] ?? 0) ||
+    evidenceWeight(right) - evidenceWeight(left) ||
+    (right.createdAt ?? 0) - (left.createdAt ?? 0);
+}
 
 /** Selects the live recommendation rail; completed, rejected and archived ideas never occupy a slot. */
 export function selectTopCurrentEditorialPriorities<T extends EditorialPriorityCandidate>(
@@ -44,10 +68,7 @@ export function selectTopCurrentEditorialPriorities<T extends EditorialPriorityC
       idea.status !== 'Completed Research' &&
       typeof idea.engineScore === 'number' && Number.isFinite(idea.engineScore),
     )
-    .sort((left, right) =>
-      (right.engineScore ?? -1) - (left.engineScore ?? -1) ||
-      (right.createdAt ?? 0) - (left.createdAt ?? 0),
-    )
+    .sort(compareEditorialPriority)
     .slice(0, maximum);
 }
 

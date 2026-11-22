@@ -540,7 +540,7 @@ export default function Detail() {
         <Txt muted>Your personal link and notes are retained; API metadata is not available.</Txt>
       )}
       {Boolean(savedLink?.note) && <Txt>{savedLink?.note}</Txt>}
-      {Boolean(op.error) && <ErrorBox message={op.error} onRetry={op.clear} />}
+      {Boolean(op.error) && <ErrorBox message={op.error} onDismiss={op.clear} />}
       {Boolean(op.message) && <Txt muted>{op.message}</Txt>}
     </Page>
   );

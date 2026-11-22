@@ -485,7 +485,7 @@ function DiscoveryDashboardReady() {
     sourceUrls: new Set(chartNews.filter((item) => scoreResearchText(chartTopic, item.title, item.summary) > 0).map((item) => item.url)),
     topic: chartTopic,
   }), [ideas, chartNews, chartTopic]);
-  const bestIdea = chartIdeas[0];
+  const bestIdea = chartIdeas.find((idea) => typeof idea.engineScore === 'number' && Number.isFinite(idea.engineScore));
   const ideaLinkage = useMemo(() => ({
     active: ideas.filter((idea) => !idea.archived && idea.status !== 'Rejected Ideas' && idea.status !== 'Completed Research').length,
     generated: ideas.filter((idea) => idea.engineGenerated === true).length,
@@ -524,8 +524,8 @@ function DiscoveryDashboardReady() {
             <BadgeText>{fa ? 'شروع تحقیق' : 'START A RESEARCH RUN'}</BadgeText>
             <Heading>{fa ? 'موضوع ویدئوی بعدی‌ات را پیدا کن' : 'Find your next video topic'}</Heading>
             <Txt muted>{fa
-              ? 'جست‌وجو فقط پس از اقدام تو انجام می‌شود. نتایج نامرتبط حذف می‌شوند و موتور ایده فقط از شواهد همین نمونه استفاده می‌کند.'
-              : 'Search runs only after you start it. Weakly related results are excluded, and ideas are tied to evidence in the returned sample.'}</Txt>
+              ? 'جست‌وجوی رسمی YouTube فقط پس از اقدام تو انجام می‌شود. نمونه و آمار خام در لایه جدا می‌مانند؛ ایده‌ها و امتیاز تحریری فقط بر پایه منابع مستقل ناشران، وب و ویکی‌مدیا ساخته می‌شوند.'
+              : 'Official YouTube search runs only after you start it. Raw samples and stats stay in a separate lane; editorial ideas and scores use independent publisher, web and Wikimedia evidence only.'}</Txt>
             <Field
               label={fa ? 'موضوع یا کلیدواژه' : 'Topic or keyword'}
               value={quickTopic}
@@ -753,7 +753,7 @@ function DiscoveryDashboardReady() {
                 <View key={name} style={{ gap: 2, borderBottomWidth: 1, borderBottomColor: p.borderSoft, paddingVertical: 7 }}>
                   <View style={[styles.rowBetween, { flexWrap: 'wrap' }]}>
                     <Text style={{ color: p.text, fontSize: 12, fontWeight: '700' }}>{name === 'YouTube' && fa ? 'API یوتیوب' : name === 'Sources' && fa ? 'خوراک‌های رسمی' : name === 'Wikimedia' && fa ? 'صفحه‌نمای ویکی‌مدیا' : name === 'Engine' && fa ? 'موتور داخلی' : name === 'AI' && fa ? 'نظر مستقل هوش مصنوعی' : name}</Text>
-                    <Text style={{ color: item.failed ? p.danger : item.partial ? p.warning : p.success, fontSize: 11, fontWeight: '700' }}>{rate}</Text>
+                    <Text style={{ color: done === 0 ? p.muted : item.succeeded / done >= 0.9 ? p.success : item.succeeded / done >= 0.5 ? p.warning : p.danger, fontSize: 11, fontWeight: '700' }}>{rate}</Text>
                   </View>
                   <Txt muted>{item.attempted + (fa ? ' تلاش · ' : ' attempted · ') + item.succeeded + (fa ? ' موفق · ' : ' success · ') + item.partial + (fa ? ' ناقص · ' : ' partial · ') + item.failed + (fa ? ' خطا' : ' errors')}</Txt>
                   <Txt muted>{(item.lastStartedAt

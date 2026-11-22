@@ -31,7 +31,7 @@ import { createSearchQuery, indexSearchText, matchesSearchIndex, normalizeSearch
 import { buildResearchInterestProfile } from '@/lib/intelligence';
 import { buildResearchActivityFeedbackProfile, buildResearchActivityResults, buildResearchActivitySourceExclusions, explainResearchActivitySourceExclusion } from '@/lib/research-activity';
 import { palette as p } from '@/lib/theme';
-import { getEditorialPriorityBand, EDITORIAL_PRIORITY_CONFIG, selectTopCurrentEditorialPriorities, type EditorialPriorityBand } from '@/lib/editorial-priority';
+import { getEditorialPriorityBand, EDITORIAL_PRIORITY_CONFIG, selectTopCurrentEditorialPriorities, compareEditorialPriority, type EditorialPriorityBand } from '@/lib/editorial-priority';
 import { setSelectedIdeaId } from '@/lib/idea-selection';
 import { recordRuntimeFinish, recordRuntimeStart } from '@/lib/runtime-metrics';
 import { MediaPreview } from '@/components/MediaPreview';
@@ -179,9 +179,7 @@ export default function Opportunities() {
     }), [matchingIdeas, scoreFilter]);
   const sortedFiltered = useMemo(() => [...filtered].sort((a, b) => {
     if (sort === 'Score') {
-      const scoreA = typeof a.engineScore === 'number' && Number.isFinite(a.engineScore) ? a.engineScore : -1;
-      const scoreB = typeof b.engineScore === 'number' && Number.isFinite(b.engineScore) ? b.engineScore : -1;
-      return scoreB - scoreA || b.createdAt - a.createdAt;
+      return compareEditorialPriority(a, b);
     }
     if (sort === 'Newest') return b.createdAt - a.createdAt;
     if (sort === 'Oldest') return a.createdAt - b.createdAt;
@@ -575,21 +573,25 @@ export default function Opportunities() {
                 </View>
               </View>
             ) : null}
-            {Boolean(op.error) && <ErrorBox message={op.error} onRetry={op.clear} />}
+            {Boolean(op.error) && <ErrorBox message={op.error} onDismiss={op.clear} />}
           </View>
 
         }
         renderItem={({ item }) => (
           <IdeaListItem item={item} fa={fa} language={preferences.uiLanguage ?? 'fa'} />
         )}
-        ListEmptyComponent={sortedFiltered.length ? undefined : (
+        ListEmptyComponent={sortedFiltered.length ? undefined : displayableIdeas.length ? (
           <Empty
-            title={displayableIdeas.length ? 'No ideas match this view.' : 'Keep your ideas and decisions here.'}
-            action={displayableIdeas.length ? 'Clear filters' : 'Create an idea'}
-            onPress={displayableIdeas.length ? () => {
+            title="No ideas match this view."
+            action="Clear filters"
+            onPress={() => {
               setSearch(''); setStatus('All'); setArchive(false); setCategory('All angles'); setScoreFilter('all');
-            } : openCreate}
+            }}
           />
+        ) : (
+          <View style={{ paddingVertical: 24, alignItems: 'center' }}>
+            <Txt muted>Keep your ideas and decisions here. Use the New idea action above to create your first idea.</Txt>
+          </View>
         )}
       />
     </Page>
