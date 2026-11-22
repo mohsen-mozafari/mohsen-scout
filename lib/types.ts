@@ -235,8 +235,49 @@ export type FeedRegistryRecord = {
     imageUrl?: string;
   }[];
 };
+export type ResearchActivityEngine =
+  | 'YouTube Data API'
+  | 'Firecrawl Search'
+  | 'Publisher Feeds'
+  | 'Wikimedia'
+  | 'Internal Engine'
+  | 'AI Provider Review';
+export type ResearchActivityStatus = 'running' | 'success' | 'partial' | 'empty' | 'error' | 'skipped';
+export type ResearchActivityFeedback = 'useful' | 'irrelevant' | 'duplicate' | 'weak-source';
+export type ResearchActivityResult = {
+  id: string;
+  title: string;
+  sourceName: string;
+  url?: string;
+  summary: string;
+  publishedAt?: string;
+  relevanceScore: number;
+  relevanceBand: 'high' | 'medium' | 'low';
+  sourceAssessment: 'configured-feed' | 'not-assessed';
+  includedInAnalysis: boolean;
+  decisionReason: string;
+  feedback?: ResearchActivityFeedback;
+};
+export type ResearchActivityEvent = {
+  id: string;
+  engine: ResearchActivityEngine;
+  query: string;
+  topic: string;
+  niche: string;
+  startedAt: number;
+  completedAt?: number;
+  durationMs?: number;
+  status: ResearchActivityStatus;
+  resultCount: number;
+  analyzedCount: number;
+  results: ResearchActivityResult[];
+  warnings: string[];
+  error?: string;
+  reportId?: string;
+};
 export type LocalData = {
   feedRegistry: FeedRegistryRecord[];
+  researchActivity: ResearchActivityEvent[];
   researchMemory: ResearchMemoryEntry[];
   preferences: Preferences;
   ideas: Idea[];
@@ -252,6 +293,7 @@ export const RETENTION_MS = 29 * 24 * 60 * 60 * 1000;
 export function defaults(): LocalData {
   return {
     feedRegistry: [],
+    researchActivity: [],
     researchMemory: [],
     preferences: {
       uiLanguage: 'fa',

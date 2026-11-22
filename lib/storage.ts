@@ -10,7 +10,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 let database: Promise<SQLite.SQLiteDatabase> | undefined;
 
 const LEGACY_DOMAINS: Record<'personal' | 'youtube', readonly RecordDomain[]> = {
-  personal: ['ideas', 'links', 'notes', 'opinions', 'researchMemory'],
+  personal: ['ideas', 'links', 'notes', 'opinions', 'researchMemory', 'researchActivity'],
   youtube: ['reports', 'videos'],
 };
 

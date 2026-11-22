@@ -2,7 +2,7 @@ import type { LocalData, Report, Video } from './types';
 import { RETENTION_MS } from './types';
 
 export const RECORD_DOMAINS = [
-  'ideas', 'links', 'notes', 'opinions', 'researchMemory', 'reports', 'videos',
+  'ideas', 'links', 'notes', 'opinions', 'researchMemory', 'researchActivity', 'reports', 'videos',
 ] as const;
 export type RecordDomain = (typeof RECORD_DOMAINS)[number];
 export type RecordCounts = Record<RecordDomain, number>;
@@ -53,7 +53,8 @@ export function recordUpdatedAt(domain: RecordDomain, value: unknown, now = Date
   const candidate = domain === 'links' ? record.savedAt
     : domain === 'notes' ? record.updatedAt
       : domain === 'researchMemory' ? record.updatedAt
-        : domain === 'videos' ? record.fetchedAt
+        : domain === 'researchActivity' ? record.startedAt
+          : domain === 'videos' ? record.fetchedAt
           : domain === 'reports' ? record.createdAt
             : record.createdAt;
   return typeof candidate === 'number' && Number.isFinite(candidate) && candidate >= 0 ? candidate : now;

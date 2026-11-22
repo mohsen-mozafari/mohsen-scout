@@ -2,7 +2,7 @@ import type { LocalData } from './types';
 
 export type LocalDataEntry = { key: keyof LocalData; value: LocalData[keyof LocalData] };
 export const LOCAL_DATA_KEYS: (keyof LocalData)[] = [
-  'feedRegistry', 'researchMemory', 'preferences', 'ideas', 'links', 'notes', 'opinions', 'reports', 'videos', 'budget',
+  'feedRegistry', 'researchActivity', 'researchMemory', 'preferences', 'ideas', 'links', 'notes', 'opinions', 'reports', 'videos', 'budget',
 ];
 
 /** Compare immutable domain references; never serialize unrelated large data to find a diff. */
