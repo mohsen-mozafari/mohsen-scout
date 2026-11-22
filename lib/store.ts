@@ -480,7 +480,6 @@ export const useScout = create<State>((set, get) => ({
         if (!topic) return { ...data, ideas };
 
         const now = Date.now();
-        const metadataTtlMs = 29 * 24 * 60 * 60 * 1000;
         const news = getCachedSpaceNews(data.feedRegistry, data.preferences.spaceNewsSources);
         const priorMemory = data.researchMemory.find(
           (entry) => normalizeResearchText(entry.topic) === normalizeResearchText(topic),

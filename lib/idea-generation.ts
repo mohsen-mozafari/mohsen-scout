@@ -440,7 +440,6 @@ export function generateEditorialIdeas(input: GenerateEditorialIdeasInput): Idea
       title: item.title,
       text: item.title,
       kind: 'history' as const,
-      publishedAt: item.publishedAt,
       sourceId: item.sourceId,
       sourceName: item.sourceName,
       sourceUrl: item.sourceUrl,
@@ -519,7 +518,6 @@ export function generateEditorialIdeas(input: GenerateEditorialIdeasInput): Idea
   // A single isolated record is not enough to justify an automated editorial idea.
   if (topicRelevantDocuments.length < 2) return [];
   const topicRelevantNews = news.filter((item) => scoreResearchText(topic, item.title, item.summary) > 0);
-  const topicRelevantVideos = videos.filter((item) => scoreResearchText(topic, item.title, item.description ?? '') > 0);
   const topicRelevantHistory = historyDocuments.filter((item) => scoreResearchText(topic, item.title, item.text) > 0);
   const relevantIndependentContext = independentContext.filter((item) =>
     scoreResearchText(topic, item.title, item.summary ?? '') > 0,
@@ -745,7 +743,6 @@ export function generateEditorialIdeas(input: GenerateEditorialIdeasInput): Idea
       existing.some((idea) => ideaHasSameMeaning(candidate, idea, topic)) ||
       output.some((idea) => ideaHasSameMeaning(candidate, idea, topic))) continue;
     usedTitles.add(normalizedTitle);
-    const relatedVideoIds: string[] = [];
     const evidenceScope = [
       news.length ? (language === 'fa'
         ? news.length + ' خبر دریافتی؛ ' + topicRelevantNews.length + ' مورد هم‌موضوع'

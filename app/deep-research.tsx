@@ -78,7 +78,7 @@ export default function DeepResearch() {
     warnings.push(...newsResult.warnings);
     if (cachedNews.length) warnings.push(preferences.uiLanguage === 'fa' ? 'شواهد خبری تازه از پرونده محلی موضوع دوباره استفاده شد؛ درخواست دیگری برای خوراک خبری ارسال نشد.' : 'Reused recent publisher evidence from the local topic dossier; no additional feed request was made.');
     let webResults: WebResearchItem[] = [];
-    if (preferences.webResearchEnabled !== false) {
+    if (preferences.webResearchEnabled) {
       try {
         const firecrawlKey = await getKey('firecrawl').catch(() => undefined);
         const web = await fetchWebResearch(query, {

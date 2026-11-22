@@ -140,7 +140,7 @@ void test('local idea analysis explains evidence, gaps and next actions without 
     ...createManualIdea('James Webb exoplanet atmosphere', 'Explain how spectra can reveal an exoplanet atmosphere.', '', 'Germany', ['en']),
     sourceUrl: 'https://www.nasa.gov/example',
     evidenceSources: [{
-      sourceType: 'publisher',
+      sourceType: 'publisher' as const,
       sourceName: 'NASA',
       title: 'James Webb exoplanet atmosphere spectroscopy source',
       summary: 'The official source describes telescope observations and their measurement limits.',

@@ -6,7 +6,7 @@ import { structuredSecondOpinionPrompt } from '../lib/api';
 
 const publishedAt = '2026-11-20T12:00:00.000Z';
 
-test('idea generation ignores legacy YouTube samples and scores independent publisher evidence only', () => {
+void test('idea generation ignores legacy YouTube samples and scores independent publisher evidence only', () => {
   const ideas = generateEditorialIdeas({
     topic: 'Mars Sample Return',
     region: 'United States',
@@ -46,15 +46,22 @@ test('idea generation ignores legacy YouTube samples and scores independent publ
   assert.ok(ideas.every((idea) => !/MOCK YouTube|9999999|123456/.test(idea.concept + idea.note)));
 });
 
-test('Firecrawl keyless search uses independent web/news results and excludes YouTube domains', async () => {
+void test('Firecrawl keyless search uses independent web/news results and excludes YouTube domains', async () => {
   let requestBody: Record<string, unknown> | undefined;
   let authorization: string | null = null;
   const result = await fetchWebResearch('Mars Sample Return', {
     limit: 6,
     days: 7,
     fetcher: async (url, init) => {
-      assert.equal(String(url), 'https://api.firecrawl.dev/v2/search');
-      requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      const requestUrl = url instanceof URL ? url.href : typeof url === 'string' ? url : url.url;
+      assert.equal(requestUrl, 'https://api.firecrawl.dev/v2/search');
+      const body = init?.body;
+      if (typeof body !== 'string') throw new Error('Expected a JSON request body.');
+      const parsed: unknown = JSON.parse(body);
+      if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+        throw new Error('Expected a JSON object request body.');
+      }
+      requestBody = parsed;
       authorization = new Headers(init?.headers).get('Authorization');
       return new Response(JSON.stringify({
         success: true,
@@ -71,8 +78,10 @@ test('Firecrawl keyless search uses independent web/news results and excludes Yo
     },
   });
   assert.deepEqual(requestBody?.sources, ['web', 'news']);
-  assert.ok(Array.isArray(requestBody?.excludeDomains));
-  assert.ok((requestBody?.excludeDomains as string[]).includes('youtube.com'));
+  const excludeDomains = requestBody?.excludeDomains;
+  assert.ok(Array.isArray(excludeDomains));
+  if (!Array.isArray(excludeDomains)) throw new Error('Expected domain exclusion list.');
+  assert.ok(excludeDomains.includes('youtube.com'));
   assert.equal(requestBody?.tbs, 'qdr:w');
   assert.equal(authorization, null);
   assert.equal(requestBody?.query, 'Mars Sample Return');
@@ -80,7 +89,7 @@ test('Firecrawl keyless search uses independent web/news results and excludes Yo
   assert.ok(result.items.every((item) => !/youtube\.com|youtu\.be/i.test(item.url)));
 });
 
-test('external review prompt contains independent evidence and excludes YouTube URLs', () => {
+void test('external review prompt contains independent evidence and excludes YouTube URLs', () => {
   const prompt = structuredSecondOpinionPrompt(
     'Mars Sample Return',
     'Explain the mission and its unresolved technical questions.',
