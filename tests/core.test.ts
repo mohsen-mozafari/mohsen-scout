@@ -1186,7 +1186,7 @@ void test('Internal engine ignores YouTube metadata in recent and all-time resea
   assert.equal(allTime.recentMatchedVideoCount, 0);
   assert.equal(allTime.outsideVideoWindowCount, 0);
   assert.ok(result.evidence.some((item) => item.id === 'retrieved-news-headlines' && item.detail.includes('Artemis')), 'unmatched publisher records remain visible in the contextual evidence audit');
-  assert.ok(result.evidence.some((item) => item.id === 'youtube-sample' && item.detail.includes('9,000')));
+  assert.ok(result.evidence.some((item) => item.id === 'youtube-sample' && item.detail.includes('intentionally excluded')));
 });
 
 void test('Topic relevance ranks a direct publisher match above unrelated feed context', () => {
