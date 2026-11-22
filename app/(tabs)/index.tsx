@@ -17,7 +17,7 @@ import { buildResearchInterestProfile, normalizeResearchText, scoreResearchText 
 import { getTopicDossier } from '@/lib/topic-dossier';
 import { VideoRow } from '@/components/VideoRow';
 import { collectEngineVideoEvidence, engineReviewCacheKey, findCachedEngineReview, selectDashboardIdeas, selectDashboardVideos } from '@/lib/dashboard';
-import { fingerprintText, getFreeModels, getOpenRouterDailyQuota, formatStructuredSecondOpinion, structuredSecondOpinionPrompt, localDateKey, nextOpenRouterUsage, selectFreeModel } from '@/lib/api';
+import { fingerprintText, getFreeModels, getOpenRouterDailyQuota, formatStructuredSecondOpinion, structuredSecondOpinionPrompt, localDateKey, nextOpenRouterUsage, selectFreeModel, type YouTubeSampleVideo } from '@/lib/api';
 import { getKey } from '@/lib/vault';
 import { requestSecondOpinionWithFallback, type SecondOpinionProviderConfig } from '@/lib/ai-gateway';
 import { ResearchOverviewChart } from '@/components/ResearchOverviewChart';
@@ -416,6 +416,7 @@ function DiscoveryDashboardReady() {
           priorMemory,
           language: preferences.uiLanguage ?? 'fa',
           ...(reportWiki ? { wiki: reportWiki } : {}),
+          videos: engineVideoEvidence,
           videoWindowDays: report.input.days,
         });
         if (active) setReportAnalysisState({ id: report.id, result });
@@ -429,7 +430,7 @@ function DiscoveryDashboardReady() {
       active = false;
       clearTimeout(timer);
     };
-  }, [latestReportId, engineNews, preferences.uiLanguage, fa]);
+  }, [latestReportId, engineNews, engineVideoEvidence, preferences.uiLanguage, fa]);
 
   const latestReportAnalysis = reportAnalysisState?.id === latestReportId
     ? reportAnalysisState.result
@@ -449,6 +450,23 @@ function DiscoveryDashboardReady() {
   const feedVideos = useMemo(
     () => selectDashboardVideos(latestReportVideoRecords ?? [], feedTopic, nicheTerms, dashboardNow, 12),
     [latestReportVideoRecords, feedTopic, nicheTerms, dashboardNow],
+  );
+  const chartVideos = useMemo<YouTubeSampleVideo[]>(
+    () => (latestReportVideoRecords ?? []).slice(0, 25).map((video) => ({
+      id: video.id,
+      title: video.title,
+      description: video.description,
+      channel: video.channel,
+      channelId: '',
+      publishedAt: video.publishedAt,
+      thumbnailUrl: video.thumbnail,
+      viewCount: video.viewCount ?? null,
+      likeCount: video.likeCount ?? null,
+      channelSubscriberCount: null,
+      channelVideoCount: null,
+      url: 'https://www.youtube.com/watch?v=' + video.id,
+    })),
+    [latestReportVideoRecords],
   );
 
   const audit = deskAnalysis?.intelligence.selfEvaluation;
@@ -493,7 +511,7 @@ function DiscoveryDashboardReady() {
           topic={chartTopic}
           news={chartNews}
           wiki={chartWiki}
-          videos={[]}
+          videos={chartVideos}
           language={preferences.uiLanguage ?? 'fa'}
           selectedIdeaId={selectedIdeaId}
           secondOpinion={chartAnalysis

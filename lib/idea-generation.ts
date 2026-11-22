@@ -131,7 +131,7 @@ function buildCandidate(
   topic: string,
   anchor: string,
   fa: boolean,
-  sourceMode: 'news' | 'context' | 'history',
+  sourceMode: 'news' | 'context' | 'history' | 'topic',
 ): Candidate {
   const term = displayTerm(anchor || topic);
   const titles: Record<IdeaGenerationCategory, string> = {
@@ -233,7 +233,9 @@ function buildCandidate(
     ? (fa ? 'پایه داده: خوراک خبری ناشران انتخاب‌شده.' : 'Evidence base: selected publisher feed items.')
     : sourceMode === 'history'
       ? (fa ? 'پایه داده: حافظه تاریخی ناشران و یادداشت‌های تحقیق قبلی؛ این داده‌ها الزاماً تازه نیستند.' : 'Evidence base: saved historical publisher records and prior research notes; these are not necessarily current.')
-      : (fa ? 'پایه داده: زمینه عمومی ویکی‌مدیا؛ بازدید مقاله معادل حجم جست‌وجو یا تقاضای مخاطب نیست.' : 'Evidence base: Wikimedia context; article pageviews are not search volume or audience demand.');
+      : sourceMode === 'topic'
+        ? (fa ? 'پایه داده: فقط موضوع انتخاب‌شده توسط کاربر؛ هنوز منبع مستقل مرتبطی برای تأیید یا امتیازدهی شواهد در دسترس نیست.' : 'Evidence base: user-provided topic only; no independent relevant source is available to verify or score the idea.')
+        : (fa ? 'پایه داده: زمینه عمومی ویکی‌مدیا؛ بازدید مقاله معادل حجم جست‌وجو یا تقاضای مخاطب نیست.' : 'Evidence base: Wikimedia context; article pageviews are not search volume or audience demand.');
 
   return {
     category,
@@ -390,6 +392,7 @@ export function generateEditorialIdeas(input: GenerateEditorialIdeasInput): Idea
   const news = [...(input.news ?? [])];
   // Publisher editorial analysis is intentionally isolated from YouTube API data.
   const context = [...(input.context ?? [])];
+  const independentContext = context.filter((item) => item.sourceName !== 'User-provided topic');
   const currentUrls = new Set(news.map((item) => canonicalizeResearchUrl(item.url)).filter(Boolean));
   const priorMemory = input.priorMemory;
   const historicalSources = (priorMemory?.sources ?? []).filter((item) => {
@@ -470,6 +473,9 @@ export function generateEditorialIdeas(input: GenerateEditorialIdeasInput): Idea
   if (!topicRelevantDocuments.length) return [];
   const topicRelevantNews = news.filter((item) => scoreResearchText(topic, item.title, item.summary) > 0);
   const topicRelevantHistory = historyDocuments.filter((item) => scoreResearchText(topic, item.title, item.text) > 0);
+  const relevantIndependentContext = independentContext.filter((item) =>
+    scoreResearchText(topic, item.title, item.summary ?? '') > 0,
+  );
   const feedback = input.feedback ?? buildResearchInterestProfile(input.existingIdeas ?? []);
   const opportunityScorer = createEditorialOpportunityScorer({
     topic,
@@ -489,7 +495,7 @@ export function generateEditorialIdeas(input: GenerateEditorialIdeasInput): Idea
       publishedAt: item.publishedAt,
     })),
     context: [
-      ...context.map((item) => ({
+      ...independentContext.map((item) => ({
         title: item.title,
         summary: item.summary,
         sourceName: item.sourceName,
@@ -574,8 +580,10 @@ export function generateEditorialIdeas(input: GenerateEditorialIdeasInput): Idea
   const fallback = tokenizeResearchText(topic).filter((term) => term.length > 2).slice(0, 4);
   const usableAnchors = anchors.length ? anchors : (fallback.length ? fallback : [topic]);
   const datedCount = topicRelevantDocuments.filter((item) => item.publishedAt && Number.isFinite(Date.parse(item.publishedAt))).length;
-  const mode: 'news' | 'context' | 'history' =
-    topicRelevantNews.length ? 'news' : topicRelevantHistory.length ? 'history' : 'context';
+  const mode: 'news' | 'context' | 'history' | 'topic' =
+    topicRelevantNews.length ? 'news'
+      : topicRelevantHistory.length ? 'history'
+        : relevantIndependentContext.length ? 'context' : 'topic';
   const definitions: IdeaGenerationCategory[] = [
     'Explainer',
     'Evidence audit',
@@ -655,10 +663,10 @@ export function generateEditorialIdeas(input: GenerateEditorialIdeasInput): Idea
   const limit = Math.max(1, Math.min(25, input.limit ?? 25));
   const sourceUrl = topicRelevantNews.find((item) => item.url.startsWith('https://'))?.url ??
     topicRelevantHistory.find((item) => item.sourceUrl?.startsWith('https://'))?.sourceUrl ??
-    context.find((item) => item.sourceUrl?.startsWith('https://'))?.sourceUrl;
+    relevantIndependentContext.find((item) => item.sourceUrl?.startsWith('https://'))?.sourceUrl;
   const sourceName = news.find((item) => item.url === sourceUrl)?.sourceName ??
     historicalSources.find((item) => item.sourceUrl === sourceUrl)?.sourceName ??
-    context.find((item) => item.sourceUrl === sourceUrl)?.sourceName;
+    relevantIndependentContext.find((item) => item.sourceUrl === sourceUrl)?.sourceName;
   const language = input.language ?? 'en';
 
   for (const candidate of candidates) {
@@ -673,7 +681,10 @@ export function generateEditorialIdeas(input: GenerateEditorialIdeasInput): Idea
       news.length ? (language === 'fa'
         ? news.length + ' خبر دریافتی؛ ' + topicRelevantNews.length + ' مورد هم‌موضوع'
         : news.length + ' publisher item(s) received; ' + topicRelevantNews.length + ' topic-matched') : '',
-      context.length ? (language === 'fa' ? context.length + ' منبع زمینه‌ای' : context.length + ' context source(s)') : '',
+      relevantIndependentContext.length ? (language === 'fa' ? relevantIndependentContext.length + ' منبع زمینه‌ای' : relevantIndependentContext.length + ' independent context source(s)') : '',
+      mode === 'topic' ? (language === 'fa'
+        ? 'فقط موضوع واردشده توسط کاربر؛ بدون شواهد مستقل مرتبط'
+        : 'user-provided topic only; no independent source evidence is available') : '',
       historicalSources.length ? (language === 'fa'
         ? historicalSources.length + ' منبع خبری در حافظه تاریخی'
         : historicalSources.length + ' historical publisher record(s) from saved research memory') : '',

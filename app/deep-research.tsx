@@ -176,6 +176,8 @@ export default function DeepResearch() {
       feedback,
       priorMemory,
       language: preferences.uiLanguage ?? 'fa',
+      videos,
+      videoWindowDays: preferences.defaultResearchDays ?? 30,
     });
     rememberTopicDossier(query, {
       news: selectedNews.length ? selectedNews : cachedDossier?.news ?? [],

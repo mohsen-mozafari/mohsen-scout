@@ -179,6 +179,24 @@ void test('no evidence produces no fabricated generated idea', () => {
   assert.equal(ideas.length, 0);
 });
 
+void test('topic-only fallback creates explicitly low-confidence exploratory ideas without inventing sources', () => {
+  const ideas = generateEditorialIdeas({
+    ...base,
+    news: [],
+    videos: [],
+    context: [{
+      title: base.topic,
+      summary: 'User-selected topic context only; not an independent source or claim verification.',
+      sourceName: 'User-provided topic',
+    }],
+    limit: 4,
+  });
+  assert.ok(ideas.length > 0);
+  assert.ok(ideas.every((idea) => idea.assessment === 'Uncertain'));
+  assert.ok(ideas.every((idea) => !idea.sourceUrl && !idea.sourceName));
+  assert.ok(ideas.every((idea) => idea.concept.includes('user-provided topic only; no independent source evidence is available')));
+});
+
 void test('manual ideas remain distinct from locally generated ideas', () => {
   const manual = createManualIdea('My own subject', 'A user-authored editorial concept.', '', 'Germany', ['en']);
   const generated = generateEditorialIdeas({ ...base, news, existingIdeas: [manual], limit: 2 });

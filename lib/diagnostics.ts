@@ -60,8 +60,17 @@ const throws = (fn: () => unknown) => {
   }
   throw new Error('Expected rejection');
 };
-const mock = (body: unknown, status = 200) =>
-  new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
+const mockResponse = (body: unknown, status = 200, headers: Record<string, string> = {}): Response => ({
+  ok: status >= 200 && status < 300,
+  status,
+  headers: { get: (name: string) => headers[name.toLowerCase()] ?? headers[name] ?? null } as Headers,
+  json: async () => body,
+} as Response);
+const mock = (body: unknown, status = 200) => mockResponse(body, status);
+const mockText = (text: string, status = 200, headers: Record<string, string> = {}): Response => ({
+  ...mockResponse(null, status, headers),
+  json: async () => { throw new SyntaxError('Invalid synthetic JSON: ' + text.slice(0, 40)); },
+} as Response);
 const fetcher =
   (fn: (url: URL) => Response | Promise<Response>): Fetcher =>
   async (url) =>
@@ -224,7 +233,7 @@ export async function runDiagnostics(): Promise<TestResult[]> {
           async () => {
             calls++;
             return calls === 1
-              ? new Response('MOCK unavailable', { status: 503 })
+              ? mockText('MOCK unavailable', 503)
               : mock({ ok: true });
           },
           undefined,
@@ -245,10 +254,7 @@ export async function runDiagnostics(): Promise<TestResult[]> {
               {},
               async () => {
                 calls++;
-                return new Response('MOCK rate limit', {
-                  status: 429,
-                  headers: { 'Retry-After': '60' },
-                });
+                return mockText('MOCK rate limit', 429, { 'Retry-After': '60' });
               },
               undefined,
               15000,
@@ -681,7 +687,7 @@ export async function runDiagnostics(): Promise<TestResult[]> {
       'MOCK unreadable successful JSON is rejected as an invalid response',
       async () => {
         await rejects(
-          () => requestJson('https://example.com/mock', {}, async () => new Response('not-json', { status: 200 })),
+          () => requestJson('https://example.com/mock', {}, async () => mockText('not-json', 200)),
           'invalid',
         );
       },

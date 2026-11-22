@@ -1,4 +1,4 @@
-import { memo, useDeferredValue, useMemo, useState } from 'react';
+import { memo, useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { FlatList, Platform, View, Text, Pressable } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Button } from 'heroui-native';
@@ -30,7 +30,7 @@ import { fetchSpaceNews, getCachedSpaceNews, SPACE_NICHES } from '@/lib/space';
 import { createSearchQuery, indexSearchText, matchesSearchIndex, normalizeSearchText } from '@/lib/search';
 import { palette as p } from '@/lib/theme';
 import { getEditorialPriorityBand, EDITORIAL_PRIORITY_CONFIG, type EditorialPriorityBand } from '@/lib/editorial-priority';
-import { setSelectedIdeaId, useSelectedIdeaId } from '@/lib/idea-selection';
+import { setSelectedIdeaId } from '@/lib/idea-selection';
 import { recordRuntimeFinish, recordRuntimeStart } from '@/lib/runtime-metrics';
 import { MediaPreview } from '@/components/MediaPreview';
 function numberLabel(value: number, fa: boolean) {
@@ -112,7 +112,12 @@ const ideaKeyExtractor = (idea: Idea) => idea.id;
 
 export default function Opportunities() {
   const params = useLocalSearchParams<{ idea?: string }>();
-  const selectedIdeaId = useSelectedIdeaId();
+  const [featuredOverrideId, setFeaturedOverrideId] = useState<string | undefined>(
+    typeof params.idea === 'string' ? params.idea : undefined,
+  );
+  useEffect(() => {
+    setFeaturedOverrideId(typeof params.idea === 'string' ? params.idea : undefined);
+  }, [params.idea]);
   const ideas = useScout((s) => s.data.ideas);
   const [status, setStatus] = useState('All');
   const [search, setSearch] = useState('');
@@ -201,9 +206,8 @@ export default function Opportunities() {
     return top;
   }, [filtered]);
   const pinnedIds = useMemo(() => new Set(pinnedIdeas.map((idea) => idea.id)), [pinnedIdeas]);
-  const requestedIdeaId = typeof params.idea === 'string' ? params.idea : selectedIdeaId;
   const featuredIdea = displayableIdeas.find((idea) =>
-    idea.id === requestedIdeaId && idea.archived === archive,
+    idea.id === featuredOverrideId && idea.archived === archive,
   ) ?? pinnedIdeas[0];
   const remainingIdeas = useMemo(() => sortedFiltered.filter((idea) => !pinnedIds.has(idea.id)), [sortedFiltered, pinnedIds]);
   const sortOptions = fa
@@ -273,14 +277,23 @@ export default function Opportunities() {
       news: allNews,
       priorMemory,
       videos,
-      context: dossier?.wiki ? [{
-        title: dossier.wiki.articleTitle,
-        summary: [dossier.wiki.summary, dossier.wiki.monthlyViews.length
-          ? 'Monthly Wikipedia article pageviews: ' + dossier.wiki.monthlyViews.map((point) => point.month + '=' + point.views).join(', ')
-          : 'No monthly Wikimedia pageview observations were returned.'].filter(Boolean).join('\n'),
-        sourceUrl: dossier.wiki.articleUrl,
-        sourceName: 'Wikimedia Pageviews · attention proxy',
-      }] : [],
+      context: [
+        ...(dossier?.wiki ? [{
+          title: dossier.wiki.articleTitle,
+          summary: [dossier.wiki.summary, dossier.wiki.monthlyViews.length
+            ? 'Monthly Wikipedia article pageviews: ' + dossier.wiki.monthlyViews.map((point) => point.month + '=' + point.views).join(', ')
+            : 'No monthly Wikimedia pageview observations were returned.'].filter(Boolean).join('\n'),
+          sourceUrl: dossier.wiki.articleUrl,
+          sourceName: 'Wikimedia Pageviews · attention proxy',
+        }] : []),
+        {
+          title: topic,
+          summary: current.preferences.uiLanguage === 'fa'
+            ? 'موضوع انتخاب‌شده توسط کاربر است؛ این متن زمینهٔ درخواستی است، نه منبع مستقل یا تأییدکنندهٔ ادعا.'
+            : 'User-selected topic context only; this is not an independent source or verification of any claim.',
+          sourceName: 'User-provided topic',
+        },
+      ],
       existingIdeas: current.ideas,
       ...(reportMatches && latestReport && videos.length ? { reportId: latestReport.id } : {}),
       region: current.preferences.region,
@@ -298,11 +311,17 @@ export default function Opportunities() {
       return;
     }
     await useScout.getState().commit((data) => ({ ...data, ideas: [...generated, ...data.ideas] }));
+    setFeaturedOverrideId(undefined);
     recordRuntimeFinish('Engine', 'success');
     engineRecorded = true;
+    const topicOnlyDrafts = generated.every((idea) => !idea.sourceUrl);
     setGenerationMessage(current.preferences.uiLanguage === 'fa'
-      ? generated.length + ' ایده تازه از شواهد به‌روز یا نسخه ذخیره‌شده تولید شد؛ درخواست جدیدی برای YouTube ارسال نشد.' + (refreshedNews.warnings.length ? ' بعضی خوراک‌ها به‌روز نشدند و از نسخه ذخیره‌شده استفاده شد.' : '')
-      : generated.length + ' new ideas were generated locally from refreshed or last-good evidence. No new YouTube request was made.' + (refreshedNews.warnings.length ? ' Some feeds could not refresh; last-good cached copies were retained.' : ''));
+      ? (topicOnlyDrafts
+        ? generated.length + ' ایدهٔ اکتشافی فقط بر پایه موضوع ساخته شد؛ هنوز منبع مستقل مرتبطی برای تأیید آن‌ها وجود ندارد.'
+        : generated.length + ' ایده تازه از شواهد به‌روز یا نسخه ذخیره‌شده تولید شد؛ درخواست جدیدی برای YouTube ارسال نشد.') + (refreshedNews.warnings.length ? ' بعضی خوراک‌ها به‌روز نشدند و از نسخه ذخیره‌شده استفاده شد.' : '')
+      : (topicOnlyDrafts
+        ? generated.length + ' exploratory idea(s) were created from the topic alone; no independent relevant source is available to validate them yet.'
+        : generated.length + ' new ideas were generated locally from refreshed or last-good evidence. No new YouTube request was made.') + (refreshedNews.warnings.length ? ' Some feeds could not refresh; last-good cached copies were retained.' : ''));
     } catch (error) {
       if (!engineRecorded) recordRuntimeFinish('Engine', 'error', error instanceof Error ? error.message : String(error));
       throw error;
@@ -418,7 +437,7 @@ export default function Opportunities() {
               >
                 <View style={{ borderRadius: 13, borderWidth: 1, borderColor: p.accent, backgroundColor: p.surface, padding: 12, gap: 7 }}>
                   <View style={styles.rowBetween}>
-                    <BadgeText>{featuredIdea.id === requestedIdeaId
+                    <BadgeText>{featuredIdea.id === featuredOverrideId
                       ? (fa ? 'ایده انتخاب‌شده از نمودار' : 'SELECTED FROM RESEARCH GRAPH')
                       : (fa ? 'ایده با بالاترین اولویت' : 'HIGHEST-PRIORITY IDEA')}</BadgeText>
                     {typeof featuredIdea.engineScore === 'number' && Number.isFinite(featuredIdea.engineScore) ? (

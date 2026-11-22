@@ -168,6 +168,18 @@ export default function Settings() {
   const [confirm, setConfirm] = useState('');
   const [restore, setRestore] = useState<ReturnType<typeof importBackup>>();
   const op = useOperation();
+  const fa = prefs.uiLanguage === 'fa';
+  const providerOrder = prefs.secondOpinionOrder ?? DEFAULT_SECOND_OPINION_ORDER;
+  const providerName = (provider: SecondOpinionProvider) => provider === 'cloudflare'
+    ? 'Cloudflare Workers AI'
+    : provider[0].toUpperCase() + provider.slice(1);
+  const moveProvider = (index: number, direction: -1 | 1) => {
+    const nextIndex = index + direction;
+    if (nextIndex < 0 || nextIndex >= providerOrder.length) return;
+    const next = [...providerOrder];
+    [next[index], next[nextIndex]] = [next[nextIndex], next[index]];
+    setPrefs({ ...prefs, secondOpinionProvider: next[0], secondOpinionOrder: next });
+  };
   const handleCredentialStatus = useCallback((kind: Credential, stored: boolean | null) => {
     setCredentialStatus((current) => ({ ...current, [kind]: stored }));
   }, []);
@@ -369,7 +381,7 @@ export default function Settings() {
           Open Google Cloud
         </Action>
       </Fold>
-      <Fold title="Second Opinion · Multi-provider" summary={(prefs.secondOpinionOrder ?? DEFAULT_SECOND_OPINION_ORDER).map((provider) => provider === 'cloudflare' ? 'Cloudflare' : provider[0].toUpperCase() + provider.slice(1)).join(' → ')}>
+      <Fold title="Second Opinion · Multi-provider" summary={providerOrder.map(providerName).join(' → ')}>
         <Txt muted>
           {prefs.uiLanguage === 'fa'
             ? 'نظر دوم فقط با لمس دکمه توسط خودت اجرا می‌شود. فقط موضوع و مفهوم/عنوان پیشنهادی به Providerها ارسال می‌شود؛ هیچ خبر، اطلاعات YouTube، آمار، امتیاز یا تصمیم موتور داخلی ارسال نمی‌شود. در صورت خطا یا پاسخ نامعتبر، سرویس بعدی در ترتیب ذخیره‌شده امتحان می‌شود؛ برای هر سرویس فقط یک درخواست تولید انجام می‌شود.'
@@ -394,23 +406,30 @@ export default function Settings() {
             setPrefs({ ...prefs, secondOpinionProvider: provider, secondOpinionOrder: nextOrder });
           }}
         />
-        <Heading>Fallback order</Heading>
-        <Txt muted>Use the arrows to set the exact failover order. Providers without saved credentials are skipped.</Txt>
-        {(prefs.secondOpinionOrder ?? DEFAULT_SECOND_OPINION_ORDER).map((provider, index, order) => (
+        <Heading>{fa ? 'ترتیب اولویت اجرا' : 'Provider priority order'}</Heading>
+        <Txt muted>{fa
+          ? 'ردیف اول سرویس اصلی است؛ اگر کلید نداشته باشد یا درخواست ناموفق باشد، سرویس‌های بعدی به همین ترتیب امتحان می‌شوند. برای جابه‌جایی از دکمه‌های بالا و پایین استفاده کن.'
+          : 'The first row is the primary provider. If it has no saved key or its request fails, the following providers are tried in order. Use Move up or Move down to reorder them.'}</Txt>
+        {providerOrder.map((provider, index) => (
           <View key={provider} style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}>
-            <View style={{ flex: 1 }}>
-              <Txt>{index + 1}. {provider === 'cloudflare' ? 'Cloudflare Workers AI' : provider[0].toUpperCase() + provider.slice(1)}</Txt>
+            <View style={{ flex: 1, minWidth: 0, gap: 3 }}>
+              <BadgeText>{index === 0
+                ? (fa ? 'اولویت ۱ · اصلی' : 'PRIORITY 1 · PRIMARY')
+                : (fa ? 'پشتیبان ' + (index + 1) : 'FALLBACK ' + (index + 1))}</BadgeText>
+              <Txt>{providerName(provider)}</Txt>
             </View>
-            <Action secondary disabled={index === 0} onPress={() => {
-              const next = [...order];
-              [next[index - 1], next[index]] = [next[index], next[index - 1]];
-              setPrefs({ ...prefs, secondOpinionProvider: next[0], secondOpinionOrder: next });
-            }}>↑</Action>
-            <Action secondary disabled={index === order.length - 1} onPress={() => {
-              const next = [...order];
-              [next[index + 1], next[index]] = [next[index], next[index + 1]];
-              setPrefs({ ...prefs, secondOpinionOrder: next });
-            }}>↓</Action>
+            <View style={{ flexDirection: 'row', gap: 5 }}>
+              <View style={{ width: 88 }}>
+                <Action secondary disabled={index === 0} onPress={() => moveProvider(index, -1)}>
+                  {fa ? '↑ بالاتر' : '↑ Move up'}
+                </Action>
+              </View>
+              <View style={{ width: 88 }}>
+                <Action secondary disabled={index === providerOrder.length - 1} onPress={() => moveProvider(index, 1)}>
+                  {fa ? '↓ پایین‌تر' : '↓ Move down'}
+                </Action>
+              </View>
+            </View>
           </View>
         ))}
         <Field
@@ -686,9 +705,9 @@ export default function Settings() {
           OpenRouter privacy
         </Action>
       </Fold>
-      <Fold title="App info & mock diagnostics" summary="Version 1.5.9 · local-first · isolated test runner">
+      <Fold title="App info & mock diagnostics" summary="Version 1.7.0 · local-first · isolated test runner">
         <Heading>MOHSEN SCOUT</Heading>
-        <Txt>Version 1.5.9</Txt>
+        <Txt>Version 1.7.0</Txt>
         <Txt muted>Run synthetic regression checks with mocked responses. They do not call YouTube or OpenRouter, use saved API keys, or change your research workspace.</Txt>
         <Action secondary icon={Bug} onPress={() => router.push({
           pathname: '/diagnostics',
