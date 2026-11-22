@@ -63,16 +63,16 @@ const throws = (fn: () => unknown) => {
 const mockResponse = (body: unknown, status = 200, headers: Record<string, string> = {}): Response => ({
   ok: status >= 200 && status < 300,
   status,
-  headers: { get: (name: string) => headers[name.toLowerCase()] ?? headers[name] ?? null } as Headers,
+  headers: { get: (name: string) => headers[name.toLowerCase()] ?? headers[name] ?? null } as unknown as Headers,
   json: async () => body,
-} as Response);
+} as unknown as Response);
 const mock = (body: unknown, status = 200) => mockResponse(body, status);
 const mockText = (text: string, status = 200, headers: Record<string, string> = {}): Response => ({
   ok: status >= 200 && status < 300,
   status,
-  headers: { get: (name: string) => headers[name.toLowerCase()] ?? headers[name] ?? null } as Headers,
+  headers: { get: (name: string) => headers[name.toLowerCase()] ?? headers[name] ?? null } as unknown as Headers,
   json: async () => { throw new SyntaxError('Invalid synthetic JSON: ' + text.slice(0, 40)); },
-} as Response);
+} as unknown as Response);
 const fetcher =
   (fn: (url: URL) => Response | Promise<Response>): Fetcher =>
   async (url) =>
