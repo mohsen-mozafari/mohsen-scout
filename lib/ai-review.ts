@@ -1,5 +1,6 @@
 import { formatStructuredSecondOpinion, getFreeModels, selectFreeModel, structuredSecondOpinionPrompt } from './api';
 import { requestSecondOpinionWithFallback, type SecondOpinionProviderConfig } from './ai-gateway';
+import { runSequentiallyWithIsolatedFailures } from './sequential-review';
 import { getKey } from './vault';
 import { DEFAULT_SECOND_OPINION_ORDER, uid, type Idea, type Opinion, type Preferences, type SecondOpinionProvider } from './types';
 export async function reviewIdeasAutomatically(
@@ -25,19 +26,27 @@ export async function reviewIdeasAutomatically(
   if (!configs.length) return { opinions: [], warnings: [...warnings, language === 'fa'
     ? 'نقد خودکار اجرا نشد؛ هیچ کلید Provider سازگار ذخیره نشده است. ایده‌های محلی حفظ شدند.'
     : 'Automatic critique skipped because no supported provider key is saved. Local ideas were preserved.'] };
-  const opinions: Opinion[] = [];
-  for (const idea of ideas.slice(0, Math.max(1, Math.min(8, options.maxIdeas ?? 8)))) {
-    try {
+  const selectedIdeas = ideas.slice(0, Math.max(1, Math.min(8, options.maxIdeas ?? 8)));
+  const opinions = await runSequentiallyWithIsolatedFailures(
+    selectedIdeas,
+    selectedIdeas.length,
+    async (idea) => {
       const prompt = structuredSecondOpinionPrompt(idea.topic, idea.concept, language, idea.evidenceSources ?? []);
       const result = await requestSecondOpinionWithFallback(configs, prompt, fetch, options.beforeProviderRequest);
-      opinions.push({ id: uid(), ideaId: idea.id, text: formatStructuredSecondOpinion(result.opinion, language), model: result.provider + '/' + result.model, createdAt: Date.now() });
-    } catch (error) {
+      return {
+        id: uid(),
+        ideaId: idea.id,
+        text: formatStructuredSecondOpinion(result.opinion, language),
+        model: result.provider + '/' + result.model,
+        createdAt: Date.now(),
+      };
+    },
+    (idea, error) => {
       warnings.push((language === 'fa' ? 'نقد خودکار ایده «' : 'Automatic critique failed for “') +
         idea.topic.slice(0, 100) + (language === 'fa' ? '»: ' : '”: ') +
         (error instanceof Error ? error.message : 'provider fallback failed.') +
-        (language === 'fa' ? ' ایده محلی حفظ شد.' : ' Local idea preserved.'));
-      break;
-    }
-  }
+        (language === 'fa' ? ' ایده محلی حفظ شد؛ بررسی ایده بعدی ادامه پیدا می‌کند.' : ' Local idea preserved; review continues with the next idea.'));
+    },
+  );
   return { opinions, warnings: warnings.slice(0, 12) };
 }
