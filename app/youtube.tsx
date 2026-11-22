@@ -86,6 +86,7 @@ export default function Discover() {
     }, []),
   );
   const report: Report | undefined = reports.find((r) => r.id === reportId);
+  const reportIdeas = report ? ideas.filter((idea) => idea.reportId === report.id) : [];
   const sortedReportVideos = report
     ? sortResearchVideos(report.videos, sort as ResearchVideoSort, topic)
     : [];
@@ -323,29 +324,33 @@ export default function Discover() {
               busy={op.busy}
               onPress={() => void op.run(() => useScout.getState().analyze(report.id))}
             >
-              CONTINUE ANALYSIS
+              Analyze saved sample
             </Action>
           )}
           {report.analyzed && (
             <View style={{ gap: 14 }}>
-              <Heading>Internal Engine · Content Angles</Heading>
-              <Txt muted>The local engine converts the real query buckets returned in this report into evidence-linked ideas, links matching video IDs, and leaves unsupported angles marked as uncertain. YouTube titles and statistics are not sent to AI.</Txt>
-              {ideas
-                .filter((i) => i.reportId === report.id)
-                .map((idea) => (
-                  <Button
-                    variant="secondary"
-                    key={idea.id}
-                    onPress={() => router.push({ pathname: '/detail', params: { idea: idea.id } })}
-                    className="h-auto justify-start p-4"
-                  >
-                    <View style={{ flex: 1, gap: 8 }}>
-                      <Txt>{idea.topic}</Txt>
-                      <Text style={styles.badge}>{idea.assessment}</Text>
-                    </View>
-                    <ArrowRight color={p.purple} size={18} />
-                  </Button>
-                ))}
+              <Heading>Internal Engine · Evidence-backed ideas</Heading>
+              <Txt muted>The local Engine v2 uses the returned YouTube sample (including its search bucket and available video metadata) alongside publisher and Wikimedia evidence to create evidence-linked idea candidates. The full report and raw video records are not sent to OpenRouter. When an optional second-opinion review runs, it can receive a compact summary of the top topics and up to three real evidence titles, source labels and observed view counts.</Txt>
+              {reportIdeas.length ? reportIdeas.map((idea) => (
+                <Button
+                  variant="secondary"
+                  key={idea.id}
+                  onPress={() => router.push({ pathname: '/detail', params: { idea: idea.id } })}
+                  className="h-auto justify-start p-4"
+                >
+                  <View style={{ flex: 1, gap: 8 }}>
+                    <Txt>{idea.topic}</Txt>
+                    <Text style={styles.badge}>{idea.assessment}</Text>
+                  </View>
+                  <ArrowRight color={p.purple} size={18} />
+                </Button>
+              )) : (
+                <Txt muted>
+                  {preferences.uiLanguage === 'fa'
+                    ? 'نمونهٔ ویدئوها دریافت شده، اما موتور برای این گزارش ایده‌ای با شواهد کافی تأیید نکرده است. ویدئوها و محدودیت‌های نمونه در بخش پایین قابل بررسی‌اند.'
+                    : 'The video sample was received, but the engine did not find an idea with sufficient supporting evidence for this report. Review the videos and sample limitations below.'}
+                </Txt>
+              )}
             </View>
           )}
           <Fold title="Relevant Videos" summary={report.videos.length + ' returned videos'}>

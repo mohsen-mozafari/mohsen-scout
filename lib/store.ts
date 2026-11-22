@@ -158,7 +158,7 @@ export const useScout = create<State>((set, get) => ({
         language: currentData.preferences.uiLanguage ?? 'fa',
         region: report.input.region,
         languages: report.input.languages,
-      reportId: report.id,
+        reportId: report.id,
       });
       // Report.warnings is the existing persisted warnings channel; engine coverage
       // limits are merged there instead of adding a new required report field.
