@@ -716,7 +716,8 @@ export function createEditorialOpportunityScorer(
       kind: 'context' as const,
       channel: '',
     })),
-    ...input.videos.map((item) => ({
+    // YouTube API metadata is a separate display-only lane. Editorial scores ignore it.
+    ...([] as EditorialOpportunityScorerInput['videos']).map((item) => ({
       text: item.title + ' ' + (item.description ?? ''),
       date: timestamp(item.publishedAt),
       families: [] as string[],
@@ -728,7 +729,6 @@ export function createEditorialOpportunityScorer(
   const documents: IndexedEditorialDocument[] = [];
   const tokenIndex = new Map<string, number[]>();
   const topicRelevantDocuments = new Set<number>();
-  let topicMatchedVideoCount = 0;
 
   for (const source of sourceDocuments) {
     const tokens = new Set(tokenizeResearchText(source.text));
@@ -742,7 +742,6 @@ export function createEditorialOpportunityScorer(
 
     if (scoreResearchText(input.topic, source.text) > 0) {
       topicRelevantDocuments.add(index);
-      if (source.kind === 'video') topicMatchedVideoCount += 1;
     }
 
     for (const token of tokens) {
@@ -770,18 +769,15 @@ export function createEditorialOpportunityScorer(
       : 0;
     const relevance = Math.round(Math.min(100, overlap * 70 + (relevant.length ? 30 : 0)));
     const publisherGroups = new Set<string>();
-    const videoChannels = new Set<string>();
     const kinds = new Set<IndexedEditorialDocument['kind']>();
     for (const document of relevant) {
       kinds.add(document.kind);
-      if (document.kind === 'video') {
-        if (document.channel) videoChannels.add(document.channel);
-      } else if (document.kind !== 'context') {
+      if (document.kind !== 'context' && document.kind !== 'video') {
         for (const family of document.families) publisherGroups.add(family);
       }
     }
     const evidenceBreadth = Math.round(Math.min(100,
-      publisherGroups.size * 18 + videoChannels.size * 7 + kinds.size * 18));
+      publisherGroups.size * 22 + kinds.size * 18));
     const dated = relevant.filter((item) => item.date > 0);
     const fresh = dated.filter((item) =>
       now - item.date <= 30 * 86400000 && now >= item.date - 86400000).length;
@@ -789,10 +785,8 @@ export function createEditorialOpportunityScorer(
     const freshness = dated.length ? Math.round(100 * fresh / dated.length) : 0;
     const audienceSignal = null;
     const anchorFrequency = anchorDocuments.size;
-    const saturation = topicMatchedVideoCount;
     const differentiation = Math.round(Math.max(0, Math.min(100,
-      100 - Math.min(65, Math.max(0, anchorFrequency - 1) * 7) -
-      Math.min(35, Math.max(0, saturation - 2) * 3))));
+      100 - Math.min(65, Math.max(0, anchorFrequency - 1) * 7))));
     const weighted = [
       { value: relevance, weight: 0.30 },
       { value: evidenceBreadth, weight: 0.30 },
@@ -802,9 +796,9 @@ export function createEditorialOpportunityScorer(
     const score = Math.round(weighted.reduce((sum, part) => sum + part.value * part.weight, 0));
     const freshnessRatio = dated.length ? fresh / dated.length : 0;
     const confidence: EditorialOpportunitySignals['confidence'] =
-      relevant.length >= 12 && publisherGroups.size >= 3 && videoChannels.size >= 3 && fresh >= 3 && freshnessRatio >= 0.25
+      relevant.length >= 12 && publisherGroups.size >= 3 && fresh >= 3 && freshnessRatio >= 0.25
         ? 'high'
-        : relevant.length >= 5 && (publisherGroups.size >= 2 || videoChannels.size >= 2) && (fresh >= 1 || dated.length === 0)
+        : relevant.length >= 5 && publisherGroups.size >= 2 && (fresh >= 1 || dated.length === 0)
           ? 'moderate' : 'low';
     const currentPublisherItems = relevant.filter((item) => item.kind === 'news').length;
     const historicalPublisherItems = relevant.filter((item) => item.kind === 'history').length;
@@ -814,7 +808,7 @@ export function createEditorialOpportunityScorer(
       publisherGroups.size ? publisherGroups.size + ' publisher group(s) across current and saved research' : 'no directly relevant publisher group',
       currentPublisherItems + ' current and ' + historicalPublisherItems + ' historical publisher record(s) matched',
       supportingContextItems + ' supporting context record(s) matched',
-      videoChannels.size ? videoChannels.size + ' relevant YouTube channel(s)' : 'no relevant YouTube channel sample',
+      'YouTube API metadata is intentionally excluded from editorial scores',
       fresh ? fresh + ' fresh dated evidence record(s)' : 'no fresh dated evidence record',
       'raw view counts are not treated as demand or growth indicators',
     ].join('; ');

@@ -1404,3 +1404,27 @@ void test('Editorial priority does not fabricate freshness when all matched evid
   });
   assert.equal(result.components.freshness, 0);
 });
+
+void test('Editorial scoring is identical with or without raw YouTube API samples', () => {
+  const base = {
+    topic: 'Mars sample return',
+    anchor: 'Mars sample return technical review',
+    news: [
+      { title: 'NASA Mars sample return mission architecture', summary: 'The sample retrieval and transfer plan needs technical review.', sourceName: 'NASA', sourceId: 'nasa', sourceUrl: 'https://nasa.gov/mars', publishedAt: '2026-11-18T00:00:00Z' },
+      { title: 'ESA Mars sample return collaboration', summary: 'The mission update describes sample handling and independent review.', sourceName: 'ESA', sourceId: 'esa', sourceUrl: 'https://esa.int/mars', publishedAt: '2026-11-17T00:00:00Z' },
+    ],
+    historicalNews: [],
+    context: [],
+    now: Date.UTC(2026, 10, 20),
+  };
+  const withoutVideoSamples = scoreEditorialOpportunity({ ...base, videos: [] });
+  const withVideoSamples = scoreEditorialOpportunity({
+    ...base,
+    videos: [
+      { title: 'MOCK Mars sample return views', channel: 'MOCK channel A', publishedAt: '2026-11-19T00:00:00Z', viewCount: 9000000 },
+      { title: 'MOCK Mars sample return high engagement', channel: 'MOCK channel B', publishedAt: '2026-11-18T00:00:00Z', viewCount: 8000000 },
+      { title: 'MOCK Mars sample return breakthrough', channel: 'MOCK channel C', publishedAt: '2026-11-17T00:00:00Z', viewCount: 7000000 },
+    ],
+  });
+  assert.deepEqual(withVideoSamples, withoutVideoSamples);
+});

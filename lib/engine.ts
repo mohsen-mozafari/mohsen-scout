@@ -367,12 +367,12 @@ export function buildInternalResearch(input: InternalResearchInput): InternalRes
       'این موتور به‌صورت محلی و بر پایه شواهد بارگذاری‌شده در برنامه اجرا می‌شود و در این مرحله منبع تازه‌ای دریافت نمی‌کند.',
       'داده‌های API یوتیوب فقط در بخش خام جداگانه نمایش داده می‌شوند و وارد استخراج موجودیت، confidence یا نتیجه‌گیری این موتور نمی‌شوند.',
       'زاویه‌های محتوایی فرضیه‌اند، نه یافته علمی و نه پیش‌بینی بازدید، رشد یا وایرال شدن.',
-      'پوشش خبری ناشران، بازدید مقاله‌های ویکی‌مدیا و نمونه یوتیوب سیگنال‌های جداگانه‌اند و نباید در یک امتیاز ترکیبی ادغام شوند.',
+      'پوشش ناشران و بازدید مقاله‌های ویکی‌مدیا فقط زمینه مستقل هستند؛ نمونه خام YouTube از تحلیل و امتیازهای این موتور کنار گذاشته شده است.',
     ] : [
       'This engine runs locally on evidence already loaded in the app; it does not fetch new sources.',
       'YouTube API records are displayed only in their separate raw-results view and are excluded from entity extraction, confidence and engine conclusions.',
       'Editorial angles are hypotheses, not scientific findings or predictions of views, growth or virality.',
-      'Publisher feed coverage, Wikimedia article pageviews and YouTube samples are separate signals and must not be combined into a score.',
+      'Publisher coverage and Wikimedia article pageviews are independent context signals; raw YouTube samples are excluded from this engine and its scores.',
     ]),
     ...(matchedNews.length < allNews.length
       ? [text('Unmatched publisher records remain in contextual evidence and source audits; they are not treated as direct support for the requested topic.', 'خبرهای بدون تطبیق مستقیم در شواهد زمینه‌ای و ممیزی منابع باقی می‌مانند، اما پشتیبانی مستقیم از موضوع محسوب نمی‌شوند.')]
@@ -402,13 +402,14 @@ export function buildInternalResearch(input: InternalResearchInput): InternalRes
   const sourceQuality = analyzeSourceQuality(news, deduplicated.duplicatesMerged, now);
   const matchedSourceQuality = analyzeSourceQuality(matchedNews.map((entry) => entry.item), 0, now);
   const trend = analyzeMonthlyViews(input.wiki?.monthlyViews ?? []);
-  const evidenceTypes = Number(matchedNews.length > 0) + Number(Boolean(input.wiki)) + Number(recentMatchedVideoCount > 0);
+  const hasPublisherEvidence = matchedNews.length > 0;
+  const hasUsableWikiHistory = trend.observations >= 4;
   const confidence: InternalResearchResult['intelligence']['confidence'] =
-    evidenceTypes >= 3 && matchedSourceQuality.independentPublishers >= 2 && trend.observations >= 4 && recentMatchedVideoCount >= 3
-      ? { level: 'high', reason: text('Several kinds of evidence are available, including independent publishers and a usable monthly series. The conclusion still applies only to this sample.', 'چند نوع شاهد و چند ناشر مستقل در دسترس‌اند و داده ماهانه هم وجود دارد؛ بااین‌حال این نتیجه فقط درباره نمونه بررسی‌شده صدق می‌کند.') }
-      : evidenceTypes >= 2 && (matchedSourceQuality.independentPublishers >= 2 || trend.observations >= 4 || recentMatchedVideoCount >= 3)
-        ? { level: 'moderate', reason: text('Several kinds of evidence are available, but the sample still lacks enough independent sources or historical depth.', 'چند نوع داده داریم، اما تعداد یا تنوع منابع و سابقه زمانی هنوز برای نتیجه‌گیری محکم کافی نیست.') }
-        : { level: 'low', reason: text('The current sample is limited in source variety, size or historical depth.', 'داده‌های فعلی از نظر تعداد و تنوع منابع یا سابقه زمانی محدودند.') };
+    hasPublisherEvidence && matchedSourceQuality.independentPublishers >= 3 && hasUsableWikiHistory
+      ? { level: 'high', reason: text('Several independent publisher families and a usable Wikimedia history are available. This is evidence breadth, not a guarantee that claims are true.', 'چند خانواده ناشر مستقل و سابقه قابل استفاده ویکی‌مدیا در دسترس‌اند؛ این فقط تنوع شواهد است و صحت ادعاها را تضمین نمی‌کند.') }
+      : hasPublisherEvidence && (matchedSourceQuality.independentPublishers >= 2 || hasUsableWikiHistory)
+        ? { level: 'moderate', reason: text('Publisher coverage or a usable Wikimedia history adds context, but the source sample is still limited.', 'پوشش ناشران یا سابقه ویکی‌مدیا زمینه می‌دهد، اما نمونه منابع هنوز محدود است.') }
+        : { level: 'low', reason: text('Independent publisher evidence or historical context is limited.', 'شواهد مستقل ناشران یا زمینه تاریخی محدود است.') };
   const gaps: string[] = [];
   if (!matchedNews.length) gaps.push(text('No direct publisher headline matched the requested topic.', 'هیچ تیتر مستقیمی از ناشران با موضوع درخواستی تطبیق نداشت.'));
   if (matchedSourceQuality.independentPublishers < 2) gaps.push(text('Independent publisher confirmation among directly relevant records is limited.', 'تأیید از سوی ناشران مستقل در میان رکوردهای مستقیماً مرتبط محدود است.'));
@@ -425,10 +426,19 @@ export function buildInternalResearch(input: InternalResearchInput): InternalRes
     ...(matchedNews.length ? [topic + ' methodology limitations'] : [topic + ' latest official research']),
   ]).slice(0, 4);
   const topicConceptTerms = new Set(tokenizeResearchText(topic));
-  const publisherConceptTerms = new Set(matchedNews.flatMap((entry) => tokenizeResearchText(entry.item.title + ' ' + entry.item.summary)));
-  const videoConceptTerms = new Set(topicalVideos.flatMap((entry) => tokenizeResearchText(entry.video.title + ' ' + (entry.video.description ?? ''))));
-  const sharedConcepts = [...publisherConceptTerms]
-    .filter((term) => videoConceptTerms.has(term) && !topicConceptTerms.has(term))
+  const conceptSourceGroups = new Map<string, Set<string>>();
+  for (const entry of matchedNews) {
+    const sourceGroup = entry.item.sourceId || entry.item.sourceName || entry.item.sourceUrl;
+    for (const term of tokenizeResearchText(entry.item.title + ' ' + entry.item.summary)) {
+      if (term.length < 3 || topicConceptTerms.has(term)) continue;
+      const groups = conceptSourceGroups.get(term) ?? new Set<string>();
+      groups.add(sourceGroup);
+      conceptSourceGroups.set(term, groups);
+    }
+  }
+  const sharedConcepts = [...conceptSourceGroups.entries()]
+    .filter(([, groups]) => groups.size >= 2)
+    .map(([term]) => term)
     .slice(0, 6);
   const potentialContradictions: string[] = (input.priorMemory?.contradictions ?? []).slice(0, 2).map((item) => {
     const detail = item.replace(/^(Previously unresolved discrepancy: |اختلاف حل‌نشده در تحقیق قبلی: )/, '');
