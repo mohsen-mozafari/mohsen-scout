@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { FlatList, View, Text, Pressable } from 'react-native';
-import { router, useLocalSearchParams } from 'expo-router';
+import { router } from 'expo-router';
 import { Button } from 'heroui-native';
 import { ArrowUpRight, Plus, Archive, Lightbulb } from 'lucide-react-native';
 import {
@@ -30,7 +30,8 @@ import { fetchSpaceNews, getCachedSpaceNews, SPACE_NICHES } from '@/lib/space';
 import { matchesSearchText, normalizeSearchText } from '@/lib/search';
 import { palette as p } from '@/lib/theme';
 import { getEditorialPriorityBand, EDITORIAL_PRIORITY_CONFIG, type EditorialPriorityBand } from '@/lib/editorial-priority';
-import { setSelectedIdeaId, useSelectedIdeaId } from '@/lib/idea-selection';
+import { setSelectedIdeaId } from '@/lib/idea-selection';
+import { selectDashboardFeaturedIdeas } from '@/lib/dashboard';
 import { recordRuntimeFinish, recordRuntimeStart } from '@/lib/runtime-metrics';
 import { MediaPreview } from '@/components/MediaPreview';
 function numberLabel(value: number, fa: boolean) {
@@ -38,8 +39,6 @@ function numberLabel(value: number, fa: boolean) {
 }
 
 export default function Opportunities() {
-  const params = useLocalSearchParams<{ idea?: string }>();
-  const selectedIdeaId = useSelectedIdeaId();
   const ideas = useScout((s) => s.data.ideas);
   const [status, setStatus] = useState('All');
   const [search, setSearch] = useState('');
@@ -107,15 +106,12 @@ export default function Opportunities() {
       .localeCompare(getIdeaDisplayTitle(b, preferences.uiLanguage ?? 'fa'), undefined, { numeric: true, sensitivity: 'base' });
     return sort === 'A-Z' ? comparison : -comparison;
   }), [filtered, sort, preferences.uiLanguage]);
-  const pinnedIdeas = useMemo(() => filtered
-    .filter((idea) => typeof idea.engineScore === 'number' && Number.isFinite(idea.engineScore))
-    .sort((a, b) => (b.engineScore ?? -1) - (a.engineScore ?? -1) || b.createdAt - a.createdAt)
-    .slice(0, EDITORIAL_PRIORITY_CONFIG.pinnedIdeas), [filtered]);
+  const pinnedIdeas = useMemo(
+    () => archive ? [] : selectDashboardFeaturedIdeas(displayableIdeas, EDITORIAL_PRIORITY_CONFIG.pinnedIdeas),
+    [displayableIdeas, archive],
+  );
   const pinnedIds = useMemo(() => new Set(pinnedIdeas.map((idea) => idea.id)), [pinnedIdeas]);
-  const requestedIdeaId = typeof params.idea === 'string' ? params.idea : selectedIdeaId;
-  const featuredIdea = displayableIdeas.find((idea) =>
-    idea.id === requestedIdeaId && idea.archived === archive,
-  ) ?? pinnedIdeas[0];
+  const featuredIdea = pinnedIdeas[0];
   const remainingIdeas = useMemo(() => sortedFiltered.filter((idea) => !pinnedIds.has(idea.id)), [sortedFiltered, pinnedIds]);
   const sortOptions = fa
     ? ['امتیاز اولویت', 'جدیدترین', 'قدیمی‌ترین', 'عنوان صعودی', 'عنوان نزولی']
@@ -325,9 +321,7 @@ export default function Opportunities() {
             {featuredIdea ? (
               <View style={{ borderRadius: 13, borderWidth: 1, borderColor: p.accent, backgroundColor: p.surface, padding: 12, gap: 7 }}>
                 <View style={styles.rowBetween}>
-                  <BadgeText>{featuredIdea.id === requestedIdeaId
-                    ? (fa ? 'ایده انتخاب‌شده از نمودار' : 'SELECTED FROM RESEARCH GRAPH')
-                    : (fa ? 'ایده با بالاترین اولویت' : 'HIGHEST-PRIORITY IDEA')}</BadgeText>
+                  <BadgeText>{fa ? 'بالاترین اولویت فعال' : 'HIGHEST ACTIVE PRIORITY'}</BadgeText>
                   {typeof featuredIdea.engineScore === 'number' && Number.isFinite(featuredIdea.engineScore) ? (
                     <Text style={{ color: p.accent, fontSize: 13, fontWeight: '800' }}>{numberLabel(featuredIdea.engineScore, fa)}/100</Text>
                   ) : <Text style={{ color: p.muted, fontSize: 10 }}>{fa ? 'بدون امتیاز' : 'NOT SCORED'}</Text>}
@@ -357,10 +351,10 @@ export default function Opportunities() {
             {pinnedIdeas.length ? (
               <View style={{ gap: 8 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <Heading>{fa ? '۵ ایده برتر سنجاق‌شده' : 'Top 5 pinned ideas'}</Heading>
+                  <Heading>{fa ? 'چهار اولویت بعدی' : 'Next four active priorities'}</Heading>
                   <BadgeText>{String(pinnedIdeas.length)}</BadgeText>
                 </View>
-                {pinnedIdeas.map((idea, index) => {
+                {pinnedIdeas.slice(1).map((idea, index) => {
                   const band = getEditorialPriorityBand(idea.engineScore ?? 0);
                   const tint = band === 'strong' ? p.success : band === 'moderate' ? p.cyan : p.danger;
                   return (
@@ -370,7 +364,7 @@ export default function Opportunities() {
                     }} accessibilityRole="button"
                       style={{ borderRadius: 12, borderWidth: 1, borderColor: p.border, backgroundColor: p.surface, padding: 11, gap: 5 }}>
                       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                        <Text style={{ color: tint, fontSize: 10, fontWeight: '800' }}>{(fa ? 'سنجاق‌شدهٔ ' : 'PINNED #') + (index + 1) + ' · ' + (band === 'strong' ? (fa ? 'قوی' : 'Strong') : band === 'moderate' ? (fa ? 'متوسط' : 'Medium') : (fa ? 'ضعیف' : 'Weak'))}</Text>
+                        <Text style={{ color: tint, fontSize: 10, fontWeight: '800' }}>{(fa ? 'اولویت ' : 'PRIORITY #') + (index + 2) + ' · ' + (band === 'strong' ? (fa ? 'قوی' : 'Strong') : band === 'moderate' ? (fa ? 'متوسط' : 'Medium') : (fa ? 'ضعیف' : 'Weak'))}</Text>
                         <Text style={{ color: tint, fontSize: 14, fontWeight: '800' }}>{idea.engineScore}/100</Text>
                       </View>
                       <Text style={{ color: p.text, fontSize: 13, fontWeight: '700' }}>{getIdeaDisplayTitle(idea, preferences.uiLanguage ?? 'fa')}</Text>
@@ -383,7 +377,7 @@ export default function Opportunities() {
             {draftOpen ? (
               <View style={styles.panel}>
                 <View style={styles.rowBetween}>
-                  <Heading>Create a complete idea</Heading>
+                  <Heading>Idea editor</Heading>
                   <Text style={styles.badge}>PERSONAL DRAFT</Text>
                 </View>
                 <Field label="Topic / working title" value={draftTopic} onChange={setDraftTopic} placeholder="e.g. What JWST reveals about exoplanet atmospheres" />

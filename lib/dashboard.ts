@@ -1,4 +1,6 @@
 import { fingerprintText } from './api';
+import { deduplicateDisplayIdeas } from './idea-generation';
+import { isIdeaDisplayable } from './idea-research';
 import { buildUnifiedBrief, type BriefVideoInput } from './engine-v2-adapter';
 import type { EngineV2Result, SourceCoverage, StageTiming } from './engine-v2';
 import { matchesResearchTerms, scoreResearchText } from './intelligence';
@@ -195,7 +197,8 @@ export function buildUnifiedDashboardBrief(
 
 /** Highest editorial assessment first, then linked evidence, then recency. */
 export function rankDashboardIdeas(ideas: readonly Idea[]): Idea[] {
-  return ideas
+  const ranked = ideas
+    .filter(isIdeaDisplayable)
     .filter((idea) =>
       !idea.archived &&
       idea.status !== 'Rejected Ideas' &&
@@ -208,6 +211,21 @@ export function rankDashboardIdeas(ideas: readonly Idea[]): Idea[] {
       evidenceWeight(b) - evidenceWeight(a) ||
       b.createdAt - a.createdAt,
     );
+
+  // Deduplicate after ranking so the strongest evidence-backed card survives.
+  return deduplicateDisplayIdeas(ranked);
+}
+
+/** Canonical scored active priorities shared by the dashboard and Ideas page. */
+export function selectDashboardFeaturedIdeas(
+  ideas: readonly Idea[],
+  limit = 5,
+): Idea[] {
+  const safeLimit = Number.isFinite(limit) ? Math.max(0, Math.floor(limit)) : 0;
+  if (!safeLimit) return [];
+  return rankDashboardIdeas(ideas)
+    .filter((idea) => typeof idea.engineScore === 'number' && Number.isFinite(idea.engineScore))
+    .slice(0, safeLimit);
 }
 
 export function chooseBestIdea(ideas: readonly Idea[]): Idea | undefined {

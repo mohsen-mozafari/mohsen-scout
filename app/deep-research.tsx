@@ -354,7 +354,6 @@ export default function DeepResearch() {
             <ResearchOverviewChart
               topic={brief.topic}
               ideas={brief.generatedIdeas}
-              brief={brief.unifiedBrief}
               language={preferences.uiLanguage ?? 'fa'}
             />
             <Txt muted>{brief.internalAnalysis.summary}</Txt>

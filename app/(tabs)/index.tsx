@@ -16,7 +16,7 @@ import { getTopicDossier } from '@/lib/topic-dossier';
 import { VideoRow } from '@/components/VideoRow';
 import {
   buildUnifiedDashboardBrief, collectEngineVideoEvidence, engineReviewCacheKey,
-  findCachedEngineReview, rankDashboardIdeas, selectDashboardVideos,
+  findCachedEngineReview, rankDashboardIdeas, selectDashboardFeaturedIdeas, selectDashboardVideos,
 } from '@/lib/dashboard';
 import {
   engineV2ReviewPrompt, fingerprintText, getFreeModels, getOpenRouterDailyQuota,
@@ -26,7 +26,6 @@ import {
 import { getKey } from '@/lib/vault';
 import { ResearchOverviewChart } from '@/components/ResearchOverviewChart';
 import { recordRuntimeFinish, recordRuntimeStart, runtimeErrorHint, useRuntimeMetrics } from '@/lib/runtime-metrics';
-import { useSelectedIdeaId } from '@/lib/idea-selection';
 import type { UnifiedBrief } from '@/lib/engine-v2-adapter';
 
 type BriefState = { id: string; updatedAt: number; cached: boolean; brief: UnifiedBrief };
@@ -350,10 +349,10 @@ function DiscoveryDashboardReady() {
     languages: state.data.preferences.languages,
   })));
   const reports = useScout((state) => state.data.reports);
+  const allIdeas = useScout((state) => state.data.ideas);
   const storedVideos = useScout((state) => state.data.videos);
   const feedRegistry = useScout((state) => state.data.feedRegistry);
   const runtimeMetrics = useRuntimeMetrics();
-  const selectedIdeaId = useSelectedIdeaId();
   const [healthExpanded, setHealthExpanded] = useState(false);
   const [briefState, setBriefState] = useState<BriefState>();
   const [analysisError, setAnalysisError] = useState('');
@@ -479,7 +478,10 @@ function DiscoveryDashboardReady() {
   const briefIsCached = Boolean(briefState && (briefState.cached || briefState.id !== latestReportId));
   const chartTopic = latestReport?.input.topic ?? preferences.lastInput?.topic ?? discoveryTopic;
   const rankedIdeas = useMemo(() => rankDashboardIdeas(briefForReview?.ideas ?? NO_IDEAS), [briefForReview]);
-  const bestIdea = rankedIdeas[0];
+  const bestIdea = selectDashboardFeaturedIdeas(allIdeas, 1)[0];
+  const bestIdeaForReview = bestIdea && briefForReview?.ideas.some((idea) => idea.id === bestIdea.id)
+    ? bestIdea
+    : undefined;
   const pageOneIdeas = rankedIdeas.slice(0, 5);
 
   const completedOperations = runtimeMetrics.succeeded + runtimeMetrics.partial + runtimeMetrics.failed;
@@ -522,9 +524,9 @@ function DiscoveryDashboardReady() {
   // Stable element identity keeps ResearchOverviewChart's memo effective.
   const secondOpinion = useMemo(
     () => briefForReview
-      ? <EngineAIReview topic={chartTopic} brief={briefForReview} idea={bestIdea} />
+      ? <EngineAIReview topic={chartTopic} brief={briefForReview} idea={bestIdeaForReview} />
       : undefined,
-    [briefForReview, chartTopic, bestIdea],
+    [briefForReview, chartTopic, bestIdeaForReview],
   );
 
   return (
@@ -545,11 +547,9 @@ function DiscoveryDashboardReady() {
         />
         {analysisError ? <Txt muted>{analysisError}</Txt> : null}
         <ResearchOverviewChart
-          brief={briefForReview}
-          ideas={rankedIdeas}
+          ideas={allIdeas}
           topic={chartTopic}
           language={preferences.uiLanguage ?? 'fa'}
-          selectedIdeaId={selectedIdeaId}
           secondOpinion={secondOpinion}
         />
 
@@ -637,7 +637,7 @@ function DiscoveryDashboardReady() {
 
         <Fold
           title={fa ? 'تحقیق و نتایج ذخیرهشده' : 'Recent research and saved results'}
-          summary={reports.length + ' reports · ' + rankedIdeas.length + ' ideas'}
+          summary={reports.length + ' reports · ' + allIdeas.length + ' saved ideas'}
         >
           <View style={{ gap: 12 }}>
             {feedVideos.length ? (
@@ -658,9 +658,6 @@ function DiscoveryDashboardReady() {
                 ))}
               </View>
             ) : null}
-            <Action secondary onPress={() => router.push('/opportunities')}>
-              {fa ? 'مشاهده همه ایدهها' : 'Open all ideas'}
-            </Action>
           </View>
         </Fold>
 

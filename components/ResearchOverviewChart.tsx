@@ -1,107 +1,128 @@
-import { memo, useCallback, useMemo } from 'react';
+import { memo, useMemo } from 'react';
 import type { ReactNode } from 'react';
 import { View, Text } from 'react-native';
 import { router } from 'expo-router';
 import { Panel, Txt, Action, BadgeText } from '@/components/ScoutUI';
-import { OpportunityMap } from '@/components/OpportunityMap';
 import { palette as p } from '@/lib/theme';
-import { rankDashboardIdeas } from '@/lib/dashboard';
+import { rankDashboardIdeas, selectDashboardFeaturedIdeas } from '@/lib/dashboard';
+import { summarizeEditorialPriority } from '@/lib/editorial-priority';
 import type { Idea } from '@/lib/types';
-import type { UnifiedBrief } from '@/lib/engine-v2-adapter';
-import { setSelectedIdeaId } from '@/lib/idea-selection';
 
-/** The chart only reads the one unified brief; legacy analysis counters are gone. */
 export const ResearchOverviewChart = memo(function ResearchOverviewChart({
-  brief,
   ideas,
   topic,
   language,
-  selectedIdeaId,
   secondOpinion,
 }: {
-  brief?: UnifiedBrief;
   ideas: readonly Idea[];
   topic: string;
   language: 'fa' | 'en';
-  selectedIdeaId?: string;
   secondOpinion?: ReactNode;
 }) {
   const fa = language === 'fa';
   const label = (english: string, persian: string) => fa ? persian : english;
   const ranked = useMemo(() => rankDashboardIdeas(ideas), [ideas]);
-  const selectIdea = useCallback((id: string) => {
-    setSelectedIdeaId(id);
-    router.push({ pathname: '/detail', params: { idea: id } });
-  }, []);
+  const priority = useMemo(() => summarizeEditorialPriority(ranked), [ranked]);
+  const featuredIdea = useMemo(() => selectDashboardFeaturedIdeas(ideas, 1)[0], [ideas]);
   const number = (value: number) => new Intl.NumberFormat(fa ? 'fa-IR' : 'en-US').format(value);
+  const bands = [
+    { id: 'strong', title: label('Strong · ≥85', 'قوی · ۸۵ به بالا'), count: priority.strong, color: p.success },
+    { id: 'moderate', title: label('Medium · 65–84', 'متوسط · ۶۵ تا ۸۴'), count: priority.moderate, color: p.cyan },
+    { id: 'weak', title: label('Low · <65', 'پایین · کمتر از ۶۵'), count: priority.weak, color: p.danger },
+  ];
 
-  const focusedIdea = selectedIdeaId ? ranked.find((idea) => idea.id === selectedIdeaId) : undefined;
-  const topIdea = focusedIdea ?? ranked[0];
-  const fullWhy = topIdea
-    ? (topIdea.engineV2Why ?? topIdea.engineScoreReason ?? topIdea.concept ?? '').trim()
+  const rationale = featuredIdea
+    ? (featuredIdea.engineV2Why ?? featuredIdea.engineScoreReason ?? featuredIdea.concept ?? '').trim()
     : '';
-  const evidence = topIdea?.engineV2Evidence ?? [];
+  const evidence = featuredIdea?.engineV2Evidence ?? [];
 
   return (
     <Panel variant="hero">
-      <Txt muted>{label('Research focus', 'تمرکز تحقیق') + ': ' + topic}</Txt>
-      {topIdea ? (
+      <View style={{ gap: 4 }}>
+        <BadgeText>{label('CURRENT EDITORIAL PRIORITY', 'اولویت تحریری فعلی')}</BadgeText>
+        <Text style={{ color: p.text, fontSize: 16, fontWeight: '800' }}>
+          {label('Highest-priority active idea', 'ایدهٔ فعال با بالاترین اولویت')}
+        </Text>
+        <Txt muted>{label(
+          'This is the same scored ranking used at the top of the Ideas page. It is an evidence-based editorial priority, not a prediction of YouTube views.',
+          'این همان رتبه‌بندی امتیازدار ابتدای صفحهٔ ایده‌هاست؛ اولویت تحریری بر پایهٔ شواهد است، نه پیش‌بینی بازدید YouTube.',
+        )}</Txt>
+      </View>
+
+      {featuredIdea ? (
         <View style={{ borderRadius: 11, borderWidth: 1, borderColor: p.accent, backgroundColor: p.surface, padding: 11, gap: 6 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 }}>
-            <BadgeText>{focusedIdea
-              ? label('SELECTED IDEA', 'ایده انتخابشده')
-              : label('TOP IDEA · RANK #1', 'ایده برتر · رتبه ۱')}</BadgeText>
-            {typeof topIdea.engineScore === 'number' && Number.isFinite(topIdea.engineScore)
-              ? <Text style={{ color: p.accent, fontSize: 12, fontWeight: '800' }}>{number(topIdea.engineScore)}/100</Text>
-              : null}
+            <BadgeText>{label('HIGHEST ACTIVE PRIORITY', 'بالاترین اولویت فعال')}</BadgeText>
+            <Text style={{ color: p.accent, fontSize: 12, fontWeight: '800' }}>
+              {number(featuredIdea.engineScore ?? 0)}/100
+            </Text>
           </View>
-          <Text style={{ color: p.text, fontSize: 14, fontWeight: '800' }}>{topIdea.topic}</Text>
-          {fullWhy ? (
-            <Txt muted>{fullWhy.slice(0, 220)}{fullWhy.length > 220 ? '…' : ''}</Txt>
+          <Text numberOfLines={2} style={{ color: p.text, fontSize: 14, fontWeight: '800' }}>
+            {featuredIdea.topic}
+          </Text>
+          {rationale ? (
+            <Txt muted>{rationale.slice(0, 170)}{rationale.length > 170 ? '…' : ''}</Txt>
           ) : null}
           {evidence.slice(0, 2).map((item, index) => {
             const views = typeof item.views === 'number' && Number.isFinite(item.views) && item.views > 0
               ? number(Math.round(item.views)) + (fa ? ' بازدید' : ' views')
               : '';
-            const line = [item.title, item.source, views, item.url].filter(Boolean).join(' · ');
-            return <Txt muted key={index}>{line}</Txt>;
+            const line = [item.title, item.source, views].filter(Boolean).join(' · ');
+            return line ? <Txt muted key={index}>{line}</Txt> : null;
           })}
-          {(topIdea.engineV2Claims ?? []).slice(0, 2).map((claim, index) => (
-            <Txt muted key={index}>{label('Claim', 'ادعا') + ': ' + claim.text + ' · ' + claim.source}</Txt>
-          ))}
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-            {typeof topIdea.engineV2Confidence === 'number' && Number.isFinite(topIdea.engineV2Confidence)
-              ? <BadgeText>{label('Confidence', 'اطمینان') + ' ' + Math.round(topIdea.engineV2Confidence * 100) + '%'}</BadgeText>
+            {typeof featuredIdea.engineV2Confidence === 'number' && Number.isFinite(featuredIdea.engineV2Confidence)
+              ? <BadgeText>{label('Confidence', 'اطمینان') + ' ' + Math.round(featuredIdea.engineV2Confidence * 100) + '%'}</BadgeText>
               : null}
-            {topIdea.engineV2Risk
-              ? <BadgeText>{label('Risk', 'ریسک') + ': ' + topIdea.engineV2Risk}</BadgeText>
-              : null}
-            {topIdea.engineV2BestTime
-              ? <BadgeText>{label('Best time', 'بهترین زمان') + ': ' + topIdea.engineV2BestTime}</BadgeText>
+            {featuredIdea.engineV2Risk
+              ? <BadgeText>{label('Risk', 'ریسک') + ': ' + featuredIdea.engineV2Risk}</BadgeText>
               : null}
           </View>
-          <Action secondary onPress={() => {
-            setSelectedIdeaId(topIdea.id);
-            router.push({ pathname: '/opportunities', params: { idea: topIdea.id } });
-          }}>
-            {label('Open full idea in Ideas', 'مشاهده توضیحات کامل در بخش ایده‌ها')}
+          <Action secondary onPress={() => router.push({ pathname: '/detail', params: { idea: featuredIdea.id } })}>
+            {label('Open complete idea', 'مشاهده پرونده کامل ایده')}
           </Action>
         </View>
       ) : (
-        <Txt muted>{label('No scored engine-generated idea is available yet. Complete a research pass to create evidence-backed recommendations.', 'هنوز ایده امتیازدار تولیدشده توسط موتور وجود ندارد. یک مرحله تحقیق را تکمیل کن تا پیشنهادهای مستند ساخته شوند.')}</Txt>
+        <Txt muted>{label(
+          'No scored active idea is available yet. Complete a research run to create evidence-backed priorities.',
+          'هنوز ایدهٔ فعال امتیازداری موجود نیست. یک تحقیق را تکمیل کن تا اولویت‌های مستند ساخته شوند.',
+        )}</Txt>
       )}
-      {brief?.result ? (
-        <OpportunityMap
-          topics={brief.result.topics}
-          scores={brief.result.scores}
-          ideas={ranked}
-          coverage={brief.coverage}
-          language={language}
-          onSelectIdea={selectIdea}
-        />
-      ) : (
-        <Txt muted>{label('The opportunity map fills in as the local engine brief becomes available. Source coverage above stays visible while it loads.', 'نقشه فرصت با آمادهشدن تحلیل موتور محلی تکمیل میشود؛ پوشش منابع تا آن زمان قابل مشاهده است.')}</Txt>
-      )}
+
+      <View style={{ gap: 8, borderRadius: 11, backgroundColor: p.surface, borderWidth: 1, borderColor: p.border, padding: 11 }}>
+        <Text style={{ color: p.text, fontSize: 11, fontWeight: '800' }}>
+          {label('EDITORIAL PRIORITY DISTRIBUTION', 'توزیع اولویت تحریری')}
+        </Text>
+        <Txt muted>{label(
+          number(priority.scored) + ' scored active ideas · ' + number(priority.unscored) + ' unscored active ideas',
+          number(priority.scored) + ' ایدهٔ فعال امتیازدار · ' + number(priority.unscored) + ' ایدهٔ فعال بدون امتیاز',
+        )}</Txt>
+        {priority.scored > 0 ? (
+          <>
+            <View style={{ height: 9, flexDirection: 'row', borderRadius: 999, overflow: 'hidden', backgroundColor: p.surfaceAlt }}>
+              {bands.filter((band) => band.count > 0).map((band) => (
+                <View key={band.id} style={{ flex: band.count, backgroundColor: band.color }} />
+              ))}
+            </View>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
+              {bands.map((band) => (
+                <View key={band.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                  <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: band.color }} />
+                  <Text style={{ color: p.muted, fontSize: 10 }}>{band.title}: {number(band.count)}</Text>
+                </View>
+              ))}
+            </View>
+          </>
+        ) : (
+          <Txt muted>{label('No scored ideas yet.', 'هنوز ایدهٔ امتیازداری وجود ندارد.')}</Txt>
+        )}
+        <Txt muted>{label(
+          'Scores combine relevance, evidence breadth, freshness and differentiation. They do not estimate views.',
+          'امتیاز از ارتباط موضوع، گسترهٔ شواهد، تازگی و تمایز ساخته می‌شود و تخمین بازدید نیست.',
+        )}</Txt>
+      </View>
+
+      <Txt muted>{label('Research focus: ', 'تمرکز تحقیق: ') + topic}</Txt>
       {secondOpinion ? (
         <View style={{ gap: 8, borderTopWidth: 1, borderTopColor: p.borderSoft, paddingTop: 12 }}>
           {secondOpinion}
