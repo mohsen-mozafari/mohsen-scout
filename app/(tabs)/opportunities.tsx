@@ -28,6 +28,8 @@ import { deduplicateDisplayIdeas, generateEditorialIdeas, IDEA_GENERATION_CATEGO
 import { getTopicDossier } from '@/lib/topic-dossier';
 import { fetchSpaceNews, getCachedSpaceNews, SPACE_NICHES } from '@/lib/space';
 import { createSearchQuery, indexSearchText, matchesSearchIndex, normalizeSearchText } from '@/lib/search';
+import { buildResearchInterestProfile } from '@/lib/intelligence';
+import { buildResearchActivityFeedbackProfile, buildResearchActivitySourceExclusions, explainResearchActivitySourceExclusion } from '@/lib/research-activity';
 import { palette as p } from '@/lib/theme';
 import { getEditorialPriorityBand, EDITORIAL_PRIORITY_CONFIG, selectTopCurrentEditorialPriorities, type EditorialPriorityBand } from '@/lib/editorial-priority';
 import { setSelectedIdeaId } from '@/lib/idea-selection';
@@ -246,7 +248,7 @@ export default function Opportunities() {
         refreshInput,
         'manual',
         true,
-        { ...(requestedCategory ? { category: requestedCategory } : {}), limit: 8 },
+        { ...(requestedCategory ? { category: requestedCategory } : {}), limit: 10 },
       );
       if (refreshedReport) {
         const updated = useScout.getState().data;
@@ -255,11 +257,11 @@ export default function Opportunities() {
         setFeaturedOverrideId(undefined);
         setGenerationMessage(current.preferences.uiLanguage === 'fa'
           ? (added.length
-            ? added.length + ' ایدهٔ تازه از نمونهٔ جدید YouTube و خبرهای ناشران ساخته شد؛ ' + refreshedReport.videos.length + ' ویدئو بررسی شد.'
+            ? added.length + ' ایدهٔ تازه از شواهد مستقل وب و ناشران ساخته شد؛ نمونهٔ خام YouTube جداگانه به‌روز شد و ' + refreshedReport.videos.length + ' رکورد ویدئو دریافت شد.'
             : 'نمونهٔ YouTube به‌روز شد، اما ایدهٔ متمایز دیگری با شواهد کافی پیدا نشد؛ پیشنهاد تکراری ساخته نشد.') +
             (warnings.length ? ' بعضی منابع با نسخهٔ ذخیره‌شده جایگزین شدند.' : '')
           : (added.length
-            ? added.length + ' new ideas were generated from a fresh YouTube sample and publisher evidence; ' + refreshedReport.videos.length + ' videos were analyzed.'
+            ? added.length + ' new ideas were generated from independent web and publisher evidence; the raw YouTube sample was refreshed separately and ' + refreshedReport.videos.length + ' video records were received.'
             : 'The YouTube sample was refreshed, but no distinct idea met the evidence threshold. Existing ideas were not recycled.') +
             (warnings.length ? ' Some publishers used their last successful cached copy.' : ''));
         return;
@@ -272,32 +274,21 @@ export default function Opportunities() {
       normalizeSearchText(item.input.topic) === normalizeSearchText(topic),
     );
     const dossier = getTopicDossier(topic);
-    const reportVideos = report?.videos ?? [];
-    const dossierVideos = dossier?.videos ?? [];
-    const mergedVideos = new Map([...dossierVideos, ...reportVideos].map((video) => [video.id, video]));
-    const now = Date.now();
-    const metadataTtlMs = 29 * 24 * 60 * 60 * 1000;
-    const videos = [...mergedVideos.values()]
-      .filter((video) => {
-        const fetchedAt = 'fetchedAt' in video && typeof video.fetchedAt === 'number'
-          ? video.fetchedAt
-          : dossier?.updatedAt ?? 0;
-        return fetchedAt > 0 && now >= fetchedAt && now - fetchedAt < metadataTtlMs;
-      })
-      .map((video) => ({
-        id: video.id,
-        title: video.title,
-        description: video.description,
-        channel: video.channel,
-        publishedAt: video.publishedAt,
-        viewCount: video.viewCount ?? null,
-        likeCount: video.likeCount ?? null,
-      }));
     const cachedNews = getCachedSpaceNews(fallbackData.feedRegistry, fallbackData.preferences.spaceNewsSources);
     const mergedNews = new Map(
       [...(dossier?.news ?? []), ...cachedNews, ...refreshedNews.items].map((item) => [item.url, item]),
     );
-    const allNews = [...mergedNews.values()];
+    const sourceExclusions = buildResearchActivitySourceExclusions(fallbackData.researchActivity);
+    const allNews = [...mergedNews.values()].filter((item) =>
+      !explainResearchActivitySourceExclusion(item.url, sourceExclusions),
+    );
+    const activityFeedback = buildResearchActivityFeedbackProfile(fallbackData.researchActivity);
+    const savedIdeaFeedback = buildResearchInterestProfile(fallbackData.ideas);
+    const feedback = {
+      positiveTopics: [...activityFeedback.positiveTopics, ...savedIdeaFeedback.positiveTopics],
+      negativeTopics: [...activityFeedback.negativeTopics, ...savedIdeaFeedback.negativeTopics],
+    };
+    const wikiExcluded = Boolean(dossier?.wiki && explainResearchActivitySourceExclusion(dossier.wiki.articleUrl, sourceExclusions));
     const priorMemory = fallbackData.researchMemory.find((entry) =>
       normalizeSearchText(entry.topic) === normalizeSearchText(topic),
     );
@@ -308,8 +299,7 @@ export default function Opportunities() {
         topic,
         news: allNews,
         priorMemory,
-        videos,
-        context: dossier?.wiki ? [{
+        context: dossier?.wiki && !wikiExcluded ? [{
           title: dossier.wiki.articleTitle,
           summary: [dossier.wiki.summary, dossier.wiki.monthlyViews.length
             ? 'Monthly Wikipedia article pageviews: ' + dossier.wiki.monthlyViews.map((point) => point.month + '=' + point.views).join(', ')
@@ -318,12 +308,13 @@ export default function Opportunities() {
           sourceName: 'Wikimedia Pageviews · attention proxy',
         }] : [],
         existingIdeas: fallbackData.ideas,
+        feedback,
         ...(report ? { reportId: report.id } : {}),
         region: fallbackData.preferences.region,
         languages: fallbackData.preferences.languages,
         language: fallbackData.preferences.uiLanguage ?? 'fa',
         ...(requestedCategory ? { category: requestedCategory } : {}),
-        limit: 8,
+        limit: 10,
       });
       if (!generated.length) {
         recordRuntimeFinish('Engine', 'partial');

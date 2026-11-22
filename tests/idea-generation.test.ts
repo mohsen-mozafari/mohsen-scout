@@ -585,3 +585,31 @@ void test('raw lifetime view counts cannot change the selected related-video ord
     selectIdeaGenerationVideos(base.topic, reversedViews).map((video) => video.id),
   );
 });
+
+
+void test('refresh with thousands of saved ideas stays bounded and does not mutate saved records', () => {
+  const saved = Array.from({ length: 2500 }, (_, index) => ({
+    ...createManualIdea(
+      'Previously saved personal angle ' + index,
+      'A user-authored note kept in the local library.',
+      '',
+      'Germany',
+      ['en'],
+    ),
+    id: 'saved-idea-' + index,
+  }));
+  const originalIds = saved.map((idea) => idea.id);
+  const startedAt = Date.now();
+  const generated = generateEditorialIdeas({
+    ...base,
+    news,
+    existingIdeas: saved,
+    limit: 10,
+    now: base.now + 5000,
+  });
+  const elapsed = Date.now() - startedAt;
+  assert.ok(generated.length <= 10);
+  assert.equal(new Set(generated.map((idea) => idea.id)).size, generated.length);
+  assert.deepEqual(saved.map((idea) => idea.id), originalIds);
+  assert.ok(elapsed < 5000, 'a local refresh should not spend seconds scanning 2,500 saved ideas');
+});
