@@ -269,7 +269,7 @@ export default function ResearchActivityScreen() {
       />
       <Panel>
         <Field
-          label={fa ? 'جست‌وجو در Query، موضوع و منابع' : 'Search queries, topics and sources'}
+          label={fa ? 'عبارت جست‌وجو یا عملیات، موضوع و منابع' : 'Search queries, operations, topics and sources'}
           value={search}
           onChange={setSearch}
           placeholder={fa ? 'عبارت جست‌وجو یا نام منبع' : 'Search phrase or source name'}

@@ -35,6 +35,7 @@ type State = {
   boot: () => Promise<void>;
   commit: (change: (data: LocalData) => LocalData) => Promise<void>;
   setResearchActivityFeedback: (eventId: string, resultId: string, feedback: ResearchActivityFeedback) => Promise<void>;
+  recordResearchActivity: (event: ResearchActivityEvent) => Promise<void>;
   research: (
     input: ResearchInput,
     origin?: YouTubeQuotaOrigin,
@@ -87,6 +88,12 @@ export const useScout = create<State>((set, get) => ({
     await get().commit((data) => ({
       ...data,
       researchActivity: updateResearchActivityFeedback(data.researchActivity, eventId, resultId, feedback),
+    }));
+  },
+  recordResearchActivity: async (event) => {
+    await get().commit((data) => ({
+      ...data,
+      researchActivity: appendResearchActivity(data.researchActivity, event),
     }));
   },
   boot: async () => {

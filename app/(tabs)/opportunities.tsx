@@ -21,7 +21,7 @@ import {
   ScreenIntro,
 } from '@/components/ScoutUI';
 import { useScout } from '@/lib/store';
-import { statuses, type Idea } from '@/lib/types';
+import { statuses, uid, type Idea, type ResearchActivityEvent } from '@/lib/types';
 import { getIdeaDisplayTitle, isIdeaDisplayable } from '@/lib/idea-research';
 import { createManualIdea } from '@/lib/engine';
 import { deduplicateDisplayIdeas, generateEditorialIdeas, IDEA_GENERATION_CATEGORIES, type IdeaGenerationCategory } from '@/lib/idea-generation';
@@ -29,7 +29,7 @@ import { getTopicDossier } from '@/lib/topic-dossier';
 import { fetchSpaceNews, getCachedSpaceNews, SPACE_NICHES } from '@/lib/space';
 import { createSearchQuery, indexSearchText, matchesSearchIndex, normalizeSearchText } from '@/lib/search';
 import { buildResearchInterestProfile } from '@/lib/intelligence';
-import { buildResearchActivityFeedbackProfile, buildResearchActivitySourceExclusions, explainResearchActivitySourceExclusion } from '@/lib/research-activity';
+import { buildResearchActivityFeedbackProfile, buildResearchActivityResults, buildResearchActivitySourceExclusions, explainResearchActivitySourceExclusion } from '@/lib/research-activity';
 import { palette as p } from '@/lib/theme';
 import { getEditorialPriorityBand, EDITORIAL_PRIORITY_CONFIG, selectTopCurrentEditorialPriorities, type EditorialPriorityBand } from '@/lib/editorial-priority';
 import { setSelectedIdeaId } from '@/lib/idea-selection';
@@ -209,34 +209,81 @@ export default function Opportunities() {
 
   const generate = (requestedCategory?: IdeaGenerationCategory) => void op.run(async () => {
     const initial = useScout.getState().data;
-    recordRuntimeStart('Sources');
-    let refreshedNews: Awaited<ReturnType<typeof fetchSpaceNews>>;
-    try {
-      refreshedNews = await fetchSpaceNews(initial.preferences.spaceNewsSources, fetch, true);
-      recordRuntimeFinish('Sources', refreshedNews.warnings.length ? 'partial' : 'success');
-    } catch (error) {
-      recordRuntimeFinish('Sources', 'error', error instanceof Error ? error.message : String(error));
-      throw error;
-    }
-    if (refreshedNews.registry.length) {
-      await useScout.getState().commit((data) => ({ ...data, feedRegistry: refreshedNews.registry }));
+    const savedReport = initial.reports[0];
+    const niche = SPACE_NICHES.find((item) => item.id === initial.preferences.selectedSpaceNiche);
+    const topic = initial.preferences.selectedSpaceNiche === 'custom'
+      ? initial.preferences.customSpaceNiche.trim()
+      : initial.preferences.selectedSpaceNiche === 'all'
+        ? initial.preferences.lastInput?.topic ?? savedReport?.input.topic ?? 'Space science and exploration'
+        : niche?.topic ?? initial.preferences.lastInput?.topic ?? 'Space science and exploration';
+    if (!topic) throw new Error('Choose a niche or enter a research topic before generating ideas.');
+
+    const savedInput = initial.preferences.lastInput;
+    const refreshAttempted = Boolean(savedInput);
+    let refreshedNews: Awaited<ReturnType<typeof fetchSpaceNews>> = {
+      items: [],
+      registry: initial.feedRegistry,
+      warnings: [],
+    };
+
+    // When a saved research input exists, the store owns the feed refresh and logs it.
+    // Avoid making a second, duplicate RSS request before that measured operation.
+    if (!savedInput) {
+      const feedStartedAt = Date.now();
+      recordRuntimeStart('Sources');
+      let feedError = '';
+      try {
+        refreshedNews = await fetchSpaceNews(initial.preferences.spaceNewsSources, fetch, true);
+        recordRuntimeFinish('Sources', refreshedNews.warnings.length ? 'partial' : 'success');
+      } catch (error) {
+        feedError = error instanceof Error ? error.message : String(error);
+        refreshedNews = {
+          items: [],
+          registry: initial.feedRegistry,
+          warnings: ['Publisher feed refresh failed: ' + feedError],
+        };
+        recordRuntimeFinish('Sources', 'error', feedError);
+      }
+      if (refreshedNews.registry.length) {
+        await useScout.getState().commit((data) => ({ ...data, feedRegistry: refreshedNews.registry }));
+      }
+      const completedAt = Date.now();
+      const feedEvent: ResearchActivityEvent = {
+        id: uid(),
+        engine: 'Publisher Feeds',
+        query: 'RSS feed refresh (no remote search query); enabled sources: ' +
+          initial.preferences.spaceNewsSources.join(', ') + '; local topic filter: ' + topic,
+        topic,
+        niche: initial.preferences.customSpaceNiche.trim() ||
+          (initial.preferences.selectedSpaceNiche !== 'all' ? initial.preferences.selectedSpaceNiche : topic),
+        startedAt: feedStartedAt,
+        completedAt,
+        durationMs: Math.max(0, completedAt - feedStartedAt),
+        status: refreshedNews.items.length
+          ? (refreshedNews.warnings.length ? 'partial' : 'success')
+          : (feedError ? 'error' : refreshedNews.warnings.length ? 'partial' : 'empty'),
+        resultCount: refreshedNews.items.length,
+        analyzedCount: refreshedNews.items.length,
+        results: buildResearchActivityResults(topic, refreshedNews.items.map((item) => ({
+          id: item.id,
+          title: item.title,
+          summary: item.summary,
+          sourceName: item.sourceName,
+          url: item.url,
+          publishedAt: item.publishedAt,
+          sourceAssessment: 'configured-feed',
+          includedInAnalysis: true,
+          decisionReason: 'Fetched from a configured RSS feed and passed to the local evidence screen; relevance is filtered by the editorial engine and publisher claims are not independently verified.',
+        }))),
+        warnings: refreshedNews.warnings.slice(0, 12),
+        ...(feedError ? { error: feedError.slice(0, 700) } : {}),
+        ...(savedReport ? { reportId: savedReport.id } : {}),
+      };
+      await useScout.getState().recordResearchActivity(feedEvent);
     }
 
     const current = useScout.getState().data;
-    const savedReport = current.reports[0];
-    const niche = SPACE_NICHES.find((item) => item.id === current.preferences.selectedSpaceNiche);
-    const topic = current.preferences.selectedSpaceNiche === 'custom'
-      ? current.preferences.customSpaceNiche.trim()
-      : current.preferences.selectedSpaceNiche === 'all'
-        ? current.preferences.lastInput?.topic ?? savedReport?.input.topic ?? 'Space science and exploration'
-        : niche?.topic ?? current.preferences.lastInput?.topic ?? 'Space science and exploration';
-    if (!topic) throw new Error('Choose a niche or enter a research topic before generating ideas.');
-
-    // A manual Ideas refresh fetches a fresh official YouTube sample using the existing key and quota.
-    // The store then runs the same local evidence engine used by scheduled research.
     const previousIdeaIds = new Set(current.ideas.map((idea) => idea.id));
-    const savedInput = current.preferences.lastInput;
-    const refreshAttempted = Boolean(savedInput);
     if (savedInput) {
       const refreshInput = {
         ...savedInput,
