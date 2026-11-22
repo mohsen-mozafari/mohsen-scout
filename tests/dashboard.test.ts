@@ -7,6 +7,7 @@ import {
   engineReviewCacheKey,
   findCachedEngineReview,
   rankDashboardIdeas,
+  selectDashboardFeaturedIdeas,
   selectDashboardIdeas,
   runSingleFlight,
   selectDashboardVideos,
@@ -57,6 +58,29 @@ void test('dashboard chooses the strongest active idea and excludes archived, re
   const newestStrong = idea('newest-strong', 'Strong Opportunity', { sourceUrl: 'https://example.com/source', createdAt: now });
   assert.equal(chooseBestIdea([completed, rejected, archived, promising, strong, newestStrong])?.id, 'newest-strong');
   assert.deepEqual(rankDashboardIdeas([completed, rejected, archived]).map((item) => item.id), []);
+});
+
+void test('dashboard featured idea uses the same active scored priority pool as the Ideas page', () => {
+  const top = idea('global-top', 'Strong Opportunity', {
+    engineGenerated: true, engineScore: 94,
+  });
+  const next = idea('next', 'Promising', {
+    engineGenerated: true, engineScore: 82,
+  });
+  const unscored = idea('unscored', 'Uncertain', { engineGenerated: true });
+  const archived = idea('archived-high', 'Strong Opportunity', {
+    engineGenerated: true, engineScore: 100, archived: true,
+  });
+  const completed = idea('completed-high', 'Strong Opportunity', {
+    engineGenerated: true, engineScore: 99, status: 'Completed Research',
+  });
+  const placeholder = idea('placeholder', 'Uncertain', {
+    topic: 'Untitled Idea', concept: '', engineGenerated: true, engineScore: 98,
+  });
+
+  assert.deepEqual(selectDashboardFeaturedIdeas(
+    [next, unscored, archived, completed, placeholder, top], 5,
+  ).map((item) => item.id), ['global-top', 'next']);
 });
 
 void test('dashboard selects source-linked radar ideas without a report ID', () => {

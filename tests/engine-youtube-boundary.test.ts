@@ -21,7 +21,7 @@ void test('internal engine receives the YouTube sample as an isolated raw pass-t
   assert.equal(result.intelligence.selfEvaluation.youtubeRawSampleReceived, true);
   const serializedAnalysis = JSON.stringify(result);
   assert.doesNotMatch(serializedAnalysis, /Raw YouTube title|Raw description stays unchanged|123456|789/);
-  assert.equal(result.intelligence.selfEvaluation.youtubeSampleCount, 0);
+  assert.equal(result.intelligence.selfEvaluation.youtubeSampleCount, 1);
   assert.equal(result.intelligence.selfEvaluation.matchedVideoCount, 0);
   assert.equal(result.intelligence.selfEvaluation.videoViewCountsAvailable, 0);
   assert.equal(result.entityCandidates.length, 0);

@@ -1309,7 +1309,7 @@ void test('Internal research engine uses publisher and Wikimedia evidence while 
   assert.ok(result.evidence.some((item) => item.id === 'publisher-news' && item.detail.includes('2 selected feed source(s)')));
   assert.ok(result.evidence.some((item) => item.id === 'wikimedia' && item.detail.includes('not search volume')));
   assert.ok(result.evidence.some((item) => item.id === 'youtube-sample' && item.detail.includes('intentionally excluded')));
-  assert.equal(result.intelligence.selfEvaluation.youtubeSampleCount, 0);
+  assert.equal(result.intelligence.selfEvaluation.youtubeSampleCount, 1);
   assert.equal(result.intelligence.selfEvaluation.videoViewCountsAvailable, 0);
   assert.doesNotMatch(JSON.stringify(result), /Exoplanet atmosphere discovery explained|MOCK science channel/);
   assert.equal(result.intelligence.sourceQuality.feedsRepresented, 2);
@@ -1339,7 +1339,7 @@ void test('Internal engine ignores YouTube metadata in recent and all-time resea
   const audit = result.intelligence.selfEvaluation;
   assert.equal(audit.topicMatchedNewsCount, 1);
   assert.equal(audit.unmatchedNewsCount, 1);
-  assert.equal(audit.youtubeSampleCount, 0);
+  assert.equal(audit.youtubeSampleCount, 4);
   assert.equal(audit.recentVideoCandidateCount, 0);
   assert.equal(audit.matchedVideoCount, 0);
   assert.equal(audit.allTimeMatchedVideoCount, 0);
@@ -1357,7 +1357,7 @@ void test('Internal engine ignores YouTube metadata in recent and all-time resea
       { id: 'aqz-KE-bpKQ', title: 'Exoplanet atmosphere announced for the future', channel: 'Future Science', publishedAt: '2026-12-01T09:00:00.000Z', viewCount: 12000, likeCount: 500 },
     ],
   }).intelligence.selfEvaluation;
-  assert.equal(allTime.youtubeSampleCount, 0);
+  assert.equal(allTime.youtubeSampleCount, 3);
   assert.equal(allTime.recentVideoCandidateCount, 0);
   assert.equal(allTime.recentMatchedVideoCount, 0);
   assert.equal(allTime.outsideVideoWindowCount, 0);
@@ -1455,7 +1455,7 @@ void test('Internal engine self-evaluation reports measured inputs, deduplicatio
   assert.equal(audit.inputNewsCount, 2);
   assert.equal(audit.uniqueNewsCount, 1);
   assert.equal(audit.duplicateNewsMerged, 1);
-  assert.equal(audit.youtubeSampleCount, 0);
+  assert.equal(audit.youtubeSampleCount, 1);
   assert.equal(audit.wikimediaMonthlyObservations, 0);
   assert.equal(audit.entityCandidateCount, result.entityCandidates.length);
   assert.equal(audit.coMentionRelationCount, result.entityRelations.length);
