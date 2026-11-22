@@ -1,6 +1,6 @@
 import { memo, useDeferredValue, useMemo, useState } from 'react';
 import { FlatList, Platform, View, Text, Pressable } from 'react-native';
-import { router, useLocalSearchParams } from 'expo-router';
+import { router } from 'expo-router';
 import { Button } from 'heroui-native';
 import { ArrowUpRight, Plus, Archive, Lightbulb, Activity } from 'lucide-react-native';
 import {
@@ -31,8 +31,9 @@ import { createSearchQuery, indexSearchText, matchesSearchIndex, normalizeSearch
 import { buildResearchInterestProfile } from '@/lib/intelligence';
 import { buildResearchActivityFeedbackProfile, buildResearchActivityResults, buildResearchActivitySourceExclusions, explainResearchActivitySourceExclusion } from '@/lib/research-activity';
 import { palette as p } from '@/lib/theme';
-import { getEditorialPriorityBand, EDITORIAL_PRIORITY_CONFIG, selectTopCurrentEditorialPriorities, compareEditorialPriority, type EditorialPriorityBand } from '@/lib/editorial-priority';
+import { getEditorialPriorityBand, EDITORIAL_PRIORITY_CONFIG, compareEditorialPriority, type EditorialPriorityBand } from '@/lib/editorial-priority';
 import { setSelectedIdeaId } from '@/lib/idea-selection';
+import { selectDashboardFeaturedIdeas } from '@/lib/dashboard';
 import { recordRuntimeFinish, recordRuntimeStart } from '@/lib/runtime-metrics';
 import { MediaPreview } from '@/components/MediaPreview';
 function numberLabel(value: number, fa: boolean) {
@@ -113,10 +114,6 @@ const IdeaListItem = memo(function IdeaListItem({
 const ideaKeyExtractor = (idea: Idea) => idea.id;
 
 export default function Opportunities() {
-  const params = useLocalSearchParams<{ idea?: string }>();
-  const [featuredOverrideId, setFeaturedOverrideId] = useState<string | undefined>(
-    typeof params.idea === 'string' ? params.idea : undefined,
-  );
   const ideas = useScout((s) => s.data.ideas);
   const [status, setStatus] = useState('All');
   const [search, setSearch] = useState('');
@@ -188,13 +185,11 @@ export default function Opportunities() {
     return sort === 'A-Z' ? comparison : -comparison;
   }), [filtered, sort, preferences.uiLanguage]);
   const topOpportunities = useMemo(
-    () => selectTopCurrentEditorialPriorities(filtered, EDITORIAL_PRIORITY_CONFIG.pinnedIdeas),
+    () => selectDashboardFeaturedIdeas(filtered, EDITORIAL_PRIORITY_CONFIG.pinnedIdeas),
     [filtered],
   );
   const topOpportunityIds = useMemo(() => new Set(topOpportunities.map((idea) => idea.id)), [topOpportunities]);
-  const featuredIdea = displayableIdeas.find((idea) =>
-    idea.id === featuredOverrideId && idea.archived === archive,
-  ) ?? topOpportunities[0];
+  const featuredIdea = topOpportunities[0];
   const remainingIdeas = useMemo(() => sortedFiltered.filter((idea) => !topOpportunityIds.has(idea.id)), [sortedFiltered, topOpportunityIds]);
   const sortOptions = fa
     ? ['امتیاز اولویت', 'جدیدترین', 'قدیمی‌ترین', 'عنوان صعودی', 'عنوان نزولی']
@@ -305,7 +300,6 @@ export default function Opportunities() {
         const updated = useScout.getState().data;
         const added = updated.ideas.filter((idea) => idea.engineGenerated && !previousIdeaIds.has(idea.id));
         const warnings = [...new Set([...refreshedNews.warnings, ...refreshedReport.warnings])];
-        setFeaturedOverrideId(undefined);
         setGenerationMessage(current.preferences.uiLanguage === 'fa'
           ? (added.length
             ? added.length + ' ایدهٔ تازه از شواهد مستقل وب و ناشران ساخته شد؛ نمونهٔ خام YouTube جداگانه به‌روز شد و ' + refreshedReport.videos.length + ' رکورد ویدئو دریافت شد.'
@@ -376,7 +370,6 @@ export default function Opportunities() {
         return;
       }
       await useScout.getState().commit((data) => ({ ...data, ideas: [...generated, ...data.ideas] }));
-      setFeaturedOverrideId(undefined);
       recordRuntimeFinish('Engine', 'success');
       engineRecorded = true;
       setGenerationMessage(current.preferences.uiLanguage === 'fa'
@@ -500,9 +493,7 @@ export default function Opportunities() {
               >
                 <View style={{ borderRadius: 13, borderWidth: 1, borderColor: p.accent, backgroundColor: p.surface, padding: 12, gap: 7 }}>
                   <View style={styles.rowBetween}>
-                    <BadgeText>{featuredIdea.id === featuredOverrideId
-                      ? (fa ? 'ایده انتخاب‌شده از نمودار' : 'SELECTED FROM RESEARCH GRAPH')
-                      : (fa ? 'ایده با بالاترین اولویت' : 'HIGHEST-PRIORITY IDEA')}</BadgeText>
+                    <BadgeText>{fa ? 'بالاترین اولویت فعال' : 'HIGHEST ACTIVE PRIORITY'}</BadgeText>
                     {typeof featuredIdea.engineScore === 'number' && Number.isFinite(featuredIdea.engineScore) ? (
                       <Text style={{ color: p.accent, fontSize: 13, fontWeight: '800' }}>{numberLabel(featuredIdea.engineScore, fa)}/100</Text>
                     ) : <Text style={{ color: p.muted, fontSize: 10 }}>{fa ? 'بدون امتیاز' : 'NOT SCORED'}</Text>}
@@ -530,10 +521,10 @@ export default function Opportunities() {
                 </View>
               </Fold>
             ) : null}
-            {topOpportunities.length ? (
-              <Fold title={fa ? '۵ ایده برتر سنجاق‌شده' : 'Top 5 active opportunities'} summary={String(topOpportunities.length)}>
+            {topOpportunities.length > 1 ? (
+              <Fold title={fa ? 'چهار اولویت بعدی' : 'Next active priorities'} summary={String(topOpportunities.length - 1)}>
                 <View style={{ gap: 8 }}>
-                    {topOpportunities.map((idea, index) => {
+                    {topOpportunities.slice(1).map((idea, index) => {
                       const band = getEditorialPriorityBand(idea.engineScore ?? 0);
                       const tint = band === 'strong' ? p.success : band === 'moderate' ? p.cyan : p.danger;
                       return (
@@ -543,7 +534,7 @@ export default function Opportunities() {
                         }} accessibilityRole="button"
                           style={{ borderRadius: 12, borderWidth: 1, borderColor: p.border, backgroundColor: p.surface, padding: 11, gap: 5 }}>
                           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                            <Text style={{ color: tint, fontSize: 10, fontWeight: '800' }}>{(fa ? 'پیشنهاد برتر ' : 'TOP PICK #') + (index + 1) + ' · ' + (band === 'strong' ? (fa ? 'قوی' : 'Strong') : band === 'moderate' ? (fa ? 'متوسط' : 'Medium') : (fa ? 'ضعیف' : 'Weak'))}</Text>
+                            <Text style={{ color: tint, fontSize: 10, fontWeight: '800' }}>{(fa ? 'پیشنهاد برتر ' : 'TOP PICK #') + (index + 2) + ' · ' + (band === 'strong' ? (fa ? 'قوی' : 'Strong') : band === 'moderate' ? (fa ? 'متوسط' : 'Medium') : (fa ? 'ضعیف' : 'Weak'))}</Text>
                             <Text style={{ color: tint, fontSize: 14, fontWeight: '800' }}>{idea.engineScore}/100</Text>
                           </View>
                           <Text style={{ color: p.text, fontSize: 13, fontWeight: '700' }}>{getIdeaDisplayTitle(idea, preferences.uiLanguage ?? 'fa')}</Text>
@@ -557,7 +548,7 @@ export default function Opportunities() {
             {draftOpen ? (
               <View style={styles.panel}>
                 <View style={styles.rowBetween}>
-                  <Heading>Create a complete idea</Heading>
+                  <Heading>Idea editor</Heading>
                   <Text style={styles.badge}>PERSONAL DRAFT</Text>
                 </View>
                 <Field label="Topic / working title" value={draftTopic} onChange={setDraftTopic} placeholder="e.g. What JWST reveals about exoplanet atmospheres" />

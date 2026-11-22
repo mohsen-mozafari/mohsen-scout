@@ -1,5 +1,7 @@
 import { fingerprintText } from './api';
-import { compareEditorialPriority } from './editorial-priority';
+import { compareEditorialPriority, selectTopCurrentEditorialPriorities } from './editorial-priority';
+import { deduplicateDisplayIdeas } from './idea-generation';
+import { isIdeaDisplayable } from './idea-research';
 import { matchesResearchTerms } from './intelligence';
 import { RETENTION_MS, type Idea, type Opinion, type Report, type Video } from './types';
 
@@ -48,14 +50,18 @@ export function collectEngineVideoEvidence(
 
 /** Highest editorial assessment first, then linked evidence, then recency. */
 export function rankDashboardIdeas(ideas: readonly Idea[]): Idea[] {
-  return ideas
+  return deduplicateDisplayIdeas(ideas.filter(isIdeaDisplayable))
     .filter((idea) =>
       !idea.archived &&
       idea.status !== 'Rejected Ideas' &&
       idea.status !== 'Completed Research',
     )
-    .slice()
     .sort(compareEditorialPriority);
+}
+
+/** Shared source of truth for the scored active priorities shown on both screens. */
+export function selectDashboardFeaturedIdeas(ideas: readonly Idea[], limit = 5): Idea[] {
+  return selectTopCurrentEditorialPriorities(rankDashboardIdeas(ideas), limit);
 }
 
 export function chooseBestIdea(ideas: readonly Idea[]): Idea | undefined {

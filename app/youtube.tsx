@@ -86,6 +86,7 @@ export default function Discover() {
     }, []),
   );
   const report: Report | undefined = reports.find((r) => r.id === reportId);
+  const reportIdeas = report ? ideas.filter((idea) => idea.reportId === report.id) : [];
   const sortedReportVideos = report
     ? sortResearchVideos(report.videos, sort as ResearchVideoSort, topic)
     : [];
@@ -323,29 +324,33 @@ export default function Discover() {
               busy={op.busy}
               onPress={() => void op.run(() => useScout.getState().analyze(report.id))}
             >
-              CONTINUE ANALYSIS
+              Analyze cached independent evidence
             </Action>
           )}
           {report.analyzed && (
             <View style={{ gap: 14 }}>
-              <Heading>Internal Engine · Content Angles</Heading>
-              <Txt muted>The local engine converts the real query buckets returned in this report into evidence-linked ideas, links matching video IDs, and leaves unsupported angles marked as uncertain. YouTube titles and statistics are not sent to AI.</Txt>
-              {ideas
-                .filter((i) => i.reportId === report.id)
-                .map((idea) => (
-                  <Button
-                    variant="secondary"
-                    key={idea.id}
-                    onPress={() => router.push({ pathname: '/detail', params: { idea: idea.id } })}
-                    className="h-auto justify-start p-4"
-                  >
-                    <View style={{ flex: 1, gap: 8 }}>
-                      <Txt>{idea.topic}</Txt>
-                      <Text style={styles.badge}>{idea.assessment}</Text>
-                    </View>
-                    <ArrowRight color={p.purple} size={18} />
-                  </Button>
-                ))}
+              <Heading>Internal Engine · Evidence-linked ideas</Heading>
+              <Txt muted>The local engine creates ideas only when cached independent publisher evidence and saved research memory meet its evidence threshold. This analysis action does not turn YouTube search buckets, video titles or statistics into ideas. The sample stays separate; use “Connect this research” to attach the report and its temporary video references to a chosen idea.</Txt>
+              {reportIdeas.length ? reportIdeas.map((idea) => (
+                <Button
+                  variant="secondary"
+                  key={idea.id}
+                  onPress={() => router.push({ pathname: '/detail', params: { idea: idea.id } })}
+                  className="h-auto justify-start p-4"
+                >
+                  <View style={{ flex: 1, gap: 8 }}>
+                    <Txt>{idea.topic}</Txt>
+                    <Text style={styles.badge}>{idea.assessment}</Text>
+                  </View>
+                  <ArrowRight color={p.purple} size={18} />
+                </Button>
+              )) : (
+                <Txt muted>
+                  {preferences.uiLanguage === 'fa'
+                    ? 'برای این گزارش ایدهٔ تازه‌ای با شواهد مستقل کافی ثبت نشده است. نمونهٔ YouTube همچنان در بخش ویدئوهای مرتبط قابل مشاهده است؛ برای تولید ایده، تحقیق مستقل ناشران و وب را از داشبورد تازه‌سازی کن.'
+                    : 'No new idea met the independent-evidence threshold for this report. The YouTube sample remains available below; refresh independent publisher and web research from the dashboard to generate evidence-backed ideas.'}
+                </Txt>
+              )}
             </View>
           )}
           <Fold title="Relevant Videos" summary={report.videos.length + ' returned videos'}>

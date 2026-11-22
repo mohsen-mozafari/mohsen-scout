@@ -16,13 +16,12 @@ import { buildInternalResearch, rankNewsForTopic, type InternalResearchResult } 
 import { buildResearchInterestProfile, normalizeResearchText, scoreResearchText } from '@/lib/intelligence';
 import { getTopicDossier } from '@/lib/topic-dossier';
 import { VideoRow } from '@/components/VideoRow';
-import { collectEngineVideoEvidence, engineReviewCacheKey, findCachedEngineReview, selectDashboardIdeas, selectDashboardVideos } from '@/lib/dashboard';
-import { fingerprintText, getFreeModels, getOpenRouterDailyQuota, formatStructuredSecondOpinion, structuredSecondOpinionPrompt, localDateKey, nextOpenRouterUsage, selectFreeModel, type YouTubeSampleVideo } from '@/lib/api';
+import { collectEngineVideoEvidence, engineReviewCacheKey, findCachedEngineReview, selectDashboardFeaturedIdeas, selectDashboardIdeas, selectDashboardVideos } from '@/lib/dashboard';
+import { fingerprintText, getFreeModels, getOpenRouterDailyQuota, formatStructuredSecondOpinion, structuredSecondOpinionPrompt, localDateKey, nextOpenRouterUsage, selectFreeModel } from '@/lib/api';
 import { getKey } from '@/lib/vault';
 import { requestSecondOpinionWithFallback, type SecondOpinionProviderConfig } from '@/lib/ai-gateway';
 import { ResearchOverviewChart } from '@/components/ResearchOverviewChart';
 import { recordRuntimeFinish, recordRuntimeStart, runtimeErrorHint, useRuntimeMetrics } from '@/lib/runtime-metrics';
-import { useSelectedIdeaId } from '@/lib/idea-selection';
 
 
 function AnalysisSignals({ result }: { result: InternalResearchResult }) {
@@ -345,7 +344,6 @@ function DiscoveryDashboardReady() {
   const storedVideos = useScout((state) => state.data.videos);
   const feedRegistry = useScout((state) => state.data.feedRegistry);
   const runtimeMetrics = useRuntimeMetrics();
-  const selectedIdeaId = useSelectedIdeaId();
   const [healthExpanded, setHealthExpanded] = useState(false);
   const completedOperations = runtimeMetrics.succeeded + runtimeMetrics.partial + runtimeMetrics.failed;
   const sessionSuccessRate = completedOperations
@@ -379,7 +377,6 @@ function DiscoveryDashboardReady() {
   );
   const topicDossier = getTopicDossier(discoveryTopic);
   const cachedTopicAnalysis = topicDossier?.internalAnalysis;
-  const topicWiki = topicDossier?.wiki;
 
   const latestReport = reports[0];
   const [quickTopicDraft, setQuickTopicDraft] = useState<string | undefined>(undefined);
@@ -451,23 +448,6 @@ function DiscoveryDashboardReady() {
     () => selectDashboardVideos(latestReportVideoRecords ?? [], feedTopic, nicheTerms, dashboardNow, 12),
     [latestReportVideoRecords, feedTopic, nicheTerms, dashboardNow],
   );
-  const chartVideos = useMemo<YouTubeSampleVideo[]>(
-    () => (latestReportVideoRecords ?? []).slice(0, 25).map((video) => ({
-      id: video.id,
-      title: video.title,
-      description: video.description,
-      channel: video.channel,
-      channelId: '',
-      publishedAt: video.publishedAt,
-      thumbnailUrl: video.thumbnail,
-      viewCount: video.viewCount ?? null,
-      likeCount: video.likeCount ?? null,
-      channelSubscriberCount: null,
-      channelVideoCount: null,
-      url: 'https://www.youtube.com/watch?v=' + video.id,
-    })),
-    [latestReportVideoRecords],
-  );
 
   const audit = deskAnalysis?.intelligence.selfEvaluation;
   const sharedTerms = deskAnalysis?.intelligence.sharedConcepts ?? [];
@@ -475,8 +455,6 @@ function DiscoveryDashboardReady() {
   const nextQuery = deskAnalysis?.intelligence.followUpQueries[0];
   const chartAnalysis = latestReportAnalysis ?? cachedTopicAnalysis;
   const chartTopic = latestReportAnalysis ? deskTopic : cachedTopicAnalysis ? discoveryTopic : deskTopic;
-  const chartDossier = getTopicDossier(chartTopic);
-  const chartWiki = chartDossier?.wiki ?? (chartTopic === discoveryTopic ? topicWiki : undefined);
   const chartNews = useMemo(
     () => rankNewsForTopic(chartTopic, engineNews, Math.max(1, engineNews.length)),
     [chartTopic, engineNews],
@@ -485,7 +463,7 @@ function DiscoveryDashboardReady() {
     sourceUrls: new Set(chartNews.filter((item) => scoreResearchText(chartTopic, item.title, item.summary) > 0).map((item) => item.url)),
     topic: chartTopic,
   }), [ideas, chartNews, chartTopic]);
-  const bestIdea = chartIdeas.find((idea) => typeof idea.engineScore === 'number' && Number.isFinite(idea.engineScore));
+  const bestIdea = selectDashboardFeaturedIdeas(ideas, 1)[0];
   const ideaLinkage = useMemo(() => ({
     active: ideas.filter((idea) => !idea.archived && idea.status !== 'Rejected Ideas' && idea.status !== 'Completed Research').length,
     generated: ideas.filter((idea) => idea.engineGenerated === true).length,
@@ -507,15 +485,11 @@ function DiscoveryDashboardReady() {
       <View style={{ gap: 15 }}>
         <ResearchOverviewChart
           analysis={chartAnalysis}
-          ideas={chartIdeas}
+          ideas={ideas}
           topic={chartTopic}
-          news={chartNews}
-          wiki={chartWiki}
-          videos={chartVideos}
           language={preferences.uiLanguage ?? 'fa'}
-          selectedIdeaId={selectedIdeaId}
           secondOpinion={chartAnalysis
-            ? <EngineAIReview topic={chartTopic} idea={bestIdea} />
+            ? <EngineAIReview topic={bestIdea?.topic ?? chartTopic} idea={bestIdea} />
             : undefined}
         />
 
@@ -676,7 +650,6 @@ function DiscoveryDashboardReady() {
                 ))}
               </View>
             ) : null}
-            <Action secondary onPress={() => router.push('/opportunities')}>Open all ideas</Action>
           </View>
         </Fold>
 

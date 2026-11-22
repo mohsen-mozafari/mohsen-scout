@@ -493,7 +493,7 @@ export function buildInternalResearch(input: InternalResearchInput): InternalRes
     independentPublisherFamilies: sourceQuality.independentPublishers,
     undatedNewsCount: sourceQuality.undatedItems,
     staleNewsCount: sourceQuality.staleItems,
-    youtubeSampleCount: inputVideos.length,
+    youtubeSampleCount: youtubeSample.length,
     youtubeRawSampleReceived: youtubeSample.length > 0,
     matchedVideoCount: recentMatchedVideoCount,
     allTimeMatchedVideoCount: videos.length,

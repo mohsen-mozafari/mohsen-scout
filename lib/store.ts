@@ -719,6 +719,7 @@ export const useScout = create<State>((set, get) => ({
       topic: report.input.topic,
       news: availableNews,
       reportId: report.id,
+      reportId: report.id,
       priorMemory,
       existingIdeas: currentData.ideas,
       feedback: buildLocalResearchFeedback(currentData),
