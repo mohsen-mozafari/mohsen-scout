@@ -99,7 +99,7 @@ export function diffRecordCollection(
 export function emptyRecordCounts(): RecordCounts {
   return {
     ideas: 0, links: 0, notes: 0, opinions: 0,
-    researchMemory: 0, reports: 0, videos: 0,
+    researchMemory: 0, researchActivity: 0, reports: 0, videos: 0,
   };
 }
 

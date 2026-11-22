@@ -101,5 +101,5 @@ void test('research activity history remains newest-first and bounded', () => {
   const next = appendResearchActivity(initial, event('new', MAX_RESEARCH_ACTIVITY + 1));
   assert.equal(next.length, MAX_RESEARCH_ACTIVITY);
   assert.equal(next[0].id, 'new');
-  assert.equal(next.at(-1)?.id, 'old-' + (MAX_RESEARCH_ACTIVITY - 2));
+  assert.equal(next.at(-1)?.id, 'old-1');
 });

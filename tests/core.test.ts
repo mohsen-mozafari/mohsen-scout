@@ -584,6 +584,47 @@ void test('Backup: round trip preserves personal data and strips all API metadat
   assert.deepEqual(imported.preferences.spaceNewsSources, defaults().preferences.spaceNewsSources);
   assert.equal(imported.preferences.spaceNewsSourcesVersion, 2);
 });
+void test('Backup preserves bounded research activity without exporting raw YouTube video metadata', () => {
+  const data = defaults();
+  data.videos = [{
+    id: 'raw-video-1',
+    title: 'RAW YOUTUBE VIDEO TITLE MUST NOT BE EXPORTED',
+    description: 'Temporary YouTube API metadata',
+    channel: 'Temporary channel',
+    thumbnail: 'https://img.example/raw-thumbnail.jpg',
+    publishedAt: new Date(1000).toISOString(),
+    fetchedAt: 1000,
+    query: 'exact temporary query',
+    viewCount: 12345,
+    likeCount: 678,
+  }];
+  data.researchActivity = [{
+    id: 'activity-1',
+    engine: 'YouTube Data API',
+    query: 'latest space telescope discoveries · recent · en',
+    topic: 'space telescope discoveries',
+    niche: 'astronomy',
+    startedAt: 1000,
+    completedAt: 2000,
+    durationMs: 1000,
+    status: 'success',
+    resultCount: 24,
+    analyzedCount: 0,
+    results: [],
+    warnings: [],
+    reportId: 'report-1',
+  }];
+  const raw = exportBackup(data);
+  assert(!raw.includes('RAW YOUTUBE VIDEO TITLE MUST NOT BE EXPORTED'));
+  const restored = importBackup(raw);
+  assert.deepEqual(restored.researchActivity, data.researchActivity);
+  assert.equal(restored.videos.length, 0);
+
+  const legacy = JSON.parse(raw);
+  delete legacy.personal.researchActivity;
+  assert.deepEqual(importBackup(JSON.stringify(legacy)).researchActivity, []);
+});
+
 void test('Backup: malformed/oversized/wrong version files rejected before mutation', () => {
   assert.throws(() => importBackup('{'));
   assert.throws(() => importBackup(JSON.stringify({ app: 'MOHSEN SCOUT', version: 2 })));

@@ -28,7 +28,7 @@ void test('first record write replaces only its own domain and supports empty co
   assert.equal(delta.replaceAll, true);
   assert.deepEqual(delta.upserts, []);
   assert.deepEqual(delta.deleteIds, []);
-  assert.deepEqual(RECORD_DOMAINS, ['ideas', 'links', 'notes', 'opinions', 'researchMemory', 'reports', 'videos']);
+  assert.deepEqual(RECORD_DOMAINS, ['ideas', 'links', 'notes', 'opinions', 'researchMemory', 'researchActivity', 'reports', 'videos']);
 });
 
 void test('research memory uses a stable normalized topic identity', () => {
