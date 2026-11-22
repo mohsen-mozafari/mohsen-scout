@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { getEditorialPriorityBand, summarizeEditorialPriority } from '../lib/editorial-priority';
+import { getEditorialPriorityBand, selectTopCurrentEditorialPriorities, summarizeEditorialPriority } from '../lib/editorial-priority';
 
 void test('editorial priority summary counts scored and unscored active ideas in the visible bands', () => {
   const summary = summarizeEditorialPriority([
@@ -40,4 +40,17 @@ void test('editorial priority summary handles an empty dashboard', () => {
     weak: 0,
     unscored: 0,
   });
+});
+
+
+void test('live top opportunities immediately replace completed, rejected and archived cards', () => {
+  const ranked = selectTopCurrentEditorialPriorities([
+    { id: 'completed', engineScore: 100, status: 'Completed Research', createdAt: 9 },
+    { id: 'rejected', engineScore: 99, status: 'Rejected Ideas', createdAt: 8 },
+    { id: 'archived', engineScore: 98, archived: true, createdAt: 7 },
+    { id: 'active-1', engineScore: 90, status: 'New Discoveries', createdAt: 6 },
+    { id: 'active-2', engineScore: 80, status: 'Saved Opportunities', createdAt: 5 },
+    { id: 'active-3', engineScore: 70, status: 'New Discoveries', createdAt: 4 },
+  ], 2);
+  assert.deepEqual(ranked.map((idea) => idea.id), ['active-1', 'active-2']);
 });

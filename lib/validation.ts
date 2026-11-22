@@ -47,7 +47,7 @@ const schema = z.object({
     openRouterDailyRemaining: z.number().int().min(0).max(10000).optional(),
     openRouterQuotaCheckedAt: time.optional(),
     youtubeRefreshTimestamps: z.array(time).max(5000).optional().default([]),
-    schedule: z.enum(['Manual', 'Every 12 hours', 'Daily', 'Weekly']),
+    schedule: z.enum(['Manual', 'Every 6 hours', 'Every 12 hours', 'Daily', 'Weekly']),
     paused: z.boolean(),
     lastInput: inputSchema.optional(),
     spaceNewsSources: z.array(z.enum(['nasa', 'jpl', 'cneos', 'esa-space', 'esa-science', 'space-com', 'phys-space', 'universe-today', 'sky-telescope'])).max(9).optional().default(['nasa', 'jpl', 'cneos', 'esa-space', 'esa-science', 'space-com', 'phys-space', 'universe-today', 'sky-telescope']),

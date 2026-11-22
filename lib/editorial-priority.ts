@@ -27,7 +27,29 @@ export type EditorialPriorityCandidate = {
   engineScore?: number | null;
   archived?: boolean;
   status?: string;
+  createdAt?: number;
 };
+
+/** Selects the live recommendation rail; completed, rejected and archived ideas never occupy a slot. */
+export function selectTopCurrentEditorialPriorities<T extends EditorialPriorityCandidate>(
+  ideas: readonly T[],
+  limit = EDITORIAL_PRIORITY_CONFIG.pinnedIdeas,
+): T[] {
+  const maximum = Number.isFinite(limit) ? Math.max(0, Math.min(25, Math.floor(limit))) : EDITORIAL_PRIORITY_CONFIG.pinnedIdeas;
+  if (!maximum) return [];
+  return ideas
+    .filter((idea) =>
+      !idea.archived &&
+      idea.status !== 'Rejected Ideas' &&
+      idea.status !== 'Completed Research' &&
+      typeof idea.engineScore === 'number' && Number.isFinite(idea.engineScore),
+    )
+    .sort((left, right) =>
+      (right.engineScore ?? -1) - (left.engineScore ?? -1) ||
+      (right.createdAt ?? 0) - (left.createdAt ?? 0),
+    )
+    .slice(0, maximum);
+}
 
 export type EditorialPrioritySummary = {
   scored: number;

@@ -535,7 +535,7 @@ export default function Settings() {
       <Fold title="Automatic YouTube research" summary={prefs.schedule === 'Manual' ? 'Manual · off' : prefs.paused ? 'Paused' : prefs.schedule}>
         <Choices
           label="Frequency"
-          options={['Manual', 'Every 12 hours', 'Daily', 'Weekly'] as const}
+          options={['Manual', 'Every 6 hours', 'Every 12 hours', 'Daily', 'Weekly'] as const}
           selected={[prefs.schedule]}
           onChange={(v) => setPrefs({ ...prefs, schedule: v[0] })}
         />
@@ -547,7 +547,7 @@ export default function Settings() {
         />
         <Txt muted>{scheduleNotice}</Txt>
         <Txt muted>
-          Uses the last manually researched topic and the same daily budget. No continuous polling.
+          Uses the last researched topic and the same daily quota. Each scheduled run refreshes the selected publisher feeds and official YouTube sample, then generates new local ideas. Android may defer the six-hour minimum; there is no always-on polling.
         </Txt>
         <Action busy={op.busy} onPress={save}>
           Save schedule
@@ -708,9 +708,9 @@ export default function Settings() {
           OpenRouter privacy
         </Action>
       </Fold>
-      <Fold title="App info & mock diagnostics" summary="Version 1.7.0 · local-first · isolated test runner">
+      <Fold title="App info & mock diagnostics" summary="Version 1.10.0 · local-first · isolated test runner">
         <Heading>MOHSEN SCOUT</Heading>
-        <Txt>Version 1.7.0</Txt>
+        <Txt>Version 1.10.0</Txt>
         <Txt muted>Run synthetic regression checks with mocked responses. They do not call YouTube or OpenRouter, use saved API keys, or change your research workspace.</Txt>
         <Action secondary icon={Bug} onPress={() => router.push({
           pathname: '/diagnostics',

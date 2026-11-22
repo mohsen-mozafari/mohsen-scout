@@ -35,7 +35,7 @@ export type IdeaGenerationContext = {
 export type GenerateEditorialIdeasInput = {
   topic: string;
   news?: readonly SpaceNewsItem[];
-  /** Deprecated compatibility input. YouTube API data is never consumed by the publisher editorial engine. */
+  /** Transient official YouTube metadata used only for local scoring; never copied into durable Idea text. */
   videos?: readonly IdeaGenerationVideo[];
   context?: readonly IdeaGenerationContext[];
   /** Bounded publisher-only history; raw YouTube metadata is intentionally excluded. */
@@ -57,11 +57,12 @@ type Document = {
   id: string;
   title: string;
   text: string;
-  kind: 'news' | 'context' | 'history';
+  kind: 'news' | 'context' | 'history' | 'youtube';
   publishedAt?: string | null;
   sourceId?: string;
   sourceName?: string;
   sourceUrl?: string;
+  videoId?: string;
 };
 
 type Candidate = {
@@ -96,7 +97,7 @@ function matchesSavedTopicPreference(value: string, topics: readonly string[]): 
 
 function ideaHasSameMeaning(candidate: Candidate, idea: Pick<Idea, 'engineGenerated' | 'ideaCategory' | 'topic' | 'concept'>, topic: string): boolean {
   if (!idea.engineGenerated) return false;
-  const question = idea.concept.match(/(?:Central question:|پرسش محوری:)\s*([^\n]+)/i)?.[1] ?? '';
+  const question = idea.concept.match(/(?:Central question:|پرسش اصلی:|پرسش محوری:)\s*([^\n]+)/i)?.[1] ?? '';
   const candidateTokens = semanticTokens(candidate.title + ' ' + candidate.question);
   const existingTokens = semanticTokens(idea.topic + ' ' + question);
   const anchorTokens = semanticTokens(candidate.anchor);
@@ -159,7 +160,7 @@ function buildCandidate(
   topic: string,
   anchor: string,
   fa: boolean,
-  sourceMode: 'news' | 'context' | 'history' | 'topic',
+  sourceMode: 'news' | 'youtube' | 'context' | 'history' | 'topic' | 'mixed',
 ): Candidate {
   const term = displayTerm(anchor || topic);
   const titles: Record<IdeaGenerationCategory, string> = {
@@ -259,11 +260,15 @@ function buildCandidate(
     : 'Before production, verify the title, date, figures and key claims at the linked source. A video title or description alone is not a primary scientific source.';
   const sourceNote = sourceMode === 'news'
     ? (fa ? 'پایه داده: خوراک خبری ناشران انتخاب‌شده.' : 'Evidence base: selected publisher feed items.')
-    : sourceMode === 'history'
-      ? (fa ? 'پایه داده: حافظه تاریخی ناشران و یادداشت‌های تحقیق قبلی؛ این داده‌ها الزاماً تازه نیستند.' : 'Evidence base: saved historical publisher records and prior research notes; these are not necessarily current.')
-      : sourceMode === 'topic'
-        ? (fa ? 'پایه داده: فقط موضوع انتخاب‌شده توسط کاربر؛ هنوز منبع مستقل مرتبطی برای تأیید یا امتیازدهی شواهد در دسترس نیست.' : 'Evidence base: user-provided topic only; no independent relevant source is available to verify or score the idea.')
-        : (fa ? 'پایه داده: زمینه عمومی ویکی‌مدیا؛ بازدید مقاله معادل حجم جست‌وجو یا تقاضای مخاطب نیست.' : 'Evidence base: Wikimedia context; article pageviews are not search volume or audience demand.');
+    : sourceMode === 'mixed'
+      ? (fa ? 'پایه داده: خبرهای ناشران و نمونه‌های مرتبط YouTube که در همین تحقیق بازیابی شده‌اند؛ هم‌پوشانی نمونه به‌معنای توافق یا رابطه علّی نیست.' : 'Evidence base: selected publisher reports plus relevant YouTube samples from this run; sample overlap is not proof of agreement or causation.')
+      : sourceMode === 'youtube'
+        ? (fa ? 'پایه داده: چند نمونه مرتبط از YouTube؛ بازدیدها فقط مشاهدات خام‌اند و معادل تقاضا یا رشد نیستند.' : 'Evidence base: multiple relevant YouTube Data API samples; raw view counts are observations, not demand or growth.')
+        : sourceMode === 'history'
+          ? (fa ? 'پایه داده: حافظه تاریخی ناشران و یادداشت‌های تحقیق قبلی؛ این داده‌ها الزاماً تازه نیستند.' : 'Evidence base: saved historical publisher records and prior research notes; these are not necessarily current.')
+          : sourceMode === 'topic'
+            ? (fa ? 'پایه داده: فقط موضوع انتخاب‌شده توسط کاربر؛ هنوز منبع مستقل مرتبطی برای تأیید یا امتیازدهی شواهد در دسترس نیست.' : 'Evidence base: user-provided topic only; no independent source is available to verify or score the idea.')
+            : (fa ? 'پایه داده: زمینه عمومی ویکی‌مدیا؛ بازدید مقاله معادل حجم جست‌وجو یا تقاضای مخاطب نیست.' : 'Evidence base: Wikimedia context; article pageviews are not search volume or audience demand.');
 
   return {
     category,
@@ -338,6 +343,8 @@ export function selectIdeaGenerationVideos(
     .sort((a, b) =>
       b.relevance - a.relevance ||
       b.overlap - a.overlap ||
+      (Number.isFinite(b.video.viewCount) ? b.video.viewCount ?? 0 : 0) -
+        (Number.isFinite(a.video.viewCount) ? a.video.viewCount ?? 0 : 0) ||
       b.descriptionWeight - a.descriptionWeight ||
       (Date.parse(b.video.publishedAt ?? '') || 0) - (Date.parse(a.video.publishedAt ?? '') || 0) ||
       a.video.id.localeCompare(b.video.id),
@@ -418,7 +425,10 @@ export function generateEditorialIdeas(input: GenerateEditorialIdeasInput): Idea
   if (!topic) return [];
 
   const news = [...(input.news ?? [])];
-  // Publisher editorial analysis is intentionally isolated from YouTube API data.
+  // YouTube metadata is processed locally as transient evidence. Only expiring video IDs
+  // and report references are attached to Ideas; raw titles, descriptions and statistics
+  // never enter durable Idea text or any external model request.
+  const videos = selectIdeaGenerationVideos(topic, input.videos ?? [], 120);
   const context = [...(input.context ?? [])];
   const independentContext = context.filter((item) => item.sourceName !== 'User-provided topic');
   const currentUrls = new Set(news.map((item) => canonicalizeResearchUrl(item.url)).filter(Boolean));
@@ -482,7 +492,7 @@ export function generateEditorialIdeas(input: GenerateEditorialIdeasInput): Idea
       sourceName: item.sourceName,
       sourceUrl: item.url,
     })),
-    ...context.map((item, index) => ({
+    ...independentContext.map((item, index) => ({
       id: 'context-' + index,
       title: item.title,
       text: item.title + ' ' + (item.summary ?? ''),
@@ -490,16 +500,28 @@ export function generateEditorialIdeas(input: GenerateEditorialIdeasInput): Idea
       sourceName: item.sourceName,
       sourceUrl: item.sourceUrl,
     })),
+    ...videos.map((video) => ({
+      id: 'youtube:' + video.id,
+      title: video.title,
+      text: video.title + ' ' + (video.description ?? ''),
+      kind: 'youtube' as const,
+      publishedAt: video.publishedAt ?? null,
+      sourceId: video.channel || 'youtube',
+      sourceName: 'YouTube sample',
+      videoId: video.id,
+    })),
     ...historyDocuments,
   ];
   if (!documents.length) return [];
 
   const topicTokens = new Set(tokenizeResearchText(topic));
   const termStats = new Map<string, { documents: number; frequency: number; sourceKinds: Set<string>; sourceGroups: Set<string> }>();
-  // Anchors are derived from the publisher/context/history corpus only.
+  // Anchors are derived from independent publisher, YouTube, context and history evidence.
   const topicRelevantDocuments = documents.filter((document) => scoreResearchText(topic, document.title, document.text) > 0);
-  if (!topicRelevantDocuments.length) return [];
+  // A single isolated record is not enough to justify an automated editorial idea.
+  if (topicRelevantDocuments.length < 2) return [];
   const topicRelevantNews = news.filter((item) => scoreResearchText(topic, item.title, item.summary) > 0);
+  const topicRelevantVideos = videos.filter((item) => scoreResearchText(topic, item.title, item.description ?? '') > 0);
   const topicRelevantHistory = historyDocuments.filter((item) => scoreResearchText(topic, item.title, item.text) > 0);
   const relevantIndependentContext = independentContext.filter((item) =>
     scoreResearchText(topic, item.title, item.summary ?? '') > 0,
@@ -537,7 +559,13 @@ export function generateEditorialIdeas(input: GenerateEditorialIdeasInput): Idea
           sourceName: 'Saved research memory',
         })),
     ],
-    videos: [],
+    videos: videos.map((item) => ({
+      title: item.title,
+      description: item.description,
+      channel: item.channel,
+      publishedAt: item.publishedAt,
+      viewCount: item.viewCount ?? null,
+    })),
     now: input.now,
   });
   for (const document of topicRelevantDocuments) {
@@ -549,7 +577,7 @@ export function generateEditorialIdeas(input: GenerateEditorialIdeasInput): Idea
       if (term.length < 3 || topicTokens.has(term)) continue;
       const current = termStats.get(term) ?? { documents: 0, frequency: 0, sourceKinds: new Set<string>(), sourceGroups: new Set<string>() };
       current.documents += 1;
-      // This corpus contains publisher, context and saved-history records only.
+      // Source groups preserve publisher families and YouTube channel diversity.
       current.sourceKinds.add(document.kind);
       if (document.sourceId || document.sourceName) current.sourceGroups.add(document.sourceId || document.sourceName || '');
       current.frequency += frequency;
@@ -559,7 +587,7 @@ export function generateEditorialIdeas(input: GenerateEditorialIdeasInput): Idea
   const phraseStats = new Map<string, { documents: number; frequency: number; sourceKinds: Set<string>; sourceGroups: Set<string> }>();
   const ignoredPhraseTerms = new Set(['mock', 'sample', 'report', 'reports', 'news', 'update', 'latest', 'official']);
   for (const document of topicRelevantDocuments) {
-    const titleTokens = tokenizeResearchText(document.title);
+    const titleTokens = tokenizeResearchText(document.kind === 'youtube' ? document.text : document.title);
     const phrases = new Set<string>();
     for (const width of [3, 2]) {
       for (let start = 0; start <= titleTokens.length - width; start++) {
@@ -608,10 +636,12 @@ export function generateEditorialIdeas(input: GenerateEditorialIdeasInput): Idea
   const fallback = tokenizeResearchText(topic).filter((term) => term.length > 2).slice(0, 4);
   const usableAnchors = anchors.length ? anchors : (fallback.length ? fallback : [topic]);
   const datedCount = topicRelevantDocuments.filter((item) => item.publishedAt && Number.isFinite(Date.parse(item.publishedAt))).length;
-  const mode: 'news' | 'context' | 'history' | 'topic' =
-    topicRelevantNews.length ? 'news'
-      : topicRelevantHistory.length ? 'history'
-        : relevantIndependentContext.length ? 'context' : 'topic';
+  const mode: 'news' | 'youtube' | 'context' | 'history' | 'topic' | 'mixed' =
+    topicRelevantNews.length && topicRelevantVideos.length ? 'mixed'
+      : topicRelevantNews.length ? 'news'
+        : topicRelevantVideos.length ? 'youtube'
+          : topicRelevantHistory.length ? 'history'
+            : relevantIndependentContext.length ? 'context' : 'topic';
   const definitions: IdeaGenerationCategory[] = [
     'Explainer',
     'Evidence audit',
@@ -624,7 +654,7 @@ export function generateEditorialIdeas(input: GenerateEditorialIdeasInput): Idea
   const eligible = definitions.filter((category) => {
     if (category === 'Comparison') return topicRelevantDocuments.length >= 2;
     if (category === 'Timeline') return datedCount >= 2;
-    if (category === 'Cross-source') return false;
+    if (category === 'Cross-source') return topicRelevantNews.length > 0 && topicRelevantVideos.length > 0;
     return true;
   });
   const existing: Idea[] = [];
@@ -684,8 +714,10 @@ export function generateEditorialIdeas(input: GenerateEditorialIdeasInput): Idea
   const publisherGroups = new Set(topicRelevantNews
     .map((item) => normalizeResearchText(item.sourceId || item.sourceName))
     .filter(Boolean)).size;
-  // Confidence follows independent publisher coverage, not raw item count.
-  const confidence = publisherGroups >= 2 ? 'moderate' : 'low';
+  const videoChannels = new Set(topicRelevantVideos.map((item) => normalizeResearchText(item.channel)).filter(Boolean)).size;
+  // Confidence describes the breadth of this returned sample, not truth or audience demand.
+  const confidence = publisherGroups >= 2 && videoChannels >= 2 ? 'high'
+    : publisherGroups >= 2 || videoChannels >= 2 ? 'moderate' : 'low';
   const output: Idea[] = [];
   const now = input.now ?? Date.now();
   const limit = Math.max(1, Math.min(25, input.limit ?? 25));
@@ -694,7 +726,8 @@ export function generateEditorialIdeas(input: GenerateEditorialIdeasInput): Idea
     relevantIndependentContext.find((item) => item.sourceUrl?.startsWith('https://'))?.sourceUrl;
   const sourceName = news.find((item) => item.url === sourceUrl)?.sourceName ??
     historicalSources.find((item) => item.sourceUrl === sourceUrl)?.sourceName ??
-    relevantIndependentContext.find((item) => item.sourceUrl === sourceUrl)?.sourceName;
+    relevantIndependentContext.find((item) => item.sourceUrl === sourceUrl)?.sourceName ??
+    (topicRelevantVideos.length ? 'YouTube sample' : undefined);
   const language = input.language ?? 'en';
 
   for (const candidate of candidates) {
@@ -704,11 +737,23 @@ export function generateEditorialIdeas(input: GenerateEditorialIdeasInput): Idea
       existing.some((idea) => ideaHasSameMeaning(candidate, idea, topic)) ||
       output.some((idea) => ideaHasSameMeaning(candidate, idea, topic))) continue;
     usedTitles.add(normalizedTitle);
-    const relatedVideoIds: string[] = [];
+    const relatedVideoIds = topicRelevantVideos
+      .map((video) => ({
+        id: video.id,
+        relevance: scoreResearchText(candidate.anchor, video.title, video.description ?? ''),
+        views: Number.isFinite(video.viewCount) ? video.viewCount ?? 0 : 0,
+      }))
+      .filter((video) => video.relevance > 0)
+      .sort((left, right) => right.relevance - left.relevance || right.views - left.views || left.id.localeCompare(right.id))
+      .slice(0, 5)
+      .map((video) => video.id);
     const evidenceScope = [
       news.length ? (language === 'fa'
         ? news.length + ' خبر دریافتی؛ ' + topicRelevantNews.length + ' مورد هم‌موضوع'
         : news.length + ' publisher item(s) received; ' + topicRelevantNews.length + ' topic-matched') : '',
+      videos.length ? (language === 'fa'
+        ? videos.length + ' نمونه ویدئویی دریافتی؛ ' + topicRelevantVideos.length + ' مورد هم‌موضوع'
+        : videos.length + ' YouTube sample(s) received; ' + topicRelevantVideos.length + ' topic-matched') : '',
       relevantIndependentContext.length ? (language === 'fa' ? relevantIndependentContext.length + ' منبع زمینه‌ای' : relevantIndependentContext.length + ' independent context source(s)') : '',
       mode === 'topic' ? (language === 'fa'
         ? 'فقط موضوع واردشده توسط کاربر؛ بدون شواهد مستقل مرتبط'
@@ -734,7 +779,7 @@ export function generateEditorialIdeas(input: GenerateEditorialIdeasInput): Idea
         '\n\nپیشنهاد برای روایت: ' + candidate.storyPath +
         '\n\nپیش از تولید بررسی کن: ' + candidate.verification +
         '\n\nاولویت پیشنهادی موتور: ' + candidate.opportunityScore + '/100 · اطمینان به داده‌ها: ' + (candidate.opportunityConfidence === 'high' ? 'زیاد' : candidate.opportunityConfidence === 'moderate' ? 'متوسط' : 'کم') + ' · ' + candidate.opportunityReason +
-        '\n\nاطمینان کلی: ' + (confidence === 'moderate' ? 'متوسط' : 'کم') + '؛ این برآورد فقط به تعداد و تنوع منابع موجود مربوط است و صحت ادعاها را تضمین نمی‌کند.'
+        '\n\nاطمینان کلی: ' + (confidence === 'high' ? 'زیاد' : confidence === 'moderate' ? 'متوسط' : 'کم') + '؛ این برآورد فقط به تعداد و تنوع منابع موجود مربوط است و صحت ادعاها را تضمین نمی‌کند.'
       : 'Central question: ' + candidate.question +
         '\n\nEditorial angle: ' + candidate.category +
         '\n\nWhy this idea was generated: ' + candidate.rationale +
@@ -746,8 +791,8 @@ export function generateEditorialIdeas(input: GenerateEditorialIdeasInput): Idea
         '\n\nConfidence: ' + confidence + '; this reflects the amount and mix of available material, not a guarantee that any claim is true.';
 
     const note = language === 'fa'
-      ? 'این ایده با موتور داخلی و بر پایه داده‌های همین تحقیق ساخته شده است: ' + evidenceScope + '. برای ساخت آن درخواست تازه‌ای به یوتیوب یا سرویس خارجی ارسال نشد و عنوان، توضیحات، تصویر و آمار خام ویدئوها در اطلاعات ماندگار این ایده ذخیره نشده‌اند.'
-      : 'Generated locally from ' + evidenceScope + '. No new YouTube or external request was made to generate this idea. Raw YouTube titles, descriptions, thumbnails and statistics were not copied into this durable Idea record.';
+      ? 'این ایده با موتور داخلی و بر پایه داده‌های همین تحقیق ساخته شده است: ' + evidenceScope + '. برای ساخت آن درخواست تازه‌ای به یوتیوب یا سرویس خارجی ارسال نشد و عنوان، توضیحات، تصویر و آمار خام ویدئوها در اطلاعات ماندگار این ایده ذخیره نشده‌اند؛ فقط شناسه‌های لازم برای پیوند به فرادادهٔ منقضی‌شونده نگهداری می‌شوند.'
+      : 'Generated locally from ' + evidenceScope + '. No new YouTube or external request was made during idea generation. Raw YouTube titles, descriptions, thumbnails and statistics were not copied into this durable Idea record; only references to expiring metadata are linked.';
     output.push({
       id: uid(),
       topic: candidate.title.slice(0, 180),
@@ -758,11 +803,12 @@ export function generateEditorialIdeas(input: GenerateEditorialIdeasInput): Idea
       videoIds: relatedVideoIds,
       createdAt: now + output.length,
       archived: false,
-      assessment: confidence === 'moderate' ? 'Worth Exploring' : 'Uncertain',
+      assessment: confidence === 'low' ? 'Uncertain' : 'Worth Exploring',
       region: input.region,
       languages: [...input.languages],
       ...(sourceUrl ? { sourceUrl } : {}),
       ...(sourceName ? { sourceName } : {}),
+      ...(input.reportId ? { reportId: input.reportId } : {}),
       engineGenerated: true,
       ideaCategory: candidate.category,
       generationKey: evidenceKey,

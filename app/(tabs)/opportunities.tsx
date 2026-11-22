@@ -29,7 +29,7 @@ import { getTopicDossier } from '@/lib/topic-dossier';
 import { fetchSpaceNews, getCachedSpaceNews, SPACE_NICHES } from '@/lib/space';
 import { createSearchQuery, indexSearchText, matchesSearchIndex, normalizeSearchText } from '@/lib/search';
 import { palette as p } from '@/lib/theme';
-import { getEditorialPriorityBand, EDITORIAL_PRIORITY_CONFIG, type EditorialPriorityBand } from '@/lib/editorial-priority';
+import { getEditorialPriorityBand, EDITORIAL_PRIORITY_CONFIG, selectTopCurrentEditorialPriorities, type EditorialPriorityBand } from '@/lib/editorial-priority';
 import { setSelectedIdeaId } from '@/lib/idea-selection';
 import { recordRuntimeFinish, recordRuntimeStart } from '@/lib/runtime-metrics';
 import { MediaPreview } from '@/components/MediaPreview';
@@ -187,26 +187,15 @@ export default function Opportunities() {
       .localeCompare(getIdeaDisplayTitle(b, preferences.uiLanguage ?? 'fa'), undefined, { numeric: true, sensitivity: 'base' });
     return sort === 'A-Z' ? comparison : -comparison;
   }), [filtered, sort, preferences.uiLanguage]);
-  const pinnedIdeas = useMemo(() => {
-    const top: typeof filtered = [];
-    const compare = (left: (typeof filtered)[number], right: (typeof filtered)[number]) =>
-      (right.engineScore ?? -1) - (left.engineScore ?? -1) ||
-      right.createdAt - left.createdAt;
-    for (const idea of filtered) {
-      if (typeof idea.engineScore !== 'number' || !Number.isFinite(idea.engineScore)) continue;
-      let position = 0;
-      while (position < top.length && compare(top[position], idea) <= 0) position += 1;
-      if (position >= EDITORIAL_PRIORITY_CONFIG.pinnedIdeas) continue;
-      top.splice(position, 0, idea);
-      if (top.length > EDITORIAL_PRIORITY_CONFIG.pinnedIdeas) top.pop();
-    }
-    return top;
-  }, [filtered]);
-  const pinnedIds = useMemo(() => new Set(pinnedIdeas.map((idea) => idea.id)), [pinnedIdeas]);
+  const topOpportunities = useMemo(
+    () => selectTopCurrentEditorialPriorities(filtered, EDITORIAL_PRIORITY_CONFIG.pinnedIdeas),
+    [filtered],
+  );
+  const topOpportunityIds = useMemo(() => new Set(topOpportunities.map((idea) => idea.id)), [topOpportunities]);
   const featuredIdea = displayableIdeas.find((idea) =>
     idea.id === featuredOverrideId && idea.archived === archive,
-  ) ?? pinnedIdeas[0];
-  const remainingIdeas = useMemo(() => sortedFiltered.filter((idea) => !pinnedIds.has(idea.id)), [sortedFiltered, pinnedIds]);
+  ) ?? topOpportunities[0];
+  const remainingIdeas = useMemo(() => sortedFiltered.filter((idea) => !topOpportunityIds.has(idea.id)), [sortedFiltered, topOpportunityIds]);
   const sortOptions = fa
     ? ['امتیاز اولویت', 'جدیدترین', 'قدیمی‌ترین', 'عنوان صعودی', 'عنوان نزولی']
     : ['Priority score', 'Newest', 'Oldest', 'Title A–Z', 'Title Z–A'];
@@ -230,26 +219,70 @@ export default function Opportunities() {
     if (refreshedNews.registry.length) {
       await useScout.getState().commit((data) => ({ ...data, feedRegistry: refreshedNews.registry }));
     }
+
     const current = useScout.getState().data;
-    const latestReport = current.reports[0];
+    const savedReport = current.reports[0];
     const niche = SPACE_NICHES.find((item) => item.id === current.preferences.selectedSpaceNiche);
-    const topic = latestReport?.input.topic ?? (
-      current.preferences.selectedSpaceNiche === 'custom'
-        ? current.preferences.customSpaceNiche
-        : niche?.topic ?? 'Space science and exploration'
+    const topic = current.preferences.selectedSpaceNiche === 'custom'
+      ? current.preferences.customSpaceNiche.trim()
+      : current.preferences.selectedSpaceNiche === 'all'
+        ? current.preferences.lastInput?.topic ?? savedReport?.input.topic ?? 'Space science and exploration'
+        : niche?.topic ?? current.preferences.lastInput?.topic ?? 'Space science and exploration';
+    if (!topic) throw new Error('Choose a niche or enter a research topic before generating ideas.');
+
+    // A manual Ideas refresh fetches a fresh official YouTube sample using the existing key and quota.
+    // The store then runs the same local evidence engine used by scheduled research.
+    const previousIdeaIds = new Set(current.ideas.map((idea) => idea.id));
+    const savedInput = current.preferences.lastInput;
+    const refreshAttempted = Boolean(savedInput);
+    if (savedInput) {
+      const refreshInput = {
+        ...savedInput,
+        topic,
+        region: current.preferences.region,
+        languages: [...current.preferences.languages],
+      };
+      const refreshedReport = await useScout.getState().research(
+        refreshInput,
+        'manual',
+        true,
+        { ...(requestedCategory ? { category: requestedCategory } : {}), limit: 8 },
+      );
+      if (refreshedReport) {
+        const updated = useScout.getState().data;
+        const added = updated.ideas.filter((idea) => idea.engineGenerated && !previousIdeaIds.has(idea.id));
+        const warnings = [...new Set([...refreshedNews.warnings, ...refreshedReport.warnings])];
+        setFeaturedOverrideId(undefined);
+        setGenerationMessage(current.preferences.uiLanguage === 'fa'
+          ? (added.length
+            ? added.length + ' ایدهٔ تازه از نمونهٔ جدید YouTube و خبرهای ناشران ساخته شد؛ ' + refreshedReport.videos.length + ' ویدئو بررسی شد.'
+            : 'نمونهٔ YouTube به‌روز شد، اما ایدهٔ متمایز دیگری با شواهد کافی پیدا نشد؛ پیشنهاد تکراری ساخته نشد.') +
+            (warnings.length ? ' بعضی منابع با نسخهٔ ذخیره‌شده جایگزین شدند.' : '')
+          : (added.length
+            ? added.length + ' new ideas were generated from a fresh YouTube sample and publisher evidence; ' + refreshedReport.videos.length + ' videos were analyzed.'
+            : 'The YouTube sample was refreshed, but no distinct idea met the evidence threshold. Existing ideas were not recycled.') +
+            (warnings.length ? ' Some publishers used their last successful cached copy.' : ''));
+        return;
+      }
+    }
+
+    // If the fresh YouTube request cannot complete, fall back to metadata still within its 29-day retention.
+    const fallbackData = useScout.getState().data;
+    const report = fallbackData.reports.find((item) =>
+      normalizeSearchText(item.input.topic) === normalizeSearchText(topic),
     );
     const dossier = getTopicDossier(topic);
-    const reportMatches = latestReport !== undefined && normalizeSearchText(latestReport.input.topic) === normalizeSearchText(topic);
-    const reportVideos = reportMatches && latestReport ? latestReport.videos : [];
+    const reportVideos = report?.videos ?? [];
     const dossierVideos = dossier?.videos ?? [];
     const mergedVideos = new Map([...dossierVideos, ...reportVideos].map((video) => [video.id, video]));
     const now = Date.now();
-    const videoWindowMs = 30 * 24 * 60 * 60 * 1000;
+    const metadataTtlMs = 29 * 24 * 60 * 60 * 1000;
     const videos = [...mergedVideos.values()]
       .filter((video) => {
-        const published = Date.parse(video.publishedAt);
-        const age = now - published;
-        return Number.isFinite(published) && age >= 0 && age <= videoWindowMs;
+        const fetchedAt = 'fetchedAt' in video && typeof video.fetchedAt === 'number'
+          ? video.fetchedAt
+          : dossier?.updatedAt ?? 0;
+        return fetchedAt > 0 && now >= fetchedAt && now - fetchedAt < metadataTtlMs;
       })
       .map((video) => ({
         id: video.id,
@@ -260,70 +293,58 @@ export default function Opportunities() {
         viewCount: video.viewCount ?? null,
         likeCount: video.likeCount ?? null,
       }));
-    const cachedNews = getCachedSpaceNews(current.feedRegistry, current.preferences.spaceNewsSources);
+    const cachedNews = getCachedSpaceNews(fallbackData.feedRegistry, fallbackData.preferences.spaceNewsSources);
     const mergedNews = new Map(
       [...(dossier?.news ?? []), ...cachedNews, ...refreshedNews.items].map((item) => [item.url, item]),
     );
     const allNews = [...mergedNews.values()];
-    const priorMemory = current.researchMemory.find((entry) => normalizeSearchText(entry.topic) === normalizeSearchText(topic));
+    const priorMemory = fallbackData.researchMemory.find((entry) =>
+      normalizeSearchText(entry.topic) === normalizeSearchText(topic),
+    );
     recordRuntimeStart('Engine');
     let engineRecorded = false;
     try {
-    const generated = generateEditorialIdeas({
-      topic,
-      news: allNews,
-      priorMemory,
-      videos,
-      context: [
-        ...(dossier?.wiki ? [{
+      const generated = generateEditorialIdeas({
+        topic,
+        news: allNews,
+        priorMemory,
+        videos,
+        context: dossier?.wiki ? [{
           title: dossier.wiki.articleTitle,
           summary: [dossier.wiki.summary, dossier.wiki.monthlyViews.length
             ? 'Monthly Wikipedia article pageviews: ' + dossier.wiki.monthlyViews.map((point) => point.month + '=' + point.views).join(', ')
             : 'No monthly Wikimedia pageview observations were returned.'].filter(Boolean).join('\n'),
           sourceUrl: dossier.wiki.articleUrl,
           sourceName: 'Wikimedia Pageviews · attention proxy',
-        }] : []),
-        {
-          title: topic,
-          summary: current.preferences.uiLanguage === 'fa'
-            ? 'موضوع انتخاب‌شده توسط کاربر است؛ این متن زمینهٔ درخواستی است، نه منبع مستقل یا تأییدکنندهٔ ادعا.'
-            : 'User-selected topic context only; this is not an independent source or verification of any claim.',
-          sourceName: 'User-provided topic',
-        },
-      ],
-      existingIdeas: current.ideas,
-      ...(reportMatches && latestReport && videos.length ? { reportId: latestReport.id } : {}),
-      region: current.preferences.region,
-      languages: current.preferences.languages,
-      language: current.preferences.uiLanguage ?? 'fa',
-      ...(requestedCategory ? { category: requestedCategory } : {}),
-      limit: 5,
-    });
-    if (!generated.length) {
-      recordRuntimeFinish('Engine', 'partial');
+        }] : [],
+        existingIdeas: fallbackData.ideas,
+        ...(report ? { reportId: report.id } : {}),
+        region: fallbackData.preferences.region,
+        languages: fallbackData.preferences.languages,
+        language: fallbackData.preferences.uiLanguage ?? 'fa',
+        ...(requestedCategory ? { category: requestedCategory } : {}),
+        limit: 8,
+      });
+      if (!generated.length) {
+        recordRuntimeFinish('Engine', 'partial');
+        engineRecorded = true;
+        setGenerationMessage(current.preferences.uiLanguage === 'fa'
+          ? 'نمونهٔ ذخیره‌شده شاهد تازه یا زاویهٔ متمایزی برای یک ایدهٔ جدید ندارد. بدون شواهد کافی ایده ساخته نشد.'
+          : 'The retained sample has no new independent angle with enough evidence. The engine did not fabricate an idea.');
+        return;
+      }
+      await useScout.getState().commit((data) => ({ ...data, ideas: [...generated, ...data.ideas] }));
+      setFeaturedOverrideId(undefined);
+      recordRuntimeFinish('Engine', 'success');
       engineRecorded = true;
       setGenerationMessage(current.preferences.uiLanguage === 'fa'
-        ? 'از آخرین تحقیق، شاهد کافی یا زاویه تازه‌ای برای تولید ایده پیدا نشد. ابتدا یک جست‌وجو یا Deep Research انجام بده.'
-        : 'No suitable new angle could be generated from the latest evidence. Run a search or Deep Research first.');
-      return;
-    }
-    await useScout.getState().commit((data) => ({ ...data, ideas: [...generated, ...data.ideas] }));
-    setFeaturedOverrideId(undefined);
-    recordRuntimeFinish('Engine', 'success');
-    engineRecorded = true;
-    const topicOnlyDrafts = generated.every((idea) => !idea.sourceUrl);
-    setGenerationMessage(current.preferences.uiLanguage === 'fa'
-      ? (topicOnlyDrafts
-        ? generated.length + ' ایدهٔ اکتشافی فقط بر پایه موضوع ساخته شد؛ هنوز منبع مستقل مرتبطی برای تأیید آن‌ها وجود ندارد.'
-        : generated.length + ' ایده تازه از شواهد به‌روز یا نسخه ذخیره‌شده تولید شد؛ درخواست جدیدی برای YouTube ارسال نشد.') + (refreshedNews.warnings.length ? ' بعضی خوراک‌ها به‌روز نشدند و از نسخه ذخیره‌شده استفاده شد.' : '')
-      : (topicOnlyDrafts
-        ? generated.length + ' exploratory idea(s) were created from the topic alone; no independent relevant source is available to validate them yet.'
-        : generated.length + ' new ideas were generated locally from refreshed or last-good evidence. No new YouTube request was made.') + (refreshedNews.warnings.length ? ' Some feeds could not refresh; last-good cached copies were retained.' : ''));
+        ? generated.length + ' ایدهٔ تازه از شواهد ذخیره‌شده ساخته شد؛ ' + (refreshAttempted ? 'به‌روزرسانی تازهٔ YouTube کامل نشد و از نمونهٔ ذخیره‌شده استفاده شد.' : 'درخواستی برای YouTube ارسال نشد.')
+        : generated.length + ' new ideas were generated from retained local evidence. ' + (refreshAttempted ? 'The fresh YouTube request did not complete; the retained sample was used.' : 'No fresh YouTube request was made.'));
     } catch (error) {
       if (!engineRecorded) recordRuntimeFinish('Engine', 'error', error instanceof Error ? error.message : String(error));
       throw error;
     }
-  }, 'New evidence-based ideas generated.');
+  }, 'Research refreshed and evidence-based ideas generated.');
 
   const openCreate = () => {
     setDraftTopic(preferences.lastInput?.topic ?? '');
@@ -361,7 +382,7 @@ export default function Opportunities() {
             <ScreenIntro
               eyebrow="IDEA WORKSPACE"
               title="Turn research into next steps"
-              subtitle="Capture your own concepts or generate new editorial angles from the evidence already collected."
+              subtitle="Refresh the official YouTube sample and selected publisher feeds, then generate new evidence-backed angles."
               icon={Lightbulb}
             />
             <View style={{ flexDirection: 'row', gap: 8 }}>
@@ -370,7 +391,7 @@ export default function Opportunities() {
               </View>
               <View style={{ flex: 1 }}>
                 <Action secondary busy={op.busy} onPress={() => generate(selectedGenerationCategory())}>
-                  Generate ideas
+                  {fa ? 'تحقیق تازه و تولید ایده' : 'Refresh research & generate'}
                 </Action>
               </View>
             </View>
@@ -464,10 +485,10 @@ export default function Opportunities() {
                 </View>
               </Fold>
             ) : null}
-            {pinnedIdeas.length ? (
-              <Fold title={fa ? '۵ ایده برتر سنجاق‌شده' : 'Top 5 pinned ideas'} summary={String(pinnedIdeas.length)}>
+            {topOpportunities.length ? (
+              <Fold title={fa ? '۵ ایده برتر سنجاق‌شده' : 'Top 5 active opportunities'} summary={String(topOpportunities.length)}>
                 <View style={{ gap: 8 }}>
-                    {pinnedIdeas.map((idea, index) => {
+                    {topOpportunities.map((idea, index) => {
                       const band = getEditorialPriorityBand(idea.engineScore ?? 0);
                       const tint = band === 'strong' ? p.success : band === 'moderate' ? p.cyan : p.danger;
                       return (
@@ -477,7 +498,7 @@ export default function Opportunities() {
                         }} accessibilityRole="button"
                           style={{ borderRadius: 12, borderWidth: 1, borderColor: p.border, backgroundColor: p.surface, padding: 11, gap: 5 }}>
                           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                            <Text style={{ color: tint, fontSize: 10, fontWeight: '800' }}>{(fa ? 'سنجاق‌شدهٔ ' : 'PINNED #') + (index + 1) + ' · ' + (band === 'strong' ? (fa ? 'قوی' : 'Strong') : band === 'moderate' ? (fa ? 'متوسط' : 'Medium') : (fa ? 'ضعیف' : 'Weak'))}</Text>
+                            <Text style={{ color: tint, fontSize: 10, fontWeight: '800' }}>{(fa ? 'پیشنهاد برتر ' : 'TOP PICK #') + (index + 1) + ' · ' + (band === 'strong' ? (fa ? 'قوی' : 'Strong') : band === 'moderate' ? (fa ? 'متوسط' : 'Medium') : (fa ? 'ضعیف' : 'Weak'))}</Text>
                             <Text style={{ color: tint, fontSize: 14, fontWeight: '800' }}>{idea.engineScore}/100</Text>
                           </View>
                           <Text style={{ color: p.text, fontSize: 13, fontWeight: '700' }}>{getIdeaDisplayTitle(idea, preferences.uiLanguage ?? 'fa')}</Text>

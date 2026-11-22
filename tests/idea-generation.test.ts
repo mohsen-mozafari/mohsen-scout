@@ -174,6 +174,37 @@ void test('a selected category changes the generated angle rather than acting as
   assert.ok(ideas.every((idea) => idea.ideaCategory === 'Evidence audit'));
 });
 
+
+void test('cross-source editorial angles require and link both publisher and YouTube evidence', () => {
+  const generated = generateEditorialIdeas({
+    ...base,
+    news,
+    videos: [
+      {
+        id: 'dQw4w9WgXcQ',
+        title: 'JWST exoplanet atmosphere methane spectroscopy signals',
+        description: 'Methane spectral lines and atmospheric measurement limits.',
+        channel: 'MOCK Science Channel A',
+        publishedAt: '2026-11-15T12:00:00Z',
+        viewCount: 2400000,
+      },
+      {
+        id: '9bZkp7q19f0',
+        title: 'James Webb exoplanet atmosphere water vapor analysis',
+        description: 'Water vapor observations and spectroscopy uncertainty.',
+        channel: 'MOCK Science Channel B',
+        publishedAt: '2026-11-14T12:00:00Z',
+        viewCount: 1200000,
+      },
+    ],
+    category: 'Cross-source',
+    limit: 5,
+  });
+  assert.ok(generated.length > 0);
+  assert.ok(generated.every((idea) => idea.ideaCategory === 'Cross-source'));
+  assert.ok(generated.some((idea) => idea.videoIds.length > 0));
+});
+
 void test('no evidence produces no fabricated generated idea', () => {
   const ideas = generateEditorialIdeas({ ...base, news: [], videos: [], context: [] });
   assert.equal(ideas.length, 0);
@@ -238,11 +269,71 @@ void test('repeated engine-generated cards collapse in the Ideas list without me
   assert.equal(stored.length, 3);
 });
 
-void test('missing publisher evidence keeps YouTube-only ideas unavailable', () => {
+void test('one isolated YouTube video is insufficient evidence for an automated idea', () => {
   const generated = generateEditorialIdeas({
     ...base,
     news: [],
-    videos: [{ id: 'dQw4w9WgXcQ', title: 'Exoplanet atmosphere', viewCount: null }],
+    videos: [{
+      id: 'dQw4w9WgXcQ',
+      title: 'JWST exoplanet atmosphere methane spectroscopy',
+      description: 'A local example with measurement limits.',
+      channel: 'MOCK Single Channel',
+      publishedAt: '2026-11-15T12:00:00Z',
+    }],
+  });
+  assert.deepEqual(generated, []);
+});
+
+void test('multiple independent YouTube channels can support locally generated video-led ideas', () => {
+  const rawTitles = [
+    'MOCK: JWST exoplanet atmosphere methane spectroscopy signals',
+    'MOCK: James Webb exoplanet atmosphere water vapor analysis',
+  ];
+  const rawDescriptions = [
+    'MOCK: Methane spectral lines and atmospheric measurement limits.',
+    'MOCK: Water vapor observations and spectroscopy uncertainty.',
+  ];
+  const generated = generateEditorialIdeas({
+    ...base,
+    news: [],
+    reportId: 'report-video-test',
+    videos: [
+      {
+        id: 'dQw4w9WgXcQ',
+        title: rawTitles[0],
+        description: rawDescriptions[0],
+        channel: 'MOCK Science Channel A',
+        publishedAt: '2026-11-15T12:00:00Z',
+        viewCount: 2400000,
+      },
+      {
+        id: '9bZkp7q19f0',
+        title: rawTitles[1],
+        description: rawDescriptions[1],
+        channel: 'MOCK Science Channel B',
+        publishedAt: '2026-11-14T12:00:00Z',
+        viewCount: 1200000,
+      },
+    ],
+    limit: 5,
+  });
+  assert.ok(generated.length > 0);
+  assert.ok(generated.every((idea) => idea.reportId === 'report-video-test'));
+  assert.ok(generated.some((idea) => idea.videoIds.length > 0));
+  assert.ok(generated.every((idea) => idea.sourceName === 'YouTube sample'));
+  assert.doesNotMatch(JSON.stringify(generated), /2400000|1200000|MOCK Science Channel|JWST exoplanet atmosphere methane spectroscopy signals/);
+});
+
+void test('user-provided topic text alone is not treated as independent evidence', () => {
+  const generated = generateEditorialIdeas({
+    ...base,
+    news: [],
+    videos: [],
+    context: [{
+      title: base.topic,
+      summary: 'This is only the topic entered by the user.',
+      sourceName: 'User-provided topic',
+    }],
   });
   assert.deepEqual(generated, []);
 });

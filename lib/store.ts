@@ -13,7 +13,7 @@ import {
 import { readData, writeData } from './storage';
 import { getKey } from './vault';
 import { nextBudget, searchYouTube, type YouTubeQuotaKind, type YouTubeQuotaOrigin } from './api';
-import { generateEditorialIdeas } from './idea-generation';
+import { generateEditorialIdeas, type IdeaGenerationCategory } from './idea-generation';
 import { attachReportToIdea as attachReport, attachVideoReferenceToIdea as attachVideoReference, getOrCreateSourceIdea, type SourceIdeaInput } from './idea-research';
 import { getCachedSpaceNews, hydrateSpaceNewsRegistry } from './space';
 import { normalizeResearchText } from './intelligence';
@@ -26,10 +26,16 @@ type State = {
   error: string;
   boot: () => Promise<void>;
   commit: (change: (data: LocalData) => LocalData) => Promise<void>;
-  research: (input: ResearchInput, origin?: YouTubeQuotaOrigin, forceRefresh?: boolean) => Promise<Report | undefined>;
+  research: (
+    input: ResearchInput,
+    origin?: YouTubeQuotaOrigin,
+    forceRefresh?: boolean,
+    ideaOptions?: { category?: IdeaGenerationCategory; limit?: number },
+  ) => Promise<Report | undefined>;
   analyze: (id: string) => Promise<void>;
   saveVideo: (video: Video, topic: string) => Promise<void>;
   saveIdea: (idea: Idea) => Promise<void>;
+  updateIdea: (idea: Idea) => Promise<void>;
   ensureSourceIdea: (input: SourceIdeaInput) => Promise<Idea>;
   linkReportToIdea: (ideaId: string, reportId: string) => Promise<void>;
   bookmarkVideoForIdea: (ideaId: string, videoId: string) => Promise<void>;
@@ -91,7 +97,7 @@ export const useScout = create<State>((set, get) => ({
       budget: nextBudget(data.budget, data.preferences.budget, units, new Date(), kind, origin),
     }));
   },
-  research: async (input, origin = 'manual', forceRefresh = false) => {
+  research: async (input, origin = 'manual', forceRefresh = false, ideaOptions) => {
     if (get().busy) return undefined;
     recordRuntimeStart('YouTube');
     let youtubeRecorded = false;
@@ -149,14 +155,25 @@ export const useScout = create<State>((set, get) => ({
       const generatedIdeas = generateEditorialIdeas({
         topic: report.input.topic,
         news: availableNews,
+        videos: report.videos.map((video) => ({
+          id: video.id,
+          title: video.title,
+          description: video.description,
+          channel: video.channel,
+          publishedAt: video.publishedAt,
+          viewCount: video.viewCount ?? null,
+          likeCount: video.likeCount ?? null,
+        })),
+        reportId: report.id,
         priorMemory,
-        existingIdeas: get().data.ideas,
+        existingIdeas: currentData.ideas,
         region: report.input.region,
         languages: report.input.languages,
-        language: get().data.preferences.uiLanguage ?? 'fa',
-        limit: 5,
+        language: currentData.preferences.uiLanguage ?? 'fa',
+        ...(ideaOptions?.category ? { category: ideaOptions.category } : {}),
+        limit: ideaOptions?.limit ?? 8,
       });
-      recordRuntimeFinish('Engine', 'success');
+      recordRuntimeFinish('Engine', generatedIdeas.length ? 'success' : 'partial');
       engineRecorded = true;
       await get().commit((data) => ({
         ...data,
@@ -197,19 +214,29 @@ export const useScout = create<State>((set, get) => ({
     const generatedIdeas = generateEditorialIdeas({
       topic: report.input.topic,
       news: availableNews,
+      videos: report.videos.map((video) => ({
+        id: video.id,
+        title: video.title,
+        description: video.description,
+        channel: video.channel,
+        publishedAt: video.publishedAt,
+        viewCount: video.viewCount ?? null,
+        likeCount: video.likeCount ?? null,
+      })),
+      reportId: report.id,
       priorMemory,
-      existingIdeas: get().data.ideas,
+      existingIdeas: currentData.ideas,
       region: report.input.region,
       languages: report.input.languages,
-      language: get().data.preferences.uiLanguage ?? 'fa',
-      limit: 5,
+      language: currentData.preferences.uiLanguage ?? 'fa',
+      limit: 8,
     });
     await get().commit((data) => ({
       ...data,
       reports: data.reports.map((r) => (r.id === id ? { ...r, analyzed: true } : r)),
       ideas: [...generatedIdeas, ...data.ideas],
     }));
-    recordRuntimeFinish('Engine', 'success');
+    recordRuntimeFinish('Engine', generatedIdeas.length ? 'success' : 'partial');
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (error) {
       recordRuntimeFinish('Engine', 'error', error instanceof Error ? error.message : String(error));
@@ -246,6 +273,77 @@ export const useScout = create<State>((set, get) => ({
       ],
     }));
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  },
+  updateIdea: async (idea) => {
+    const previous = get().data.ideas.find((item) => item.id === idea.id);
+    const closingTransition = Boolean(
+      previous?.engineGenerated &&
+      previous.status !== idea.status &&
+      (idea.status === 'Completed Research' || idea.status === 'Rejected Ideas'),
+    );
+    if (closingTransition) recordRuntimeStart('Engine');
+    let replenished = 0;
+    try {
+      await get().commit((data) => {
+        const existing = data.ideas.find((item) => item.id === idea.id);
+        const ideas = [{ ...idea }, ...data.ideas.filter((item) => item.id !== idea.id)];
+        const closedNow = Boolean(
+          existing?.engineGenerated &&
+          existing.status !== idea.status &&
+          (idea.status === 'Completed Research' || idea.status === 'Rejected Ideas'),
+        );
+        if (!closedNow) return { ...data, ideas };
+
+        // Rotate to unused angles from the most recent retained report. This is local-only:
+        // no YouTube quota is consumed until the user or scheduled cycle requests fresh data.
+        const lastTopic = data.preferences.lastInput?.topic;
+        const targetReport = data.reports.find((report) => report.id === idea.reportId) ??
+          (lastTopic
+            ? data.reports.find((report) =>
+                normalizeResearchText(report.input.topic) === normalizeResearchText(lastTopic),
+              )
+            : data.reports[0]);
+        const topic = targetReport?.input.topic ?? lastTopic ?? '';
+        if (!topic) return { ...data, ideas };
+
+        const now = Date.now();
+        const metadataTtlMs = 29 * 24 * 60 * 60 * 1000;
+        const videos = (targetReport?.videos ?? [])
+          .filter((video) => video.fetchedAt > 0 && now >= video.fetchedAt && now - video.fetchedAt < metadataTtlMs)
+          .map((video) => ({
+            id: video.id,
+            title: video.title,
+            description: video.description,
+            channel: video.channel,
+            publishedAt: video.publishedAt,
+            viewCount: video.viewCount ?? null,
+            likeCount: video.likeCount ?? null,
+          }));
+        const news = getCachedSpaceNews(data.feedRegistry, data.preferences.spaceNewsSources);
+        const priorMemory = data.researchMemory.find(
+          (entry) => normalizeResearchText(entry.topic) === normalizeResearchText(topic),
+        );
+        const nextIdeas = generateEditorialIdeas({
+          topic,
+          news,
+          videos,
+          ...(targetReport ? { reportId: targetReport.id } : {}),
+          priorMemory,
+          existingIdeas: ideas,
+          region: targetReport?.input.region ?? data.preferences.region,
+          languages: targetReport?.input.languages ?? data.preferences.languages,
+          language: data.preferences.uiLanguage ?? 'fa',
+          limit: 8,
+          now,
+        });
+        replenished = nextIdeas.length;
+        return { ...data, ideas: [...nextIdeas, ...ideas] };
+      });
+      if (closingTransition) recordRuntimeFinish('Engine', replenished ? 'success' : 'partial');
+    } catch (error) {
+      if (closingTransition) recordRuntimeFinish('Engine', 'error', error instanceof Error ? error.message : String(error));
+      throw error;
+    }
   },
   ensureSourceIdea: async (input) => {
     const preview = getOrCreateSourceIdea(get().data, input);

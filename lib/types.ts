@@ -161,7 +161,7 @@ export type Preferences = {
   openRouterDailyRemaining?: number;
   openRouterQuotaCheckedAt?: number;
   youtubeRefreshTimestamps?: number[];
-  schedule: 'Manual' | 'Every 12 hours' | 'Daily' | 'Weekly';
+  schedule: 'Manual' | 'Every 6 hours' | 'Every 12 hours' | 'Daily' | 'Weekly';
   paused: boolean;
   lastInput?: ResearchInput;
   spaceNewsSources: SpaceNewsSourceId[];

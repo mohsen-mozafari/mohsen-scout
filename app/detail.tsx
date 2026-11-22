@@ -368,12 +368,9 @@ export default function Detail() {
                 busy={op.busy}
                 onPress={() =>
                   void op.run(async () => {
-                    await useScout.getState().commit((d) => ({
-                      ...d,
-                      ideas: d.ideas.map((i) => (i.id === idea.id ? idea : i)),
-                    }));
+                    await useScout.getState().updateIdea(idea);
                     setEditing(false);
-                  }, 'Changes saved.')
+                  }, 'Changes saved. If distinct retained evidence exists, the next idea is generated locally.')
                 }
               >
                 Save changes

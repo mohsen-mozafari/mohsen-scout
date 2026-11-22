@@ -120,7 +120,7 @@ jobs:
           set -euo pipefail
           APK="android/app/build/outputs/apk/release/app-release.apk"
           BADGING="$("$ANDROID_HOME/build-tools/37.0.0/aapt" dump badging "$APK")"
-          echo "$BADGING" | grep -F "package: name='me.bilt.mohsenscout' versionCode='28' versionName='1.9.0'"
+          echo "$BADGING" | grep -F "package: name='me.bilt.mohsenscout' versionCode='29' versionName='1.10.0'"
           echo "$BADGING" | grep -F "native-code: 'arm64-v8a'"
           CERT_SHA="$("$ANDROID_HOME/build-tools/37.0.0/apksigner" verify --print-certs "$APK" | awk -F': ' '/certificate SHA-256 digest:/ {print tolower($NF); exit}')"
           EXPECTED_CERT_SHA="8e951f99da896948aa6af5fae37a6ae870c4263bde99ce942d3ef5fb507364de"
@@ -134,7 +134,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist
-          APK_NAME="MOHSEN-SCOUT-1.9.0-arm64.apk"
+          APK_NAME="MOHSEN-SCOUT-1.10.0-arm64.apk"
           APK="dist/$APK_NAME"
           cp android/app/build/outputs/apk/release/app-release.apk "$APK"
           sha256sum "$APK" > dist/SHA256SUMS.txt
@@ -146,7 +146,7 @@ jobs:
         with:
           name: mohsen-scout-release-apk
           path: |
-            dist/MOHSEN-SCOUT-1.9.0-arm64.apk
+            dist/MOHSEN-SCOUT-1.10.0-arm64.apk
             dist/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 1
@@ -172,8 +172,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          TAG="v1.9.0"
-          ASSET="MOHSEN-SCOUT-1.9.0-arm64.apk"
+          TAG="v1.10.0"
+          ASSET="MOHSEN-SCOUT-1.10.0-arm64.apk"
           APK="dist/$ASSET"
           CHECKSUMS="dist/SHA256SUMS.txt"
 
@@ -182,7 +182,7 @@ jobs:
           else
             gh release create "$TAG" "$APK" "$CHECKSUMS" \
               --repo "$GITHUB_REPOSITORY" \
-              --title "MOHSEN SCOUT v1.9.0" \
+              --title "MOHSEN SCOUT v1.10.0" \
               --notes "Signed Android ARM64 release. SHA256 is included in SHA256SUMS.txt." \
               --target "$GITHUB_SHA"
           fi
