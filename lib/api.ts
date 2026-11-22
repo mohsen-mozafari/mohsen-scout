@@ -557,7 +557,7 @@ export type YouTubeSampleVideo = {
 };
 export type YouTubeSampleFilters = {
   days?: 0 | 7 | 30 | 90;
-  order?: 'date' | 'viewCount' | 'relevance';
+  order?: 'date' | 'viewCount' | 'relevance' | 'discovery';
   region?: Region;
   language?: string;
   pageToken?: string;
@@ -627,8 +627,41 @@ function encodeLikeSampleCursor(relevance: string, views: string) {
   }));
 }
 
-/** Search once for a normal sort, or sample two discovery pools for raw-like sorting.
- *  The likes mode remains a bounded sample, never a global ranking.
+const DISCOVERY_CURSOR_PREFIX = 'mohsen-scout-discovery-v1:';
+const discoveryCursorSchema = z.object({
+  version: z.literal(1),
+  views: z.string().optional().default(''),
+  recent: z.string().optional().default(''),
+  relevance: z.string().optional().default(''),
+});
+function decodeDiscoveryCursor(token?: string) {
+  if (!token) return { views: '', recent: '', relevance: '' };
+  if (!token.startsWith(DISCOVERY_CURSOR_PREFIX)) {
+    throw new ApiError('This YouTube discovery cursor is invalid. Start a new sample.', 'invalid');
+  }
+  try {
+    const raw = JSON.parse(decodeURIComponent(token.slice(DISCOVERY_CURSOR_PREFIX.length)));
+    const parsed = discoveryCursorSchema.safeParse(raw);
+    if (!parsed.success) throw new Error('Invalid cursor shape');
+    return parsed.data;
+  } catch {
+    throw new ApiError('The saved YouTube discovery cursor is invalid. Start a new sample.', 'invalid');
+  }
+}
+function encodeDiscoveryCursor(views: string, recent: string, relevance: string) {
+  if (!views && !recent && !relevance) return undefined;
+  return DISCOVERY_CURSOR_PREFIX + encodeURIComponent(JSON.stringify({
+    version: 1,
+    views,
+    recent,
+    relevance,
+  }));
+}
+
+/**
+ * Samples three independent official YouTube search orders and interleaves their
+ * returned IDs. The API's order is preserved within each lane; no local growth,
+ * demand, or composite score is calculated from API statistics.
  */
 export async function searchYouTubeSample(
   topic: string,
@@ -658,12 +691,66 @@ export async function searchYouTubeSample(
   if (filters.language) commonParams.relevanceLanguage = filters.language;
   if (days > 0) commonParams.publishedAfter = new Date(Date.now() - days * 86400000).toISOString();
 
-  const selectedById = new Map<string, z.infer<typeof spaceSearchSchema>['items'][number]>();
+  type SearchItem = z.infer<typeof spaceSearchSchema>['items'][number];
+  const selectedById = new Map<string, SearchItem>();
   const warnings: string[] = [];
   let nextPageToken: string | undefined;
   let lastSearchError: unknown;
+  let selectedOverride: SearchItem[] | undefined;
 
-  if (order === 'relevance') {
+  if (order === 'discovery') {
+    const cursor = decodeDiscoveryCursor(filters.pageToken);
+    const isFirstPage = !filters.pageToken;
+    const poolSize = Math.max(1, Math.ceil(resultLimit / 3));
+    const laneIds: Record<'views' | 'recent' | 'relevance', string[]> = {
+      views: [], recent: [], relevance: [],
+    };
+    const next: Record<'views' | 'recent' | 'relevance', string> = {
+      views: '', recent: '', relevance: '',
+    };
+    const pools = [
+      { name: 'views' as const, order: 'viewCount', token: cursor.views },
+      { name: 'recent' as const, order: 'date', token: cursor.recent },
+      { name: 'relevance' as const, order: 'relevance', token: cursor.relevance },
+    ];
+    for (const pool of pools) {
+      if (!isFirstPage && !pool.token) continue;
+      try {
+        const params: Record<string, string> = {
+          ...commonParams,
+          order: pool.order,
+          maxResults: String(poolSize),
+        };
+        if (pool.token) params.pageToken = pool.token;
+        const raw = await youtube('search', params, options, 1);
+        const parsed = spaceSearchSchema.safeParse(raw);
+        if (!parsed.success) throw new ApiError('YouTube returned an invalid discovery sample.', 'invalid');
+        next[pool.name] = parsed.data.nextPageToken ?? '';
+        for (const item of parsed.data.items) {
+          laneIds[pool.name].push(item.id.videoId);
+          if (!selectedById.has(item.id.videoId)) selectedById.set(item.id.videoId, item);
+        }
+      } catch (error) {
+        lastSearchError = error;
+        warnings.push((error instanceof Error ? error.message : 'A YouTube discovery lane failed.') + ' Completed lanes remain available.');
+        if (error instanceof ApiError && ['quota', 'budget', 'key', 'permission', 'offline', 'timeout', 'attempt-limit'].includes(error.code)) break;
+      }
+    }
+    const orderedIds: string[] = [];
+    const seen = new Set<string>();
+    const maxLaneLength = Math.max(...Object.values(laneIds).map((ids) => ids.length), 0);
+    for (let index = 0; index < maxLaneLength; index++) {
+      for (const lane of ['views', 'recent', 'relevance'] as const) {
+        const id = laneIds[lane][index];
+        if (id && !seen.has(id)) {
+          seen.add(id);
+          orderedIds.push(id);
+        }
+      }
+    }
+    selectedOverride = orderedIds.map((id) => selectedById.get(id)).filter((item): item is SearchItem => Boolean(item));
+    nextPageToken = encodeDiscoveryCursor(next.views, next.recent, next.relevance);
+  } else if (order === 'relevance') {
     const cursor = decodeLikeSampleCursor(filters.pageToken);
     const isFirstPage = !filters.pageToken;
     const poolSize = Math.max(1, Math.ceil(resultLimit / 2));
@@ -694,7 +781,8 @@ export async function searchYouTubeSample(
     }
     nextPageToken = encodeLikeSampleCursor(relevanceNext, viewsNext);
   } else {
-    if (filters.pageToken?.startsWith(LIKE_SAMPLE_CURSOR_PREFIX)) {
+    if (filters.pageToken?.startsWith(LIKE_SAMPLE_CURSOR_PREFIX) ||
+        filters.pageToken?.startsWith(DISCOVERY_CURSOR_PREFIX)) {
       throw new ApiError('This YouTube sample cursor belongs to a different sort. Start a new sample.', 'invalid');
     }
     try {
@@ -712,7 +800,7 @@ export async function searchYouTubeSample(
   }
 
   if (!selectedById.size && lastSearchError) throw lastSearchError;
-  const selected = [...selectedById.values()].slice(0, resultLimit);
+  const selected = (selectedOverride ?? [...selectedById.values()]).slice(0, resultLimit);
   if (!selected.length) {
     return {
       videos: [],
@@ -753,7 +841,7 @@ export async function searchYouTubeSample(
       fields: 'items(id,statistics(subscriberCount,videoCount))',
     }, options, 1);
     const channelParsed = channelStatsSchema.safeParse(channelRaw);
-    if (!channelParsed.success) throw new ApiError('Channel statistics returned an invalid response.', 'invalid');
+    if (!channelParsed.success) throw new ApiError('YouTube channel statistics returned an invalid response.', 'invalid');
     channelMetrics = new Map(channelParsed.data.items.map((item): [string, { subscribers: number | null; videos: number | null }] => [
       item.id,
       {
@@ -783,9 +871,11 @@ export async function searchYouTubeSample(
     channelVideoCount: channelMetrics.get(item.snippet.channelId)?.videos ?? null,
     url: 'https://www.youtube.com/watch?v=' + item.id.videoId,
   }));
-  const scopeWarning = order === 'relevance'
-    ? 'Most Likes combines relevance-ordered and view-count-ordered discovery pools, then compares actual public like counts within the returned sample. It is not a global like-count ranking.'
-    : 'Sorting is applied to the returned sample using publication dates or actual public view counts. This is not a complete market census or a growth-rate/saturation score.';
+  const scopeWarning = order === 'discovery'
+    ? 'Discovery Mix interleaves YouTube official view-count, newest-first and relevance search lanes. Public counts are raw observations only; no growth or market score is calculated.'
+    : order === 'relevance'
+      ? 'Most Likes combines relevance-ordered and view-count-ordered discovery pools, then compares actual public like counts within the returned sample. It is not a global like-count ranking.'
+      : 'Results use YouTube official publication-date or view-count order. This is a limited sample, not a complete market census or a growth-rate/saturation score.';
   return {
     videos,
     warning: ['Limited YouTube sample. ' + scopeWarning, ...warnings, statisticsWarning, channelWarning].filter(Boolean).join(' '),
