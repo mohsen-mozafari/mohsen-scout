@@ -187,7 +187,9 @@ export function buildInternalResearch(input: InternalResearchInput): InternalRes
   const declaredPublisherCount = Math.max(0, ...news.map((item) => item.sourceCount ?? 0));
   const publisherCount = Math.max(publisherNames.length, declaredPublisherCount);
 
-  const inputVideos = [...new Map((input.videos ?? []).map((video) => [video.id, video])).values()];
+  // YouTube API records belong to the separate raw-results display only. Ignore legacy
+  // callers that still pass videos so no metadata or derived metrics enter this engine.
+  const inputVideos: NonNullable<InternalResearchInput['videos']> = [];
   const recentVideoCandidates = inputVideos.filter((video) => {
     const published = Date.parse(video.publishedAt);
     return Number.isFinite(published) && published >= videoWindowStart && published <= now + 86400000;
@@ -291,7 +293,7 @@ export function buildInternalResearch(input: InternalResearchInput): InternalRes
     evidence.push({
       id: 'youtube-sample',
       label: text('YouTube sample', 'نمونه یوتیوب'),
-      detail: text('No YouTube sample was supplied. Competition has not been checked and no YouTube quota was used by this local analysis.', 'نمونه‌ای از یوتیوب ارائه نشده است. رقابت بررسی نشده و این تحلیل محلی هیچ سهمیه‌ای از یوتیوب مصرف نکرده است.')
+      detail: text('YouTube API samples and raw metrics are displayed separately and intentionally excluded from this research analysis, entity extraction, confidence and scores.', 'نمونه‌ها و آمار خام API یوتیوب جداگانه نمایش داده می‌شوند و عمداً از تحلیل پژوهش، استخراج موجودیت، confidence و امتیازهای موتور کنار گذاشته شده‌اند.')
     });
   }
 
@@ -363,12 +365,12 @@ export function buildInternalResearch(input: InternalResearchInput): InternalRes
   const limitationsList = [
     ...(fa ? [
       'این موتور به‌صورت محلی و بر پایه شواهد بارگذاری‌شده در برنامه اجرا می‌شود و در این مرحله منبع تازه‌ای دریافت نمی‌کند.',
-      'همه ویدئوهای نگهداری‌شده از نظر عنوان و توضیحات بررسی می‌شوند؛ فقط موارد تاریخ‌دار و هم‌موضوع در ' + videoWindowDays + ' روز اخیر به‌عنوان نمونه دوره فعلی شمرده می‌شوند و بقیه در زمینه تاریخی می‌مانند.',
+      'داده‌های API یوتیوب فقط در بخش خام جداگانه نمایش داده می‌شوند و وارد استخراج موجودیت، confidence یا نتیجه‌گیری این موتور نمی‌شوند.',
       'زاویه‌های محتوایی فرضیه‌اند، نه یافته علمی و نه پیش‌بینی بازدید، رشد یا وایرال شدن.',
       'پوشش خبری ناشران، بازدید مقاله‌های ویکی‌مدیا و نمونه یوتیوب سیگنال‌های جداگانه‌اند و نباید در یک امتیاز ترکیبی ادغام شوند.',
     ] : [
       'This engine runs locally on evidence already loaded in the app; it does not fetch new sources.',
-      'All retained video records are inspected for topic, title and description signals; only dated recent matches are counted as current-period examples, while older records remain historical context.',
+      'YouTube API records are displayed only in their separate raw-results view and are excluded from entity extraction, confidence and engine conclusions.',
       'Editorial angles are hypotheses, not scientific findings or predictions of views, growth or virality.',
       'Publisher feed coverage, Wikimedia article pageviews and YouTube samples are separate signals and must not be combined into a score.',
     ]),
@@ -411,26 +413,15 @@ export function buildInternalResearch(input: InternalResearchInput): InternalRes
   if (!matchedNews.length) gaps.push(text('No direct publisher headline matched the requested topic.', 'هیچ تیتر مستقیمی از ناشران با موضوع درخواستی تطبیق نداشت.'));
   if (matchedSourceQuality.independentPublishers < 2) gaps.push(text('Independent publisher confirmation among directly relevant records is limited.', 'تأیید از سوی ناشران مستقل در میان رکوردهای مستقیماً مرتبط محدود است.'));
   if (!input.wiki || trend.observations < 4) gaps.push(text('There is not enough monthly public-interest history to infer a reliable direction.', 'سابقه ماهانه توجه عمومی برای تشخیص جهت قابل اعتماد کافی نیست.'));
-  if (recentMatchedVideoCount < 3) gaps.push(text('The recent, topic-matched YouTube sample is too small for a robust current-period comparison.', 'نمونه تازه و هم‌موضوع YouTube برای مقایسه قابل اتکای دوره فعلی کوچک است.'));
-  if (inputVideos.length > recentVideoCandidates.length) gaps.push(text(
-    (inputVideos.length - recentVideoCandidates.length) + ' video(s) were retained as historical context but are outside the current publication-date window or undated.',
-    (inputVideos.length - recentVideoCandidates.length) + ' ویدئو به‌عنوان زمینه تاریخی نگه داشته شده‌اند، اما خارج از بازه انتشار فعلی یا بی‌تاریخ‌اند.',
-  ));
-  if (recentVideoCandidates.length > recentMatchedVideoCount) gaps.push(text(
-    (recentVideoCandidates.length - recentMatchedVideoCount) + ' recent video(s) did not match the topic in title or description.',
-    (recentVideoCandidates.length - recentMatchedVideoCount) + ' ویدئوی تازه در عنوان یا توضیحات با موضوع تطبیق نداشت.',
-  ));
   if (sourceQuality.undatedItems > 0) gaps.push(text('Some source items have no publication date.', 'تاریخ انتشار بعضی منابع مشخص نیست.'));
   if (sourceQuality.staleItems > 0) gaps.push(text('Some source items are older than 90 days.', 'بعضی منابع بیش از ۹۰ روز قدمت دارند.'));
   const followUpQueries = (fa ? [
     ...(sourceQuality.independentPublishers < 2 ? [topic + ' منبع اولیه مستقل'] : []),
     ...(!input.wiki || trend.observations < 4 ? [topic + ' سابقه ماهانه توجه عمومی'] : []),
-    ...(videos.length < 3 ? [topic + ' نمونه‌های یوتیوب'] : []),
     ...(matchedNews.length ? [topic + ' محدودیت‌های روش‌شناسی'] : [topic + ' تازه‌ترین پژوهش رسمی']),
   ] : [
     ...(sourceQuality.independentPublishers < 2 ? [topic + ' independent primary source'] : []),
     ...(!input.wiki || trend.observations < 4 ? [topic + ' monthly interest history'] : []),
-    ...(videos.length < 3 ? [topic + ' YouTube examples'] : []),
     ...(matchedNews.length ? [topic + ' methodology limitations'] : [topic + ' latest official research']),
   ]).slice(0, 4);
   const topicConceptTerms = new Set(tokenizeResearchText(topic));
@@ -549,86 +540,15 @@ export function buildInternalResearch(input: InternalResearchInput): InternalRes
   };
   return { topic, entityCandidates, entityRelations, summary, evidence, angles, verificationQuestions, limitations: limitationsList, intelligence };
 }
-function matchedVideos(report: Report, queries: readonly string[]) {
-  const expected = new Set(queries.map((query) => query.trim().toLowerCase()));
-  return report.videos.filter((video) => expected.has(video.query.trim().toLowerCase()));
+export function buildIdeas(_report: Report, _language: 'fa' | 'en' = 'en'): Idea[] {
+  // This legacy helper receives only a Report, which has raw YouTube records but no
+  // independent publisher/web evidence. It must not fabricate source-backed ideas.
+  return [];
 }
-
-/** Turns query buckets from a real manual search into evidence-linked ideas. */
-export function buildIdeas(report: Report, language: 'fa' | 'en' = 'en'): Idea[] {
-  const fa = language === 'fa';
-  const topic = cleanTopic(report.input.topic);
-  const angleDefinitions = [
-    {
-      suffix: fa ? 'نمونه‌های فعلی چه چیزی نشان می‌دهند' : 'What current examples show',
-      queries: [report.input.topic, 'YouTube popularity order', 'YouTube recent results'],
-      concept: fa
-        ? 'از نمونه‌های دریافت‌شده برای توضیح محدوده نتایج فعلی استفاده کن. تحلیل و توضیح مستقلی اضافه کن و روشن نگه دار که این فقط یک نمونه محدود از جست‌وجو است.'
-        : 'Use the returned examples as reference points for explaining what the current sample covers. Add an original explanation and make clear that this is only a limited search sample.',
-    },
-    {
-      suffix: fa ? 'توضیح روشن برای تازه‌کارها' : 'A clear beginner explanation',
-      queries: [report.input.topic + ' explained'],
-      concept: fa
-        ? 'توضیحی قابل فهم برای تازه‌کارها درباره ' + topic + ' بساز. اصطلاحات ضروری را تعریف کن، یک سازوکار اصلی را توضیح بده و هر ادعای علمی را با منبع اولیه تطبیق بده.'
-        : 'Build a beginner-friendly explanation of ' + topic + '. Define essential terms, explain one central mechanism and verify each scientific statement against a primary source.',
-    },
-    {
-      suffix: fa ? 'نمونه‌های تازه‌منتشرشده چه چیزی اضافه می‌کنند' : 'What recently published examples add',
-      queries: ['YouTube recent results'],
-      concept: fa
-        ? 'مقایسه‌ای متمرکز درباره ' + topic + ' طراحی کن. معیارهای مقایسه را ثابت نگه دار و هر ادعای واقعی را بررسی کن؛ نمونه محدود را نماینده کل موضوع فرض نکن.'
-        : 'Develop a focused comparison around ' + topic + '. State what is being compared, keep the criteria consistent and verify every factual claim rather than assuming the sample represents the whole topic.',
-    },
-    {
-      suffix: fa ? 'مقایسه‌ای که ارزش راستی‌آزمایی دارد' : 'A comparison worth verifying',
-      queries: [],
-      concept: fa
-        ? 'فقط در صورتی یک ادعای پرتکرار درباره ' + topic + ' را انتخاب کن که منبع معتبری آن را ثبت کرده باشد. ادعا را با شواهد اولیه بسنج و از ساختن افسانه یا ادعای بی‌پشتوانه پرهیز کن.'
-        : 'Choose one commonly repeated claim about ' + topic + ' only if a reliable source documents it. Test the claim against primary evidence, explain what is accurate or incomplete, and do not invent a myth if none is supported.',
-    },
-  ];
-
-  return angleDefinitions.map((angle): Idea => {
-    const related = matchedVideos(report, angle.queries);
-    const hasExamples = related.length > 0;
-    return {
-      id: uid(),
-      topic: topic + ' · ' + angle.suffix,
-      concept: angle.concept,
-      note: hasExamples
-        ? fa
-          ? 'موتور داخلی ' + related.length + ' نمونه ویدئوی دریافت‌شده را به این زاویه مرتبط کرده است. این نمونه‌ها شواهد محدود جست‌وجو هستند و تقاضا یا رقابت پایین را ثابت نمی‌کنند.'
-          : 'Internal engine linked ' + related.length + ' returned sample video(s) to this angle. Examples remain limited search evidence, not proof of demand or low competition.'
-        : fa
-          ? 'نمونه مستقیمی برای این زاویه دریافت نشد. آن را یک فرضیه محتوایی بدان و پیش از اولویت‌بندی اعتبارسنجی کن.'
-          : 'No directly matching sample was returned for this angle. Treat it as an editorial hypothesis and validate it before prioritizing.',
-      status: 'New Discoveries',
-      decision: '',
-      videoIds: related.map((video) => video.id),
-      imageUrl: related.find((video) => Boolean(video.thumbnail))?.thumbnail,
-      createdAt: Date.now(),
-      archived: false,
-      assessment: hasExamples ? 'Worth Exploring' : 'Uncertain',
-      region: report.input.region,
-      languages: report.input.languages,
-      reportId: report.id,
-    };
-  });
-}
-
-export function reasoning(idea: Idea, observedVideoCount = idea.videoIds.length, language: 'fa' | 'en' = 'en') {
-  if (language === 'fa') {
-    if (observedVideoCount <= 0) {
-      return 'در حال حاضر نمونه ویدئوی مرتبطی به این ایده پیوند داده نشده است. این مورد یک فرضیه محتوایی است؛ پیش از اولویت‌بندی، شواهد بیشتری گردآوری کن.';
-    }
-    return 'موتور داخلی ' + observedVideoCount + ' نمونه ویدئوی دریافت‌شده را به این ایده مرتبط کرده است. این نمونه‌ها فقط نقاط مرجع‌اند و تقاضای مخاطب، رقابت پایین یا رشد آینده را ثابت نمی‌کنند.';
-  }
-  if (observedVideoCount <= 0) {
-    return 'No currently available related YouTube examples are linked to this idea. It remains an editorial hypothesis; gather evidence before prioritizing it.';
-  }
-  return 'The internal engine linked ' + observedVideoCount +
-    ' returned sample video example(s) to this idea. They are reference points only—not proof of audience demand, low competition or future growth.';
+export function reasoning(_idea: Idea, _observedVideoCount = 0, language: 'fa' | 'en' = 'en') {
+  return language === 'fa'
+    ? 'نمونه و آمار خام YouTube فقط جداگانه نمایش داده می‌شوند و در تولید، تحلیل یا امتیاز این ایده نقشی ندارند. ایده باید با شواهد مستقل ناشران و وب اعتبارسنجی شود.'
+    : 'Raw YouTube samples and metrics are displayed separately and do not influence this idea, its analysis or score. Validate the idea with independent publisher and web evidence.';
 }
 
 export type IdeaAnalysisSection = {
@@ -645,88 +565,52 @@ export type IdeaAnalysisSection = {
  */
 export function buildIdeaAnalysis(
   idea: Idea,
-  relatedVideos: readonly Pick<YouTubeSampleVideo, 'id' | 'title' | 'channel' | 'publishedAt'>[],
+  _relatedVideos: readonly Pick<YouTubeSampleVideo, 'id' | 'title' | 'channel' | 'publishedAt'>[],
   language: 'fa' | 'en' = 'en',
 ): IdeaAnalysisSection[] {
   const fa = language === 'fa';
-  const topic = idea.topic.trim();
   const concept = idea.concept.trim();
-  const matched = relatedVideos
-    .map((video, index) => ({ video, index, relevance: scoreResearchText(topic, video.title) }))
-    .filter((entry) => entry.relevance > 0)
-    .sort((a, b) => b.relevance - a.relevance || a.index - b.index)
-    .slice(0, 5);
-  const channels = new Set(matched.map((entry) => entry.video.channel).filter(Boolean));
+  const sources = (idea.evidenceSources ?? []).slice(0, 8);
+  const sourceItems = sources.map((source) => source.sourceName + ' · ' + source.title);
   const gaps: string[] = [];
-  if (!idea.sourceUrl?.trim()) gaps.push(fa
-    ? 'هنوز پیوندی به منبع اولیه برای این ایده ذخیره نشده است؛ ادعاهای واقعی را پیش از تولید با سند اصلی تطبیق بده.'
-    : 'No primary-source link is attached to this idea yet; verify factual claims against an original document before production.');
+  if (!idea.sourceUrl?.trim() && !sources.length) gaps.push(fa
+    ? 'هنوز منبع مستقل ناشر یا وب به این ایده پیوند نشده است؛ پیش از تولید، یک سند اولیه معتبر پیدا کن.'
+    : 'No independent publisher or web source is attached to this idea yet; find a credible primary document before production.');
   if (!concept) gaps.push(fa
-    ? 'مفهوم ویدئو تعریف نشده است؛ پرسش مرکزی، چیزی که مخاطب یاد می‌گیرد و زاویه متمایز را مشخص کن.'
-    : 'The video concept is not defined; specify the central question, viewer takeaway and distinctive angle.');
-  if (matched.length < 3) gaps.push(fa
-    ? 'کمتر از سه نمونه مرتبطِ ذخیره‌شده در داده‌های محلی پیدا شد؛ برای مقایسه، نمونه بیشتری با جست‌وجوی دستی جمع‌آوری کن.'
-    : 'Fewer than three relevant saved examples were found in local data; gather more through manual search before drawing comparisons.');
-  if (matched.length > 0 && channels.size < 2) gaps.push(fa
-    ? 'نمونه‌های مرتبط فعلی از کانال‌های متمایز کافی نیستند؛ مقایسه به نمونه‌هایی از سازندگان مختلف نیاز دارد.'
-    : 'The current relevant sample does not span multiple channels; a broader comparison needs examples from distinct creators.');
+    ? 'مفهوم ویدئو تعریف نشده است؛ پرسش مرکزی و چیزی را که مخاطب یاد می‌گیرد مشخص کن.'
+    : 'The video concept is not defined; specify the central question and viewer takeaway.');
   if (!idea.decision.trim()) gaps.push(fa
     ? 'معیار تصمیم شخصی هنوز ثبت نشده است؛ مشخص کن چه نتیجه‌ای این ایده را ارزشمند یا نامناسب می‌کند.'
     : 'No personal decision criterion is recorded; define what would make this idea worth pursuing or rejecting.');
-  const evidenceBody = fa
-    ? 'از ' + relatedVideos.length + ' ویدئوی پیوندخورده و موجود در داده محلی، ' + matched.length +
-      ' عنوان با موضوع ایده تطبیق متنی/معنایی داشتند و این نمونه‌ها به ' + channels.size +
-      ' کانال متمایز مربوط‌اند. این فقط بررسی همان نمونه ذخیره‌شده است؛ تقاضای مخاطب، سطح رقابت یا عملکرد آینده را اثبات نمی‌کند.'
-    : 'Of ' + relatedVideos.length + ' linked videos currently present in local data, ' + matched.length +
-      ' titles matched the idea topic using local relevance rules, across ' + channels.size +
-      ' distinct channels. This describes only the saved sample; it does not prove audience demand, competition or future performance.';
+  const evidenceBody = sources.length
+    ? (fa
+        ? sources.length + ' منبع مستقل ناشر، وب یا دانشنامه‌ای به ایده پیوند شده است. این پیوندها مسیر بررسی ادعاها را نشان می‌دهند، اما به‌تنهایی راستی‌آزمایی یا اثبات تقاضای مخاطب نیستند.'
+        : sources.length + ' independent publisher, web or encyclopedia source(s) are linked to this idea. They support source tracing but do not by themselves verify every claim or prove audience demand.')
+    : (fa
+        ? 'هیچ منبع مستقلی به ایده پیوند نشده است. داده خام YouTube جداگانه نمایش داده می‌شود و در این تحلیل یا امتیاز دخالت ندارد.'
+        : 'No independent source is linked to this idea. Raw YouTube API data is displayed separately and is not used in this analysis or any score.');
   const nextSteps = fa
     ? [
         '۱. پرسش مرکزی و وعده آموزشی ایده را در یک جمله دقیق بنویس.',
-        idea.sourceUrl?.trim()
-          ? '۲. ادعاهای اصلی را در منبع پیوندشده و منابع اولیه ارجاعی بررسی کن.'
-          : '۲. یک مقاله، اطلاعیه یا سند اولیه معتبر پیدا و به ایده پیوند بده.',
-        matched.length
-          ? '۳. عنوان و زاویه نمونه‌های مرتبط را با ایده خود مقایسه کن و تفاوت واقعی را مشخص کن.'
-          : '۳. با جست‌وجوی دستی چند نمونه واقعاً مرتبط پیدا کن؛ نبود نمونه ذخیره‌شده به معنی نبود محتوا نیست.',
-        '۴. مخاطب هدف و دلیل مفید بودن این توضیح برای او را مشخص کن؛ سپس مفهوم را با شواهد تکمیل کن.',
+        sources.length ? '۲. ادعاهای اصلی را در منابع مستقل پیوندشده و اسناد اولیه بررسی کن.' : '۲. یک مقاله، اطلاعیه یا سند اولیه معتبر پیدا و به ایده پیوند بده.',
+        '۳. ادعاهای منابع را از تفسیر خودت جدا کن و اختلاف یا خلأ شواهد را مشخص کن.',
+        '۴. مخاطب هدف و دلیل مفید بودن این توضیح برای او را تعریف کن.',
       ]
     : [
         '1. State the central question and viewer takeaway in one precise sentence.',
-        idea.sourceUrl?.trim()
-          ? '2. Check key claims against the linked source and its cited primary material.'
-          : '2. Find a credible original paper, mission release or primary document and attach it to the idea.',
-        matched.length
-          ? '3. Compare the angles and titles of relevant saved examples, then state the genuine difference in your approach.'
-          : '3. Gather a few genuinely relevant examples with manual search; an empty saved sample does not mean no videos exist.',
-        '4. Define the intended audience and why this explanation helps them, then refine the concept against the evidence.',
+        sources.length ? '2. Check the main claims against the linked independent sources and their primary documents.' : '2. Find a credible original paper, official release or primary document and attach it to the idea.',
+        '3. Separate source claims from your interpretation and note any evidence gaps or contradictions.',
+        '4. Define the intended audience and why this explanation helps them.',
       ];
   const framing = concept
     ? (fa
-        ? 'مبنای تحلیل، مفهوم ثبت‌شده کاربر است: «' + concept.slice(0, 900) + '». این متن جهت فعلی ایده را مشخص می‌کند؛ اعتبار ادعاها باید جداگانه با منابع سنجیده شود.'
-        : 'The analysis starts from the user’s saved concept: “' + concept.slice(0, 900) + '”. It defines the current direction of the idea; factual claims still need separate source verification.')
-    : (fa
-        ? 'برای این ایده هنوز توضیح محتوایی ثبت نشده است. تا زمان تکمیل مفهوم، نمی‌توان درباره زاویه یا ارزش تحریری آن داوری کرد.'
-        : 'No editorial concept is saved for this idea. Its angle cannot be assessed until the concept is completed.');
+        ? 'مبنای تحلیل، مفهوم ثبت‌شده کاربر است: «' + concept.slice(0, 900) + '». اعتبار ادعاها باید جداگانه با منابع مستقل سنجیده شود.'
+        : 'The analysis starts from the saved concept: “' + concept.slice(0, 900) + '”. Factual claims still need independent source verification.')
+    : (fa ? 'برای این ایده هنوز توضیح محتوایی ثبت نشده است.' : 'No editorial concept is saved for this idea yet.');
   return [
     { id: 'core-framing', title: fa ? 'هسته ایده و زاویه فعلی' : 'Core idea and current angle', body: framing },
-    {
-      id: 'evidence-review',
-      title: fa ? 'بررسی شواهد و نمونه‌های موجود' : 'Evidence and available examples',
-      body: evidenceBody,
-      ...(matched.length ? { items: matched.map((entry) => entry.video.title) } : {}),
-    },
-    {
-      id: 'research-gaps',
-      title: fa ? 'چه چیزهایی هنوز ثابت نشده‌اند؟' : 'What remains unproven?',
-      body: gaps.length ? gaps.map((gap) => '• ' + gap).join('\n') : (fa
-        ? 'در داده محلی فعلی، خلأ آشکار دیگری از قواعد این بررسی پیدا نشد؛ این به معنای راستی‌آزمایی کامل ایده نیست.'
-        : 'No additional gap was identified by these local checks; this does not mean the idea has been fully verified.'),
-    },
-    {
-      id: 'next-actions',
-      title: fa ? 'اقدام‌های پیشنهادی برای پیشبرد ایده' : 'Practical next steps',
-      body: nextSteps.join('\n'),
-    },
+    { id: 'evidence-review', title: fa ? 'منابع مستقل پیوندشده' : 'Linked independent sources', body: evidenceBody, ...(sourceItems.length ? { items: sourceItems } : {}) },
+    { id: 'research-gaps', title: fa ? 'چه چیزهایی هنوز ثابت نشده‌اند؟' : 'What remains unproven?', body: gaps.length ? gaps.map((gap) => '• ' + gap).join('\n') : (fa ? 'خلأ آشکار دیگری در داده‌های منبع ثبت‌شده دیده نشد؛ این به معنی راستی‌آزمایی کامل نیست.' : 'No additional gap was identified in the saved source data; this does not mean the idea is fully verified.') },
+    { id: 'next-actions', title: fa ? 'اقدام‌های پیشنهادی برای پیشبرد ایده' : 'Practical next steps', body: nextSteps.join('\n') },
   ];
 }

@@ -138,21 +138,12 @@ void test('editorial priority survives the validated local SQLite data shape', (
   );
 });
 
-void test('YouTube API samples create video-led ideas without publisher attribution', () => {
+void test('YouTube API samples alone cannot create editorial ideas', () => {
   const ideas = generateEditorialIdeas({ ...base, news: [], videos, reportId: 'report-1', limit: 4 });
-  assert.ok(ideas.length > 0);
-  assert.ok(ideas.every((idea) => idea.reportId === 'report-1'));
-  assert.ok(ideas.every((idea) => idea.sourceName === 'YouTube sample'));
-  assert.ok(ideas.every((idea) => !idea.sourceUrl));
-  assert.ok(ideas.every((idea) => idea.videoIds.length > 0));
-  assert.ok(ideas.every((idea) =>
-    videos.every((video) => !idea.topic.includes(video.title) &&
-      !idea.concept.includes(video.title) && !idea.note.includes(video.title) &&
-      !idea.concept.includes(video.description ?? '')),
-  ));
+  assert.deepEqual(ideas, []);
 });
 
-void test('cross-source category stays unavailable without YouTube evidence', () => {
+void test('cross-source category stays unavailable without independent web evidence', () => {
   const ideas = generateEditorialIdeas({
     ...base,
     news,
@@ -184,7 +175,7 @@ void test('a selected category changes the generated angle rather than acting as
 });
 
 
-void test('cross-source editorial angles require and link both publisher and YouTube evidence', () => {
+void test('cross-source editorial angles require publisher and independent web evidence', () => {
   const generated = generateEditorialIdeas({
     ...base,
     news,
@@ -206,12 +197,20 @@ void test('cross-source editorial angles require and link both publisher and You
         viewCount: 1200000,
       },
     ],
+    context: [{
+      title: 'JWST exoplanet atmosphere methane spectroscopy results from an independent research institute',
+      summary: 'The independent research paper discusses methane spectral lines, water vapor and the limits of atmospheric measurement.',
+      sourceName: 'Independent Research Institute',
+      sourceUrl: 'https://research.example.org/jwst-exoplanet-atmosphere',
+      publishedAt: '2026-11-16T10:00:00Z',
+    }],
     category: 'Cross-source',
     limit: 5,
   });
   assert.ok(generated.length > 0);
   assert.ok(generated.every((idea) => idea.ideaCategory === 'Cross-source'));
-  assert.ok(generated.some((idea) => idea.videoIds.length > 0));
+  assert.ok(generated.every((idea) => idea.videoIds.length === 0));
+  assert.ok(generated.every((idea) => idea.engineScoreBasis === 'publisher-web-only-v2'));
 });
 
 void test('no evidence produces no fabricated generated idea', () => {

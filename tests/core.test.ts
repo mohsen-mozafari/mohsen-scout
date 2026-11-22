@@ -609,17 +609,21 @@ void test('YouTube sample keeps relevance, high-view, recent and explainer bucke
   assert.equal(counts[input.topic + ' explained'] ?? 0, 0);
 });
 
-void test('YouTube MOCK: broad result buckets use one 50-result page each', async () => {
-  let calls = 0;
+void test('YouTube MOCK: extra pages stop at the 12-search safety cap and video statistics remain a separate request', async () => {
+  let searchCalls = 0;
+  let statisticsCalls = 0;
   const result = await searchYouTube(input, {
     key: 'MOCK_PAGE',
     charge: async () => {},
-    fetcher: fetcher(() => {
-      calls++;
+    fetcher: fetcher((url) => {
+      const pathname = new URL(url).pathname;
+      if (pathname.endsWith('/search')) searchCalls++;
+      else if (pathname.endsWith('/videos')) statisticsCalls++;
       return response({ nextPageToken: 'next', items: [mockItem('dQw4w9WgXcQ')] });
     }),
   });
-  assert.equal(calls, 5);
+  assert.equal(searchCalls, 12);
+  assert.equal(statisticsCalls, 1);
   assert.equal(result.videos.length, 1);
 });
 void test('YouTube MOCK: quota exhaustion stops without retries and invokes stop hook', async () => {
@@ -1094,7 +1098,7 @@ void test('OpenRouter news translation parses and caches a Persian title and sum
   assert.equal(calls, 1);
 });
 
-void test('Internal research engine joins publisher, Wikimedia and YouTube evidence without a composite score', () => {
+void test('Internal research engine uses publisher and Wikimedia evidence while excluding YouTube API data', () => {
   const result = buildInternalResearch({
     topic: 'Exoplanet atmospheres',
     news: [
@@ -1132,9 +1136,11 @@ void test('Internal research engine joins publisher, Wikimedia and YouTube evide
   assert.equal(result.angles.length, 3);
   assert.ok(result.evidence.some((item) => item.id === 'publisher-news' && item.detail.includes('2 selected feed source(s)')));
   assert.ok(result.evidence.some((item) => item.id === 'wikimedia' && item.detail.includes('not search volume')));
-  assert.ok(result.evidence.some((item) => item.id === 'youtube-sample' && item.detail.includes('1 returned video example')));
-  assert.ok(result.evidence.some((item) => item.id === 'youtube-sample' && item.detail.includes('median 1,000')));
-  assert.ok(result.evidence.some((item) => item.id === 'youtube-sample' && item.detail.includes('median 50')));
+  assert.ok(result.evidence.some((item) => item.id === 'youtube-sample' && item.detail.includes('intentionally excluded')));
+  assert.equal(result.intelligence.selfEvaluation.youtubeSampleCount, 0);
+  assert.equal(result.intelligence.selfEvaluation.videoViewCountsAvailable, 0);
+  assert.equal(result.videos.length, 0);
+  assert.doesNotMatch(JSON.stringify(result), /Exoplanet atmosphere discovery explained|MOCK science channel/);
   assert.equal(result.intelligence.sourceQuality.feedsRepresented, 2);
   assert.equal(result.intelligence.sourceQuality.independentPublishers, 1);
   assert.equal(result.intelligence.sourceQuality.duplicateStoriesMerged, 1);
@@ -1142,7 +1148,7 @@ void test('Internal research engine joins publisher, Wikimedia and YouTube evide
   assert(!JSON.stringify(result).toLowerCase().includes('viral score'));
 });
 
-void test('Internal engine keeps historical context while separating recent, all-time and future-dated YouTube matches', () => {
+void test('Internal engine ignores YouTube metadata in recent and all-time research metrics', () => {
   const fixedNow = Date.parse('2026-11-18T12:00:00.000Z');
   const result = buildInternalResearch({
     topic: 'Exoplanet atmospheres',
@@ -1162,15 +1168,17 @@ void test('Internal engine keeps historical context while separating recent, all
   const audit = result.intelligence.selfEvaluation;
   assert.equal(audit.topicMatchedNewsCount, 1);
   assert.equal(audit.unmatchedNewsCount, 1);
-  assert.equal(audit.youtubeSampleCount, 4);
-  assert.equal(audit.recentVideoCandidateCount, 2);
-  assert.equal(audit.matchedVideoCount, 1);
-  assert.equal(audit.allTimeMatchedVideoCount, 2);
-  assert.equal(audit.recentMatchedVideoCount, 1);
-  assert.equal(audit.outsideVideoWindowCount, 2);
-  assert.equal(audit.futureDatedVideoCount, 1);
-  assert.equal(audit.excludedVideoCount, 2);
-  assert.equal(audit.videoViewCountsAvailable, 2);
+  assert.equal(audit.youtubeSampleCount, 0);
+  assert.equal(audit.recentVideoCandidateCount, 0);
+  assert.equal(audit.matchedVideoCount, 0);
+  assert.equal(audit.allTimeMatchedVideoCount, 0);
+  assert.equal(audit.recentMatchedVideoCount, 0);
+  assert.equal(audit.outsideVideoWindowCount, 0);
+  assert.equal(audit.futureDatedVideoCount, 0);
+  assert.equal(audit.excludedVideoCount, 0);
+  assert.equal(audit.videoViewCountsAvailable, 0);
+  assert.equal(result.videos.length, 0);
+  assert.ok(result.evidence.some((item) => item.id === 'youtube-sample' && item.detail.includes('intentionally excluded')));
   const allTime = buildInternalResearch({
     topic: 'Exoplanet atmospheres', now: fixedNow, videoWindowDays: 0,
     videos: [
@@ -1179,9 +1187,10 @@ void test('Internal engine keeps historical context while separating recent, all
       { id: 'aqz-KE-bpKQ', title: 'Exoplanet atmosphere announced for the future', channel: 'Future Science', publishedAt: '2026-12-01T09:00:00.000Z', viewCount: 12000, likeCount: 500 },
     ],
   }).intelligence.selfEvaluation;
-  assert.equal(allTime.recentVideoCandidateCount, 2);
-  assert.equal(allTime.recentMatchedVideoCount, 2);
-  assert.equal(allTime.outsideVideoWindowCount, 1);
+  assert.equal(allTime.youtubeSampleCount, 0);
+  assert.equal(allTime.recentVideoCandidateCount, 0);
+  assert.equal(allTime.recentMatchedVideoCount, 0);
+  assert.equal(allTime.outsideVideoWindowCount, 0);
   assert.ok(result.evidence.some((item) => item.id === 'retrieved-news-headlines' && item.detail.includes('Artemis')), 'unmatched publisher records remain visible in the contextual evidence audit');
   assert.ok(result.evidence.some((item) => item.id === 'youtube-sample' && item.detail.includes('9,000')));
 });
@@ -1248,7 +1257,7 @@ void test('Second Opinion prompt follows the selected UI language', () => {
   assert.match(englishPrompt, /concise English second opinion/);
 });
 
-void test('generated research ideas use the selected UI language', () => {
+void test('legacy report helper does not derive ideas from raw YouTube samples', () => {
   const report: Report = {
     id: 'language-idea-test',
     input: { ...input, topic: 'James Webb discoveries' },
@@ -1259,8 +1268,7 @@ void test('generated research ideas use the selected UI language', () => {
     analyzed: false,
   };
   const persianIdeas = buildIdeas(report, 'fa');
-  assert.match(persianIdeas[0].topic, /نمونه‌های فعلی/);
-  assert.match(persianIdeas[0].concept, /نمونه‌های دریافت‌شده/);
+  assert.deepEqual(persianIdeas, []);
 });
 
 
@@ -1277,7 +1285,7 @@ void test('Internal engine self-evaluation reports measured inputs, deduplicatio
   assert.equal(audit.inputNewsCount, 2);
   assert.equal(audit.uniqueNewsCount, 1);
   assert.equal(audit.duplicateNewsMerged, 1);
-  assert.equal(audit.youtubeSampleCount, 1);
+  assert.equal(audit.youtubeSampleCount, 0);
   assert.equal(audit.wikimediaMonthlyObservations, 0);
   assert.equal(audit.entityCandidateCount, result.entityCandidates.length);
   assert.equal(audit.coMentionRelationCount, result.entityRelations.length);

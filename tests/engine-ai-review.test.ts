@@ -70,9 +70,12 @@ void test('internal engine retains unmatched and historical evidence as context 
   assert.equal(result.intelligence.selfEvaluation.uniqueNewsCount, 2);
   assert.equal(result.intelligence.selfEvaluation.topicMatchedNewsCount, 1);
   assert.equal(result.intelligence.sourceQuality.uniqueStories, 2);
-  assert.equal(result.intelligence.selfEvaluation.allTimeMatchedVideoCount, 2);
-  assert.equal(result.intelligence.selfEvaluation.recentMatchedVideoCount, 1);
-  assert.equal(result.intelligence.selfEvaluation.outsideVideoWindowCount, 1);
+  assert.equal(result.intelligence.selfEvaluation.youtubeSampleCount, 0);
+  assert.equal(result.intelligence.selfEvaluation.allTimeMatchedVideoCount, 0);
+  assert.equal(result.intelligence.selfEvaluation.recentMatchedVideoCount, 0);
+  assert.equal(result.intelligence.selfEvaluation.outsideVideoWindowCount, 0);
+  assert.equal(result.videos.length, 0);
+  assert.doesNotMatch(JSON.stringify(result), /Mars rover sample analysis|Mars exploration documentary|100000|900000/);
   assert.ok(result.entityCandidates.length >= 1);
 });
 

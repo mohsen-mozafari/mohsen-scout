@@ -514,7 +514,7 @@ export function generateEditorialIdeas(input: GenerateEditorialIdeasInput): Idea
 
   const topicTokens = new Set(tokenizeResearchText(topic));
   const termStats = new Map<string, { documents: number; frequency: number; sourceKinds: Set<string>; sourceGroups: Set<string> }>();
-  // Anchors are derived from independent publisher, YouTube, context and history evidence.
+  // Anchors are derived only from independent publisher, web/encyclopedia context and saved publisher history.
   const topicRelevantDocuments = documents.filter((document) => scoreResearchText(topic, document.title, document.text) > 0);
   // A single isolated record is not enough to justify an automated editorial idea.
   if (topicRelevantDocuments.length < 2) return [];
@@ -634,12 +634,11 @@ export function generateEditorialIdeas(input: GenerateEditorialIdeasInput): Idea
   const fallback = tokenizeResearchText(topic).filter((term) => term.length > 2).slice(0, 4);
   const usableAnchors = anchors.length ? anchors : (fallback.length ? fallback : [topic]);
   const datedCount = topicRelevantDocuments.filter((item) => item.publishedAt && Number.isFinite(Date.parse(item.publishedAt))).length;
-  const mode: 'news' | 'youtube' | 'context' | 'history' | 'topic' | 'mixed' =
-    topicRelevantNews.length && topicRelevantVideos.length ? 'mixed'
+  const mode: 'news' | 'context' | 'history' | 'topic' | 'mixed' =
+    topicRelevantNews.length && relevantIndependentContext.length ? 'mixed'
       : topicRelevantNews.length ? 'news'
-        : topicRelevantVideos.length ? 'youtube'
-          : topicRelevantHistory.length ? 'history'
-            : relevantIndependentContext.length ? 'context' : 'topic';
+        : topicRelevantHistory.length ? 'history'
+          : relevantIndependentContext.length ? 'context' : 'topic';
   const definitions: IdeaGenerationCategory[] = [
     'Explainer',
     'Evidence audit',
@@ -652,7 +651,7 @@ export function generateEditorialIdeas(input: GenerateEditorialIdeasInput): Idea
   const eligible = definitions.filter((category) => {
     if (category === 'Comparison') return topicRelevantDocuments.length >= 2;
     if (category === 'Timeline') return datedCount >= 2;
-    if (category === 'Cross-source') return topicRelevantNews.length > 0 && topicRelevantVideos.length > 0;
+    if (category === 'Cross-source') return topicRelevantNews.length > 0 && relevantIndependentContext.length > 0;
     return true;
   });
   const existing: Idea[] = [];
@@ -687,10 +686,10 @@ export function generateEditorialIdeas(input: GenerateEditorialIdeasInput): Idea
       const hasPublisherSupport = topicRelevantNews.some((item) =>
         scoreResearchText(candidate.anchor, item.title, item.summary) > 0,
       );
-      const hasVideoSupport = topicRelevantVideos.some((video) =>
-        scoreResearchText(candidate.anchor, video.title, video.description ?? '') > 0,
+      const hasIndependentContextSupport = relevantIndependentContext.some((item) =>
+        scoreResearchText(candidate.anchor, item.title, item.summary ?? '') > 0,
       );
-      if (!hasPublisherSupport || !hasVideoSupport) continue;
+      if (!hasPublisherSupport || !hasIndependentContextSupport) continue;
     }
     const opportunity = opportunityScorer(candidate.anchor);
     const positivePreference = matchesSavedTopicPreference(candidate.anchor, feedback.positiveTopics);
@@ -721,10 +720,12 @@ export function generateEditorialIdeas(input: GenerateEditorialIdeasInput): Idea
   const publisherGroups = new Set(topicRelevantNews
     .map((item) => normalizeResearchText(item.sourceId || item.sourceName))
     .filter(Boolean)).size;
-  const videoChannels = new Set(topicRelevantVideos.map((item) => normalizeResearchText(item.channel ?? '')).filter(Boolean)).size;
-  // Confidence describes the breadth of this returned sample, not truth or audience demand.
-  const confidence = publisherGroups >= 2 && videoChannels >= 2 ? 'high'
-    : publisherGroups >= 2 || videoChannels >= 2 ? 'moderate' : 'low';
+  const independentContextGroups = new Set(relevantIndependentContext
+    .map((item) => normalizeResearchText(item.sourceName || item.sourceUrl || ''))
+    .filter(Boolean)).size;
+  // Confidence describes breadth of independent sources, not truth or audience demand.
+  const confidence = publisherGroups >= 2 && independentContextGroups >= 1 ? 'high'
+    : publisherGroups >= 2 || independentContextGroups >= 2 ? 'moderate' : 'low';
   const output: Idea[] = [];
   const now = input.now ?? Date.now();
   const limit = Math.max(1, Math.min(25, input.limit ?? 25));
@@ -734,7 +735,7 @@ export function generateEditorialIdeas(input: GenerateEditorialIdeasInput): Idea
   const sourceName = news.find((item) => item.url === sourceUrl)?.sourceName ??
     historicalSources.find((item) => item.sourceUrl === sourceUrl)?.sourceName ??
     relevantIndependentContext.find((item) => item.sourceUrl === sourceUrl)?.sourceName ??
-    (topicRelevantVideos.length ? 'YouTube sample' : undefined);
+    undefined;
   const language = input.language ?? 'en';
 
   for (const candidate of candidates) {
@@ -744,27 +745,14 @@ export function generateEditorialIdeas(input: GenerateEditorialIdeasInput): Idea
       existing.some((idea) => ideaHasSameMeaning(candidate, idea, topic)) ||
       output.some((idea) => ideaHasSameMeaning(candidate, idea, topic))) continue;
     usedTitles.add(normalizedTitle);
-    const relatedVideoIds = topicRelevantVideos
-      .map((video) => ({
-        id: video.id,
-        relevance: scoreResearchText(candidate.anchor, video.title, video.description ?? ''),
-        publishedAt: Date.parse(video.publishedAt ?? '') || 0,
-      }))
-      .filter((video) => video.relevance > 0)
-      .sort((left, right) =>
-        right.relevance - left.relevance ||
-        right.publishedAt - left.publishedAt ||
-        left.id.localeCompare(right.id),
-      )
-      .slice(0, 5)
-      .map((video) => video.id);
+    const relatedVideoIds: string[] = [];
     const evidenceScope = [
       news.length ? (language === 'fa'
         ? news.length + ' خبر دریافتی؛ ' + topicRelevantNews.length + ' مورد هم‌موضوع'
         : news.length + ' publisher item(s) received; ' + topicRelevantNews.length + ' topic-matched') : '',
-      videos.length ? (language === 'fa'
-        ? videos.length + ' نمونه ویدئویی دریافتی؛ ' + topicRelevantVideos.length + ' مورد هم‌موضوع'
-        : videos.length + ' YouTube sample(s) received; ' + topicRelevantVideos.length + ' topic-matched') : '',
+      relevantIndependentContext.length ? (language === 'fa'
+        ? relevantIndependentContext.length + ' منبع مستقل وب یا دانشنامه‌ای'
+        : relevantIndependentContext.length + ' independent web or encyclopedia source(s)') : '',
       relevantIndependentContext.length ? (language === 'fa' ? relevantIndependentContext.length + ' منبع زمینه‌ای' : relevantIndependentContext.length + ' independent context source(s)') : '',
       mode === 'topic' ? (language === 'fa'
         ? 'فقط موضوع واردشده توسط کاربر؛ بدون شواهد مستقل مرتبط'
@@ -840,7 +828,7 @@ export function generateEditorialIdeas(input: GenerateEditorialIdeasInput): Idea
       note,
       status: 'New Discoveries',
       decision: '',
-      videoIds: relatedVideoIds,
+      videoIds: [],
       createdAt: now + output.length,
       archived: false,
       assessment: confidence === 'low' ? 'Uncertain' : 'Worth Exploring',
