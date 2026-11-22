@@ -51,6 +51,7 @@ export class SecondOpinionProviderError extends Error {
     message: string,
     public readonly code: ProviderAttempt['status'],
     public readonly retryAfterSeconds?: number,
+    public readonly attempts: ProviderAttempt[] = [],
   ) {
     super(message);
     this.name = 'SecondOpinionProviderError';
@@ -252,6 +253,8 @@ export async function requestSecondOpinionWithFallback(
       ? 'All configured second-opinion providers failed or returned an invalid response. ' + detail
       : 'No second-opinion provider has a saved key. Add a provider key in Settings.',
     activeAttempts[activeAttempts.length - 1]?.status ?? 'disabled',
+    undefined,
+    attempts,
   );
 }
 

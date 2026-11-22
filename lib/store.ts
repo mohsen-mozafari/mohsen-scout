@@ -620,23 +620,48 @@ export const useScout = create<State>((set, get) => ({
               : item),
           }));
         }
-        recordRuntimeFinish('AI', review.opinions.length ? 'success' : 'partial', review.warnings.join(' '));
-        const ideasById = new Map(generatedIdeas.map((idea) => [idea.id, idea]));
+        const fallbackUsed = review.providerAttempts.some((attempt) =>
+          attempt.status !== 'success' && attempt.status !== 'disabled',
+        );
+        recordRuntimeFinish('AI', review.opinions.length ? (fallbackUsed ? 'partial' : 'success') : 'partial', review.warnings.join(' '));
+        const groupedAttempts = new Map<string, {
+          provider: string;
+          model: string;
+          statuses: string[];
+          messages: string[];
+          ideaTopics: string[];
+        }>();
+        for (const attempt of review.providerAttempts) {
+          const key = attempt.provider + '/' + attempt.model;
+          const group = groupedAttempts.get(key) ?? {
+            provider: attempt.provider,
+            model: attempt.model,
+            statuses: [],
+            messages: [],
+            ideaTopics: [],
+          };
+          group.statuses.push(attempt.status);
+          group.messages.push(attempt.message.slice(0, 180));
+          if (!group.ideaTopics.includes(attempt.ideaTopic)) group.ideaTopics.push(attempt.ideaTopic);
+          groupedAttempts.set(key, group);
+        }
+        const providerActivity = [...groupedAttempts.values()].map((group) => ({
+          id: group.provider + '/' + group.model,
+          title: group.provider + ' · ' + group.model,
+          summary: group.ideaTopics.slice(0, 3).join(' | ') +
+            ' · ' + group.statuses.length + ' request(s): ' + group.statuses.join(', ') +
+            ' · ' + group.messages.slice(0, 3).join(' | '),
+          sourceName: group.provider,
+          includedInAnalysis: false,
+          decisionReason: 'Advisory second opinion requested after the internal ranking was completed. It is recorded for audit and does not alter internal evidence scores or reorder the local ideas.',
+        }));
         await finishActivity(aiActivityId, {
-          status: review.opinions.length ? (review.warnings.length ? 'partial' : 'success') : 'empty',
-          resultCount: review.opinions.length,
-          analyzedCount: Math.min(8, generatedIdeas.length),
-          results: buildResearchActivityResults(topic, review.opinions.map((opinion) => {
-            const idea = ideasById.get(opinion.ideaId);
-            return {
-              id: opinion.id,
-              title: idea?.topic ?? 'Second-opinion review',
-              summary: opinion.text,
-              sourceName: opinion.model,
-              includedInAnalysis: true,
-              decisionReason: 'External opinion was requested only after the internal result was finalized; it is advisory and does not overwrite the local ranking.',
-            };
-          })),
+          status: review.opinions.length
+            ? (fallbackUsed || review.warnings.length ? 'partial' : 'success')
+            : review.providerAttempts.length ? 'error' : 'skipped',
+          resultCount: review.providerAttempts.length,
+          analyzedCount: review.opinions.length,
+          results: buildResearchActivityResults(topic, providerActivity),
           warnings: review.warnings.slice(0, 12),
         });
       }
@@ -668,10 +693,11 @@ export const useScout = create<State>((set, get) => ({
       reportId: report.id,
       priorMemory,
       existingIdeas: currentData.ideas,
+      feedback: buildLocalResearchFeedback(currentData),
       region: report.input.region,
       languages: report.input.languages,
       language: currentData.preferences.uiLanguage ?? 'fa',
-      limit: 8,
+      limit: 10,
     });
     await get().commit((data) => ({
       ...data,
@@ -759,10 +785,11 @@ export const useScout = create<State>((set, get) => ({
           ...(targetReport ? { reportId: targetReport.id } : {}),
           priorMemory,
           existingIdeas: ideas,
+          feedback: buildLocalResearchFeedback(data),
           region: targetReport?.input.region ?? data.preferences.region,
           languages: targetReport?.input.languages ?? data.preferences.languages,
           language: data.preferences.uiLanguage ?? 'fa',
-          limit: 8,
+          limit: 10,
           now,
         });
         replenished = nextIdeas.length;
