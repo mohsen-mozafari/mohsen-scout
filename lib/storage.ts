@@ -129,15 +129,17 @@ export async function writeData(
   const validatedRecords = new Map<RecordDomain, { id: string; value: unknown }[]>();
   const scalarEntries: { key: keyof LocalData; value: unknown }[] = [];
   for (const entry of changedEntries) {
-    if (isRecordDomain(entry.key)) {
-      const delta = diffRecordCollection(entry.key, entry.value as unknown[], previousData?.[entry.key] as unknown[] | undefined);
-      recordDeltas.set(entry.key, delta);
-      validatedRecords.set(entry.key, delta.upserts.map(({ id, value }) => ({
+    const key = entry.key;
+    if (isRecordDomain(key)) {
+      const previousRecords = previousData?.[key] as unknown[] | undefined;
+      const delta = diffRecordCollection(key, entry.value as unknown[], previousRecords);
+      recordDeltas.set(key, delta);
+      validatedRecords.set(key, delta.upserts.map(({ id, value }) => ({
         id,
-        value: validateLocalRecord(entry.key, value),
+        value: validateLocalRecord(key, value),
       })));
     } else {
-      scalarEntries.push({ key: entry.key, value: validateLocalEntry(entry.key, entry.value) });
+      scalarEntries.push({ key, value: validateLocalEntry(key, entry.value) });
     }
   }
   const hasRecordChanges = [...recordDeltas.values()].some((delta) =>

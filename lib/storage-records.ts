@@ -1,4 +1,4 @@
-import type { LocalData, Report, ResearchMemoryEntry, Video } from './types';
+import type { LocalData, Report, Video } from './types';
 import { RETENTION_MS } from './types';
 
 export const RECORD_DOMAINS = [
@@ -39,9 +39,11 @@ export function recordIdFor(domain: RecordDomain, value: unknown): string {
     throw new Error('Cannot persist an invalid ' + domain + ' record.');
   }
   const record = value as Record<string, unknown>;
+  const topic = typeof record.topic === 'string' ? record.topic : '';
+  const recordId = typeof record.id === 'string' ? record.id : '';
   const id = domain === 'researchMemory'
-    ? 'topic:' + String(record.topic ?? '').trim().normalize('NFKC').toLowerCase().replace(/\s+/g, ' ')
-    : String(record.id ?? '');
+    ? 'topic:' + topic.trim().normalize('NFKC').toLowerCase().replace(/\s+/g, ' ')
+    : recordId;
   if (!id || id === 'topic:') throw new Error('A stable identifier is required for ' + domain + '.');
   return id;
 }

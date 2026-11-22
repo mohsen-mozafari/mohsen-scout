@@ -1,7 +1,6 @@
 import { z } from 'zod';
 import { DEFAULT_SECOND_OPINION_ORDER, type LocalData, regions, statuses } from './types';
 import type { RecordDomain } from './storage-records';
-import type { RecordDomain } from './storage-records';
 
 const id = z.string().min(1);
 const text = z.string();

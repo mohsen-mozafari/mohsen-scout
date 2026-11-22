@@ -409,8 +409,8 @@ export default function DeepResearch() {
                     <Text style={styles.badge}>{item.statusLabel}</Text>
                   </View>
                   <Txt muted>{item.summary}</Txt>
-                  {item.findings.map((finding, index) => <Txt key={item.id + '-finding-' + index}>{'• ' + finding}</Txt>)}
-                  {item.caveats.map((caveat, index) => <Txt muted key={item.id + '-caveat-' + index}>{caveat}</Txt>)}
+                  {item.findings.map((finding) => <Txt key={item.id + '-finding-' + finding}>{'• ' + finding}</Txt>)}
+                  {item.caveats.map((caveat) => <Txt muted key={item.id + '-caveat-' + caveat}>{caveat}</Txt>)}
                 </View>
               ))}
             </Fold>
