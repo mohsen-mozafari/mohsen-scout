@@ -889,11 +889,7 @@ void test('Analysis: ideas are cautious hypotheses, not performance scores', () 
     analyzed: false,
   };
   const ideas = buildIdeas(report);
-  assert.equal(ideas.length, 4);
-  assert.equal(ideas[0].assessment, 'Worth Exploring');
-  assert.deepEqual(ideas[0].videoIds, [video.id]);
-  assert.equal(ideas[0].imageUrl, video.thumbnail);
-  assert.equal(ideas[1].assessment, 'Uncertain');
+  assert.deepEqual(ideas, []);
   assert(!JSON.stringify(ideas).includes(video.title));
   assert(!JSON.stringify(ideas).includes(video.description));
   assert(!JSON.stringify(ideas).includes('score'));
@@ -908,7 +904,7 @@ const regressionReport: Report = {
   createdAt: now,
   analyzed: false,
 };
-const regressionIdea = buildIdeas(regressionReport)[0];
+const regressionIdea = createManualIdea(input.topic, 'A user-authored concept used only for persistence regression tests.', '', 'Iran', ['en']);
 const regressionLink = {
   id: video.id,
   url: `https://www.youtube.com/watch?v=${video.id}`,
@@ -1139,7 +1135,6 @@ void test('Internal research engine uses publisher and Wikimedia evidence while 
   assert.ok(result.evidence.some((item) => item.id === 'youtube-sample' && item.detail.includes('intentionally excluded')));
   assert.equal(result.intelligence.selfEvaluation.youtubeSampleCount, 0);
   assert.equal(result.intelligence.selfEvaluation.videoViewCountsAvailable, 0);
-  assert.equal(result.videos.length, 0);
   assert.doesNotMatch(JSON.stringify(result), /Exoplanet atmosphere discovery explained|MOCK science channel/);
   assert.equal(result.intelligence.sourceQuality.feedsRepresented, 2);
   assert.equal(result.intelligence.sourceQuality.independentPublishers, 1);
@@ -1177,7 +1172,6 @@ void test('Internal engine ignores YouTube metadata in recent and all-time resea
   assert.equal(audit.futureDatedVideoCount, 0);
   assert.equal(audit.excludedVideoCount, 0);
   assert.equal(audit.videoViewCountsAvailable, 0);
-  assert.equal(result.videos.length, 0);
   assert.ok(result.evidence.some((item) => item.id === 'youtube-sample' && item.detail.includes('intentionally excluded')));
   const allTime = buildInternalResearch({
     topic: 'Exoplanet atmospheres', now: fixedNow, videoWindowDays: 0,

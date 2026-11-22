@@ -45,7 +45,7 @@ const videos: YouTubeSampleVideo[] = [{
   url: 'https://www.youtube.com/watch?v=mock-video-1',
 }];
 
-void test('research graph preserves original source, video and monthly pageview details', () => {
+void test('research graph preserves publisher source and monthly pageviews while excluding YouTube', () => {
   const analysis = buildInternalResearch({
     topic: 'JWST exoplanet atmosphere',
     news: news.map((item) => ({
@@ -74,8 +74,8 @@ void test('research graph preserves original source, video and monthly pageview 
   assert.equal(sourceGroup?.items[0].title, news[0].title);
   assert.equal(sourceGroup?.items[0].url, news[0].url);
   assert.match(sourceGroup?.items[0].detail ?? '', /measured atmospheric observation/);
-  assert.match(videoGroup?.items[0].detail ?? '', /1,200/);
-  assert.match(videoGroup?.items[0].detail ?? '', /5,000/);
+  assert.equal(videoGroup, undefined);
+  assert.equal(model.groups.some((group) => group.id === 'youtube'), false);
   assert.match(contextGroup?.items.find((item) => item.id === 'trend-observations')?.detail ?? '', /2026-11 — 160/);
   assert.ok(model.groups.find((group) => group.id === 'evidence')?.items.length);
   assert.ok(entityGroup?.items.some((item) => item.title === 'NASA'));
@@ -91,8 +91,8 @@ void test('research graph preserves original source, video and monthly pageview 
     edge.relation.includes('co-mentioned in 1')
   ));
   assert.ok(model.edges.some((edge) => edge.source === 'idea-idea-1' && edge.target === 'source-news-1' && edge.relation === 'generated from official source'));
-  assert.ok(model.edges.some((edge) => edge.source === 'idea-idea-1' && edge.target === 'video-mock-video-1' && edge.relation === 'references temporary YouTube sample'));
-  assert.ok(model.edges.some((edge) => edge.relation.includes('word overlap only')));
+  assert.equal(model.edges.some((edge) => edge.source === 'idea-idea-1' && edge.target.startsWith('video-')), false);
+  assert.equal(model.edges.some((edge) => edge.relation.includes('word overlap only')), false);
   assert.equal(model.summary, analysis.summary);
 });
 
@@ -112,7 +112,7 @@ void test('research graph does not invent empty source, video or public-interest
   assert.equal(model.edges.some((edge) => edge.relation.includes('word overlap')), false);
 });
 
-void test('research graph retains every source node while bounding cross-source overlap edges', () => {
+void test('research graph retains publisher nodes while excluding the YouTube result lane', () => {
   const analysis = buildInternalResearch({
     topic: 'JWST exoplanet atmosphere',
     news: news.map((item) => ({
@@ -137,6 +137,6 @@ void test('research graph retains every source node while bounding cross-source 
     topic: 'JWST exoplanet atmosphere', news: manyNews, videos: manyVideos, analysis, language: 'en',
   });
   assert.equal(model.groups.find((group) => group.id === 'sources')?.items.length, manyNews.length);
-  assert.equal(model.groups.find((group) => group.id === 'youtube')?.items.length, manyVideos.length);
+  assert.equal(model.groups.some((group) => group.id === 'youtube'), false);
   assert.ok(model.edges.length < 5000, 'cross-source edge growth must stay bounded');
 });

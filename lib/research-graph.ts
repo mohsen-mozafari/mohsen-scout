@@ -45,6 +45,9 @@ export type BuildResearchGraphInput = {
 };
 
 export function buildResearchGraphModel(input: BuildResearchGraphInput): ResearchGraphModel {
+  // Raw YouTube API samples stay on their dedicated results screen. This graph is an
+  // independent-source view and must not merge or correlate YouTube metadata.
+  const rawDisplayVideos: BuildResearchGraphInput['videos'] = [];
   const fa = input.language === 'fa';
   const number = (value: number) => new Intl.NumberFormat(input.language).format(value);
   const text = (english: string, persian: string) => fa ? persian : english;
@@ -64,11 +67,11 @@ export function buildResearchGraphModel(input: BuildResearchGraphInput): Researc
     });
   }
 
-  if (input.videos.length) {
+  if (rawDisplayVideos.length) {
     groups.push({
       id: 'youtube',
       title: text('YouTube sample', 'نمونه یوتیوب'),
-      items: input.videos.map((video) => ({
+      items: rawDisplayVideos.map((video) => ({
         id: 'video-' + video.id,
         title: video.title,
         meta: [video.channel, video.publishedAt].filter(Boolean).join(' · '),
@@ -321,7 +324,7 @@ export function buildResearchGraphModel(input: BuildResearchGraphInput): Researc
       if (entity.evidenceIds.includes(story.url) || entity.evidenceIds.includes(story.id))
         addEdge('source-' + story.id, entityNodeId, text('mentions entity', 'به این موجودیت اشاره می‌کند'));
     }
-    for (const video of input.videos) {
+    for (const video of rawDisplayVideos) {
       if (entity.evidenceIds.includes('youtube:' + video.id))
         addEdge('video-' + video.id, entityNodeId, text('mentions entity in temporary sample', 'ذکر موجودیت در نمونه موقت'));
     }
@@ -338,7 +341,7 @@ export function buildResearchGraphModel(input: BuildResearchGraphInput): Researc
     for (const item of input.news) addEdge('source-' + item.id, 'evidence-publisher-news', text('represented in news evidence', 'بازتاب‌یافته در شواهد خبری'));
   }
   if (nodeIds.has('evidence-youtube-sample')) {
-    for (const video of input.videos) addEdge('video-' + video.id, 'evidence-youtube-sample', text('represented in video sample', 'بازتاب‌یافته در نمونه ویدئویی'));
+    for (const video of rawDisplayVideos) addEdge('video-' + video.id, 'evidence-youtube-sample', text('represented in video sample', 'بازتاب‌یافته در نمونه ویدئویی'));
   }
   if (nodeIds.has('wikimedia-article') && nodeIds.has('evidence-wikimedia')) {
     addEdge('wikimedia-article', 'evidence-wikimedia', text('context for', 'زمینه برای'));
@@ -348,7 +351,7 @@ export function buildResearchGraphModel(input: BuildResearchGraphInput): Researc
     .map((term) => term.trim())
     .filter((term) => term.length >= 3)
     .slice(0, 24);
-  if (shared.length && input.news.length && input.videos.length) {
+  if (shared.length && input.news.length && rawDisplayVideos.length) {
     // Index matches once per shared term. A bounded edge budget prevents a large
     // retained corpus from producing a quadratic graph rebuild or a UI freeze.
     const newsByTerm = new Map<string, SpaceNewsItem[]>();
@@ -356,7 +359,7 @@ export function buildResearchGraphModel(input: BuildResearchGraphInput): Researc
     for (const term of shared) {
       const matchedNews = input.news.filter((story) =>
         matchesResearchTerms(story.title + ' ' + story.summary, [term]));
-      const matchedVideos = input.videos.filter((video) =>
+      const matchedVideos = rawDisplayVideos.filter((video) =>
         matchesResearchTerms(video.title + ' ' + video.description, [term]));
       if (matchedNews.length && matchedVideos.length) {
         newsByTerm.set(term, matchedNews);

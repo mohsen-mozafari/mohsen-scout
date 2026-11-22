@@ -16,7 +16,7 @@ import {
   opinionPrompt,
   type Fetcher,
 } from './api';
-import { buildIdeas } from './engine';
+import { buildIdeas, createManualIdea } from './engine';
 import { scheduleChecks } from '../tests/schedule.cases';
 export type TestResult = { name: string; passed: boolean; detail?: string };
 
@@ -117,7 +117,7 @@ export async function runDiagnostics(): Promise<TestResult[]> {
     createdAt: now,
     analyzed: false,
   };
-  const idea = buildIdeas(report)[0];
+  const idea = createManualIdea(input.topic, 'A user-authored concept used only for storage regression coverage.', '', 'Iran', ['en']);
   const savedLink = {
     id: video.id,
     url: `https://www.youtube.com/watch?v=${video.id}`,
@@ -643,12 +643,9 @@ export async function runDiagnostics(): Promise<TestResult[]> {
           createdAt: now,
           analyzed: false,
         });
-        check(ideas.length === 4);
-        check(ideas[0].assessment === 'Worth Exploring');
-        check(ideas.slice(1).every((idea) => idea.assessment === 'Uncertain'));
-        check(ideas.every((idea) => !JSON.stringify(idea).includes(video.title)));
-        check(ideas.every((idea) => !JSON.stringify(idea).includes(video.description)));
-        check(ideas[0].videoIds.includes(video.id));
+        check(ideas.length === 0);
+        check(!JSON.stringify(ideas).includes(video.title));
+        check(!JSON.stringify(ideas).includes(video.description));
       },
     ],
   ];

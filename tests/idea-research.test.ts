@@ -139,6 +139,13 @@ void test('local idea analysis explains evidence, gaps and next actions without 
   const idea = {
     ...createManualIdea('James Webb exoplanet atmosphere', 'Explain how spectra can reveal an exoplanet atmosphere.', '', 'Germany', ['en']),
     sourceUrl: 'https://www.nasa.gov/example',
+    evidenceSources: [{
+      sourceType: 'publisher',
+      sourceName: 'NASA',
+      title: 'James Webb exoplanet atmosphere spectroscopy source',
+      summary: 'The official source describes telescope observations and their measurement limits.',
+      sourceUrl: 'https://www.nasa.gov/example',
+    }],
   };
   const result = buildIdeaAnalysis(idea, [
     { id: 'v1', title: 'James Webb detects molecules in exoplanet atmosphere', channel: 'Science One', publishedAt: '2026-11-15T00:00:00Z' },
@@ -147,7 +154,7 @@ void test('local idea analysis explains evidence, gaps and next actions without 
   ], 'en');
   assert.equal(result.length, 4);
   assert.ok(result.some((section) => section.id === 'evidence-review' && section.items?.length));
-  assert.ok(result.some((section) => section.id === 'next-actions' && section.body.includes('primary material')));
+  assert.ok(result.some((section) => section.id === 'next-actions' && section.body.includes('primary documents')));
   assert.ok(result.every((section) => section.title.trim() && section.body.trim()));
   const serialized = result.map((section) => section.body).join(' ');
   assert.doesNotMatch(serialized, /opportunity score|viral prediction|guaranteed demand/i);
