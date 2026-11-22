@@ -1071,6 +1071,46 @@ void test('Retention: nested video metadata expires independently of a current r
   data.reports = [{ ...regressionReport, videos: [{ ...video, fetchedAt: now - RETENTION_MS }] }];
   assert.deepEqual(purgeExpired(data, now).reports[0].videos, []);
 });
+
+void test('Retention: activity report links are pruned when nested YouTube metadata expires', () => {
+  const data = defaults();
+  data.reports = [
+    {
+      ...regressionReport,
+      videos: [{ ...video, fetchedAt: now - RETENTION_MS }],
+    },
+    {
+      ...regressionReport,
+      id: 'live-retention-report',
+      videos: [{ ...video, id: 'live-video', fetchedAt: now }],
+    },
+  ];
+  const activity = {
+    engine: 'YouTube Data API' as const,
+    query: 'recent topic sample',
+    topic: 'recent topic',
+    niche: 'astronomy',
+    startedAt: now - 1000,
+    completedAt: now,
+    durationMs: 1000,
+    status: 'success' as const,
+    resultCount: 12,
+    analyzedCount: 0,
+    results: [],
+    warnings: [],
+  };
+  data.researchActivity = [
+    { ...activity, id: 'expired-video-link', reportId: 'retention-report' },
+    { ...activity, id: 'live-video-link', reportId: 'live-retention-report' },
+    { ...activity, id: 'orphan-video-link', reportId: 'missing-report' },
+  ];
+  const clean = purgeExpired(data, now);
+  assert.deepEqual(clean.reports.find((report) => report.id === 'retention-report')?.videos, []);
+  assert.equal(clean.researchActivity.find((event) => event.id === 'expired-video-link')?.reportId, undefined);
+  assert.equal(clean.researchActivity.find((event) => event.id === 'orphan-video-link')?.reportId, undefined);
+  assert.equal(clean.researchActivity.find((event) => event.id === 'live-video-link')?.reportId, 'live-retention-report');
+});
+
 void test('Restore: replaces personal data without resetting research/quota, disables scheduling', () => {
   const current = defaults();
   current.videos = [video];
