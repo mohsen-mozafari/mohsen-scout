@@ -634,7 +634,7 @@ function flattenText(node: ReactNode): string {
 
 const RTL_STRONG = /[\u05D0-\u05EA\u05EF-\u05F2\u0620-\u064A\u066E-\u066F\u0671-\u06D3\u06FA-\u06FC\u06FF\u0750-\u077F\u08A0-\u08C9\uFB1D-\uFB4F\uFB50-\uFDFF\uFE70-\uFEFC]/u;
 const LTR_STRONG = /[A-Za-z\u00C0-\u02AF\u0370-\u052F\u0900-\u1FFF\u2C00-\uD7FF]/u;
-const RTL_RUN = /[\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFC][\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFC\u200C\u200D\u064B-\u065F]*(?:[ \t]+[\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFC][\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFC\u200C\u200D\u064B-\u065F]*)*/gu;
+const RTL_RUN = /[\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFC](?:[\u200C\u200D]?[\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFC])*(?:[ \t]+[\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFC](?:[\u200C\u200D]?[\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFC])*)*/gu;
 const LTR_RUN = /[A-Za-z\u00C0-\u02AF\u0370-\u052F0-9]+(?:[ \t]+[A-Za-z\u00C0-\u02AF\u0370-\u052F0-9]+)*/gu;
 
 export function resolveTextDirection(value: string): 'rtl' | 'ltr' {
@@ -681,10 +681,9 @@ export function isolateMixedDirectionNode(node: ReactNode, paragraphDirection: '
     return isolateMixedDirectionText(String(node), paragraphDirection);
   }
   if (Array.isArray(node)) return node.map((child) => isolateMixedDirectionNode(child, paragraphDirection));
-  if (!isValidElement(node)) return node;
-  const props = node.props as Record<string, unknown>;
+  if (!isValidElement<{ children?: ReactNode }>(node)) return node;
   return cloneElement(node, {
-    children: isolateMixedDirectionNode(props.children as ReactNode, paragraphDirection),
+    children: isolateMixedDirectionNode(node.props.children, paragraphDirection),
   });
 }
 

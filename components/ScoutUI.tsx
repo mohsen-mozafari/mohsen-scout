@@ -1,6 +1,7 @@
 import { type ReactNode, useState } from 'react';
 import {
   isolateMixedDirectionNode,
+  isolateMixedDirectionText,
   resolveNodeDirection,
   resolveParagraphDirection,
   translateNode,
