@@ -22,7 +22,7 @@ const news: SpaceNewsItem[] = [
     sourceId: 'esa-science',
     sourceName: 'ESA',
     title: 'MOCK: New spectroscopy analysis examines methane on a distant world',
-    summary: 'MOCK: Researchers compare observation methods and uncertainty in atmospheric readings.',
+    summary: 'MOCK: Researchers compare observation methods and uncertainty in exoplanet atmosphere readings.',
     url: 'https://www.esa.int/mock-spectroscopy-report',
     publishedAt: '2026-11-14T12:00:00Z',
   },
@@ -273,6 +273,18 @@ void test('repeated engine-generated cards collapse in the Ideas list without me
   assert.equal(visible[0].id, duplicate.id);
   assert.equal(visible[1].id, personal.id);
   assert.equal(stored.length, 3);
+
+  const persianFirst = {
+    ...first,
+    topic: 'Overview alpha',
+    concept: 'پرسش اصلی: How methane spectral lines reveal atmosphere composition.',
+  };
+  const persianDuplicate = {
+    ...persianFirst,
+    id: 'persian-semantic-duplicate',
+    topic: 'Overview beta',
+  };
+  assert.equal(deduplicateDisplayIdeas([persianFirst, persianDuplicate]).length, 1);
 });
 
 void test('one isolated YouTube video is insufficient evidence for an automated idea', () => {

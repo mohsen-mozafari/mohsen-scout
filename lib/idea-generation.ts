@@ -374,7 +374,7 @@ export function deduplicateDisplayIdeas(ideas: readonly Idea[]): Idea[] {
     }
     if (seenGeneratedTitles.has(title)) continue;
 
-    const centralQuestion = idea.concept.match(/(?:Central question:|پرسش محوری:)\s*([^\n]+)/i)?.[1] ?? '';
+    const centralQuestion = idea.concept.match(/(?:Central question:|پرسش اصلی:|پرسش محوری:)\s*([^\n]+)/i)?.[1] ?? '';
     const tokens = semanticTokens(idea.topic + ' ' + centralQuestion);
     let duplicate = false;
 
