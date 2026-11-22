@@ -364,9 +364,6 @@ export default function DeepResearch() {
             <Heading>Internal Research Engine</Heading>
             <ResearchOverviewChart
               topic={brief.topic}
-              news={brief.news}
-              wiki={brief.wiki}
-              videos={[]}
               analysis={brief.internalAnalysis}
               ideas={brief.generatedIdeas}
               language={preferences.uiLanguage ?? 'fa'}
