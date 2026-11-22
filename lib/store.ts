@@ -23,9 +23,9 @@ import { reviewIdeasAutomatically } from './ai-review';
 import { generateEditorialIdeas, type IdeaGenerationCategory } from './idea-generation';
 import { attachReportToIdea as attachReport, attachVideoReferenceToIdea as attachVideoReference, getOrCreateSourceIdea, type SourceIdeaInput } from './idea-research';
 import { fetchSpaceNews, getCachedSpaceNews, getWikipediaSignal, hydrateSpaceNewsRegistry } from './space';
-import { normalizeResearchText } from './intelligence';
+import { buildResearchInterestProfile, normalizeResearchText, type ResearchFeedbackProfile } from './intelligence';
 import { recordRuntimeFinish, recordRuntimeStart } from './runtime-metrics';
-import { appendResearchActivity, buildResearchActivityResults, updateResearchActivityEvent, updateResearchActivityFeedback } from './research-activity';
+import { appendResearchActivity, buildResearchActivityFeedbackProfile, buildResearchActivityResults, buildResearchActivitySourceExclusions, explainResearchActivitySourceExclusion, updateResearchActivityEvent, updateResearchActivityFeedback } from './research-activity';
 type State = {
   data: LocalData;
   ready: boolean;
@@ -52,6 +52,27 @@ type State = {
   clearError: () => void;
 };
 const RETENTION_SWEEP_INTERVAL_MS = 6 * 60 * 60 * 1000;
+
+function buildLocalResearchFeedback(data: LocalData): ResearchFeedbackProfile {
+  const activity = buildResearchActivityFeedbackProfile(data.researchActivity);
+  const savedIdeas = buildResearchInterestProfile(data.ideas);
+  const unique = (values: readonly string[], limit: number) => {
+    const seen = new Set<string>();
+    const result: string[] = [];
+    for (const value of values) {
+      const normalized = normalizeResearchText(value);
+      if (!normalized || seen.has(normalized)) continue;
+      seen.add(normalized);
+      result.push(value);
+      if (result.length >= limit) break;
+    }
+    return result;
+  };
+  return {
+    positiveTopics: unique([...activity.positiveTopics, ...savedIdeas.positiveTopics], 40),
+    negativeTopics: unique([...activity.negativeTopics, ...savedIdeas.negativeTopics], 20),
+  };
+}
 let lastRetentionSweepAt = 0;
 
 let queue = Promise.resolve();
@@ -114,7 +135,11 @@ export const useScout = create<State>((set, get) => ({
   },
   research: async (input, origin = 'manual', forceRefresh = false, ideaOptions) => {
     if (get().busy) return undefined;
-    const initialPreferences = get().data.preferences;
+    const initialData = get().data;
+    const initialPreferences = initialData.preferences;
+    const sourceExclusions = buildResearchActivitySourceExclusions(initialData.researchActivity);
+    const researchNiche = initialPreferences.customSpaceNiche.trim() ||
+      (initialPreferences.selectedSpaceNiche !== 'all' ? initialPreferences.selectedSpaceNiche : input.topic.trim());
     let engineStarted = false;
     let engineRecorded = false;
     let engineActivityId: string | undefined;
@@ -128,7 +153,7 @@ export const useScout = create<State>((set, get) => ({
       const startedAt = Date.now();
       const event: ResearchActivityEvent = {
         id: uid(), engine, query: query.slice(0, 1600), topic,
-        niche: topic, startedAt, status: 'running', resultCount: 0,
+        niche: researchNiche, startedAt, status: 'running', resultCount: 0,
         analyzedCount: 0, results: [], warnings: [], reportId,
       };
       try {
@@ -187,6 +212,17 @@ export const useScout = create<State>((set, get) => ({
       let feedRegistry = get().data.feedRegistry;
       let webItems: Awaited<ReturnType<typeof fetchWebResearch>>['items'] = [];
       let wiki: Awaited<ReturnType<typeof getWikipediaSignal>> | undefined;
+
+      const splitSourcesByFeedback = <T extends { url: string }>(items: readonly T[]) => {
+        const included: T[] = [];
+        const excluded: { item: T; reason: string }[] = [];
+        for (const item of items) {
+          const reason = explainResearchActivitySourceExclusion(item.url, sourceExclusions);
+          if (reason) excluded.push({ item, reason });
+          else included.push(item);
+        }
+        return { included, excluded };
+      };
 
       const youtubeTask = async () => {
         const key = await getKey('youtube').catch(() => undefined);
@@ -249,43 +285,59 @@ export const useScout = create<State>((set, get) => ({
         try {
           const result = await fetchSpaceNews(initialPreferences.spaceNewsSources, fetch, true);
           feedRegistry = result.registry;
-          publisherNews = result.items.length
+          const rawPublisherNews = result.items.length
             ? result.items
             : getCachedSpaceNews(result.registry, initialPreferences.spaceNewsSources);
+          const split = splitSourcesByFeedback(rawPublisherNews);
+          publisherNews = split.included;
           warnings.push(...result.warnings);
-          const usedCachedItems = result.items.length === 0 && publisherNews.length > 0;
+          const usedCachedItems = result.items.length === 0 && rawPublisherNews.length > 0;
           const activityWarnings = [
             ...result.warnings,
-            ...(usedCachedItems ? ['No fresh feed items were returned; retained cached publisher items were passed to analysis.'] : []),
+            ...(usedCachedItems ? ['No fresh feed items were returned; retained cached publisher items were evaluated.'] : []),
+            ...(split.excluded.length ? [split.excluded.length + ' publisher result(s) were excluded using saved source feedback.'] : []),
           ];
           await finishActivity(activityId, {
-            status: publisherNews.length ? (activityWarnings.length ? 'partial' : 'success') : 'empty',
-            resultCount: publisherNews.length,
+            status: rawPublisherNews.length
+              ? (activityWarnings.length || !publisherNews.length ? 'partial' : 'success')
+              : 'empty',
+            resultCount: rawPublisherNews.length,
             analyzedCount: publisherNews.length,
-            results: buildResearchActivityResults(topic, publisherNews.map((item) => ({
-              id: item.id, title: item.title, summary: item.summary, sourceName: item.sourceName,
-              url: item.url, publishedAt: item.publishedAt, sourceAssessment: 'configured-feed',
-              includedInAnalysis: true,
-              decisionReason: 'Passed to the internal evidence pipeline; relevance, publication freshness, duplication and source diversity are evaluated before idea generation.',
-            }))),
+            results: buildResearchActivityResults(topic, rawPublisherNews.map((item) => {
+              const exclusion = explainResearchActivitySourceExclusion(item.url, sourceExclusions);
+              return {
+                id: item.id, title: item.title, summary: item.summary, sourceName: item.sourceName,
+                url: item.url, publishedAt: item.publishedAt, sourceAssessment: 'configured-feed',
+                includedInAnalysis: !exclusion,
+                decisionReason: exclusion ?? 'Passed to the internal evidence pipeline; relevance, publication freshness, duplication and source diversity are evaluated before idea generation.',
+              };
+            })),
             warnings: activityWarnings.slice(0, 12),
           });
         } catch (error) {
           const message = error instanceof Error ? error.message : 'Publisher-feed refresh failed.';
           warnings.push('Publisher-feed refresh failed; the last successful cached feed items were retained. ' + message);
-          publisherNews = getCachedSpaceNews(feedRegistry, initialPreferences.spaceNewsSources);
+          const rawPublisherNews = getCachedSpaceNews(feedRegistry, initialPreferences.spaceNewsSources);
+          const split = splitSourcesByFeedback(rawPublisherNews);
+          publisherNews = split.included;
           await finishActivity(activityId, {
-            status: publisherNews.length ? 'partial' : 'error',
-            resultCount: publisherNews.length,
+            status: rawPublisherNews.length ? 'partial' : 'error',
+            resultCount: rawPublisherNews.length,
             analyzedCount: publisherNews.length,
-            results: buildResearchActivityResults(topic, publisherNews.map((item) => ({
-              id: item.id, title: item.title, summary: item.summary, sourceName: item.sourceName,
-              url: item.url, publishedAt: item.publishedAt, sourceAssessment: 'configured-feed',
-              includedInAnalysis: true,
-              decisionReason: 'Retained cached publisher item; fresh feed retrieval failed.',
-            }))),
+            results: buildResearchActivityResults(topic, rawPublisherNews.map((item) => {
+              const exclusion = explainResearchActivitySourceExclusion(item.url, sourceExclusions);
+              return {
+                id: item.id, title: item.title, summary: item.summary, sourceName: item.sourceName,
+                url: item.url, publishedAt: item.publishedAt, sourceAssessment: 'configured-feed',
+                includedInAnalysis: !exclusion,
+                decisionReason: exclusion ?? 'Retained cached publisher item; fresh feed retrieval failed, then source feedback was applied.',
+              };
+            })),
             error: message.slice(0, 700),
-            warnings: [message.slice(0, 700)],
+            warnings: [
+              message.slice(0, 700),
+              ...(split.excluded.length ? [split.excluded.length + ' cached publisher result(s) were excluded using saved source feedback.'] : []),
+            ],
           });
         }
       };
@@ -304,19 +356,29 @@ export const useScout = create<State>((set, get) => ({
             limit: 6,
             days: normalizedInput.days,
           });
-          webItems = result.items;
+          const split = splitSourcesByFeedback(result.items);
+          webItems = split.included;
           warnings.push(...result.warnings);
+          const activityWarnings = [
+            ...result.warnings,
+            ...(split.excluded.length ? [split.excluded.length + ' Firecrawl result(s) were excluded using saved source feedback.'] : []),
+          ];
           await finishActivity(activityId, {
-            status: webItems.length ? (result.warnings.length ? 'partial' : 'success') : 'empty',
-            resultCount: webItems.length,
+            status: result.items.length
+              ? (activityWarnings.length || !webItems.length ? 'partial' : 'success')
+              : 'empty',
+            resultCount: result.items.length,
             analyzedCount: webItems.length,
-            results: buildResearchActivityResults(topic, webItems.map((item) => ({
-              id: item.id, title: item.title, summary: item.summary, sourceName: item.sourceName,
-              url: item.url, publishedAt: item.publishedAt ?? null, sourceAssessment: 'not-assessed',
-              includedInAnalysis: true,
-              decisionReason: 'Returned by Firecrawl and passed to internal analysis; publisher credibility is not inferred from search ranking.',
-            }))),
-            warnings: result.warnings.slice(0, 12),
+            results: buildResearchActivityResults(topic, result.items.map((item) => {
+              const exclusion = explainResearchActivitySourceExclusion(item.url, sourceExclusions);
+              return {
+                id: item.id, title: item.title, summary: item.summary, sourceName: item.sourceName,
+                url: item.url, publishedAt: item.publishedAt ?? null, sourceAssessment: 'not-assessed',
+                includedInAnalysis: !exclusion,
+                decisionReason: exclusion ?? 'Returned by Firecrawl and passed to internal analysis; publisher credibility is not inferred from search ranking.',
+              };
+            })),
+            warnings: activityWarnings.slice(0, 12),
           });
         } catch (error) {
           const message = error instanceof Error ? error.message : 'Firecrawl request failed.';
@@ -334,15 +396,38 @@ export const useScout = create<State>((set, get) => ({
         recordRuntimeStart('Wikimedia');
         set({ progress: 'Checking Wikimedia public-interest context…' });
         try {
-          wiki = await getWikipediaSignal(topic, initialPreferences.spaceInterestLanguage ?? 'en');
-          recordRuntimeFinish('Wikimedia', wiki ? 'success' : 'partial');
+          const result = await getWikipediaSignal(topic, initialPreferences.spaceInterestLanguage ?? 'en');
+          if (!result) {
+            recordRuntimeFinish('Wikimedia', 'partial');
+            await finishActivity(activityId, { status: 'empty', resultCount: 0, analyzedCount: 0 });
+            return;
+          }
+          const exclusion = explainResearchActivitySourceExclusion(result.articleUrl, sourceExclusions);
+          if (exclusion) {
+            recordRuntimeFinish('Wikimedia', 'partial', exclusion);
+            warnings.push('Wikimedia context was excluded using saved source feedback.');
+            await finishActivity(activityId, {
+              status: 'partial',
+              resultCount: 1,
+              analyzedCount: 0,
+              results: buildResearchActivityResults(topic, [{
+                title: result.articleTitle, summary: result.summary, sourceName: 'Wikimedia Pageviews',
+                url: result.articleUrl, sourceAssessment: 'not-assessed', includedInAnalysis: false,
+                decisionReason: exclusion,
+              }]),
+              warnings: [exclusion],
+            });
+            return;
+          }
+          wiki = result;
+          recordRuntimeFinish('Wikimedia', 'success');
           await finishActivity(activityId, {
             status: 'success',
             resultCount: 1,
             analyzedCount: 1,
             results: buildResearchActivityResults(topic, [{
-              title: wiki.articleTitle, summary: wiki.summary, sourceName: 'Wikimedia Pageviews',
-              url: wiki.articleUrl, sourceAssessment: 'not-assessed', includedInAnalysis: true,
+              title: result.articleTitle, summary: result.summary, sourceName: 'Wikimedia Pageviews',
+              url: result.articleUrl, sourceAssessment: 'not-assessed', includedInAnalysis: true,
               decisionReason: 'Article context and monthly Wikimedia pageviews were passed as an independent attention proxy, not as YouTube demand or search volume.',
             }]),
           });
@@ -441,11 +526,12 @@ export const useScout = create<State>((set, get) => ({
         reportId: report.id,
         priorMemory,
         existingIdeas: currentData.ideas,
+        feedback: buildLocalResearchFeedback(currentData),
         region: normalizedInput.region,
         languages: normalizedInput.languages,
         language: currentData.preferences.uiLanguage ?? 'fa',
         ...(ideaOptions?.category ? { category: ideaOptions.category } : {}),
-        limit: ideaOptions?.limit ?? 8,
+        limit: ideaOptions?.limit ?? 10,
       });
 
       await finishActivity(engineActivityId, {

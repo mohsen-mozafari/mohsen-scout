@@ -125,3 +125,77 @@ export function updateResearchActivityFeedback(
     results: event.results.map((item) => item.id === resultId ? { ...item, feedback } : item),
   });
 }
+
+import type { ResearchFeedbackProfile } from './intelligence';
+
+export type ResearchActivitySourceExclusions = {
+  weakSourceHosts: string[];
+  duplicateSourceUrls: string[];
+};
+
+/** Convert explicit user feedback into a bounded topic-preference profile. */
+export function buildResearchActivityFeedbackProfile(
+  events: readonly ResearchActivityEvent[],
+): ResearchFeedbackProfile {
+  const latest = new Map<string, { title: string; feedback: ResearchActivityFeedback }>();
+  for (const event of [...events].sort((a, b) => b.startedAt - a.startedAt)) {
+    for (const result of event.results) {
+      if (!result.feedback) continue;
+      const key = normalizeResearchText(result.title);
+      if (key && !latest.has(key)) latest.set(key, { title: result.title, feedback: result.feedback });
+    }
+  }
+  const entries = [...latest.values()];
+  return {
+    positiveTopics: entries.filter((item) => item.feedback === 'useful').slice(0, 40).map((item) => item.title),
+    negativeTopics: entries.filter((item) => item.feedback === 'irrelevant').slice(0, 20).map((item) => item.title),
+  };
+}
+
+/** Build a recent, bounded exclusion profile from explicit source feedback. */
+export function buildResearchActivitySourceExclusions(
+  events: readonly ResearchActivityEvent[],
+): ResearchActivitySourceExclusions {
+  const latestHosts = new Map<string, ResearchActivityFeedback>();
+  const latestUrls = new Map<string, ResearchActivityFeedback>();
+  for (const event of [...events].sort((a, b) => b.startedAt - a.startedAt)) {
+    for (const result of event.results) {
+      if (!result.feedback || !result.url) continue;
+      const canonical = canonicalizeResearchUrl(result.url);
+      if (!canonical) continue;
+      try {
+        const host = new URL(canonical).hostname.toLowerCase();
+        if (!latestHosts.has(host)) latestHosts.set(host, result.feedback);
+        if (!latestUrls.has(canonical)) latestUrls.set(canonical, result.feedback);
+      } catch {
+        // Invalid URLs are already excluded from activity records.
+      }
+    }
+  }
+  return {
+    weakSourceHosts: [...latestHosts].filter(([, feedback]) => feedback === 'weak-source').map(([host]) => host).slice(0, 50),
+    duplicateSourceUrls: [...latestUrls].filter(([, feedback]) => feedback === 'duplicate').map(([url]) => url).slice(0, 50),
+  };
+}
+
+/** Return a transparent reason when saved feedback excludes a result from a later run. */
+export function explainResearchActivitySourceExclusion(
+  value: string | undefined,
+  exclusions: ResearchActivitySourceExclusions,
+): string | undefined {
+  if (!value) return undefined;
+  const canonical = canonicalizeResearchUrl(value);
+  if (!canonical) return undefined;
+  try {
+    const host = new URL(canonical).hostname.toLowerCase();
+    if (exclusions.weakSourceHosts.some((blocked) => host === blocked || host.endsWith('.' + blocked))) {
+      return 'Excluded from this run because the source domain was previously marked as a weak source.';
+    }
+    if (exclusions.duplicateSourceUrls.includes(canonical)) {
+      return 'Excluded from this run because this canonical source URL was previously marked as a duplicate.';
+    }
+  } catch {
+    return undefined;
+  }
+  return undefined;
+}
