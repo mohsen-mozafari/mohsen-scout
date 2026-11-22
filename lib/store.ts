@@ -9,6 +9,9 @@ import {
   type Idea,
   type Video,
   uid,
+  type ResearchActivityEngine,
+  type ResearchActivityEvent,
+  type ResearchActivityFeedback,
 } from './types';
 import { readData, writeData } from './storage';
 import { getKey } from './vault';
@@ -22,6 +25,7 @@ import { attachReportToIdea as attachReport, attachVideoReferenceToIdea as attac
 import { fetchSpaceNews, getCachedSpaceNews, getWikipediaSignal, hydrateSpaceNewsRegistry } from './space';
 import { normalizeResearchText } from './intelligence';
 import { recordRuntimeFinish, recordRuntimeStart } from './runtime-metrics';
+import { appendResearchActivity, buildResearchActivityResults, updateResearchActivityEvent, updateResearchActivityFeedback } from './research-activity';
 type State = {
   data: LocalData;
   ready: boolean;
@@ -30,6 +34,7 @@ type State = {
   error: string;
   boot: () => Promise<void>;
   commit: (change: (data: LocalData) => LocalData) => Promise<void>;
+  setResearchActivityFeedback: (eventId: string, resultId: string, feedback: ResearchActivityFeedback) => Promise<void>;
   research: (
     input: ResearchInput,
     origin?: YouTubeQuotaOrigin,
@@ -57,6 +62,12 @@ export const useScout = create<State>((set, get) => ({
   progress: '',
   error: '',
   clearError: () => set({ error: '' }),
+  setResearchActivityFeedback: async (eventId, resultId, feedback) => {
+    await get().commit((data) => ({
+      ...data,
+      researchActivity: updateResearchActivityFeedback(data.researchActivity, eventId, resultId, feedback),
+    }));
+  },
   boot: async () => {
     try {
       const data = await readData();
@@ -106,6 +117,53 @@ export const useScout = create<State>((set, get) => ({
     const initialPreferences = get().data.preferences;
     let engineStarted = false;
     let engineRecorded = false;
+    let engineActivityId: string | undefined;
+    const warnings: string[] = [];
+    const beginActivity = async (
+      engine: ResearchActivityEngine,
+      topic: string,
+      query: string,
+      reportId: string,
+    ): Promise<string | undefined> => {
+      const startedAt = Date.now();
+      const event: ResearchActivityEvent = {
+        id: uid(), engine, query: query.slice(0, 1600), topic,
+        niche: topic, startedAt, status: 'running', resultCount: 0,
+        analyzedCount: 0, results: [], warnings: [], reportId,
+      };
+      try {
+        await get().commit((data) => ({
+          ...data,
+          researchActivity: appendResearchActivity(data.researchActivity, event),
+        }));
+        return event.id;
+      } catch {
+        warnings.push(engine + ' activity could not be written to local history.');
+        return undefined;
+      }
+    };
+    const finishActivity = async (
+      eventId: string | undefined,
+      patch: Partial<ResearchActivityEvent>,
+    ): Promise<void> => {
+      if (!eventId) return;
+      const completedAt = Date.now();
+      try {
+        await get().commit((data) => {
+          const startedAt = data.researchActivity.find((event) => event.id === eventId)?.startedAt ?? completedAt;
+          return {
+            ...data,
+            researchActivity: updateResearchActivityEvent(data.researchActivity, eventId, {
+              ...patch,
+              completedAt,
+              durationMs: Math.max(0, completedAt - startedAt),
+            }),
+          };
+        });
+      } catch {
+        warnings.push('A research activity result could not be saved to local history.');
+      }
+    };
     set({ busy: true, error: '', progress: 'Starting independent source collection…' });
     try {
       if (!input.topic.trim() || !input.languages.length)
@@ -123,7 +181,7 @@ export const useScout = create<State>((set, get) => ({
         return get().data.reports.find((item) => item.id === cached.id) ?? cached;
       }
 
-      const warnings: string[] = [];
+      const researchReportId = uid();
       let youtubeResult: Awaited<ReturnType<typeof searchYouTube>> | undefined;
       let publisherNews = getCachedSpaceNews(get().data.feedRegistry, initialPreferences.spaceNewsSources);
       let feedRegistry = get().data.feedRegistry;
@@ -136,6 +194,7 @@ export const useScout = create<State>((set, get) => ({
           warnings.push('YouTube sample skipped: add a YouTube Data API key in Settings. Independent web/publisher research can still continue.');
           return;
         }
+        const activityId = await beginActivity('YouTube Data API', topic, topic, researchReportId);
         recordRuntimeStart('YouTube');
         set({ progress: 'Collecting a bounded YouTube Data API sample…' });
         try {
@@ -158,14 +217,34 @@ export const useScout = create<State>((set, get) => ({
           );
           recordRuntimeFinish('YouTube', youtubeResult.videos.length ? 'success' : 'partial');
           warnings.push(...(youtubeResult.warnings ?? []));
+          await finishActivity(activityId, {
+            query: (youtubeResult.queries ?? []).join(' ; ') || topic,
+            status: youtubeResult.videos.length
+              ? ((youtubeResult.warnings ?? []).length ? 'partial' : 'success')
+              : 'empty',
+            resultCount: youtubeResult.videos.length,
+            analyzedCount: 0,
+            results: [],
+            warnings: (youtubeResult.warnings ?? []).slice(0, 12),
+          });
         } catch (error) {
           const message = error instanceof Error ? error.message : 'YouTube sample was unavailable.';
           recordRuntimeFinish('YouTube', 'error', message);
           warnings.push('YouTube sample unavailable: ' + message);
+          await finishActivity(activityId, {
+            status: 'error',
+            error: message.slice(0, 700),
+            warnings: [message.slice(0, 700)],
+          });
         }
       };
 
       const feedTask = async () => {
+        const activityId = await beginActivity(
+          'Publisher Feeds', topic,
+          'Refresh selected publisher feeds: ' + initialPreferences.spaceNewsSources.join(', ') + '; topic relevance is evaluated locally: ' + topic,
+          researchReportId,
+        );
         set({ progress: 'Refreshing selected NASA, ESA and publisher feeds…' });
         try {
           const result = await fetchSpaceNews(initialPreferences.spaceNewsSources, fetch, true);
@@ -174,10 +253,40 @@ export const useScout = create<State>((set, get) => ({
             ? result.items
             : getCachedSpaceNews(result.registry, initialPreferences.spaceNewsSources);
           warnings.push(...result.warnings);
+          const usedCachedItems = result.items.length === 0 && publisherNews.length > 0;
+          const activityWarnings = [
+            ...result.warnings,
+            ...(usedCachedItems ? ['No fresh feed items were returned; retained cached publisher items were passed to analysis.'] : []),
+          ];
+          await finishActivity(activityId, {
+            status: publisherNews.length ? (activityWarnings.length ? 'partial' : 'success') : 'empty',
+            resultCount: publisherNews.length,
+            analyzedCount: publisherNews.length,
+            results: buildResearchActivityResults(topic, publisherNews.map((item) => ({
+              id: item.id, title: item.title, summary: item.summary, sourceName: item.sourceName,
+              url: item.url, publishedAt: item.publishedAt, sourceAssessment: 'configured-feed',
+              includedInAnalysis: true,
+              decisionReason: 'Passed to the internal evidence pipeline; relevance, publication freshness, duplication and source diversity are evaluated before idea generation.',
+            }))),
+            warnings: activityWarnings.slice(0, 12),
+          });
         } catch (error) {
-          warnings.push('Publisher-feed refresh failed; the last successful cached feed items were retained. ' +
-            (error instanceof Error ? error.message : ''));
+          const message = error instanceof Error ? error.message : 'Publisher-feed refresh failed.';
+          warnings.push('Publisher-feed refresh failed; the last successful cached feed items were retained. ' + message);
           publisherNews = getCachedSpaceNews(feedRegistry, initialPreferences.spaceNewsSources);
+          await finishActivity(activityId, {
+            status: publisherNews.length ? 'partial' : 'error',
+            resultCount: publisherNews.length,
+            analyzedCount: publisherNews.length,
+            results: buildResearchActivityResults(topic, publisherNews.map((item) => ({
+              id: item.id, title: item.title, summary: item.summary, sourceName: item.sourceName,
+              url: item.url, publishedAt: item.publishedAt, sourceAssessment: 'configured-feed',
+              includedInAnalysis: true,
+              decisionReason: 'Retained cached publisher item; fresh feed retrieval failed.',
+            }))),
+            error: message.slice(0, 700),
+            warnings: [message.slice(0, 700)],
+          });
         }
       };
 
@@ -186,6 +295,7 @@ export const useScout = create<State>((set, get) => ({
           warnings.push('Independent web search is disabled in Settings; selected RSS feeds and Wikimedia remain available.');
           return;
         }
+        const activityId = await beginActivity('Firecrawl Search', topic, topic, researchReportId);
         set({ progress: 'Searching independent web and news sources…' });
         try {
           const webKey = await getKey('firecrawl').catch(() => undefined);
@@ -196,22 +306,55 @@ export const useScout = create<State>((set, get) => ({
           });
           webItems = result.items;
           warnings.push(...result.warnings);
+          await finishActivity(activityId, {
+            status: webItems.length ? (result.warnings.length ? 'partial' : 'success') : 'empty',
+            resultCount: webItems.length,
+            analyzedCount: webItems.length,
+            results: buildResearchActivityResults(topic, webItems.map((item) => ({
+              id: item.id, title: item.title, summary: item.summary, sourceName: item.sourceName,
+              url: item.url, publishedAt: item.publishedAt ?? null, sourceAssessment: 'not-assessed',
+              includedInAnalysis: true,
+              decisionReason: 'Returned by Firecrawl and passed to internal analysis; publisher credibility is not inferred from search ranking.',
+            }))),
+            warnings: result.warnings.slice(0, 12),
+          });
         } catch (error) {
-          warnings.push('Independent web search unavailable: ' +
-            (error instanceof Error ? error.message : 'Firecrawl request failed.') +
-            ' RSS and Wikimedia research continue independently.');
+          const message = error instanceof Error ? error.message : 'Firecrawl request failed.';
+          warnings.push('Independent web search unavailable: ' + message + ' RSS and Wikimedia research continue independently.');
+          await finishActivity(activityId, {
+            status: 'error',
+            error: message.slice(0, 700),
+            warnings: [message.slice(0, 700)],
+          });
         }
       };
 
       const wikiTask = async () => {
+        const activityId = await beginActivity('Wikimedia', topic, topic + ' · article search and monthly pageviews · ' + (initialPreferences.spaceInterestLanguage ?? 'en'), researchReportId);
         recordRuntimeStart('Wikimedia');
         set({ progress: 'Checking Wikimedia public-interest context…' });
         try {
           wiki = await getWikipediaSignal(topic, initialPreferences.spaceInterestLanguage ?? 'en');
           recordRuntimeFinish('Wikimedia', wiki ? 'success' : 'partial');
+          await finishActivity(activityId, {
+            status: 'success',
+            resultCount: 1,
+            analyzedCount: 1,
+            results: buildResearchActivityResults(topic, [{
+              title: wiki.articleTitle, summary: wiki.summary, sourceName: 'Wikimedia Pageviews',
+              url: wiki.articleUrl, sourceAssessment: 'not-assessed', includedInAnalysis: true,
+              decisionReason: 'Article context and monthly Wikimedia pageviews were passed as an independent attention proxy, not as YouTube demand or search volume.',
+            }]),
+          });
         } catch (error) {
-          recordRuntimeFinish('Wikimedia', 'error', error instanceof Error ? error.message : 'Wikimedia unavailable.');
+          const message = error instanceof Error ? error.message : 'Wikimedia unavailable.';
+          recordRuntimeFinish('Wikimedia', 'error', message);
           warnings.push('Wikimedia article context was unavailable; this signal will not be inferred.');
+          await finishActivity(activityId, {
+            status: 'error',
+            error: message.slice(0, 700),
+            warnings: [message.slice(0, 700)],
+          });
         }
       };
 
@@ -247,6 +390,7 @@ export const useScout = create<State>((set, get) => ({
         })),
       ];
 
+      engineActivityId = await beginActivity('Internal Engine', topic, 'Internal evidence analysis and editorial opportunity generation: ' + topic, researchReportId);
       recordRuntimeStart('Engine');
       engineStarted = true;
       set({ progress: 'Analyzing independent evidence and research gaps…' });
@@ -266,7 +410,7 @@ export const useScout = create<State>((set, get) => ({
           ...(webItems.length ? ['Firecrawl web/news search: ' + topic] : []),
         ],
         warnings: [...new Set(warnings)],
-        id: uid(),
+        id: researchReportId,
         createdAt: Date.now(),
         analyzed: true,
       };
@@ -302,6 +446,21 @@ export const useScout = create<State>((set, get) => ({
         language: currentData.preferences.uiLanguage ?? 'fa',
         ...(ideaOptions?.category ? { category: ideaOptions.category } : {}),
         limit: ideaOptions?.limit ?? 8,
+      });
+
+      await finishActivity(engineActivityId, {
+        status: generatedIdeas.length ? 'success' : 'empty',
+        resultCount: generatedIdeas.length,
+        analyzedCount: engineNews.length + (wiki ? 1 : 0),
+        results: buildResearchActivityResults(topic, generatedIdeas.map((idea) => ({
+          id: idea.id,
+          title: idea.topic,
+          summary: idea.concept,
+          sourceName: idea.sourceName ?? 'MOHSEN SCOUT Internal Engine',
+          url: idea.sourceUrl,
+          includedInAnalysis: true,
+          decisionReason: idea.engineScoreReason ?? 'Generated from independent publisher, web and Wikimedia evidence.',
+        }))),
       });
 
       const memoryEntry = createResearchMemoryEntry({
@@ -341,6 +500,11 @@ export const useScout = create<State>((set, get) => ({
       if (generatedIdeas.length && get().data.preferences.automaticExternalReview) {
         recordRuntimeStart('AI');
         set({ progress: 'Reviewing generated ideas with the configured AI-provider fallback chain…' });
+        const aiActivityId = await beginActivity(
+          'AI Provider Review', topic,
+          'Independent second-opinion review after local analysis: ' + generatedIdeas.slice(0, 8).map((idea) => idea.topic).join(' ; '),
+          researchReportId,
+        );
         const review = await reviewIdeasAutomatically(generatedIdeas, get().data.preferences, {
           language: get().data.preferences.uiLanguage ?? 'fa',
           beforeProviderRequest: async (config) => {
@@ -371,6 +535,24 @@ export const useScout = create<State>((set, get) => ({
           }));
         }
         recordRuntimeFinish('AI', review.opinions.length ? 'success' : 'partial', review.warnings.join(' '));
+        const ideasById = new Map(generatedIdeas.map((idea) => [idea.id, idea]));
+        await finishActivity(aiActivityId, {
+          status: review.opinions.length ? (review.warnings.length ? 'partial' : 'success') : 'empty',
+          resultCount: review.opinions.length,
+          analyzedCount: Math.min(8, generatedIdeas.length),
+          results: buildResearchActivityResults(topic, review.opinions.map((opinion) => {
+            const idea = ideasById.get(opinion.ideaId);
+            return {
+              id: opinion.id,
+              title: idea?.topic ?? 'Second-opinion review',
+              summary: opinion.text,
+              sourceName: opinion.model,
+              includedInAnalysis: true,
+              decisionReason: 'External opinion was requested only after the internal result was finalized; it is advisory and does not overwrite the local ranking.',
+            };
+          })),
+          warnings: review.warnings.slice(0, 12),
+        });
       }
 
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -378,6 +560,7 @@ export const useScout = create<State>((set, get) => ({
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Research could not finish. Try again.';
       if (engineStarted && !engineRecorded) recordRuntimeFinish('Engine', 'error', message);
+      if (engineStarted && !engineRecorded) await finishActivity(engineActivityId, { status: 'error', error: message.slice(0, 700), warnings: [message.slice(0, 700)] });
       set({ error: message });
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       return undefined;
