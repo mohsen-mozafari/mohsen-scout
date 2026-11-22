@@ -236,23 +236,26 @@ export default function ResearchActivityScreen() {
   const fa = language === 'fa';
   const [engine, setEngine] = useState('All engines');
   const [status, setStatus] = useState('All statuses');
+  const [niche, setNiche] = useState('All niches');
   const [timeRange, setTimeRange] = useState<(typeof TIME_RANGES)[number]>('7 days');
   const [search, setSearch] = useState('');
   const [expandedId, setExpandedId] = useState<string>();
   const refreshTime = timeRange === '24 hours' ? 86400000
     : timeRange === '7 days' ? 7 * 86400000
       : timeRange === '30 days' ? 30 * 86400000 : Number.POSITIVE_INFINITY;
+  const niches = useMemo(() => ['All niches', ...new Set(events.map((event) => event.niche).filter(Boolean).sort())], [events]);
   const filtered = useMemo(() => {
     const query = search.trim().toLocaleLowerCase();
     const since = Date.now() - refreshTime;
     return events.filter((event) =>
       (engine === 'All engines' || event.engine === engine) &&
       (status === 'All statuses' || event.status === status) &&
+      (niche === 'All niches' || event.niche === niche) &&
       event.startedAt >= since &&
       (!query || [event.query, event.topic, event.niche, event.engine, ...event.results.map((item) => item.title + ' ' + item.sourceName)]
         .join(' ').toLocaleLowerCase().includes(query)),
     ).sort((a, b) => b.startedAt - a.startedAt);
-  }, [events, engine, status, refreshTime, search]);
+  }, [events, engine, status, niche, refreshTime, search]);
   const header = (
     <View style={{ gap: 14, paddingBottom: 14 }}>
       <ScreenIntro
@@ -283,6 +286,12 @@ export default function ResearchActivityScreen() {
           onChange={(values) => setStatus(values[0] ?? 'All statuses')}
         />
         <Choices
+          label={fa ? 'نیچ' : 'Niche'}
+          options={niches}
+          selected={[niche]}
+          onChange={(values) => setNiche(values[0] ?? 'All niches')}
+        />
+        <Choices
           label={fa ? 'بازه زمانی' : 'Time range'}
           options={[...TIME_RANGES]}
           selected={[timeRange]}
@@ -294,11 +303,10 @@ export default function ResearchActivityScreen() {
         <Panel>
           <Empty
             title={fa ? 'هنوز تحقیقی ثبت نشده است' : 'No research activity yet'}
-            description={fa
-              ? 'بعد از اجرای تحقیق، هر API و منبع مستقل در این صفحه ثبت می‌شود.'
-              : 'Run a research task and each real API or independent source operation will appear here.'}
+            action={fa ? 'بازگشت به فرصت‌ها' : 'Back to opportunities'}
+            onPress={() => router.push('/(tabs)/opportunities')}
+            icon={Activity}
           />
-          <Action onPress={() => router.push('/(tabs)/opportunities')}>{fa ? 'بازگشت به فرصت‌ها' : 'Back to opportunities'}</Action>
         </Panel>
       ) : null}
     </View>
@@ -320,7 +328,17 @@ export default function ResearchActivityScreen() {
         ListHeaderComponent={header}
         ListEmptyComponent={events.length ? (
           <Panel>
-            <Empty title={fa ? 'مطابق فیلترها نتیجه‌ای نیست' : 'No matching activity'} description={fa ? 'فیلترها یا عبارت جست‌وجو را تغییر بده.' : 'Adjust the filters or search phrase.'} />
+            <Empty
+            title={fa ? 'مطابق فیلترها نتیجه‌ای نیست' : 'No matching activity'}
+            action={fa ? 'پاک‌کردن فیلترها' : 'Clear filters'}
+            onPress={() => {
+              setSearch('');
+              setEngine('All engines');
+              setStatus('All statuses');
+              setTimeRange('7 days');
+              setNiche('All niches');
+            }}
+          />
           </Panel>
         ) : null}
         contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 28, gap: 12 }}
