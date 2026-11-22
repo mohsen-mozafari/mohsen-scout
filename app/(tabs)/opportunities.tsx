@@ -2,7 +2,7 @@ import { memo, useDeferredValue, useMemo, useState } from 'react';
 import { FlatList, Platform, View, Text, Pressable } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Button } from 'heroui-native';
-import { ArrowUpRight, Plus, Archive, Lightbulb } from 'lucide-react-native';
+import { ArrowUpRight, Plus, Archive, Lightbulb, Activity } from 'lucide-react-native';
 import {
   Page,
   styles,
@@ -395,6 +395,9 @@ export default function Opportunities() {
                 </Action>
               </View>
             </View>
+            <Action secondary icon={Activity} onPress={() => router.push('/research-activity')}>
+              Research activity
+            </Action>
             <View style={styles.panel}>
               <Field label="Search ideas" value={search} onChange={setSearch} placeholder="Topic or personal decision" />
               <Txt muted>{numberLabel(sortedFiltered.length, fa)} {fa ? 'ایده در این فهرست' : 'ideas in this view'} · {archive ? 'Archived' : 'Active'}</Txt>

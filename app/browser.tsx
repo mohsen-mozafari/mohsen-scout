@@ -2,13 +2,15 @@ import { useState } from 'react';
 import { Linking, Platform, View } from 'react-native';
 import { Page, Panel, Heading, Txt, Field, Action } from '@/components/ScoutUI';
 import { WebView } from '@/components/ui/primitives/WebView';
-import { isAllowedBrowserNavigation, normalizeBrowserAddress } from '@/lib/browser';
+import { getBrowserFailureMessage, isAllowedBrowserNavigation, normalizeBrowserAddress } from '@/lib/browser';
+import { RefreshCw } from 'lucide-react-native';
 
 export default function InternalBrowser() {
   const [address, setAddress] = useState('');
   const [currentUrl, setCurrentUrl] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [webViewKey, setWebViewKey] = useState(0);
 
   const navigate = () => {
     const next = normalizeBrowserAddress(address);
@@ -18,6 +20,7 @@ export default function InternalBrowser() {
     }
     setError('');
     setCurrentUrl(next);
+    setWebViewKey((key) => key + 1);
     setAddress(next);
   };
 
@@ -29,6 +32,13 @@ export default function InternalBrowser() {
         <Action disabled={!address.trim()} onPress={navigate}>Open page</Action>
         {currentUrl ? <Action secondary onPress={() => void Linking.openURL(currentUrl).catch(() => setError('Could not open the external browser.'))}>Open in external browser</Action> : null}
         {error ? <Txt>{error}</Txt> : null}
+        {error && currentUrl && Platform.OS !== 'web' ? (
+          <Action secondary icon={RefreshCw} onPress={() => {
+            setError('');
+            setLoading(true);
+            setWebViewKey((key) => key + 1);
+          }}>Retry page</Action>
+        ) : null}
         {loading ? <Txt muted>Loading page…</Txt> : null}
       </Panel>
       {currentUrl ? (
@@ -40,6 +50,7 @@ export default function InternalBrowser() {
         ) : (
           <View style={{ height: 560, overflow: 'hidden', borderRadius: 14 }}>
             <WebView
+              key={webViewKey}
               source={{ uri: currentUrl }}
               originWhitelist={['https://*', 'http://*']}
               javaScriptEnabled
@@ -53,16 +64,29 @@ export default function InternalBrowser() {
               sharedCookiesEnabled={false}
               thirdPartyCookiesEnabled={false}
               startInLoadingState
+              cacheEnabled
+              androidLayerType="hardware"
               onLoadStart={() => { setLoading(true); setError(''); }}
               onLoadEnd={() => setLoading(false)}
               onError={(event) => {
                 setLoading(false);
-                setError(event.nativeEvent.description || 'The page could not be loaded.');
+                setError(getBrowserFailureMessage(event.nativeEvent.description, event.nativeEvent.code));
               }}
               onHttpError={(event) => {
                 if (event.nativeEvent.statusCode >= 400) {
-                  setError('The website returned HTTP ' + event.nativeEvent.statusCode + '.');
+                  setLoading(false);
+                  setError('The website returned HTTP ' + event.nativeEvent.statusCode + '. The host may block embedded browsers or require a different sign-in method.');
                 }
+              }}
+              onRenderProcessGone={(event) => {
+                setLoading(false);
+                setError(event.nativeEvent.didCrash
+                  ? 'Android System WebView crashed while rendering this page. Update Android System WebView and retry.'
+                  : 'Android System WebView stopped unexpectedly. Retry the page.');
+              }}
+              onContentProcessDidTerminate={() => {
+                setLoading(false);
+                setError('The embedded browser process stopped. Retry the page.');
               }}
               onNavigationStateChange={(state) => {
                 if (isAllowedBrowserNavigation(state.url)) setAddress(state.url);

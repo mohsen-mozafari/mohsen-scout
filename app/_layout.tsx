@@ -166,6 +166,7 @@ export default function RootLayout() {
           <Stack.Screen name="trend-intelligence" options={{ title: 'Trend Intelligence' }} />
           <Stack.Screen name="search-demand" options={{ title: 'Search Demand' }} />
           <Stack.Screen name="deep-research" options={{ title: 'Deep Research' }} />
+          <Stack.Screen name="research-activity" options={{ title: 'Research Activity' }} />
         </Stack>
         <InstallPrompt />
       </HeroUINativeProvider>
