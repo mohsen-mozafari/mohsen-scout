@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import type { ResearchActivityEvent } from '../lib/types';
 import {
   appendResearchActivity,
   buildResearchActivityResults,
@@ -49,11 +50,11 @@ void test('research activity canonicalizes and deduplicates source URLs, includi
   assert.equal(results.length, 2);
   assert.equal(results[0].url, 'https://example.org/report');
   assert.ok(results[0].relevanceScore > results[1].relevanceScore);
-  assert.equal(results.some((item) => item.url.includes('youtube.com')), false);
+  assert.equal(results.some((item) => item.url?.includes('youtube.com') ?? false), false);
 });
 
 void test('research activity feedback updates one result without changing its evidence', () => {
-  const events = [{
+  const events: ResearchActivityEvent[] = [{
     id: 'run-1',
     engine: 'Firecrawl Search' as const,
     query: 'solar storm impact',
@@ -70,7 +71,8 @@ void test('research activity feedback updates one result without changing its ev
       url: 'https://example.org/report',
       summary: 'Source summary',
       relevanceScore: 90,
-      relevanceBand: 'high' as const,
+      relevanceBand: 'high',
+      sourceAssessment: 'not-assessed',
       includedInAnalysis: true,
       decisionReason: 'Passed to analysis.',
     }],

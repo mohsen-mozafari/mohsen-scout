@@ -21,7 +21,11 @@ export type ResearchActivityCandidate = {
 };
 
 function cleanText(value: string | undefined, limit: number): string {
-  return (value ?? '').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, limit);
+  const safe = Array.from(value ?? '').filter((character) => {
+    const code = character.charCodeAt(0);
+    return code >= 32 && code !== 127;
+  }).join('');
+  return safe.replace(/\s+/g, ' ').trim().slice(0, limit);
 }
 
 function safeSourceUrl(value: string | undefined): string | undefined {

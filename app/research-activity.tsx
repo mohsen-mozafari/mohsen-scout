@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { FlatList, Linking, Pressable, Text, View } from 'react-native';
 import { router } from 'expo-router';
-import { Activity, ExternalLink, RefreshCw } from 'lucide-react-native';
+import { Activity, ExternalLink } from 'lucide-react-native';
 import {
   Action,
   BadgeText,
@@ -29,6 +29,7 @@ const ENGINES = [
 ] as const;
 const STATUSES = ['running', 'success', 'partial', 'empty', 'error', 'skipped'] as const;
 const TIME_RANGES = ['24 hours', '7 days', '30 days', 'All time'] as const;
+const ACTIVITY_VIEW_STARTED_AT = Date.now();
 const FEEDBACK: { value: ResearchActivityFeedback; label: string }[] = [
   { value: 'useful', label: 'Useful' },
   { value: 'irrelevant', label: 'Irrelevant' },
@@ -246,7 +247,7 @@ export default function ResearchActivityScreen() {
   const niches = useMemo(() => ['All niches', ...new Set(events.map((event) => event.niche).filter(Boolean).sort())], [events]);
   const filtered = useMemo(() => {
     const query = search.trim().toLocaleLowerCase();
-    const since = Date.now() - refreshTime;
+    const since = ACTIVITY_VIEW_STARTED_AT - refreshTime;
     return events.filter((event) =>
       (engine === 'All engines' || event.engine === engine) &&
       (status === 'All statuses' || event.status === status) &&
@@ -340,7 +341,7 @@ export default function ResearchActivityScreen() {
             }}
           />
           </Panel>
-        ) : null}
+        ) : undefined}
         contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 28, gap: 12 }}
         initialNumToRender={7}
         maxToRenderPerBatch={7}
