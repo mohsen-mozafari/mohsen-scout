@@ -30,6 +30,7 @@ export type IdeaGenerationContext = {
   summary?: string;
   sourceName?: string;
   sourceUrl?: string;
+  publishedAt?: string | null;
 };
 
 export type GenerateEditorialIdeasInput = {
@@ -423,10 +424,8 @@ export function generateEditorialIdeas(input: GenerateEditorialIdeasInput): Idea
   if (!topic) return [];
 
   const news = [...(input.news ?? [])];
-  // YouTube metadata is processed locally as transient evidence. Only expiring video IDs
-  // and report references are attached to Ideas; raw titles, descriptions and statistics
-  // never enter durable Idea text or any external model request.
-  const videos = selectIdeaGenerationVideos(topic, input.videos ?? [], 120);
+  // Ignore legacy YouTube inputs. Raw API data is a separate display-only lane.
+  const videos: IdeaGenerationVideo[] = [];
   const context = [...(input.context ?? [])];
   const independentContext = context.filter((item) => item.sourceName !== 'User-provided topic');
   const currentUrls = new Set(news.map((item) => canonicalizeResearchUrl(item.url)).filter(Boolean));
@@ -445,6 +444,7 @@ export function generateEditorialIdeas(input: GenerateEditorialIdeasInput): Idea
       sourceId: item.sourceId,
       sourceName: item.sourceName,
       sourceUrl: item.sourceUrl,
+      publishedAt: item.publishedAt ?? null,
     })),
     ...(priorMemory?.keyFindings ?? []).map((value, index) => ({
       id: 'memory-finding:' + index,
@@ -802,8 +802,37 @@ export function generateEditorialIdeas(input: GenerateEditorialIdeasInput): Idea
         '\n\nConfidence: ' + confidence + '; this reflects the amount and mix of available material, not a guarantee that any claim is true.';
 
     const note = language === 'fa'
-      ? 'این ایده با موتور داخلی و بر پایه داده‌های همین تحقیق ساخته شده است: ' + evidenceScope + '. برای ساخت آن درخواست تازه‌ای به یوتیوب یا سرویس خارجی ارسال نشد و عنوان، توضیحات، تصویر و آمار خام ویدئوها در اطلاعات ماندگار این ایده ذخیره نشده‌اند؛ فقط شناسه‌های لازم برای پیوند به فرادادهٔ منقضی‌شونده نگهداری می‌شوند.'
-      : 'Generated locally from ' + evidenceScope + '. No new YouTube or external request was made during idea generation. Raw YouTube titles, descriptions, thumbnails and statistics were not copied into this durable Idea record; only references to expiring metadata are linked.';
+      ? 'این ایده فقط از شواهد مستقل ناشران، وب و زمینه دانشنامه‌ای ساخته شده است. نمونه خام YouTube جداگانه نمایش داده می‌شود و در تولید ایده یا امتیاز تحریری نقشی ندارد.'
+      : 'Generated from independent publisher, web and encyclopedia evidence only. Raw YouTube API samples remain separate and do not influence idea generation or editorial scoring.';
+    const sourceCandidates = [
+      ...topicRelevantNews.map((item) => ({
+        sourceType: 'publisher' as const,
+        sourceName: item.sourceName,
+        title: item.title,
+        summary: item.summary,
+        sourceUrl: item.url,
+        publishedAt: item.publishedAt ?? undefined,
+      })),
+      ...relevantIndependentContext.map((item) => ({
+        sourceType: /wikimedia/i.test(item.sourceName ?? '') ? 'encyclopedia' as const : 'web' as const,
+        sourceName: item.sourceName ?? 'Independent web source',
+        title: item.title,
+        summary: item.summary ?? '',
+        sourceUrl: item.sourceUrl ?? '',
+        publishedAt: item.publishedAt ?? undefined,
+      })),
+    ];
+    const evidenceSources: import('./types').IdeaEvidenceSource[] = [];
+    const seenEvidenceUrls = new Set<string>();
+    for (const source of sourceCandidates) {
+      if (!source.sourceUrl.startsWith('https://') || seenEvidenceUrls.has(source.sourceUrl)) continue;
+      let host = '';
+      try { host = new URL(source.sourceUrl).hostname.toLowerCase(); } catch { continue; }
+      if (host === 'youtube.com' || host.endsWith('.youtube.com') || host === 'youtu.be' || host.endsWith('.googlevideo.com')) continue;
+      seenEvidenceUrls.add(source.sourceUrl);
+      evidenceSources.push({ ...source, summary: source.summary.slice(0, 1500) });
+      if (evidenceSources.length >= 8) break;
+    }
     output.push({
       id: uid(),
       topic: candidate.title.slice(0, 180),
@@ -825,6 +854,8 @@ export function generateEditorialIdeas(input: GenerateEditorialIdeasInput): Idea
       generationKey: evidenceKey,
       engineScore: candidate.opportunityScore,
       engineScoreReason: candidate.opportunityReason,
+      engineScoreBasis: 'publisher-web-only-v2',
+      ...(evidenceSources.length ? { evidenceSources } : {}),
     });
   }
   return output;

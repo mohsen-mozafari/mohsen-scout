@@ -8,6 +8,7 @@ import { useScout } from '@/lib/store';
 import { translateText } from '@/lib/i18n';
 import { uid, RETENTION_MS, type Idea } from '@/lib/types';
 import { getKey } from '@/lib/vault';
+import { fetchWebResearch, type WebResearchItem } from '@/lib/web-research';
 import { buildInternalResearch, rankNewsForTopic, type InternalResearchResult } from '@/lib/engine';
 import { buildResearchInterestProfile, normalizeResearchText } from '@/lib/intelligence';
 import { MediaPreview } from '@/components/MediaPreview';
@@ -27,6 +28,7 @@ type Brief = {
   topic: string;
   createdAt: number;
   news: SpaceNewsItem[];
+  webResults: WebResearchItem[];
   wiki?: WikiSignal;
   videos: YouTubeSampleVideo[];
   warnings: string[];
@@ -75,6 +77,21 @@ export default function DeepResearch() {
     }
     warnings.push(...newsResult.warnings);
     if (cachedNews.length) warnings.push(preferences.uiLanguage === 'fa' ? 'شواهد خبری تازه از پرونده محلی موضوع دوباره استفاده شد؛ درخواست دیگری برای خوراک خبری ارسال نشد.' : 'Reused recent publisher evidence from the local topic dossier; no additional feed request was made.');
+    let webResults: WebResearchItem[] = [];
+    if (preferences.webResearchEnabled !== false) {
+      try {
+        const firecrawlKey = await getKey('firecrawl').catch(() => undefined);
+        const web = await fetchWebResearch(query, {
+          apiKey: firecrawlKey ?? undefined,
+          limit: 6,
+          days: preferences.defaultResearchDays,
+        });
+        webResults = web.items;
+        warnings.push(...web.warnings);
+      } catch (error) {
+        warnings.push('Independent web search unavailable: ' + (error instanceof Error ? error.message : 'Firecrawl request failed.') + ' Official feeds and Wikimedia continue independently.');
+      }
+    }
     const nicheNews = niche
       ? newsForNiche(newsResult.items, nicheId)
       : nicheId === 'custom'
@@ -164,7 +181,8 @@ export default function DeepResearch() {
     const outline = buildResearchOutline(query, selectedNews.map((item) => item.title), preferences.uiLanguage ?? 'fa');
     const internalAnalysis = buildInternalResearch({
       topic: query,
-      news: selectedNews.map((item) => ({
+      news: [
+        ...selectedNews.map((item) => ({
         title: item.title,
         summary: item.summary,
         sourceName: item.sourceName,
@@ -172,12 +190,19 @@ export default function DeepResearch() {
         publishedAt: item.publishedAt,
         sourceId: item.sourceId,
       })),
+        ...webResults.map((item) => ({
+          title: item.title,
+          summary: item.summary,
+          sourceName: item.sourceName,
+          sourceUrl: item.url,
+          publishedAt: item.publishedAt ?? null,
+          sourceId: 'web:' + item.sourceName,
+        })),
+      ],
       wiki,
       feedback,
       priorMemory,
       language: preferences.uiLanguage ?? 'fa',
-      videos,
-      videoWindowDays: preferences.defaultResearchDays ?? 30,
     });
     rememberTopicDossier(query, {
       news: selectedNews.length ? selectedNews : cachedDossier?.news ?? [],
@@ -216,7 +241,10 @@ export default function DeepResearch() {
     const generatedIdeas = generateEditorialIdeas({
       topic: query,
       news: selectedNews,
-      context: wiki ? [{ title: wiki.articleTitle, summary: wiki.summary, sourceUrl: wiki.articleUrl, sourceName: 'Wikimedia' }] : [],
+      context: [
+        ...webResults.map((item) => ({ title: item.title, summary: item.summary, sourceUrl: item.url, sourceName: item.sourceName, publishedAt: item.publishedAt ?? null })),
+        ...(wiki ? [{ title: wiki.articleTitle, summary: wiki.summary, sourceUrl: wiki.articleUrl, sourceName: 'Wikimedia' }] : []),
+      ],
       existingIdeas: useScout.getState().data.ideas,
       region: preferences.region,
       languages: preferences.languages,
@@ -237,6 +265,7 @@ export default function DeepResearch() {
       topic: query,
       createdAt: Date.now(),
       news: selectedNews,
+      webResults,
       wiki,
       videos,
       warnings,
@@ -442,7 +471,21 @@ export default function DeepResearch() {
               </View>
             ))}
           </Panel>
-</Fold>          <Fold title="7 · YouTube evidence sample" summary={brief.videos.length + ' videos · source links retained'}>          <Panel>
+</Fold>          <Fold title="7 · Independent web research" summary={brief.webResults.length + ' search result(s)'}>
+            <Panel>
+              <Heading>Web and news search</Heading>
+              {brief.webResults.length ? brief.webResults.map((item) => (
+                <View key={item.id} style={{ gap: 5 }}>
+                  <Text style={styles.badge}>{item.sourceName} · {item.category}</Text>
+                  <SourceText>{item.title}</SourceText>
+                  <Txt muted>{item.summary}</Txt>
+                  <Button variant="tertiary" className="h-auto justify-start px-0" onPress={() => void Linking.openURL(item.url).catch(() => {})}>
+                    <Button.Label>Open web source ↗</Button.Label>
+                  </Button>
+                </View>
+              )) : <Txt muted>Firecrawl returned no usable results. The official publisher feeds and Wikimedia sources above remain available.</Txt>}
+            </Panel>
+</Fold>          <Fold title="8 · YouTube sample (separate API data)" summary={brief.videos.length + ' videos · source links retained'}>          <Panel>
             <Heading>YouTube evidence</Heading>
             {brief.videos.length > 0 ? brief.videos.map((video) => (
               <View key={video.id} style={{ gap: 4 }}>
@@ -453,7 +496,7 @@ export default function DeepResearch() {
               </View>
             )) : <Txt muted>No YouTube sample was available. This does not block the source-led brief.</Txt>}
           </Panel>
-</Fold>          <Fold title="8 · Production plan & verification" summary={brief.titleIdeas.length + ' title ideas · ' + brief.outline.length + ' story steps'}>          <Panel>
+</Fold>          <Fold title="9 · Production plan & verification" summary={brief.titleIdeas.length + ' title ideas · ' + brief.outline.length + ' story steps'}>          <Panel>
             <Heading>Suggested video titles</Heading>
             {brief.titleIdeas.map((title) => <Txt key={title}>{title}</Txt>)}
           </Panel>

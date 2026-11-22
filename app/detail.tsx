@@ -23,7 +23,7 @@ import {
 import { VideoRow } from '@/components/VideoRow';
 import { useScout } from '@/lib/store';
 import { type Idea, statuses, languages } from '@/lib/types';
-import { buildIdeaAnalysis, limitations, reasoning } from '@/lib/engine';
+import { buildIdeaAnalysis, limitations } from '@/lib/engine';
 import { getIdeaDisplayTitle } from '@/lib/idea-research';
 import { getKey } from '@/lib/vault';
 import { localDateKey, getFreeModels, getOpenRouterDailyQuota, getOpinion, nextOpenRouterUsage, opinionPrompt, selectFreeModel } from '@/lib/api';
@@ -60,7 +60,7 @@ export default function Detail() {
   const ideaReadyForOpinion = Boolean(ideaOpinionTopic.trim() && idea?.concept.trim());
   const related = idea ? data.videos.filter((v) => idea.videoIds.includes(v.id)) : [];
   const analysisSections = idea
-    ? buildIdeaAnalysis({ ...idea, topic: ideaDisplayTopic }, related, uiLanguage)
+    ? buildIdeaAnalysis({ ...idea, topic: ideaDisplayTopic }, [], uiLanguage)
     : [];
   const savedReferences = idea ? data.links.filter((link) => idea.videoIds.includes(link.id)) : [];
   const researchNotes = idea ? data.notes.filter((note) => note.ideaId === idea.id) : [];
@@ -185,7 +185,7 @@ export default function Detail() {
       </SourceTitle>
       {idea ? (
         <Panel>
-          {typeof idea.engineScore === 'number' && Number.isFinite(idea.engineScore) ? (() => {
+          {idea.engineScoreBasis === 'publisher-web-only-v2' && typeof idea.engineScore === 'number' && Number.isFinite(idea.engineScore) ? (() => {
             const band = getEditorialPriorityBand(idea.engineScore);
             const tint = band === 'strong' ? p.success : band === 'moderate' ? p.cyan : p.danger;
             const fa = uiLanguage === 'fa';
@@ -201,7 +201,9 @@ export default function Detail() {
               </View>
             );
           })() : (
-            <Txt muted>{uiLanguage === 'fa' ? 'این ایده هنوز امتیاز تحریری مبتنی بر شواهد ندارد؛ امتیاز یا برچسبی به‌صورت حدسی ساخته نمی‌شود.' : 'This idea has no evidence-based editorial score yet. No score or label is fabricated.'}</Txt>
+            <Txt muted>{idea.engineScore !== undefined && idea.engineScoreBasis !== 'publisher-web-only-v2'
+              ? (uiLanguage === 'fa' ? 'امتیاز نسخه قدیمی نمایش داده نمی‌شود؛ رتبه‌بندی فعلی فقط از شواهد مستقل وب و ناشران استفاده می‌کند.' : 'A legacy score from an older engine version is hidden; current ranking uses independent web/publisher evidence only.')
+              : (uiLanguage === 'fa' ? 'این ایده هنوز امتیاز تحریری مستقل ندارد؛ امتیاز یا برچسبی به‌صورت حدسی ساخته نمی‌شود.' : 'This idea has no independent evidence-based editorial score yet. No score or label is fabricated.')}</Txt>
           )}
         </Panel>
       ) : null}
@@ -241,13 +243,15 @@ export default function Detail() {
             <Heading>Video concept</Heading>
             <SourceText>{idea.concept || 'Add your own concept.'}</SourceText>
             <Heading>Why investigate it?</Heading>
-            <Txt>{reasoning(idea, related.length, data.preferences.uiLanguage ?? 'fa')}</Txt>
+            <Txt>{data.preferences.uiLanguage === 'fa'
+              ? 'امتیاز و اولویت این ایده فقط از خبرهای ناشران، جست‌وجوی وب و زمینه دانشنامه‌ای ساخته شده است. نمونه YouTube در بخش جداگانه دیده می‌شود و در امتیاز یا نقد هوش مصنوعی نقشی ندارد.'
+              : 'This idea’s editorial priority uses publisher news, independent web search and encyclopedia context only. The YouTube sample is displayed separately and does not affect the score or AI critique.'}</Txt>
           </Panel>
           <Panel>
             <Heading>{data.preferences.uiLanguage === 'fa' ? 'تحلیل تحریری موتور داخلی' : 'Internal editorial analysis'}</Heading>
             <Txt muted>{data.preferences.uiLanguage === 'fa'
-              ? 'این بررسی محلی است و فقط از مفهوم ثبت‌شده و نمونه‌های پیوندخورده موجود روی دستگاه استفاده می‌کند؛ منبع تازه‌ای دریافت نمی‌کند و نظر AI نیست.'
-              : 'This local review uses only the saved concept and linked examples already on this device. It fetches no new sources and is not an AI opinion.'}</Txt>
+              ? 'این بخش تحلیل تحریری محلی را از نقد خودکار مدل خارجی جدا می‌کند. داده‌های خام YouTube در تحلیل محلی این ایده ادغام نمی‌شوند.'
+              : 'This section separates the local editorial checklist from the automatic external-model critique. Raw YouTube API data is not merged into this idea analysis.'}</Txt>
             {analysisSections.map((section) => (
               <View key={section.id} style={{ gap: 6 }}>
                 <Heading>{section.title}</Heading>
@@ -263,6 +267,21 @@ export default function Detail() {
             <Action secondary onPress={() => void Linking.openURL(idea.sourceUrl!).catch(() => {})}>
               {'Open original source · ' + (idea.sourceName || 'Publisher')}
             </Action>
+          ) : null}
+          {idea.evidenceSources?.length ? (
+            <Fold title={uiLanguage === 'fa' ? 'منابع تحقیق' : 'Research sources'} summary={idea.evidenceSources.length + ' independent source(s)'}>
+              <Txt muted>{uiLanguage === 'fa'
+                ? 'این منابع مستقل پشتوانه ایده و امتیاز تحریری هستند. هر پیوند را پیش از ضبط باز و ادعای اصلی را در منبع اولیه بررسی کن.'
+                : 'These independent sources support the idea and its editorial priority. Open each link and verify key claims against the original source before recording.'}</Txt>
+              {idea.evidenceSources.map((source) => (
+                <View key={source.sourceUrl} style={{ gap: 4 }}>
+                  <Text style={styles.badge}>{source.sourceName} · {source.sourceType}</Text>
+                  <SourceText>{source.title}</SourceText>
+                  {source.summary ? <Txt muted>{source.summary}</Txt> : null}
+                  <Action secondary onPress={() => void Linking.openURL(source.sourceUrl).catch(() => {})}>Open source ↗</Action>
+                </View>
+              ))}
+            </Fold>
           ) : null}
           <Panel>
             <Heading>Continue this research</Heading>

@@ -347,8 +347,13 @@ export async function searchYouTube(input: ResearchInput, options: YouTubeOption
     searchAttemptBudget: { used: 0, limit: YOUTUBE_SEARCH_REQUEST_LIMIT },
   };
   let lastError: unknown;
-  for (const search of searches) {
-    onProgress?.(`Sampling ${SEARCH_BUCKET_LABELS[search.bucket](topic)} · ${search.language || 'global'} · ${search.order}`);
+  let haltSearch = false;
+  const searchStates = searches.map((search) => ({ search, nextPageToken: undefined as string | undefined, page: 0 }));
+  const fetchSearchPage = async (state: typeof searchStates[number]) => {
+    if (haltSearch || researchOptions.searchAttemptBudget!.used >= researchOptions.searchAttemptBudget!.limit) return;
+    const { search } = state;
+    const page = state.page + 1;
+    onProgress?.(\`Sampling \${SEARCH_BUCKET_LABELS[search.bucket](topic)} · \${search.language || 'global'} · page \${page}\`);
     const params: Record<string, string> = {
       part: 'snippet', type: 'video', q: search.query, order: search.order,
       maxResults: '50', videoDuration: input.duration,
@@ -361,13 +366,15 @@ export async function searchYouTube(input: ResearchInput, options: YouTubeOption
     if (search.language) params.relevanceLanguage = search.language;
     if (search.bucket !== 'popularity' && regionCodes[input.region]) params.regionCode = regionCodes[input.region]!;
     if (input.category) params.videoCategoryId = input.category;
-    // Apply the exact user-selected window locally for date/view-count ordered searches.
     if (search.order === 'relevance' && input.days > 0)
       params.publishedAfter = new Date(searchNow - input.days * 86400000).toISOString();
+    if (state.nextPageToken) params.pageToken = state.nextPageToken;
     try {
       const raw = await youtube('search', params, researchOptions, 1);
       const parsed = searchSchema.safeParse(raw);
       if (!parsed.success) throw new ApiError('YouTube returned an invalid search response.', 'invalid');
+      state.page = page;
+      state.nextPageToken = parsed.data.nextPageToken;
       for (const item of parsed.data.items) {
         if (!isWithinYouTubeResearchWindow(item.snippet.publishedAt, input.days, searchNow)) continue;
         const id = item.id.videoId;
@@ -381,11 +388,36 @@ export async function searchYouTube(input: ResearchInput, options: YouTubeOption
         }
         bucketIds[search.bucket].push(id);
       }
+      return true;
     } catch (error) {
       lastError = error;
+      state.nextPageToken = undefined;
       warnings.push((error instanceof Error ? error.message : 'A YouTube search failed.') + ' Another result bucket may still be available.');
-      if (error instanceof ApiError && ['quota', 'budget', 'key', 'permission', 'invalid', 'offline', 'timeout', 'attempt-limit'].includes(error.code)) break;
+      if (error instanceof ApiError && ['quota', 'budget', 'key', 'permission', 'invalid', 'offline', 'timeout', 'attempt-limit'].includes(error.code))
+        haltSearch = true;
+      return false;
     }
+  };
+
+  // First sample every planned query angle. Then use any remaining per-run
+  // search budget for additional pages, round-robin across the same buckets.
+  for (const state of searchStates) {
+    if (haltSearch || researchOptions.searchAttemptBudget!.used >= researchOptions.searchAttemptBudget!.limit) break;
+    await fetchSearchPage(state);
+  }
+  while (!haltSearch && researchOptions.searchAttemptBudget!.used < researchOptions.searchAttemptBudget!.limit) {
+    let requestedAnotherPage = false;
+    for (const state of searchStates) {
+      if (haltSearch || researchOptions.searchAttemptBudget!.used >= researchOptions.searchAttemptBudget!.limit) break;
+      if (!state.nextPageToken) continue;
+      requestedAnotherPage = true;
+      await fetchSearchPage(state);
+    }
+    if (!requestedAnotherPage) break;
+  }
+  if (researchOptions.searchAttemptBudget!.used >= researchOptions.searchAttemptBudget!.limit &&
+      searchStates.some((state) => Boolean(state.nextPageToken))) {
+    warnings.push('The per-run YouTube search safety budget was reached. Additional result pages were left for a later refresh.');
   }
   if (!candidates.size && lastError) throw lastError;
 
@@ -839,18 +871,24 @@ export function structuredSecondOpinionPrompt(
   topic: string,
   concept: string,
   language: 'fa' | 'en' = 'en',
+  evidenceSources: readonly { sourceType?: string; sourceName: string; title: string; summary?: string; sourceUrl: string }[] = [],
 ): string {
   const cleanTopic = topic.trim().slice(0, 180);
   const cleanConcept = concept.trim().slice(0, 1200);
-  if (!cleanTopic || !cleanConcept) {
-    throw new ApiError('A topic and candidate concept are required for the second opinion.', 'input');
-  }
+  if (!cleanTopic || !cleanConcept) throw new ApiError('A topic and candidate concept are required for the second opinion.', 'input');
+  const independentSources = evidenceSources.slice(0, 6).flatMap((source) => {
+    try {
+      const url = new URL(source.sourceUrl);
+      const host = url.hostname.toLowerCase();
+      if (url.protocol !== 'https:' || host === 'youtube.com' || host.endsWith('.youtube.com') || host === 'youtu.be' || host.endsWith('.googlevideo.com')) return [];
+      return [{ sourceType: (source.sourceType ?? 'independent').slice(0, 40), sourceName: source.sourceName.slice(0, 120), title: source.title.slice(0, 240), summary: (source.summary ?? '').slice(0, 420), sourceUrl: url.toString().slice(0, 500) }];
+    } catch { return []; }
+  });
   const instruction = language === 'fa'
-    ? 'موضوع و ایده پیشنهادی را مستقل و کاربردی بررسی کن. هیچ منبع بیرونی، آمار عملکرد، داده تقاضا یا رقابت در اختیار تو نیست؛ چیزی نساز و امتیاز داخلی را حدس نزن. با زبان طبیعی و روان فارسی بنویس؛ طوری که سازنده محتوا با یک بار خواندن منظور را بفهمد. جمله‌ها کوتاه، روشن و مستقیم باشند. از ترجمه تحت‌اللفظی، عبارت‌های اداری، لحن رباتیک و اصطلاح تخصصیِ بی‌توضیح پرهیز کن؛ اگر اصطلاحی لازم است، همان‌جا خیلی ساده توضیحش بده. فقط JSON معتبر و بدون Markdown با همین کلیدها برگردان: decision (یکی از develop, gather_more_evidence, reframe)، strengths (حداکثر ۳ نکته)، risks (حداکثر ۳ نکته)، missingData (حداکثر ۳ مورد)، validationSteps (حداکثر ۳ اقدام)، nextAction (یک اقدام روشن). همه مقدارهای متنی باید فارسی و قابل‌فهم باشند. هیچ کلید دیگری اضافه نکن.'
-    : 'Independently assess the supplied topic and idea in practical terms. You have no external sources, performance statistics, audience-demand or competition data; do not invent any or guess the local engine score. Write in natural, clear language in English that a working creator can understand on the first read. Use short, direct sentences. Avoid stiff report language, literal translation, filler and unexplained technical jargon; briefly explain any necessary technical term. Return only valid JSON without Markdown using exactly these keys: decision (one of develop, gather_more_evidence, reframe), strengths (up to 3 useful points), risks (up to 3 useful points), missingData (up to 3 items), validationSteps (up to 3 practical checks), nextAction (one clear action). All string values must be in natural English. Do not add other keys.';
-  return (instruction + '\n\n' + JSON.stringify({ topic: cleanTopic, candidateConcept: cleanConcept })).slice(0, 5000);
+    ? 'موضوع و ایده را با اتکا به منابع مستقلی که همراه درخواست آمده‌اند، نقادانه بررسی کن. منابع ممکن است ناقص یا قدیمی باشند؛ ادعای باز کردن یا راستی‌آزمایی صفحه‌ای را نکن. ادعای منبع را از برداشت خودت جدا کن. آمار عملکرد، تقاضا، رقابت، پیش‌بینی یا امتیاز نساز و امتیاز داخلی را حدس نزن. هیچ داده یا متادیتای YouTube در این درخواست نیست. فارسی طبیعی و کوتاه بنویس. فقط JSON معتبر و بدون Markdown با کلیدهای decision (develop, gather_more_evidence یا reframe)، strengths (حداکثر ۳)، risks (حداکثر ۳)، missingData (حداکثر ۳)، validationSteps (حداکثر ۳) و nextAction برگردان. کلید دیگری اضافه نکن.'
+    : 'Critically assess this idea using only the independent sources supplied here. Sources may be incomplete or stale; do not claim to have opened or verified them. Distinguish source claims from your interpretation. Do not invent performance, demand, competition, forecasts or scores. No YouTube API data is provided. Return only valid JSON: decision (develop, gather_more_evidence, reframe), strengths (max 3), risks (max 3), missingData (max 3), validationSteps (max 3), nextAction. Write natural concise English; add no keys.';
+  return (instruction + '\n\n' + JSON.stringify({ topic: cleanTopic, candidateConcept: cleanConcept, independentSources })).slice(0, 6500);
 }
-
 export function parseStructuredSecondOpinion(content: string): StructuredSecondOpinion {
   const cleaned = content.trim()
     .replace(/^\x60{3}(?:json)?\s*/i, '')

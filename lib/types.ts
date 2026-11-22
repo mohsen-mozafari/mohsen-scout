@@ -66,6 +66,14 @@ export const statuses: IdeaStatus[] = [
   'Rejected Ideas',
   'Completed Research',
 ];
+export type IdeaEvidenceSource = {
+  sourceType: 'publisher' | 'web' | 'encyclopedia';
+  sourceName: string;
+  title: string;
+  summary?: string;
+  sourceUrl: string;
+  publishedAt?: string;
+};
 export type Idea = {
   id: string;
   topic: string;
@@ -89,6 +97,8 @@ export type Idea = {
   /** Explainable local editorial-priority score (not a view or revenue forecast). */
   engineScore?: number;
   engineScoreReason?: string;
+  engineScoreBasis?: 'publisher-web-only-v2';
+  evidenceSources?: IdeaEvidenceSource[];
 };
 export type Report = {
   id: string;
@@ -150,6 +160,8 @@ export type Preferences = {
   /** Automatic privacy-bounded external review after local research completes. */
   /** Kept for backward compatibility; external review now requires an explicit manual action. */
   hybridIntelligence: boolean;
+  webResearchEnabled: boolean;
+  automaticExternalReview: boolean;
   secondOpinionProvider: SecondOpinionProvider;
   secondOpinionOrder: SecondOpinionProvider[];
   secondOpinionModels: { gemini: string; groq: string; cloudflare: string; openrouter: string };
@@ -251,6 +263,8 @@ export function defaults(): LocalData {
       budget: 10000,
       model: '',
       hybridIntelligence: false,
+      webResearchEnabled: true,
+      automaticExternalReview: true,
       secondOpinionProvider: 'gemini',
       secondOpinionOrder: [...DEFAULT_SECOND_OPINION_ORDER],
       secondOpinionModels: { gemini: 'gemini-3.8-flash', groq: 'openai/gpt-oss-120b', cloudflare: '@cf/meta/llama-3.3-70b-instruct-fp8-fast', openrouter: '' },

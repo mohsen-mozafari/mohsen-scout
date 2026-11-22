@@ -12,10 +12,14 @@ import {
 } from './types';
 import { readData, writeData } from './storage';
 import { getKey } from './vault';
-import { nextBudget, searchYouTube, type YouTubeQuotaKind, type YouTubeQuotaOrigin } from './api';
+import { localDateKey, nextBudget, nextOpenRouterUsage, searchYouTube, type YouTubeQuotaKind, type YouTubeQuotaOrigin } from './api';
+import { buildInternalResearch } from './engine';
+import { createResearchMemoryEntry } from './research-memory';
+import { fetchWebResearch } from './web-research';
+import { reviewIdeasAutomatically } from './ai-review';
 import { generateEditorialIdeas, type IdeaGenerationCategory } from './idea-generation';
 import { attachReportToIdea as attachReport, attachVideoReferenceToIdea as attachVideoReference, getOrCreateSourceIdea, type SourceIdeaInput } from './idea-research';
-import { getCachedSpaceNews, hydrateSpaceNewsRegistry } from './space';
+import { fetchSpaceNews, getCachedSpaceNews, getWikipediaSignal, hydrateSpaceNewsRegistry } from './space';
 import { normalizeResearchText } from './intelligence';
 import { recordRuntimeFinish, recordRuntimeStart } from './runtime-metrics';
 type State = {
@@ -99,104 +103,282 @@ export const useScout = create<State>((set, get) => ({
   },
   research: async (input, origin = 'manual', forceRefresh = false, ideaOptions) => {
     if (get().busy) return undefined;
-    recordRuntimeStart('YouTube');
-    let youtubeRecorded = false;
+    const initialPreferences = get().data.preferences;
     let engineStarted = false;
     let engineRecorded = false;
-    set({ busy: true, error: '', progress: 'Preparing related queries…' });
+    set({ busy: true, error: '', progress: 'Starting independent source collection…' });
     try {
       if (!input.topic.trim() || !input.languages.length)
         throw new Error('Enter a topic and choose at least one language.');
-      const key = await getKey('youtube');
-      if (!key) throw new Error('Add your YouTube API key in Settings to start research.');
+      const topic = input.topic.trim().replace(/\s+/g, ' ').slice(0, 180);
+      const normalizedInput = { ...input, topic };
       const cached = forceRefresh ? undefined : get().data.reports.find(
-        (r) =>
-          JSON.stringify(r.input) === JSON.stringify(input) &&
-          Date.now() - r.createdAt < 15 * 60000,
+        (report) =>
+          JSON.stringify(report.input) === JSON.stringify(normalizedInput) &&
+          Date.now() - report.createdAt < 15 * 60000,
       );
       if (cached) {
-        set({ progress: 'Using a recent local search sample.' });
+        set({ progress: 'Using a recent local research report.' });
         if (!cached.analyzed) await get().analyze(cached.id);
-        recordRuntimeFinish('YouTube', 'partial');
-        youtubeRecorded = true;
         return get().data.reports.find((item) => item.id === cached.id) ?? cached;
       }
-      const result = await searchYouTube(
-        input,
-        {
-          key,
-          origin,
-          charge: (units, kind = 'other') => get().charge(units, kind, origin),
-          onQuota: (kind) =>
-            get().commit((data) => ({
-              ...data,
-              budget: {
-                ...data.budget,
-                ...(kind === 'search' ? { searchExhausted: true } : { otherExhausted: true }),
-              },
-            })),
-        },
-        (progress) => set({ progress }),
+
+      const warnings: string[] = [];
+      let youtubeResult: Awaited<ReturnType<typeof searchYouTube>> | undefined;
+      let publisherNews = getCachedSpaceNews(get().data.feedRegistry, initialPreferences.spaceNewsSources);
+      let feedRegistry = get().data.feedRegistry;
+      let webItems: Awaited<ReturnType<typeof fetchWebResearch>>['items'] = [];
+      let wiki: Awaited<ReturnType<typeof getWikipediaSignal>> | undefined;
+
+      const youtubeTask = async () => {
+        const key = await getKey('youtube').catch(() => undefined);
+        if (!key) {
+          warnings.push('YouTube sample skipped: add a YouTube Data API key in Settings. Independent web/publisher research can still continue.');
+          return;
+        }
+        recordRuntimeStart('YouTube');
+        set({ progress: 'Collecting a bounded YouTube Data API sample…' });
+        try {
+          youtubeResult = await searchYouTube(
+            normalizedInput,
+            {
+              key,
+              origin,
+              charge: (units, kind = 'other') => get().charge(units, kind, origin),
+              onQuota: (kind) =>
+                get().commit((data) => ({
+                  ...data,
+                  budget: {
+                    ...data.budget,
+                    ...(kind === 'search' ? { searchExhausted: true } : { otherExhausted: true }),
+                  },
+                })),
+            },
+            (progress) => set({ progress }),
+          );
+          recordRuntimeFinish('YouTube', youtubeResult.videos.length ? 'success' : 'partial');
+          warnings.push(...(youtubeResult.warnings ?? []));
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'YouTube sample was unavailable.';
+          recordRuntimeFinish('YouTube', 'error', message);
+          warnings.push('YouTube sample unavailable: ' + message);
+        }
+      };
+
+      const feedTask = async () => {
+        set({ progress: 'Refreshing selected NASA, ESA and publisher feeds…' });
+        try {
+          const result = await fetchSpaceNews(initialPreferences.spaceNewsSources, fetch, true);
+          feedRegistry = result.registry;
+          publisherNews = result.items.length
+            ? result.items
+            : getCachedSpaceNews(result.registry, initialPreferences.spaceNewsSources);
+          warnings.push(...result.warnings);
+        } catch (error) {
+          warnings.push('Publisher-feed refresh failed; the last successful cached feed items were retained. ' +
+            (error instanceof Error ? error.message : ''));
+          publisherNews = getCachedSpaceNews(feedRegistry, initialPreferences.spaceNewsSources);
+        }
+      };
+
+      const webTask = async () => {
+        if (!initialPreferences.webResearchEnabled) {
+          warnings.push('Independent web search is disabled in Settings; selected RSS feeds and Wikimedia remain available.');
+          return;
+        }
+        set({ progress: 'Searching independent web and news sources…' });
+        try {
+          const webKey = await getKey('firecrawl').catch(() => undefined);
+          const result = await fetchWebResearch(topic, {
+            apiKey: webKey ?? undefined,
+            limit: 6,
+            days: normalizedInput.days,
+          });
+          webItems = result.items;
+          warnings.push(...result.warnings);
+        } catch (error) {
+          warnings.push('Independent web search unavailable: ' +
+            (error instanceof Error ? error.message : 'Firecrawl request failed.') +
+            ' RSS and Wikimedia research continue independently.');
+        }
+      };
+
+      const wikiTask = async () => {
+        recordRuntimeStart('Wikimedia');
+        set({ progress: 'Checking Wikimedia public-interest context…' });
+        try {
+          wiki = await getWikipediaSignal(topic, initialPreferences.spaceInterestLanguage ?? 'en');
+          recordRuntimeFinish('Wikimedia', wiki ? 'success' : 'partial');
+        } catch (error) {
+          recordRuntimeFinish('Wikimedia', 'error', error instanceof Error ? error.message : 'Wikimedia unavailable.');
+          warnings.push('Wikimedia article context was unavailable; this signal will not be inferred.');
+        }
+      };
+
+      recordRuntimeStart('Sources');
+      await Promise.all([youtubeTask(), feedTask(), webTask(), wikiTask()]);
+      const independentSourcesReady = publisherNews.length > 0 || webItems.length > 0;
+      recordRuntimeFinish('Sources', independentSourcesReady ? 'success' : 'partial', independentSourcesReady ? undefined : 'No independent publisher/web evidence was returned.');
+      if (!publisherNews.length) warnings.push('No selected publisher-feed items are currently available.');
+      if (!webItems.length && initialPreferences.webResearchEnabled)
+        warnings.push('No independent web results were available in this run.');
+      if (!wiki) warnings.push('No Wikimedia pageview/article signal was available in this run.');
+
+      const currentData = get().data;
+      const priorMemory = currentData.researchMemory.find(
+        (entry) => normalizeResearchText(entry.topic) === normalizeResearchText(topic),
       );
-      recordRuntimeFinish('YouTube', 'success');
-      youtubeRecorded = true;
+      const engineNews = [
+        ...publisherNews.map((item) => ({
+          title: item.title,
+          summary: item.summary,
+          sourceName: item.sourceName,
+          sourceUrl: item.url,
+          publishedAt: item.publishedAt,
+          sourceId: item.sourceId,
+        })),
+        ...webItems.map((item) => ({
+          title: item.title,
+          summary: item.summary,
+          sourceName: item.sourceName,
+          sourceUrl: item.url,
+          publishedAt: item.publishedAt ?? null,
+          sourceId: 'web:' + item.sourceName,
+        })),
+      ];
+
+      recordRuntimeStart('Engine');
+      engineStarted = true;
+      set({ progress: 'Analyzing independent evidence and research gaps…' });
+      const internalAnalysis = buildInternalResearch({
+        topic,
+        news: engineNews,
+        wiki,
+        priorMemory,
+        language: currentData.preferences.uiLanguage ?? 'fa',
+      });
+
       const report: Report = {
-        ...result,
-        input: { ...input, topic: input.topic.trim() },
+        input: normalizedInput,
+        videos: youtubeResult?.videos ?? [],
+        queries: [
+          ...(youtubeResult?.queries ?? []),
+          ...(webItems.length ? ['Firecrawl web/news search: ' + topic] : []),
+        ],
+        warnings: [...new Set(warnings)],
         id: uid(),
         createdAt: Date.now(),
         analyzed: true,
       };
-      const currentData = get().data;
-      const availableNews = getCachedSpaceNews(currentData.feedRegistry, currentData.preferences.spaceNewsSources);
-      const priorMemory = currentData.researchMemory.find((entry) => normalizeResearchText(entry.topic) === normalizeResearchText(report.input.topic));
-      recordRuntimeStart('Engine');
-      engineStarted = true;
+
+      const webContexts = webItems.map((item) => ({
+        title: item.title,
+        summary: item.summary,
+        sourceName: item.sourceName,
+        sourceUrl: item.url,
+        publishedAt: item.publishedAt ?? null,
+      }));
+      const context = [
+        ...webContexts,
+        ...(wiki ? [{
+          title: wiki.articleTitle,
+          summary: wiki.summary,
+          sourceName: 'Wikimedia',
+          sourceUrl: wiki.articleUrl,
+        }] : []),
+      ];
+
+      // Editorial ideas and their scores use only independent publisher/web/Wikimedia
+      // evidence. YouTube API records stay in the separate raw sample/report domain.
       const generatedIdeas = generateEditorialIdeas({
-        topic: report.input.topic,
-        news: availableNews,
-        videos: report.videos.map((video) => ({
-          id: video.id,
-          title: video.title,
-          description: video.description,
-          channel: video.channel,
-          publishedAt: video.publishedAt,
-          viewCount: video.viewCount ?? null,
-          likeCount: video.likeCount ?? null,
-        })),
+        topic,
+        news: publisherNews,
+        context,
         reportId: report.id,
         priorMemory,
         existingIdeas: currentData.ideas,
-        region: report.input.region,
-        languages: report.input.languages,
+        region: normalizedInput.region,
+        languages: normalizedInput.languages,
         language: currentData.preferences.uiLanguage ?? 'fa',
         ...(ideaOptions?.category ? { category: ideaOptions.category } : {}),
         limit: ideaOptions?.limit ?? 8,
       });
-      recordRuntimeFinish('Engine', generatedIdeas.length ? 'success' : 'partial');
-      engineRecorded = true;
+
+      const memoryEntry = createResearchMemoryEntry({
+        topic,
+        news: engineNews.map((item) => ({
+          sourceId: item.sourceId,
+          sourceName: item.sourceName,
+          title: item.title,
+          url: item.sourceUrl,
+          publishedAt: item.publishedAt,
+        })),
+        analysis: internalAnalysis,
+        previous: priorMemory,
+        language: currentData.preferences.uiLanguage ?? 'fa',
+      });
+
+      if (!generatedIdeas.length) {
+        report.warnings.push('No sufficiently distinct idea was supported by the independent publisher/web evidence in this run. The raw YouTube sample remains separate.');
+      }
       await get().commit((data) => ({
         ...data,
+        feedRegistry,
         reports: [report, ...data.reports],
         ideas: [...generatedIdeas, ...data.ideas],
-        videos: [...new Map([...data.videos, ...result.videos].map((v) => [v.id, v])).values()],
-        preferences: { ...data.preferences, lastInput: input },
+        videos: [...new Map([...data.videos, ...(youtubeResult?.videos ?? [])].map((video) => [video.id, video])).values()],
+        researchMemory: memoryEntry
+          ? [
+              memoryEntry,
+              ...data.researchMemory.filter((entry) => normalizeResearchText(entry.topic) !== normalizeResearchText(topic)),
+            ].slice(0, 40)
+          : data.researchMemory,
+        preferences: { ...data.preferences, lastInput: normalizedInput },
       }));
+      recordRuntimeFinish('Engine', generatedIdeas.length ? 'success' : 'partial');
+      engineRecorded = true;
+
+      if (generatedIdeas.length && get().data.preferences.automaticExternalReview) {
+        recordRuntimeStart('AI');
+        set({ progress: 'Reviewing generated ideas with the configured AI-provider fallback chain…' });
+        const review = await reviewIdeasAutomatically(generatedIdeas, get().data.preferences, {
+          language: get().data.preferences.uiLanguage ?? 'fa',
+          beforeProviderRequest: async (config) => {
+            if (config.provider !== 'openrouter') return;
+            const preferences = get().data.preferences;
+            const usage = nextOpenRouterUsage(
+              preferences.openRouterUsageDay,
+              preferences.openRouterRequestsToday,
+              localDateKey(),
+              preferences.openRouterDailyLimit ?? 50,
+            );
+            await get().commit((data) => ({
+              ...data,
+              preferences: { ...data.preferences, ...usage },
+            }));
+          },
+        });
+        if (review.opinions.length || review.warnings.length) {
+          await get().commit((data) => ({
+            ...data,
+            opinions: [
+              ...review.opinions,
+              ...data.opinions.filter((opinion) => !review.opinions.some((item) => item.ideaId === opinion.ideaId)),
+            ],
+            reports: data.reports.map((item) => item.id === report.id
+              ? { ...item, warnings: [...new Set([...item.warnings, ...review.warnings])] }
+              : item),
+          }));
+        }
+        recordRuntimeFinish('AI', review.opinions.length ? 'success' : 'partial', review.warnings.join(' '));
+      }
+
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      return report;
+      return get().data.reports.find((item) => item.id === report.id) ?? report;
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Research could not finish. Try again.';
-      if (engineStarted && !engineRecorded) {
-        recordRuntimeFinish('Engine', 'error', message);
-        engineRecorded = true;
-      }
-      if (!youtubeRecorded) {
-        recordRuntimeFinish('YouTube', 'error', message);
-        youtubeRecorded = true;
-      }
-      set({
-        error: message,
-      });
+      if (engineStarted && !engineRecorded) recordRuntimeFinish('Engine', 'error', message);
+      set({ error: message });
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       return undefined;
     } finally {
@@ -214,15 +396,6 @@ export const useScout = create<State>((set, get) => ({
     const generatedIdeas = generateEditorialIdeas({
       topic: report.input.topic,
       news: availableNews,
-      videos: report.videos.map((video) => ({
-        id: video.id,
-        title: video.title,
-        description: video.description,
-        channel: video.channel,
-        publishedAt: video.publishedAt,
-        viewCount: video.viewCount ?? null,
-        likeCount: video.likeCount ?? null,
-      })),
       reportId: report.id,
       priorMemory,
       existingIdeas: currentData.ideas,
@@ -308,17 +481,6 @@ export const useScout = create<State>((set, get) => ({
 
         const now = Date.now();
         const metadataTtlMs = 29 * 24 * 60 * 60 * 1000;
-        const videos = (targetReport?.videos ?? [])
-          .filter((video) => video.fetchedAt > 0 && now >= video.fetchedAt && now - video.fetchedAt < metadataTtlMs)
-          .map((video) => ({
-            id: video.id,
-            title: video.title,
-            description: video.description,
-            channel: video.channel,
-            publishedAt: video.publishedAt,
-            viewCount: video.viewCount ?? null,
-            likeCount: video.likeCount ?? null,
-          }));
         const news = getCachedSpaceNews(data.feedRegistry, data.preferences.spaceNewsSources);
         const priorMemory = data.researchMemory.find(
           (entry) => normalizeResearchText(entry.topic) === normalizeResearchText(topic),
@@ -326,7 +488,6 @@ export const useScout = create<State>((set, get) => ({
         const nextIdeas = generateEditorialIdeas({
           topic,
           news,
-          videos,
           ...(targetReport ? { reportId: targetReport.id } : {}),
           priorMemory,
           existingIdeas: ideas,

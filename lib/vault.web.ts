@@ -1,4 +1,4 @@
-export type Credential = 'youtube' | 'openrouter' | 'gemini' | 'groq' | 'cloudflare' | 'cloudflare-account-id';
+export type Credential = 'youtube' | 'openrouter' | 'gemini' | 'groq' | 'cloudflare' | 'cloudflare-account-id' | 'firecrawl';
 const keys: Partial<Record<Credential, string>> = {};
 export const credentialPersistence =
   'Browser preview: keys stay in memory only and clear on reload. Android uses encrypted SecureStore.';

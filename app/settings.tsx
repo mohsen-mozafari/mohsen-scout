@@ -22,6 +22,7 @@ import { type Preferences, type SecondOpinionProvider, DEFAULT_SECOND_OPINION_OR
 import { getKey, setKey, deleteKey, credentialPersistence, type Credential } from '@/lib/vault';
 import { getFreeModels, getOpenRouterDailyQuota, testYouTube, testOpenRouter, quotaDay, localDateKey } from '@/lib/api';
 import { discoverSecondOpinionModels, testSecondOpinionCredential } from '@/lib/ai-gateway';
+import { testFirecrawlKey } from '@/lib/web-research';
 import { exportBackup, importBackup, restorePersonalData } from '@/lib/backup';
 import { shareText, readBackup, shareApk } from '@/lib/transfer';
 import { configureSchedule, enableNotifications, scheduleNotice } from '@/lib/scheduler';
@@ -88,6 +89,8 @@ function CredentialSection({
         await testOpenRouter(value);
       } else if (kind === 'cloudflare-account-id') {
         if (!/^[a-f0-9]{32}$/i.test(value.trim())) throw new Error('Cloudflare Account ID must be 32 hexadecimal characters.');
+      } else if (kind === 'firecrawl') {
+        await testFirecrawlKey(value);
       } else {
         const accountId = kind === 'cloudflare' ? await getKey('cloudflare-account-id') ?? undefined : undefined;
         await testSecondOpinionCredential(kind, { key: value, accountId });
@@ -169,6 +172,7 @@ export default function Settings() {
     groq: null,
     cloudflare: null,
     'cloudflare-account-id': null,
+    firecrawl: null,
   });
   const [modelBusy, setModelBusy] = useState(false);
   const [confirm, setConfirm] = useState('');
@@ -192,7 +196,7 @@ export default function Settings() {
   }, [data.preferences]);
   useEffect(() => {
     let active = true;
-    const kinds: Credential[] = ['youtube', 'openrouter', 'gemini', 'groq', 'cloudflare', 'cloudflare-account-id'];
+    const kinds: Credential[] = ['youtube', 'openrouter', 'gemini', 'groq', 'cloudflare', 'cloudflare-account-id', 'firecrawl'];
     void Promise.all(kinds.map(async (kind) => [kind, Boolean(await getKey(kind))] as const))
       .then((entries) => {
         if (!active) return;
@@ -200,7 +204,7 @@ export default function Settings() {
       })
       .catch(() => {
         if (active) setCredentialStatus({
-          youtube: null, openrouter: null, gemini: null, groq: null, cloudflare: null, 'cloudflare-account-id': null,
+          youtube: null, openrouter: null, gemini: null, groq: null, cloudflare: null, 'cloudflare-account-id': null, firecrawl: null,
         });
       });
     return () => { active = false; };
@@ -373,6 +377,10 @@ export default function Settings() {
           Native clients cannot keep bundled secrets; this key belongs to you and is entered on your
           device. Google controls project quota.
         </Txt>
+        <Txt muted>{fa
+          ? 'در حالت فعلی، نمونه‌های خام YouTube جدا نمایش داده می‌شوند و امتیاز/نسبت/پیش‌بینی مشتق‌شده از آن‌ها ساخته نمی‌شود. برای معیارهای مشتق‌شده مانند امتیاز کانال، نسبت تعامل یا رتبه‌بندی رشد، ابتدا باید اصلاحیه رسمی Derived Metrics Policy را برای پروژه API خود بپذیری: Section 5 · Use Cases, API Integration, and Feature Implementation · Analytics & Reporting. این برنامه پذیرش را از طرف تو انجام نمی‌دهد.'
+          : 'In the current mode, raw YouTube samples are displayed separately and no custom score, ratio or forecast is derived from them. To use derived metrics such as channel scores, engagement ratios or growth leaderboards, first accept YouTube’s Derived Metrics Policy amendment for your API project: Section 5 · Use Cases, API Integration, and Feature Implementation · Analytics & Reporting. The app cannot accept this amendment on your behalf.'}</Txt>
+        <Action secondary onPress={() => void Linking.openURL('https://developers.google.com/youtube/terms/derived-metrics-policy')}>Read YouTube derived-metrics policy</Action>
         <Action
           secondary
           onPress={() =>
@@ -384,11 +392,27 @@ export default function Settings() {
           Open Google Cloud
         </Action>
       </Fold>
+      <Fold title="Independent web research · Firecrawl" summary={prefs.webResearchEnabled ? 'Enabled · Firecrawl + selected RSS + Wikimedia' : 'Disabled · selected RSS + Wikimedia only'}>
+        <Choices
+          label={fa ? 'جست‌وجوی وب مستقل' : 'Independent web search'}
+          options={['Enabled', 'Disabled']}
+          selected={[prefs.webResearchEnabled ? 'Enabled' : 'Disabled']}
+          onChange={(values) => setPrefs({ ...prefs, webResearchEnabled: values[0] === 'Enabled' })}
+        />
+        <Txt muted>{fa
+          ? 'Firecrawl Search نتایج وب و خبر را برای موضوع انتخابی پیدا می‌کند و با کلید شخصی می‌تواند خلاصه محتوای صفحات را هم برگرداند. بدون کلید، جست‌وجوی رایگانِ بدون کلید با محدودیت روزانه IP امتحان می‌شود؛ در صورت محدودیت یا قطع دسترسی، خوراک‌های RSS و ویکی‌مدیا مستقل ادامه می‌دهند.'
+          : 'Firecrawl Search finds independent web/news sources for the selected topic and can return concise page summaries when a personal key is configured. Without a key, keyless search is attempted subject to daily IP limits; RSS feeds and Wikimedia continue independently if Firecrawl is unavailable.'}</Txt>
+        <CredentialSection kind="firecrawl" label="Firecrawl API key (optional)" onStatusChange={handleCredentialStatus} />
+        <Txt muted>{fa
+          ? 'فقط عبارت موضوع و تنظیمات جست‌وجو به Firecrawl ارسال می‌شود؛ هیچ عنوان، توضیح، شناسه، آمار یا تصویر YouTube به Firecrawl فرستاده نمی‌شود. کلید Firecrawl به‌صورت رمزنگاری‌شده روی همین دستگاه نگهداری می‌شود.'
+          : 'Only the topic query and search options are sent to Firecrawl. No YouTube title, description, ID, statistic or thumbnail is sent. A Firecrawl key is stored encrypted on this device.'}</Txt>
+        <Action busy={op.busy} onPress={save} disabled={!ready}>Save web research settings</Action>
+      </Fold>
       <Fold title="Second Opinion · Multi-provider" summary={providerOrder.map(providerName).join(' → ')}>
         <Txt muted>
           {prefs.uiLanguage === 'fa'
-            ? 'نظر دوم فقط با لمس دکمه توسط خودت اجرا می‌شود. فقط موضوع و مفهوم/عنوان پیشنهادی به Providerها ارسال می‌شود؛ هیچ خبر، اطلاعات YouTube، آمار، امتیاز یا تصمیم موتور داخلی ارسال نمی‌شود. در صورت خطا یا پاسخ نامعتبر، سرویس بعدی در ترتیب ذخیره‌شده امتحان می‌شود؛ برای هر سرویس فقط یک درخواست تولید انجام می‌شود.'
-            : 'Second opinion runs only when you press its button. Providers receive only the topic and candidate concept/title. No news, YouTube metadata, statistics, local score or internal decision is sent. On a provider failure or invalid response, the next saved provider is tried; each provider receives at most one generation request.'}
+            ? 'پس از تولید ایده، نقد خودکار با ترتیب اولویت ذخیره‌شده اجرا می‌شود. هر سرویس در صورت خطا، محدودیت یا پاسخ نامعتبر به سرویس بعدی واگذار می‌کند. فقط موضوع، مفهوم ایده و خلاصه/پیوند منابع مستقل وب و ناشران ارسال می‌شود. هیچ داده YouTube API، عنوان ویدئو، شناسه، آمار بازدید/پسند، تصویر یا امتیاز YouTube به مدل‌ها ارسال یا با منابع دیگر ترکیب نمی‌شود.'
+            : 'After local idea generation, automatic critique runs through the saved provider priority order. On an error, rate limit or invalid response, the next provider is tried. Providers receive the idea topic/concept plus summaries and links from independent web/publisher sources. No YouTube API data, video titles, IDs, view/like statistics, thumbnails or YouTube-derived scores are sent to models or combined with external sources.'}
         </Txt>
         <Txt muted>
           {prefs.uiLanguage === 'fa'
@@ -409,6 +433,15 @@ export default function Settings() {
             setPrefs({ ...prefs, secondOpinionProvider: provider, secondOpinionOrder: nextOrder });
           }}
         />
+        <Choices
+          label={fa ? 'نقد خودکار پس از تحقیق' : 'Automatic AI critique after research'}
+          options={['Enabled', 'Disabled']}
+          selected={[prefs.automaticExternalReview ? 'Enabled' : 'Disabled']}
+          onChange={(values) => setPrefs({ ...prefs, automaticExternalReview: values[0] === 'Enabled' })}
+        />
+        <Txt muted>{fa
+          ? 'در حالت فعال، هر ایده تازه با مدل اصلی بررسی می‌شود؛ در صورت خطا یا عدم دسترسی، مدل‌های پشتیبان به ترتیب امتحان می‌شوند. اگر همه مدل‌ها در دسترس نباشند، ایده‌های موتور داخلی حفظ می‌شوند و وضعیت نقد ناموفق ثبت می‌شود.'
+          : 'When enabled, each new idea is reviewed by the primary model; if it fails or is unavailable, backup providers are tried in order. If every provider fails, local ideas are preserved and the failed review is reported.'}</Txt>
         <Heading>{fa ? 'ترتیب اولویت اجرا' : 'Provider priority order'}</Heading>
         <Txt muted>{fa
           ? 'ردیف اول سرویس اصلی است؛ اگر کلید نداشته باشد یا درخواست ناموفق باشد، سرویس‌های بعدی به همین ترتیب امتحان می‌شوند. برای جابه‌جایی از دکمه‌های بالا و پایین استفاده کن.'
@@ -634,9 +667,7 @@ export default function Settings() {
       </Fold>
       <Fold title="Privacy & data management" summary={(data.researchMemory?.length ?? 0) + ' saved research topics · keys stay on device'}>
         <Txt muted>
-          YouTube receives your searches and API key. OpenRouter receives the topic and processed aggregate research signals only when automatic hybrid review is enabled, or the prompt you manually request. Raw news/video metadata, private notes and API keys are not sent. Nothing is sent to an app-owned server. No video, audio,
-          subtitle or caption downloads. API titles, descriptions and thumbnails expire within 29
-          days; saved personal links and notes remain.
+          YouTube receives YouTube search queries and the key stored on this device. Firecrawl receives the research topic query when independent web search is enabled. The selected AI provider receives the new idea, its concept and source summaries/links from independent publisher, web and Wikimedia sources when automatic review is enabled. YouTube API data (video titles, descriptions, IDs, view/like counts and thumbnails) is never sent to Firecrawl or AI providers and is not combined into publisher/web editorial scores. Private notes and API keys are not sent. Nothing is sent to an app-owned server. No video, audio, subtitle or caption downloads. YouTube API metadata is purged within 29 days; saved personal links and notes remain.
         </Txt>
         <Txt muted>{'Saved research memory: ' + data.researchMemory.length + ' topic(s). This memory is used only for local research comparisons and can be cleared independently.'}</Txt>
         <Action
@@ -684,6 +715,7 @@ export default function Settings() {
                 defaults().preferences,
                 async () => {
                   await deleteKey('youtube');
+                  await deleteKey('firecrawl');
                   await deleteKey('openrouter');
                   await current.commit(() => defaults());
                 },
