@@ -126,6 +126,34 @@ function displayTerm(value: string): string {
   return /^[a-z]/i.test(value) ? value.charAt(0).toUpperCase() + value.slice(1) : value;
 }
 
+function categoryLabel(category: IdeaGenerationCategory, language: 'fa' | 'en'): string {
+  if (language !== 'fa') return category;
+  const labels: Record<IdeaGenerationCategory, string> = {
+    Explainer: 'توضیح ساده یک مفهوم',
+    'Evidence audit': 'بررسی و سنجش شواهد',
+    Comparison: 'مقایسه',
+    Timeline: 'روایت بر اساس خط زمانی',
+    'Open question': 'پرسش بی‌پاسخ',
+    'Cross-source': 'مقایسه روایت منابع',
+    Storytelling: 'روایت مستند',
+  };
+  return labels[category];
+}
+
+function opportunityReasonText(
+  opportunity: ReturnType<ReturnType<typeof createEditorialOpportunityScorer>>,
+  language: 'fa' | 'en',
+): string {
+  if (language !== 'fa') return opportunity.reason;
+  const level = (value: number) => value >= 70 ? 'قوی' : value >= 40 ? 'متوسط' : 'محدود';
+  return [
+    'ارتباط با موضوع: ' + level(opportunity.components.relevance),
+    'پشتوانه منابع: ' + level(opportunity.components.evidenceBreadth),
+    'تازگی اطلاعات: ' + level(opportunity.components.freshness),
+    'تمایز زاویه: ' + level(opportunity.components.differentiation),
+  ].join('؛ ');
+}
+
 function buildCandidate(
   category: IdeaGenerationCategory,
   topic: string,
@@ -633,10 +661,10 @@ export function generateEditorialIdeas(input: GenerateEditorialIdeasInput): Idea
     candidate.opportunityScore = Math.max(0, Math.min(100,
       opportunity.score + (positivePreference ? 8 : 0) - (negativePreference ? 18 : 0)));
     candidate.opportunityConfidence = opportunity.confidence;
-    candidate.opportunityReason = opportunity.reason + (positivePreference
-      ? (input.language === 'fa' ? '; با موضوعات ذخیره‌شدهٔ موردعلاقه‌ات هم‌راستاست' : '; aligns with your saved positive topics')
+    candidate.opportunityReason = opportunityReasonText(opportunity, input.language ?? 'en') + (positivePreference
+      ? (input.language === 'fa' ? '؛ با موضوعاتی که قبلاً پسندیده‌ای هم‌راستاست' : '; aligns with your saved positive topics')
       : '') + (negativePreference
-        ? (input.language === 'fa' ? '; با موضوعی که قبلاً رد کرده‌ای هم‌پوشانی دارد' : '; overlaps a topic you previously rejected')
+        ? (input.language === 'fa' ? '؛ به موضوعی شبیه است که قبلاً نپسندیده‌ای' : '; overlaps a topic you previously rejected')
         : '');
     const anchorKey = normalizeResearchText(candidate.anchor);
     if (!anchorKey || usedAnchors.has(anchorKey) ||
@@ -690,23 +718,23 @@ export function generateEditorialIdeas(input: GenerateEditorialIdeasInput): Idea
         : historicalSources.length + ' historical publisher record(s) from saved research memory') : '',
       (priorMemory?.keyFindings.length ?? 0) + (priorMemory?.unresolvedQuestions.length ?? 0) + (priorMemory?.contradictions.length ?? 0) > 0
         ? (language === 'fa'
-          ? 'یافته‌ها، پرسش‌ها و اختلاف‌های ذخیره‌شده نیز بررسی شدند'
+          ? 'یافته‌ها، پرسش‌های بی‌پاسخ و اختلاف‌های قبلی هم بررسی شدند'
           : 'saved findings, open questions and discrepancies were also reviewed') : '',
       priorMemory?.history?.length
         ? (language === 'fa'
-          ? priorMemory.history.length + ' Snapshot تاریخی از تغییرات تحقیق بررسی شد'
+          ? priorMemory.history.length + ' گزارش قبلی از روند تغییرات تحقیق مرور شد'
           : priorMemory.history.length + ' historical research snapshots reviewed') : '',
     ].filter(Boolean).join(language === 'fa' ? ' و ' : ' and ');
     const concept = language === 'fa'
-      ? 'پرسش محوری: ' + candidate.question +
-        '\n\nزاویه محتوا: ' + candidate.category +
-        '\n\nچرا این ایده ساخته شد: ' + candidate.rationale +
-        '\n\nدامنه شواهد: ' + evidenceScope + '. این تعداد، فقط داده‌های همین تحقیق است و شاخص تقاضا یا محبوبیت نیست.' +
-        '\n\nارزش برای مخاطب: مخاطب می‌تواند مفهوم «' + candidate.anchor + '» را در چارچوب ' + topic + ' بفهمد و مرز میان مشاهده و تفسیر را تشخیص دهد.' +
-        '\n\nمسیر روایت: ' + candidate.storyPath +
-        '\n\nموارد لازم برای راستی‌آزمایی: ' + candidate.verification +
-        '\n\nاولویت تحریری موتور: ' + candidate.opportunityScore + '/100 · اطمینان داده‌ای: ' + candidate.opportunityConfidence + ' · ' + candidate.opportunityReason +
-        '\n\nسطح اطمینان کلی: ' + (confidence === 'moderate' ? 'متوسط' : 'پایین') + '؛ این سطح به تنوع و تعداد منابع موجود وابسته است و تضمین صحت ادعا نیست.'
+      ? 'پرسش اصلی: ' + candidate.question +
+        '\n\nزاویه پیشنهادی: ' + categoryLabel(candidate.category, language) +
+        '\n\nچرا این ایده پیشنهاد شده؟ ' + candidate.rationale +
+        '\n\nداده‌های بررسی‌شده: ' + evidenceScope + '. این شمارش فقط مربوط به همین تحقیق است و به معنی محبوبیت یا تقاضای مخاطب نیست.' +
+        '\n\nفایده برای مخاطب: این ویدئو باید کمک کند مخاطب مفهوم «' + candidate.anchor + '» را در موضوع ' + topic + ' بهتر بفهمد و فرق مشاهده با برداشت را تشخیص دهد.' +
+        '\n\nپیشنهاد برای روایت: ' + candidate.storyPath +
+        '\n\nپیش از تولید بررسی کن: ' + candidate.verification +
+        '\n\nاولویت پیشنهادی موتور: ' + candidate.opportunityScore + '/100 · اطمینان به داده‌ها: ' + (candidate.opportunityConfidence === 'high' ? 'زیاد' : candidate.opportunityConfidence === 'moderate' ? 'متوسط' : 'کم') + ' · ' + candidate.opportunityReason +
+        '\n\nاطمینان کلی: ' + (confidence === 'moderate' ? 'متوسط' : 'کم') + '؛ این برآورد فقط به تعداد و تنوع منابع موجود مربوط است و صحت ادعاها را تضمین نمی‌کند.'
       : 'Central question: ' + candidate.question +
         '\n\nEditorial angle: ' + candidate.category +
         '\n\nWhy this idea was generated: ' + candidate.rationale +
@@ -718,7 +746,7 @@ export function generateEditorialIdeas(input: GenerateEditorialIdeasInput): Idea
         '\n\nConfidence: ' + confidence + '; this reflects the amount and mix of available material, not a guarantee that any claim is true.';
 
     const note = language === 'fa'
-      ? 'ساخته‌شده توسط موتور محلی از ' + evidenceScope + '. هیچ درخواست تازه‌ای برای YouTube یا منبع خارجی جهت تولید این ایده ارسال نشد. عنوان‌ها، توضیحات، تصویرها و آمار خام YouTube در رکورد دائمی این ایده کپی نشده‌اند.'
+      ? 'این ایده با موتور داخلی و بر پایه داده‌های همین تحقیق ساخته شده است: ' + evidenceScope + '. برای ساخت آن درخواست تازه‌ای به یوتیوب یا سرویس خارجی ارسال نشد و عنوان، توضیحات، تصویر و آمار خام ویدئوها در اطلاعات ماندگار این ایده ذخیره نشده‌اند.'
       : 'Generated locally from ' + evidenceScope + '. No new YouTube or external request was made to generate this idea. Raw YouTube titles, descriptions, thumbnails and statistics were not copied into this durable Idea record.';
     output.push({
       id: uid(),

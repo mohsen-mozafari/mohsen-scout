@@ -15,7 +15,7 @@ void test('Persian UI keeps a mixed Persian-English paragraph RTL even when the 
 
 void test('English-only publisher and YouTube text stays LTR inside Persian UI', () => {
   assert.equal(resolveParagraphDirection('NASA confirms new JWST observation', 'fa'), 'ltr');
-  assert.equal(resolveParagraphDirection('عنوان انگلیسی ویدئو', 'en'), 'ltr');
+  assert.equal(resolveParagraphDirection('NASA video title', 'en'), 'ltr');
 });
 
 void test('opposite-direction runs are isolated without changing the original words', () => {

@@ -114,17 +114,17 @@ export function buildMultiParadigmAnalysis(input: MultiParadigmInput): ResearchP
     : 'Independent confirmation across multiple publisher families is not established.');
 
   const semanticFindings = [
-    fa ? 'پوشش واژگانی موضوع در پیکره بررسی‌شده ' + (lexicalCoverage * 100).toFixed(0) + '٪ است.'
+    fa ? 'از واژه‌های اصلی موضوع، ' + (lexicalCoverage * 100).toFixed(0) + '٪ در خبرها و ویدئوهای بررسی‌شده پیدا شد.'
       : 'Lexical coverage of topic terms in the inspected corpus is ' + (lexicalCoverage * 100).toFixed(0) + '%.',
     sharedTerms.length
-      ? (fa ? 'واژه‌های مشترک خبر و نمونه ویدئو: ' : 'Terms shared by publisher records and sampled videos: ') + sharedTerms.join(fa ? '، ' : ', ')
-      : (fa ? 'هم‌پوشانی واژگانی مشخصی میان دو مجموعه پیدا نشد.' : 'No clear lexical overlap was found between the two collections.'),
+      ? (fa ? 'عبارت‌های مشترک در خبرها و ویدئوها: ' : 'Terms shared by publisher records and sampled videos: ') + sharedTerms.join(fa ? '، ' : ', ')
+      : (fa ? 'عبارت مشترک روشنی میان خبرها و ویدئوهای این نمونه پیدا نشد.' : 'No clear lexical overlap was found between the two collections.'),
   ];
   const temporalEnough = datedNews.length >= 4 || input.wikiObservations.length >= 4;
   const temporalFindings = [
-    fa ? recentNews + ' گزارش در ۳۰ روز اخیر و ' + previousNews + ' گزارش در ۳۰ روز پیش از آن ثبت شده است.'
+    fa ? recentNews + '  گزارش در ۳۰ روز اخیر و ' + previousNews + '  گزارش در ۳۰ روز قبل از آن منتشر شده است.'
       : recentNews + ' publisher reports fall in the latest 30 days and ' + previousNews + ' in the preceding 30 days.',
-    fa ? 'سری ماهانه ویکی‌مدیا ' + input.wikiObservations.length + ' مشاهده دارد؛ جهت آن «' + input.trend.direction + '» است.'
+    fa ? 'داده ماهانه ویکی‌پدیا ' + input.wikiObservations.length + ' ماه داده دارد؛ جهت تغییر آن «' + input.trend.direction + '» است.'
       : 'The Wikimedia series has ' + input.wikiObservations.length + ' observations; its direction is "' + input.trend.direction + '".',
   ];
   if (input.trend.anomaly) temporalFindings.push(fa
@@ -137,60 +137,60 @@ export function buildMultiParadigmAnalysis(input: MultiParadigmInput): ResearchP
   const networkFindings = [
     fa ? input.entities.length + ' موجودیت و ' + input.relations.length + ' رابطه هم‌ذکری در گراف محلی استخراج شد.'
       : input.entities.length + ' entities and ' + input.relations.length + ' co-mention relations were extracted.',
-    centralEntities.length ? (fa ? 'موجودیت‌های پرتکرار/مرکزی: ' : 'Frequent/central entities: ') + centralEntities.join(fa ? '، ' : ', ')
-      : (fa ? 'موجودیت مرکزی قابل اتکایی استخراج نشد.' : 'No reliable central entity was extracted.'),
+    centralEntities.length ? (fa ? 'نام‌های پرتکرار و مرتبط: ' : 'Frequent/central entities: ') + centralEntities.join(fa ? '، ' : ', ')
+      : (fa ? 'نام یا ارتباط پرتکرار قابل اتکایی از این نمونه به دست نیامد.' : 'No reliable central entity was extracted.'),
   ];
   const contradictionCount = input.contradictions.length;
   const adversarialFindings = contradictionCount
     ? unique(input.contradictions, 4)
-    : [fa ? 'تناقض صریحی علامت‌گذاری نشد؛ نبود هشدار به معنی نبود تناقض نیست.'
+    : [fa ? 'اختلاف روشنی پیدا نشد؛ البته پیدا نشدن اختلاف، یکسان بودن همه گزارش‌ها را ثابت نمی‌کند.'
       : 'No explicit discrepancy was flagged; absence of a warning does not prove consistency.'];
   adversarialFindings.push(fa
-    ? input.gaps.length + ' خلأ تحقیق برای آزمون ادعاها باقی مانده است.'
+    ? input.gaps.length + ' هنوز چند پرسش بی‌پاسخ وجود دارد که باید پیش از نتیجه‌گیری بررسی شوند.'
     : input.gaps.length + ' research gaps remain for testing claims.');
 
   const causalFindings = [
-    fa ? 'هم‌زمانی خبرها، بازدید مقاله و نمونه ویدئو رابطه علّی را ثابت نمی‌کند.'
+    fa ? 'اینکه خبرها، بازدید مقاله و ویدئوها در یک زمان دیده شوند، ثابت نمی‌کند یکی باعث دیگری شده است.'
       : 'Co-occurrence among news, article pageviews and sampled videos does not establish causality.',
-    fa ? 'برای ادعای علّی به آزمایش، مقایسه خلاف‌واقع معتبر یا سازوکار مستند در منبع اولیه نیاز است.'
+    fa ? 'برای گفتن اینکه یک عامل باعث عامل دیگر شده، به آزمایش، مقایسه درست یا توضیح مستند در منبع اولیه نیاز داریم.'
       : 'Causal claims require an experiment, a defensible counterfactual comparison or a mechanism documented by a primary source.',
   ];
   const creativeDirections = unique([
-    fa ? 'سازوکار: چه فرایندی پدیده را ایجاد می‌کند و کدام اندازه‌گیری آن را نشان می‌دهد؟'
+    fa ? 'سازوکار: این پدیده چطور اتفاق می‌افتد و چه اندازه‌گیری‌ای آن را نشان می‌دهد؟'
       : 'Mechanism: what process creates the phenomenon, and which measurement demonstrates it?',
-    fa ? 'توضیح رقیب: چه عامل دیگری می‌تواند همین الگوی مشاهده‌شده را توضیح دهد؟'
+    fa ? 'توضیح جایگزین: چه عامل دیگری ممکن است همین نتیجه را به وجود آورده باشد؟'
       : 'Rival explanation: what other factor could produce the same observed pattern?',
-    fa ? 'مقایسه: کدام دو مأموریت، روش یا نتیجه را می‌توان با معیار یکسان مقایسه کرد؟'
+    fa ? 'مقایسه: کدام دو مأموریت یا نتیجه را می‌توان با یک معیار مشخص کنار هم گذاشت؟'
       : 'Comparison: which missions, methods or findings can be compared using the same criteria?',
     input.gaps[0] ? (fa ? 'خلأ تحقیق: ' : 'Research gap: ') + input.gaps[0]
-      : (fa ? 'مرز دانش: چه چیزی هنوز اندازه‌گیری یا تأیید نشده است؟' : 'Knowledge boundary: what remains unmeasured or unverified?'),
+      : (fa ? 'چه چیزی هنوز اندازه‌گیری یا تأیید نشده است؟' : 'Knowledge boundary: what remains unmeasured or unverified?'),
     contradictionCount
-      ? (fa ? 'حل اختلاف: تفاوت منابع از تاریخ، واحد یا روش اندازه‌گیری ناشی می‌شود؟'
+      ? (fa ? 'بررسی اختلاف: تفاوت تاریخ، واحد یا روش اندازه‌گیری باعث اختلاف گزارش‌ها شده است؟'
         : 'Resolve the discrepancy: do differing sources use different dates, units or methods?')
-      : (fa ? 'آزمون زمانی: آیا الگو در چند بازه مستقل نیز تکرار می‌شود؟'
+      : (fa ? 'بررسی در زمان: آیا همین الگو در چند بازه جداگانه هم دیده می‌شود؟'
         : 'Temporal test: does the pattern recur across independent periods?'),
   ], 5);
 
   const actions: string[] = [];
-  if (!input.news.length) actions.push(fa ? 'یک سند اولیه معتبر و مستقیماً مرتبط با موضوع پیدا کن.'
+  if (!input.news.length) actions.push(fa ? 'یک سند اولیه و معتبر درباره همین موضوع پیدا کن.'
     : 'Retrieve a credible primary document directly related to the topic.');
   if (input.independentPublisherFamilies < 2) actions.push(fa
-    ? 'ادعاهای مهم را با یک خانواده ناشر مستقل دیگر تطبیق بده.'
+    ? 'ادعاهای مهم را در یک منبع مستقل دیگر هم بررسی کن.'
     : 'Check important claims against another independent publisher family.');
   if (contradictionCount) actions.push(fa
     ? 'تاریخ، واحد، روش اندازه‌گیری و منبع اصلی هر اختلاف را کنار هم مقایسه کن.'
     : 'Compare date, unit, measurement method and original source for each discrepancy.');
   if (input.wikiObservations.length < 4) actions.push(fa
-    ? 'پیش از تفسیر روند، دست‌کم چهار مشاهده ماهانه با تعریف ثابت جمع‌آوری کن.'
+    ? 'برای بررسی روند، دست‌کم چهار ماه داده با روش یکسان جمع کن.'
     : 'Collect at least four consistently defined monthly observations before interpreting a trend.');
   if (input.videos.length < 3) actions.push(fa
-    ? 'نمونه ویدئو را گسترش بده و نمونه کوچک را نماینده کل بازار فرض نکن.'
+    ? 'ویدئوهای بیشتری را بررسی کن؛ چند نمونه محدود را نماینده همه محتواها ندان.'
     : 'Broaden the video sample; do not treat a small sample as representative of the whole market.');
   if (input.entities.length < 3 || input.relations.length < 2) actions.push(fa
-    ? 'موجودیت‌ها و روابط را از منابع اصلی استخراج و راستی‌آزمایی کن.'
+    ? 'نام‌ها و ارتباط‌های مهم را از متن منبع اصلی استخراج و بررسی کن.'
     : 'Extract related entities and relationships from primary sources, then verify them.');
   if (!actions.length) actions.push(fa
-    ? 'یک تفسیر رقیب و مدرک لازم برای رد یا تأیید آن را مشخص کن.'
+    ? 'یک توضیح جایگزین مطرح کن و مشخص کن چه مدرکی آن را تأیید یا رد می‌کند.'
     : 'State a rival interpretation and identify evidence needed to falsify or support it.');
   const nextActions = unique(actions, 6);
 
@@ -206,32 +206,32 @@ export function buildMultiParadigmAnalysis(input: MultiParadigmInput): ResearchP
       readiness === 'developing' ? 'Analysis is still developing' : 'Exploratory; evidence is insufficient';
 
   const lenses: ParadigmLens[] = [
-    makeLens('evidence', fa ? '۱. کیفیت و استقلال شواهد' : '1. Evidence quality and independence', evidenceStatus,
-      fa ? 'بررسی منشأ، تازگی، تنوع و تعداد شواهد.' : 'Reviews provenance, freshness, diversity and sample size.',
+    makeLens('evidence', fa ? '۱. اعتبار و تنوع منابع' : '1. Evidence quality and independence', evidenceStatus,
+      fa ? 'بررسی می‌کند اطلاعات از کجا آمده‌اند، چقدر تازه‌اند و چند منبع مستقل آن‌ها را پوشش می‌دهند.' : 'Reviews provenance, freshness, diversity and sample size.',
       evidenceFindings, [fa ? 'چند خوراک از یک خانواده ناشر، تأیید مستقل متعدد نیست.' : 'Multiple feeds from one publisher family are not multiple independent confirmations.'], fa),
-    makeLens('semantic', fa ? '۲. ارتباط معنایی و واژگانی' : '2. Semantic and lexical alignment',
+    makeLens('semantic', fa ? '۲. ارتباط موضوعی خبرها و ویدئوها' : '2. Semantic and lexical alignment',
       sharedTerms.length >= 2 ? 'mixed' : 'limited',
-      fa ? 'مقایسه واژگان موضوع، گزارش‌ها و نمونه ویدئوها.' : 'Compares topic vocabulary, publisher reports and sampled video titles.',
-      semanticFindings, [fa ? 'هم‌پوشانی واژگانی اثبات درک عمیق یا توافق factual نیست.' : 'Lexical overlap does not prove deep understanding or factual agreement.'], fa),
-    makeLens('temporal', fa ? '۳. پویایی زمانی' : '3. Temporal dynamics', temporalEnough ? 'mixed' : 'limited',
-      fa ? 'تفکیک قدمت گزارش‌ها از جهت سری زمانی ویکی‌مدیا.' : 'Separates publication recency from the Wikimedia time-series direction.',
+      fa ? 'بررسی می‌کند خبرها و ویدئوهای نمونه واقعاً درباره کدام بخش از موضوع‌اند.' : 'Compares topic vocabulary, publisher reports and sampled video titles.',
+      semanticFindings, [fa ? 'مشترک بودن چند واژه به معنی یکی بودن محتوا یا تأیید متقابل خبرها نیست.' : 'Lexical overlap does not prove deep understanding or factual agreement.'], fa),
+    makeLens('temporal', fa ? '۳. تغییرات در طول زمان' : '3. Temporal dynamics', temporalEnough ? 'mixed' : 'limited',
+      fa ? 'تازه بودن خبرها را از تغییر بازدید مقاله‌های ویکی‌پدیا جداگانه بررسی می‌کند.' : 'Separates publication recency from the Wikimedia time-series direction.',
       temporalFindings, [fa ? 'تعداد خبرها معادل تقاضا نیست.' : 'Article counts are not demand.'], fa),
-    makeLens('network', fa ? '۴. گراف موجودیت‌ها و روابط' : '4. Entity and relationship graph',
+    makeLens('network', fa ? '۴. نام‌ها و ارتباط‌های مهم' : '4. Entity and relationship graph',
       input.entities.length >= 3 && input.relations.length >= 2 ? 'mixed' : 'limited',
-      fa ? 'شناسایی موجودیت‌های پرتکرار و ارتباطات هم‌ذکری.' : 'Identifies frequent entities and document co-mentions.',
+      fa ? 'نام‌ها و ارتباط‌هایی را پیدا می‌کند که در چند منبع تکرار شده‌اند.' : 'Identifies frequent entities and document co-mentions.',
       networkFindings, [fa ? 'هم‌ذکری رابطه رسمی یا اثر علّی را اثبات نمی‌کند.' : 'Co-mention does not prove a formal relationship or causal influence.'], fa),
-    makeLens('adversarial', fa ? '۵. تفکر نقادانه و تناقض‌سنجی' : '5. Adversarial review',
+    makeLens('adversarial', fa ? '۵. بررسی اختلاف‌ها و دیدگاه مخالف' : '5. Adversarial review',
       contradictionCount ? 'warning' : input.gaps.length ? 'mixed' : 'limited',
-      fa ? 'آشکارسازی اختلاف‌ها و ادعاهای تأییدنشده.' : 'Surfaces discrepancies and claims that remain unverified.',
+      fa ? 'اختلاف گزارش‌ها و ادعاهایی را که هنوز سند کافی ندارند مشخص می‌کند.' : 'Surfaces discrepancies and claims that remain unverified.',
       adversarialFindings, [fa ? 'اختلاف باید با منبع اولیه و زمینه اندازه‌گیری بررسی شود.' : 'Discrepancies must be checked against primary sources and measurement context.'], fa),
-    makeLens('causal', fa ? '۶. بررسی علّی و خلاف‌واقع' : '6. Causal and counterfactual reasoning', 'hypothesis',
-      fa ? 'جلوگیری از اشتباه گرفتن هم‌بستگی با علت و معلول.' : 'Prevents correlation from being mistaken for cause and effect.',
+    makeLens('causal', fa ? '۶. بررسی علت و معلول' : '6. Causal and counterfactual reasoning', 'hypothesis',
+      fa ? 'اجازه نمی‌دهد هم‌زمانی دو اتفاق را به‌اشتباه رابطه علت و معلولی بدانیم.' : 'Prevents correlation from being mistaken for cause and effect.',
       causalFindings, [fa ? 'موتور آزمایش علّی اجرا نمی‌کند.' : 'The local engine does not run causal experiments.'], fa),
-    makeLens('creative', fa ? '۷. ترکیب خلاقانه و فرضیه‌سازی' : '7. Creative synthesis', 'hypothesis',
-      fa ? 'ساخت مسیر تحقیق از شکاف‌ها و تفسیرهای رقیب.' : 'Creates research directions from gaps and rival interpretations.',
+    makeLens('creative', fa ? '۷. پیدا کردن زاویه‌های تازه' : '7. Creative synthesis', 'hypothesis',
+      fa ? 'از پرسش‌های بی‌پاسخ و توضیح‌های جایگزین، مسیرهای تازه‌ای برای تحقیق می‌سازد.' : 'Creates research directions from gaps and rival interpretations.',
       creativeDirections, [fa ? 'این موارد فرضیه‌اند، نه یافته اثبات‌شده.' : 'These are hypotheses, not established findings.'], fa),
-    makeLens('decision', fa ? '۸. اقدام بعدی بهینه' : '8. Next-best research actions', 'mixed',
-      fa ? 'اولویت‌بندی گام‌هایی که بیشترین عدم‌قطعیت را کاهش می‌دهند.' : 'Prioritizes steps most likely to reduce uncertainty.',
+    makeLens('decision', fa ? '۸. بهترین گام بعدی برای تحقیق' : '8. Next-best research actions', 'mixed',
+      fa ? 'گام بعدی را بر اساس اینکه کدام کار ابهام مهم‌تری را برطرف می‌کند پیشنهاد می‌دهد.' : 'Prioritizes steps most likely to reduce uncertainty.',
       nextActions, [fa ? 'با ورود داده جدید، پیشنهادها دوباره محاسبه می‌شوند.' : 'Recommendations are recalculated when new evidence arrives.'], fa),
   ];
 
@@ -239,15 +239,15 @@ export function buildMultiParadigmAnalysis(input: MultiParadigmInput): ResearchP
     version: 1, readiness, readinessLabel,
     synthesis: fa
       ? readiness === 'well-supported'
-        ? 'چند مسیر مستقل شواهد در دسترس است، اما نتیجه به نمونه فعلی محدود است. اختلاف‌ها و محدودیت‌های منابع را جدا نگه دار.'
+        ? 'چند منبع مستقل از موضوع پشتیبانی می‌کنند، اما نتیجه را فقط به همین نمونه تعمیم بده. اختلاف‌ها و محدودیت‌های منابع را هم جداگانه بررسی کن.'
         : readiness === 'developing'
-          ? 'داده برای ساخت چند فرضیه مفید است، اما بعضی ابعاد اصلی ضعیف‌اند. اقدام‌های بعدی برای کاهش عدم‌قطعیت اولویت دارند.'
-          : 'شواهد کافی برای نتیجه‌گیری وجود ندارد. خروجی موتور را نقشه پرسش‌های تحقیق بدان، نه پاسخ قطعی.'
+          ? 'داده‌های فعلی چند فرضیه قابل بررسی می‌سازند، اما هنوز بعضی بخش‌ها ناقص‌اند. اول سراغ کاری برو که ابهام اصلی را کمتر می‌کند.'
+          : 'هنوز شواهد کافی برای نتیجه‌گیری نداریم. این خروجی را فهرستی از پرسش‌های تحقیق بدان، نه جواب نهایی.'
       : readiness === 'well-supported'
-        ? 'Several independent evidence tracks are available, but conclusions remain bounded by the current sample.'
+        ? 'Several independent sources support parts of the picture, but the conclusion should stay limited to this sample.'
         : readiness === 'developing'
-          ? 'The data can support several hypotheses, but key dimensions remain weak. Prioritize actions that reduce uncertainty.'
-          : 'There is not enough evidence for a substantive conclusion. Use the output as a research-question map, not a definitive answer.',
+          ? 'The data suggests several useful questions, but important gaps remain. Start with the checks that would remove the biggest uncertainty.'
+          : 'There is not enough evidence for a firm conclusion. Treat this as a list of questions to investigate, not a final answer.',
     lenses, creativeDirections, nextActions, centralEntities,
   };
 }

@@ -318,34 +318,34 @@ export function buildInternalResearch(input: InternalResearchInput): InternalRes
   const angles: InternalEngineAngle[] = [
     {
       id: 'evidence-audit',
-      title: text('What the latest source actually establishes', 'آخرین منبع دقیقاً چه چیزی را ثابت می‌کند؟') ,
+      title: text('What the latest report actually tells us', 'از تازه‌ترین گزارش چه چیزی می‌دانیم؟') ,
       hook: newestNews
-        ? 'با گزارش دقیق منبع شروع کن: «' + newestNews.title + '». ناشر چه چیزی را مشاهده کرده و کدام بخش هنوز تفسیر است؟'
-        : 'برای تبدیل ' + topic + ' به یک ویدئوی مستند، ابتدا به یک مشاهده یا سند اولیه نیاز است.',
+        ? 'با خود گزارش شروع کن: «' + newestNews.title + '». گزارش دقیقاً چه چیزی را ثبت کرده و چه بخشی هنوز برداشت یا تفسیر است؟'
+        : 'برای ساخت ویدئویی مستند درباره ' + topic + '، اول باید یک گزارش یا سند اولیه پیدا کنیم.',
       approach: newestNews
-        ? 'شروع روایت را بر گزارش پیوندشده و تاریخ آن بنا کن. نتیجه اندازه‌گیری‌شده را از تفسیر و پیش‌بینی جدا کن و عددی فراتر از منبع اضافه نکن.'
+        ? 'روایت را از همان گزارش و تاریخ انتشارش شروع کن. آنچه واقعاً اندازه‌گیری شده را از برداشت‌ها جدا نگه دار و عددی که در منبع نیست اضافه نکن.'
         : 'پیش از نگارش، صفحه مأموریت، مقاله یا اطلاعیه رسمی را پیدا کن و مشاهده مستقیم، تاریخ و روش آن را مشخص کن.',
       verification: text('Can each factual sentence be traced to the linked primary source or a cited paper?', 'آیا می‌توان هر جمله واقعی را به منبع اولیه پیوندشده یا مقاله ارجاع‌شده ردیابی کرد؟'),
     },
     {
       id: 'youtube-sample',
-      title: text(bestVideo ? 'What the returned YouTube sample emphasizes' : 'How to test audience-facing explanations', bestVideo ? 'نمونه یوتیوب دریافت‌شده بر چه چیزی تأکید دارد؟' : 'چگونه توضیح مناسب مخاطب را آزمایش کنیم؟'),
+      title: text(bestVideo ? 'What the sampled YouTube videos focus on' : 'How to test audience-facing explanations', bestVideo ? 'ویدئوهای بررسی‌شده بیشتر به چه نکته‌ای پرداخته‌اند؟' : 'چگونه توضیح مناسب مخاطب را آزمایش کنیم؟'),
       hook: bestVideo
         ? 'یکی از نمونه‌های دریافت‌شده «' + bestVideo.title + '» است. این عنوان چه وعده‌ای می‌دهد و چه توضیح مفیدتری می‌توان به آن افزود؟'
         : 'چه نوع توضیحی می‌تواند ' + topic + ' را برای مخاطبی که با موضوع آشنا نیست قابل فهم کند؟',
       approach: bestVideo
-        ? 'عنوان، تاریخ انتشار و آمار خام بازدید و پسند نمونه‌های مرتبط را بررسی کن. وعده هر عنوان را با شواهد منبع بسنج. این‌ها نمونه‌اند، نه فهرست کامل رقبا.'
-        : 'با بررسی دستی مجموعه‌ای از ویدئوهای مرتبط، پرسش‌ها و قالب‌هایی را که از قبل پوشش داده شده‌اند مشخص کن.',
+        ? 'عنوان و تاریخ ویدئوهای مرتبط را کنار هم بگذار و ببین هرکدام چه وعده‌ای به مخاطب می‌دهند. بعد آن وعده را با منبع اصلی مقایسه کن؛ این چند ویدئو فقط یک نمونه‌اند، نه تصویر کامل یوتیوب.'
+        : 'چند ویدئوی واقعاً مرتبط را هم دستی بررسی کن تا ببینی چه پرسش‌هایی قبلاً جواب گرفته‌اند و چه زاویه‌ای هنوز جای کار دارد.',
       verification: text('Is the returned sample large and relevant enough for the comparison being made? What is still missing?', 'آیا نمونه دریافت‌شده برای این مقایسه به‌اندازه کافی بزرگ و مرتبط است؟ چه چیزی هنوز کم است؟'),
     },
     {
       id: 'open-question',
       title: text('The most important unanswered question', 'مهم‌ترین پرسش بی‌پاسخ'),
-      hook: 'شاید بهترین زاویهٔ اصیل، بخشی از ' + topic + ' باشد که منابع موجود هنوز پاسخی برای آن ندارند.',
+      hook: 'شاید زاویه تازه در بخشی از ' + topic + ' باشد که منابع فعلی هنوز جواب روشنی برایش ندارند.',
       approach: sharedTerms.length
-        ? 'تیتر ناشران و عنوان ویدئوها در این واژه‌ها هم‌پوشانی دارند: ' + sharedTerms.slice(0, 4).join('، ') + '؛ فراتر از واژه‌های تکراری برو و سازوکار، عدم‌قطعیت یا اندازه‌گیری حل‌نشده را پیدا کن.'
-        : 'سازوکار حل‌نشده، تفسیرهای رقیب یا اندازه‌گیری مفقود را پیدا کن و پرسش علمی باز را از گمانه‌زنی جدا نگه دار.',
-      verification: text('Which uncertainty is explicitly acknowledged by the publisher or cited paper, and what evidence could resolve it?', 'ناشر یا مقاله ارجاع‌شده کدام عدم‌قطعیت را صریحاً پذیرفته و چه مدرکی می‌تواند آن را روشن کند؟'),
+        ? 'تیتر ناشران و عنوان ویدئوها در این واژه‌ها هم‌پوشانی دارند: ' + sharedTerms.slice(0, 4).join('، ') + '؛ به تکرار واژه‌ها بسنده نکن؛ ببین چه سازوکاری پشت موضوع است، چه چیزی هنوز قطعی نیست و کدام اندازه‌گیری کم است.'
+        : 'یک پرسش بی‌پاسخ، توضیح جایگزین یا داده‌ای را که هنوز اندازه‌گیری نشده پیدا کن؛ حدس را هم جای واقعیت ننشان.',
+      verification: text('Which uncertainty is explicitly acknowledged by the publisher or cited paper, and what evidence could resolve it?', 'منبع اصلی چه چیزی را هنوز نامطمئن می‌داند؟ چه داده‌ای می‌تواند این ابهام را کمتر کند؟'),
     },
   ];
 
@@ -403,10 +403,10 @@ export function buildInternalResearch(input: InternalResearchInput): InternalRes
   const evidenceTypes = Number(matchedNews.length > 0) + Number(Boolean(input.wiki)) + Number(recentMatchedVideoCount > 0);
   const confidence: InternalResearchResult['intelligence']['confidence'] =
     evidenceTypes >= 3 && matchedSourceQuality.independentPublishers >= 2 && trend.observations >= 4 && recentMatchedVideoCount >= 3
-      ? { level: 'high', reason: text('Several different evidence types are available, with multiple publisher families and a usable monthly series. This is still sample-scoped.', 'چند نوع شاهد، چند گروه مستقل ناشر و یک سری زمانی ماهانه قابل استفاده موجود است؛ بااین‌حال نتیجه همچنان محدود به همین نمونه است.') }
+      ? { level: 'high', reason: text('Several kinds of evidence are available, including independent publishers and a usable monthly series. The conclusion still applies only to this sample.', 'چند نوع شاهد و چند ناشر مستقل در دسترس‌اند و داده ماهانه هم وجود دارد؛ بااین‌حال این نتیجه فقط درباره نمونه بررسی‌شده صدق می‌کند.') }
       : evidenceTypes >= 2 && (matchedSourceQuality.independentPublishers >= 2 || trend.observations >= 4 || recentMatchedVideoCount >= 3)
-        ? { level: 'moderate', reason: text('More than one evidence type is available, but source independence, sample size or historical depth is incomplete.', 'بیش از یک نوع شاهد در دسترس است، اما استقلال منابع، اندازه نمونه یا عمق داده تاریخی هنوز کامل نیست.') }
-        : { level: 'low', reason: text('The current evidence is limited in source diversity, sample size or historical depth.', 'شواهد فعلی از نظر تنوع منابع، اندازه نمونه یا عمق تاریخی محدود است.') };
+        ? { level: 'moderate', reason: text('Several kinds of evidence are available, but the sample still lacks enough independent sources or historical depth.', 'چند نوع داده داریم، اما تعداد یا تنوع منابع و سابقه زمانی هنوز برای نتیجه‌گیری محکم کافی نیست.') }
+        : { level: 'low', reason: text('The current sample is limited in source variety, size or historical depth.', 'داده‌های فعلی از نظر تعداد و تنوع منابع یا سابقه زمانی محدودند.') };
   const gaps: string[] = [];
   if (!matchedNews.length) gaps.push(text('No direct publisher headline matched the requested topic.', 'هیچ تیتر مستقیمی از ناشران با موضوع درخواستی تطبیق نداشت.'));
   if (matchedSourceQuality.independentPublishers < 2) gaps.push(text('Independent publisher confirmation among directly relevant records is limited.', 'تأیید از سوی ناشران مستقل در میان رکوردهای مستقیماً مرتبط محدود است.'));

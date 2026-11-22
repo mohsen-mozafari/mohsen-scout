@@ -1,6 +1,8 @@
 import { type ReactNode, useState } from 'react';
 import {
+  isolateMixedDirectionNode,
   resolveNodeDirection,
+  resolveParagraphDirection,
   resolveTextDirection,
   translateNode,
   translateText,
@@ -418,10 +420,10 @@ function PageHeading({
   const language = useScout((s) => s.data.preferences.uiLanguage ?? 'fa');
   const translatedTitle = translateText(title, language);
   const translatedEyebrow = eyebrow ? translateText(eyebrow, language) : 'WORKSPACE';
-  const direction = resolveTextDirection(translatedTitle);
+  const direction = resolveParagraphDirection(translatedTitle, language);
   return (
     <View style={styles.intro}>
-      <Text style={[styles.eyebrow, { writingDirection: resolveTextDirection(translatedEyebrow) }]}>
+      <Text style={[styles.eyebrow, { writingDirection: resolveParagraphDirection(translatedEyebrow, language) }]}>
         {translatedEyebrow}
       </Text>
       <Text style={[styles.title, { writingDirection: direction, textAlign: direction === 'rtl' ? 'right' : 'left' }]}>
@@ -444,7 +446,7 @@ export function ScreenIntro({
   const language = useScout((s) => s.data.preferences.uiLanguage ?? 'fa');
   const translatedTitle = translateText(title, language);
   const translatedEyebrow = translateText(eyebrow, language);
-  const direction = resolveTextDirection(translatedTitle);
+  const direction = resolveParagraphDirection(translatedTitle, language);
   return (
     <View style={styles.intro}>
       {Icon ? (
@@ -452,7 +454,7 @@ export function ScreenIntro({
           <Icon color={p.purple} size={19} strokeWidth={1.9} />
         </View>
       ) : null}
-      <Text style={[styles.eyebrow, { writingDirection: resolveTextDirection(translatedEyebrow) }]}>{translatedEyebrow}</Text>
+      <Text style={[styles.eyebrow, { writingDirection: resolveParagraphDirection(translatedEyebrow, language) }]}>{translatedEyebrow}</Text>
       <Text style={[styles.title, { writingDirection: direction, textAlign: direction === 'rtl' ? 'right' : 'left' }]}>{translatedTitle}</Text>
     </View>
   );
@@ -461,15 +463,17 @@ export function ScreenIntro({
 export function Txt({ children, muted = false }: { children: ReactNode; muted?: boolean }) {
   const language = useScout((s) => s.data.preferences.uiLanguage ?? 'fa');
   const content = translateNode(children, language);
-  const direction = resolveNodeDirection(content);
-  return <Text style={[muted ? styles.muted : styles.text, { writingDirection: direction, textAlign: direction === 'rtl' ? 'right' : 'left' }]}>{content}</Text>;
+  const direction = resolveNodeDirection(content, language);
+  const isolatedContent = isolateMixedDirectionNode(content, direction);
+  return <Text style={[muted ? styles.muted : styles.text, { writingDirection: direction, textAlign: direction === 'rtl' ? 'right' : 'left' }]}>{isolatedContent}</Text>;
 }
 
 export function Heading({ children }: { children: ReactNode }) {
   const language = useScout((s) => s.data.preferences.uiLanguage ?? 'fa');
   const content = translateNode(children, language);
-  const direction = resolveNodeDirection(content);
-  return <Text style={[styles.heading, { writingDirection: direction, textAlign: direction === 'rtl' ? 'right' : 'left' }]}>{content}</Text>;
+  const direction = resolveNodeDirection(content, language);
+  const isolatedContent = isolateMixedDirectionNode(content, direction);
+  return <Text style={[styles.heading, { writingDirection: direction, textAlign: direction === 'rtl' ? 'right' : 'left' }]}>{isolatedContent}</Text>;
 }
 
 export function SourceText({ children, muted = false, numberOfLines }: { children: ReactNode; muted?: boolean; numberOfLines?: number }) {
@@ -490,14 +494,15 @@ export function SourceTitle({ children }: { children: ReactNode }) {
 export function BadgeText({ children }: { children: string }) {
   const language = useScout((s) => s.data.preferences.uiLanguage ?? 'fa');
   const content = translateText(children, language);
-  const direction = resolveTextDirection(content);
-  return <Text style={[styles.badge, { writingDirection: direction, textAlign: direction === 'rtl' ? 'right' : 'left' }]}>{content}</Text>;
+  const direction = resolveParagraphDirection(content, language);
+  const isolatedContent = isolateMixedDirectionNode(content, direction);
+  return <Text style={[styles.badge, { writingDirection: direction, textAlign: direction === 'rtl' ? 'right' : 'left' }]}>{isolatedContent}</Text>;
 }
 
 function PageError({ message, onRetry }: { message: string; onRetry: () => void }) {
   const language = useScout((s) => s.data.preferences.uiLanguage ?? 'fa');
   const translatedMessage = translateText(message, language);
-  const direction = resolveTextDirection(translatedMessage);
+  const direction = resolveParagraphDirection(translatedMessage, language);
   return (
     <View style={styles.errorBox}>
       <View style={styles.row}>
@@ -620,7 +625,8 @@ export function Action({
 }) {
   const language = useScout((s) => s.data.preferences.uiLanguage ?? 'fa');
   const label = translateText(children, language);
-  const direction = resolveTextDirection(label);
+  const direction = resolveParagraphDirection(label, language);
+  const isolatedLabel = isolateMixedDirectionText(label, direction);
   const foreground = secondary ? p.text : p.background;
   return (
     <Pressable
@@ -644,7 +650,7 @@ export function Action({
       ) : Icon ? (
         <Icon size={17} color={danger ? p.danger : foreground} strokeWidth={2} />
       ) : null}
-      <Text numberOfLines={2} style={[styles.actionLabel, { color: danger ? p.danger : foreground, writingDirection: direction, textAlign: Icon ? direction === 'rtl' ? 'right' : 'left' : 'center', flex: 1 }]}>{busy ? translateText('Working…', language) : label}</Text>
+      <Text numberOfLines={2} style={[styles.actionLabel, { color: danger ? p.danger : foreground, writingDirection: direction, textAlign: Icon ? direction === 'rtl' ? 'right' : 'left' : 'center', flex: 1 }]}>{busy ? translateText('Working…', language) : isolatedLabel}</Text>
     </Pressable>
   );
 }
@@ -668,8 +674,8 @@ export function Field({
   const translatedLabel = translateText(label, language);
   const translatedPlaceholder = placeholder ? translateText(placeholder, language) : undefined;
   const seed = value.trim() || translatedPlaceholder?.trim() || translatedLabel;
-  const direction = seed ? resolveTextDirection(seed) : language === 'fa' ? 'rtl' : 'ltr';
-  const labelDirection = resolveTextDirection(translatedLabel);
+  const direction = seed ? resolveParagraphDirection(seed, language) : language === 'fa' ? 'rtl' : 'ltr';
+  const labelDirection = resolveParagraphDirection(translatedLabel, language);
   return (
     <View style={{ gap: 7, width: '100%' }}>
       <Text style={[styles.label, { textAlign: labelDirection === 'rtl' ? 'right' : 'left', writingDirection: labelDirection }]}>{translatedLabel}</Text>
@@ -707,7 +713,7 @@ export function Choices<T extends string>({
 }) {
   const language = useScout((s) => s.data.preferences.uiLanguage ?? 'fa');
   const translatedLabel = label ? translateText(label, language) : '';
-  const direction = resolveTextDirection(translatedLabel);
+  const direction = resolveParagraphDirection(translatedLabel, language);
   return (
     <View style={{ gap: 9 }}>
       {label ? (
@@ -853,7 +859,7 @@ export function Fold({
   const language = useScout((s) => s.data.preferences.uiLanguage ?? 'fa');
   const translatedTitle = translateText(title, language);
   const translatedSummary = summary ? translateText(summary, language) : '';
-  const direction = resolveTextDirection(translatedTitle);
+  const direction = resolveParagraphDirection(translatedTitle, language);
   return (
     <View style={styles.fold}>
       <Pressable

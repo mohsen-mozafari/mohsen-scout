@@ -528,6 +528,93 @@ const fa: Record<string, string> = {
   'DIRECT ACCESS': 'دسترسی مستقیم',
   'Cosmic News': 'اخبار کیهانی',
   'Idea workspace': 'فضای ایده‌ها',
+  'Evidence audit': 'بررسی شواهد',
+  'Explainer': 'توضیح ساده',
+  'Comparison': 'مقایسه',
+  'Timeline': 'خط زمانی',
+  'Open question': 'پرسش بی‌پاسخ',
+  'Cross-source': 'مقایسه میان منابع',
+  'Storytelling': 'روایت مستند',
+  'low': 'کم',
+  'moderate': 'متوسط',
+  'high': 'زیاد',
+  'Source findings': 'یافته‌های منابع',
+  'Verification checklist': 'فهرست راستی‌آزمایی',
+  'Research gaps': 'خلأهای پژوهش',
+  'Potential discrepancies': 'اختلاف‌های احتمالی منابع',
+  'Local engine summary': 'خلاصه موتور داخلی',
+  'Processed evidence signals': 'شواهد بررسی‌شده',
+  'Local confidence': 'میزان اطمینان',
+  'Topic': 'موضوع',
+  'Concept': 'ایده اصلی',
+  'Editorial angle': 'زاویه محتوایی',
+  'Evidence scope': 'دامنه شواهد',
+  'Audience value': 'ارزش برای مخاطب',
+  'Suggested story path': 'مسیر پیشنهادی روایت',
+  'Verify before production': 'پیش از تولید بررسی کن',
+  'Engine editorial priority': 'اولویت محتوایی موتور',
+  'Evidence confidence': 'میزان اطمینان شواهد',
+  'Confidence': 'میزان اطمینان',
+  'What remains unknown': 'چه چیزهایی هنوز مشخص نیست؟',
+  'Next action': 'اقدام بعدی',
+  'Useful findings': 'یافته‌های مفید',
+  'Adversarial check': 'نقد و بررسی مخالف',
+  'Missing data': 'داده‌های موردنیاز',
+  'Opening': 'شروع',
+  'Context': 'زمینه',
+  'Evidence': 'شواهد',
+  'Explanation': 'توضیح',
+  'Limits': 'محدودیت‌ها',
+  'Payoff': 'چرا این موضوع مهم است؟',
+  'Closing': 'پایان‌بندی',
+  'HOOK': 'شروع ویدئو',
+  'CONTEXT': 'زمینه',
+  'SOURCE-LED EVIDENCE': 'شواهد و منابع',
+  'EXPLANATION': 'توضیح',
+  'LIMITS': 'محدودیت‌ها',
+  'CLOSING': 'پایان‌بندی',
+  'Internal research engine': 'موتور تحقیق داخلی',
+  'Video outline': 'طرح ویدئو',
+  'Script draft structure': 'پیش‌نویس ساختار روایت',
+  'Primary source': 'منبع اولیه',
+  'Primary sources': 'منابع اولیه',
+  'Research question': 'پرسش پژوهش',
+  'Evidence quality': 'کیفیت شواهد',
+  'Independent publisher groups': 'گروه‌های مستقل ناشر',
+  'Current and historical publisher records': 'گزارش‌های تازه و قدیمی ناشران',
+  'No fresh dated evidence record': 'شاهد تاریخ‌دار تازه‌ای در دسترس نیست',
+  'strong topic/anchor alignment': 'ارتباط قوی با موضوع و محور ایده',
+  'limited direct topic alignment': 'ارتباط مستقیم با موضوع محدود است',
+  'no directly relevant publisher group': 'گروه ناشر مرتبطی پیدا نشد',
+  'supporting context record(s) matched': 'مورد زمینه‌ای مرتبط پیدا شد',
+  'relevant YouTube channel(s)': 'کانال مرتبط یوتیوب',
+  'raw view counts are not treated as demand or growth indicators': 'تعداد بازدید خام، نشانه تقاضا یا رشد در نظر گرفته نمی‌شود',
+  'Saved research memory': 'حافظه پژوهش ذخیره‌شده',
+  'No directly relevant publisher article was available for this topic. The internal report will remain exploratory until primary evidence is found.': 'گزارش خبریِ مستقیمی درباره این موضوع پیدا نشد. تا وقتی منبع اولیه‌ای در دسترس نباشد، نتیجه این تحقیق صرفاً اکتشافی است.',
+  'YouTube sample': 'نمونه یوتیوب',
+  'Official publisher coverage': 'پوشش خبری ناشران رسمی',
+  'Retrieved official news headlines': 'عنوان خبرهای دریافت‌شده از منابع رسمی',
+  'Retrieved YouTube titles and public metrics': 'عنوان و آمار عمومی ویدئوهای دریافت‌شده از یوتیوب',
+  'Shared vocabulary across retrieved sources': 'عبارت‌های مشترک میان منابع بررسی‌شده',
+  'Evidence base': 'مبنای شواهد',
+  'Knowledge boundary': 'مرز دانسته‌ها',
+  'Rival explanation': 'توضیح جایگزین',
+  'Temporal test': 'بررسی الگوی زمانی',
+  'Mechanism': 'سازوکار',
+  'Research gap:': 'خلأ پژوهش:',
+  'Reasonably multi-source supported; sample-scoped': 'چند منبع از نتیجه پشتیبانی می‌کنند؛ اما نتیجه به همین نمونه محدود است',
+  'Analysis is still developing': 'تحلیل هنوز کامل نشده است',
+  'Exploratory; evidence is insufficient': 'نتیجه فعلاً اکتشافی است و شواهد کافی نیست',
+  'Decision': 'تصمیم',
+  'Useful Findings': 'یافته‌های مفید',
+  'Adversarial Check': 'نقد مخالف',
+  'Next Action': 'اقدام بعدی',
+  'Missing Data': 'داده‌های مفقود',
+  'No reliable percentage can be calculated from the available evidence.': 'با شواهد فعلی نمی‌توان درصد قابل اتکایی محاسبه کرد.',
+  'Research suggested question': 'پرسش پیشنهادی برای پژوهش',
+  'No additional gap was identified by these local checks; this does not mean the idea has been fully verified.': 'این بررسی محلی خلأ دیگری پیدا نکرد؛ بااین‌حال به معنی تأیید کامل ایده نیست.',
+  'The analysis starts from the user’s saved concept': 'این تحلیل از ایده‌ای شروع می‌شود که خودت ثبت کرده‌ای',
+  'The analysis starts from the user\'s saved concept': 'این تحلیل از ایده‌ای شروع می‌شود که خودت ثبت کرده‌ای',
 };
 
 const replacements: [string, string][] = Object.entries(fa)
@@ -554,22 +641,60 @@ function flattenText(node: ReactNode): string {
   return '';
 }
 
+const RTL_STRONG = /[\u05D0-\u05EA\u05EF-\u05F2\u0620-\u064A\u066E-\u066F\u0671-\u06D3\u06FA-\u06FC\u06FF\u0750-\u077F\u08A0-\u08C9\uFB1D-\uFB4F\uFB50-\uFDFF\uFE70-\uFEFC]/u;
+const LTR_STRONG = /[A-Za-z\u00C0-\u02AF\u0370-\u052F\u0900-\u1FFF\u2C00-\uD7FF]/u;
+const RTL_RUN = /[\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFC][\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFC\u200C\u200D\u064B-\u065F]*(?:[ \t]+[\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFC][\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFC\u200C\u200D\u064B-\u065F]*)*/gu;
+const LTR_RUN = /[A-Za-z\u00C0-\u02AF\u0370-\u052F0-9]+(?:[ \t]+[A-Za-z\u00C0-\u02AF\u0370-\u052F0-9]+)*/gu;
+
 export function resolveTextDirection(value: string): 'rtl' | 'ltr' {
-  // Only strong letters set direction; punctuation, digits and emoji are ignored.
-  const rtlStrong = /[\u05D0-\u05EA\u05EF-\u05F2\u0620-\u064A\u066E-\u066F\u0671-\u06D3\u06FA-\u06FC\u06FF\u0750-\u077F\u08A0-\u08C9\uFB1D-\uFB4F\uFB50-\uFDFF\uFE70-\uFEFC]/u;
-  const ltrStrong = /[A-Za-z\u00C0-\u02AF\u0370-\u052F\u0900-\u1FFF\u2C00-\uD7FF]/u;
+  // Source text follows its first strong character, independent of the UI locale.
   for (const character of value) {
-    if (rtlStrong.test(character)) return 'rtl';
-    if (ltrStrong.test(character)) return 'ltr';
+    if (RTL_STRONG.test(character)) return 'rtl';
+    if (LTR_STRONG.test(character)) return 'ltr';
   }
   return 'ltr';
+}
+
+/**
+ * Chooses the paragraph base direction from the actual script content.
+ * A mixed sentence follows the selected UI language, while a source-only
+ * English headline remains LTR even when the surrounding UI is Persian.
+ */
+export function resolveParagraphDirection(value: string, language: UiLanguage = 'fa'): 'rtl' | 'ltr' {
+  const hasRtl = RTL_STRONG.test(value);
+  const hasLtr = LTR_STRONG.test(value);
+  if (hasRtl && hasLtr) return language === 'fa' ? 'rtl' : 'ltr';
+  if (hasRtl) return 'rtl';
+  if (hasLtr) return 'ltr';
+  return language === 'fa' ? 'rtl' : 'ltr';
+}
+
+/** Wrap opposite-direction word runs with Unicode directional isolates. */
+export function isolateMixedDirectionText(value: string, paragraphDirection: 'rtl' | 'ltr'): string {
+  if (!value) return value;
+  const pattern = paragraphDirection === 'rtl' ? LTR_RUN : RTL_RUN;
+  const isolate = paragraphDirection === 'rtl' ? '\u2066' : '\u2067';
+  return value.replace(pattern, (run) => isolate + run + '\u2069');
 }
 
 export function containsPersianText(node: ReactNode): boolean {
   return resolveTextDirection(flattenText(node)) === 'rtl';
 }
-export function resolveNodeDirection(node: ReactNode): 'rtl' | 'ltr' {
-  return resolveTextDirection(flattenText(node));
+export function resolveNodeDirection(node: ReactNode, language?: UiLanguage): 'rtl' | 'ltr' {
+  const value = flattenText(node);
+  return language ? resolveParagraphDirection(value, language) : resolveTextDirection(value);
+}
+
+export function isolateMixedDirectionNode(node: ReactNode, paragraphDirection: 'rtl' | 'ltr'): ReactNode {
+  if (typeof node === 'string' || typeof node === 'number') {
+    return isolateMixedDirectionText(String(node), paragraphDirection);
+  }
+  if (Array.isArray(node)) return node.map((child) => isolateMixedDirectionNode(child, paragraphDirection));
+  if (!isValidElement(node)) return node;
+  const props = node.props as Record<string, unknown>;
+  return cloneElement(node, {
+    children: isolateMixedDirectionNode(props.children as ReactNode, paragraphDirection),
+  });
 }
 
 export function translateNode(node: ReactNode, language: UiLanguage): ReactNode {
@@ -592,7 +717,8 @@ export function translateNode(node: ReactNode, language: UiLanguage): ReactNode 
   }
   if (/^Text$/.test(elementType.displayName ?? elementType.name ?? '')) {
     const content = flattenText(children);
-    const direction = resolveTextDirection(content);
+    const direction = resolveParagraphDirection(content, language);
+    patch.children = isolateMixedDirectionNode(children, direction);
     patch.style = [props.style, { writingDirection: direction, textAlign: direction === 'rtl' ? 'right' : 'left' }];
   }
   return cloneElement(node, patch);
