@@ -3,7 +3,10 @@ import { test } from 'node:test';
 import type { ResearchActivityEvent } from '../lib/types';
 import {
   appendResearchActivity,
+  buildResearchActivityFeedbackProfile,
   buildResearchActivityResults,
+  buildResearchActivitySourceExclusions,
+  explainResearchActivitySourceExclusion,
   MAX_RESEARCH_ACTIVITY,
   updateResearchActivityFeedback,
 } from '../lib/research-activity';
@@ -104,4 +107,117 @@ void test('research activity history remains newest-first and bounded', () => {
   assert.equal(next.length, MAX_RESEARCH_ACTIVITY);
   assert.equal(next[0].id, 'new');
   assert.equal(next.at(-1)?.id, 'old-1');
+});
+
+void test('saved research feedback influences topic preferences without treating weak sources as weak topics', () => {
+  const events: ResearchActivityEvent[] = [{
+    id: 'feedback-run',
+    engine: 'Firecrawl Search',
+    query: 'space telescope research',
+    topic: 'space telescope research',
+    niche: 'astronomy',
+    startedAt: 100,
+    status: 'success',
+    resultCount: 3,
+    analyzedCount: 3,
+    results: [
+      {
+        id: 'useful',
+        title: 'JWST exoplanet atmosphere measurements',
+        sourceName: 'Research Journal',
+        url: 'https://journal.example/jwst-atmosphere',
+        summary: 'Useful research evidence.',
+        relevanceScore: 90,
+        relevanceBand: 'high',
+        sourceAssessment: 'not-assessed',
+        includedInAnalysis: true,
+        decisionReason: 'Passed to analysis.',
+        feedback: 'useful',
+      },
+      {
+        id: 'irrelevant',
+        title: 'Celebrity gossip unrelated to astronomy',
+        sourceName: 'News Mirror',
+        url: 'https://mirror.example/celebrity',
+        summary: 'Unrelated content.',
+        relevanceScore: 0,
+        relevanceBand: 'low',
+        sourceAssessment: 'not-assessed',
+        includedInAnalysis: false,
+        decisionReason: 'Not relevant.',
+        feedback: 'irrelevant',
+      },
+      {
+        id: 'weak',
+        title: 'Astronomy claims from a weak publisher',
+        sourceName: 'Weak Example',
+        url: 'https://weak.example/report',
+        summary: 'The topic may be useful but the source is weak.',
+        relevanceScore: 55,
+        relevanceBand: 'medium',
+        sourceAssessment: 'not-assessed',
+        includedInAnalysis: false,
+        decisionReason: 'User marked the source as weak.',
+        feedback: 'weak-source',
+      },
+    ],
+    warnings: [],
+  }];
+  const profile = buildResearchActivityFeedbackProfile(events);
+  assert.ok(profile.positiveTopics.includes('JWST exoplanet atmosphere measurements'));
+  assert.ok(profile.negativeTopics.includes('Celebrity gossip unrelated to astronomy'));
+  assert.equal(profile.negativeTopics.includes('Astronomy claims from a weak publisher'), false);
+});
+
+void test('weak-source and duplicate feedback exclude matching sources from later research', () => {
+  const events: ResearchActivityEvent[] = [{
+    id: 'source-feedback-run',
+    engine: 'Publisher Feeds',
+    query: 'space telescopes',
+    topic: 'space telescopes',
+    niche: 'astronomy',
+    startedAt: 100,
+    status: 'success',
+    resultCount: 2,
+    analyzedCount: 2,
+    results: [
+      {
+        id: 'weak-source',
+        title: 'A weak source article',
+        sourceName: 'Weak Publisher',
+        url: 'https://weak.example/story',
+        summary: '',
+        relevanceScore: 50,
+        relevanceBand: 'medium',
+        sourceAssessment: 'not-assessed',
+        includedInAnalysis: false,
+        decisionReason: 'Marked as a weak source.',
+        feedback: 'weak-source',
+      },
+      {
+        id: 'duplicate-source',
+        title: 'A repeated source URL',
+        sourceName: 'Duplicate Publisher',
+        url: 'https://duplicate.example/story?utm_source=rss',
+        summary: '',
+        relevanceScore: 50,
+        relevanceBand: 'medium',
+        sourceAssessment: 'not-assessed',
+        includedInAnalysis: false,
+        decisionReason: 'Marked as a duplicate.',
+        feedback: 'duplicate',
+      },
+    ],
+    warnings: [],
+  }];
+  const exclusions = buildResearchActivitySourceExclusions(events);
+  assert.match(
+    explainResearchActivitySourceExclusion('https://sub.weak.example/another-story', exclusions) ?? '',
+    /weak source/i,
+  );
+  assert.match(
+    explainResearchActivitySourceExclusion('https://duplicate.example/story?utm_campaign=new', exclusions) ?? '',
+    /duplicate/i,
+  );
+  assert.equal(explainResearchActivitySourceExclusion('https://trusted.example/story', exclusions), undefined);
 });
