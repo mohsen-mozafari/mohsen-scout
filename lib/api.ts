@@ -353,7 +353,7 @@ export async function searchYouTube(input: ResearchInput, options: YouTubeOption
     if (haltSearch || researchOptions.searchAttemptBudget!.used >= researchOptions.searchAttemptBudget!.limit) return;
     const { search } = state;
     const page = state.page + 1;
-    onProgress?.(\`Sampling \${SEARCH_BUCKET_LABELS[search.bucket](topic)} · \${search.language || 'global'} · page \${page}\`);
+    onProgress?.(`Sampling ${SEARCH_BUCKET_LABELS[search.bucket](topic)} · ${search.language || 'global'} · page ${page}`);
     const params: Record<string, string> = {
       part: 'snippet', type: 'video', q: search.query, order: search.order,
       maxResults: '50', videoDuration: input.duration,
