@@ -33,7 +33,7 @@ export type EditorialPriorityCandidate = {
 /** Selects the live recommendation rail; completed, rejected and archived ideas never occupy a slot. */
 export function selectTopCurrentEditorialPriorities<T extends EditorialPriorityCandidate>(
   ideas: readonly T[],
-  limit = EDITORIAL_PRIORITY_CONFIG.pinnedIdeas,
+  limit: number = EDITORIAL_PRIORITY_CONFIG.pinnedIdeas,
 ): T[] {
   const maximum = Number.isFinite(limit) ? Math.max(0, Math.min(25, Math.floor(limit))) : EDITORIAL_PRIORITY_CONFIG.pinnedIdeas;
   if (!maximum) return [];

@@ -721,7 +721,7 @@ export function generateEditorialIdeas(input: GenerateEditorialIdeasInput): Idea
   const publisherGroups = new Set(topicRelevantNews
     .map((item) => normalizeResearchText(item.sourceId || item.sourceName))
     .filter(Boolean)).size;
-  const videoChannels = new Set(topicRelevantVideos.map((item) => normalizeResearchText(item.channel)).filter(Boolean)).size;
+  const videoChannels = new Set(topicRelevantVideos.map((item) => normalizeResearchText(item.channel ?? '')).filter(Boolean)).size;
   // Confidence describes the breadth of this returned sample, not truth or audience demand.
   const confidence = publisherGroups >= 2 && videoChannels >= 2 ? 'high'
     : publisherGroups >= 2 || videoChannels >= 2 ? 'moderate' : 'low';
