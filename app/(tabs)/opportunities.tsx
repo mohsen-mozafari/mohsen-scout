@@ -248,6 +248,22 @@ export default function Opportunities() {
         await useScout.getState().commit((data) => ({ ...data, feedRegistry: refreshedNews.registry }));
       }
       const completedAt = Date.now();
+      const feedSourceExclusions = buildResearchActivitySourceExclusions(initial.researchActivity);
+      const feedActivityResults = refreshedNews.items.map((item) => {
+        const exclusion = explainResearchActivitySourceExclusion(item.url, feedSourceExclusions);
+        return {
+          id: item.id,
+          title: item.title,
+          summary: item.summary,
+          sourceName: item.sourceName,
+          url: item.url,
+          publishedAt: item.publishedAt,
+          sourceAssessment: 'configured-feed' as const,
+          includedInAnalysis: !exclusion,
+          decisionReason: exclusion ??
+            'Fetched from a configured RSS feed and passed to the local evidence screen; relevance is filtered by the editorial engine and publisher claims are not independently verified.',
+        };
+      });
       const feedEvent: ResearchActivityEvent = {
         id: uid(),
         engine: 'Publisher Feeds',
@@ -263,18 +279,8 @@ export default function Opportunities() {
           ? (refreshedNews.warnings.length ? 'partial' : 'success')
           : (feedError ? 'error' : refreshedNews.warnings.length ? 'partial' : 'empty'),
         resultCount: refreshedNews.items.length,
-        analyzedCount: refreshedNews.items.length,
-        results: buildResearchActivityResults(topic, refreshedNews.items.map((item) => ({
-          id: item.id,
-          title: item.title,
-          summary: item.summary,
-          sourceName: item.sourceName,
-          url: item.url,
-          publishedAt: item.publishedAt,
-          sourceAssessment: 'configured-feed',
-          includedInAnalysis: true,
-          decisionReason: 'Fetched from a configured RSS feed and passed to the local evidence screen; relevance is filtered by the editorial engine and publisher claims are not independently verified.',
-        }))),
+        analyzedCount: feedActivityResults.filter((item) => item.includedInAnalysis).length,
+        results: buildResearchActivityResults(topic, feedActivityResults),
         warnings: refreshedNews.warnings.slice(0, 12),
         ...(feedError ? { error: feedError.slice(0, 700) } : {}),
         ...(savedReport ? { reportId: savedReport.id } : {}),
@@ -420,7 +426,7 @@ export default function Opportunities() {
             <ScreenIntro
               eyebrow="IDEA WORKSPACE"
               title="Turn research into next steps"
-              subtitle="Refresh the official YouTube sample and selected publisher feeds, then generate new evidence-backed angles."
+              subtitle="Refresh the official YouTube sample separately; generate editorial angles from selected publisher feeds, independent web research and Wikimedia evidence."
               icon={Lightbulb}
             />
             <View style={{ flexDirection: 'row', gap: 8 }}>
