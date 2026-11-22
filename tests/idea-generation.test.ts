@@ -277,7 +277,7 @@ void test('repeated engine-generated cards collapse in the Ideas list without me
   const persianFirst = {
     ...first,
     topic: 'Overview alpha',
-    concept: 'پرسش اصلی: How methane spectral lines reveal atmosphere composition.',
+    concept: 'پرسش اصلی: How methane spectral emission lines clearly reveal exoplanet atmosphere composition.',
   };
   const persianDuplicate = {
     ...persianFirst,
@@ -425,7 +425,7 @@ void test('publisher-backed ideas retain relevant YouTube references without sav
     sourceId: 'sky-telescope',
     sourceName: 'Sky & Telescope',
     title: 'MOCK: Lunar observation schedule published',
-    summary: 'MOCK: A separate lunar observing guide with no exoplanet or spectroscopy detail.',
+    summary: 'MOCK: A separate lunar observing guide focused on night-sky viewing schedules and telescope setup.',
     url: 'https://skyandtelescope.org/mock-lunar-schedule',
     publishedAt: '2026-11-10T12:00:00Z',
   };
