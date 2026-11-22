@@ -69,10 +69,10 @@ void test('potential contradictions trigger adversarial review and an explicit r
   assert.equal(result.readiness, 'developing');
 });
 
-void test('future-dated reports are excluded from current temporal counts', () => {
+void test('reports more than one day in the future are excluded from current temporal counts', () => {
   const input = sample();
   input.news = [
-    { ...input.news[0], publishedAt: '2026-11-23T12:00:00.000Z' },
+    { ...input.news[0], publishedAt: '2026-11-25T12:00:00.000Z' },
     { ...input.news[1], publishedAt: '2026-10-01T12:00:00.000Z' },
   ];
   input.wikiObservations = [];
