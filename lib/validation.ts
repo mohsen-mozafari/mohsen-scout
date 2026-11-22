@@ -220,10 +220,3 @@ export function validateLocalRecord(domain: RecordDomain, value: unknown): unkno
   if (!parsed.success) throw new Error('Saved ' + domain + ' record is unreadable. Retry the last change.');
   return (parsed.data as unknown[])[0];
 }
-
-/** Validate one normalized SQLite row without parsing its whole collection. */
-export function validateLocalRecord(domain: RecordDomain, value: unknown): unknown {
-  const parsed = schema.shape[domain].safeParse([value]);
-  if (!parsed.success) throw new Error('Saved ' + domain + ' record is unreadable. Retry the last change.');
-  return (parsed.data as unknown[])[0];
-}

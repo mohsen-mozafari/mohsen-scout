@@ -1,4 +1,5 @@
 import { type Report, type Idea, type ResearchMemoryEntry, uid } from './types';
+import { buildMultiParadigmAnalysis, type ResearchParadigmAnalysis } from './multiparadigm';
 import type { WikiSignal } from './space';
 import type { YouTubeSampleVideo } from './api';
 import {
@@ -78,6 +79,7 @@ export type InternalResearchResult = {
     sharedConcepts: string[];
     potentialContradictions: string[];
     scenarios: string[];
+    paradigms: ResearchParadigmAnalysis;
     selfEvaluation: {
       inputNewsCount: number;
       uniqueNewsCount: number;
@@ -502,6 +504,33 @@ export function buildInternalResearch(input: InternalResearchInput): InternalRes
     processingMs: Math.max(0, Date.now() - startedAt),
     limitations: [...gaps],
   };
+  const paradigms = buildMultiParadigmAnalysis({
+    topic,
+    news: matchedNews.map(({ item }) => ({
+      title: item.title,
+      summary: item.summary,
+      sourceName: item.sourceName,
+      sourceId: item.sourceId,
+      publishedAt: item.publishedAt,
+    })),
+    videos: videos.map((video) => ({
+      id: video.id,
+      title: video.title,
+      channel: video.channel,
+      publishedAt: video.publishedAt,
+    })),
+    wikiObservations: input.wiki?.monthlyViews ?? [],
+    trend,
+    independentPublisherFamilies: matchedSourceQuality.independentPublishers,
+    undatedPublisherItems: matchedSourceQuality.undatedItems,
+    stalePublisherItems: matchedSourceQuality.staleItems,
+    entities: entityCandidates,
+    relations: entityRelations,
+    gaps,
+    contradictions: potentialContradictions,
+    now,
+    language: input.language,
+  });
   const intelligence = {
     sourceQuality,
     trend,
@@ -511,6 +540,7 @@ export function buildInternalResearch(input: InternalResearchInput): InternalRes
     sharedConcepts,
     potentialContradictions,
     selfEvaluation,
+    paradigms,
     scenarios: fa ? [
       'سناریوی مشروط اول: اگر جهت اخیر ادامه پیدا کند، میزان توجه ممکن است نزدیک محدوده فعلی بماند؛ این پیش‌بینی قطعی نیست.',
       'سناریوی مشروط دوم: اگر فعالیت به میانگین قبلی برگردد، تغییر اخیر ممکن است پایدار نماند.',

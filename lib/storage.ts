@@ -1,5 +1,5 @@
 import * as SQLite from 'expo-sqlite';
-import { defaults, purgeExpired, type LocalData } from './types';
+import { defaults, purgeExpired, RETENTION_MS, type LocalData } from './types';
 import { validateLocal, validateLocalEntry, validateLocalRecord } from './validation';
 import { changedLocalDataEntries } from './storage-diff';
 import { diffRecordCollection, isRecordDomain, recordIdFor, recordTable, recordUpdatedAt, recordExpiresAt, RECORD_DOMAINS, emptyRecordCounts, type RecordDomain, type StorageHealth } from './storage-records';

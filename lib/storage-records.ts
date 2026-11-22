@@ -40,7 +40,7 @@ export function recordIdFor(domain: RecordDomain, value: unknown): string {
   }
   const record = value as Record<string, unknown>;
   const id = domain === 'researchMemory'
-    ? 'topic:' + String(record.topic ?? '').trim().normalize('NFKC').toLowerCase().replace(/\\s+/g, ' ')
+    ? 'topic:' + String(record.topic ?? '').trim().normalize('NFKC').toLowerCase().replace(/\s+/g, ' ')
     : String(record.id ?? '');
   if (!id || id === 'topic:') throw new Error('A stable identifier is required for ' + domain + '.');
   return id;

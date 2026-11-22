@@ -397,6 +397,23 @@ export default function DeepResearch() {
               {brief.internalAnalysis.intelligence.scenarios.map((scenario) => <Txt muted key={scenario}>{scenario}</Txt>)}
               {brief.internalAnalysis.intelligence.potentialContradictions.map((item) => <Txt muted key={item}>{'Potential discrepancy: ' + item}</Txt>)}
             </View>
+            <Fold
+              title={preferences.uiLanguage === 'fa' ? 'تحلیل چندپارادایمی موتور هوشمند' : 'Multi-paradigm engine analysis'}
+              summary={brief.internalAnalysis.intelligence.paradigms.readinessLabel}
+            >
+              <Txt>{brief.internalAnalysis.intelligence.paradigms.synthesis}</Txt>
+              {brief.internalAnalysis.intelligence.paradigms.lenses.map((item) => (
+                <View key={item.id} style={{ gap: 4, borderTopWidth: 1, borderTopColor: p.border, paddingTop: 9 }}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                    <Heading>{item.title}</Heading>
+                    <Text style={styles.badge}>{item.statusLabel}</Text>
+                  </View>
+                  <Txt muted>{item.summary}</Txt>
+                  {item.findings.map((finding, index) => <Txt key={item.id + '-finding-' + index}>{'• ' + finding}</Txt>)}
+                  {item.caveats.map((caveat, index) => <Txt muted key={item.id + '-caveat-' + index}>{caveat}</Txt>)}
+                </View>
+              ))}
+            </Fold>
           </Panel>
 </Fold>          {brief.wiki && (
           <Fold title="5 · Wikimedia context" summary={brief.wiki.articleTitle}>            <Panel>
