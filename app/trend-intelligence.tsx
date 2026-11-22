@@ -19,7 +19,7 @@ export default function TrendIntelligence() {
   const [videos, setVideos] = useState<YouTubeSampleVideo[]>([]);
   const [warning, setWarning] = useState('');
   const [days, setDays] = useState(String(preferences.defaultResearchDays ?? 30));
-  const [sort, setSort] = useState('Most Views');
+  const [sort, setSort] = useState('Discovery Mix');
   const [nextPageToken, setNextPageToken] = useState('');
   const [activeSearch, setActiveSearch] = useState<{ topic: string; days: 0 | 7 | 30 | 90; sort: string }>();
   const searchGeneration = useRef(0);
@@ -49,7 +49,7 @@ export default function TrendIntelligence() {
         onQuota: () => useScout.getState().commit((data) => ({ ...data, budget: { ...data.budget, exhausted: true } })),
       }, 50, {
         days: search.days,
-        order: search.sort === 'Newest' ? 'date' : search.sort === 'Most Likes' ? 'relevance' : 'viewCount',
+        order: search.sort === 'Discovery Mix' ? 'discovery' : search.sort === 'Newest' ? 'date' : search.sort === 'Most Likes' ? 'relevance' : 'viewCount',
         region: preferences.region,
         language: preferences.languages[0],
         ...(pageToken ? { pageToken } : {}),
@@ -70,7 +70,7 @@ export default function TrendIntelligence() {
         days: search.days,
         region: preferences.region,
         language: preferences.languages[0] ?? '',
-        order: search.sort === 'Newest' ? 'date' : search.sort === 'Most Likes' ? 'relevance' : 'viewCount',
+        order: search.sort === 'Discovery Mix' ? 'discovery' : search.sort === 'Newest' ? 'date' : search.sort === 'Most Likes' ? 'relevance' : 'viewCount',
       },
     });
     setVideos(combinedVideos);
@@ -94,7 +94,7 @@ export default function TrendIntelligence() {
     void op.run(() => executeSample(activeSearch, nextPageToken, true), 'Loaded the next YouTube result page.');
   };
 
-  const sortedVideos = [...videos].sort((a, b) => {
+  const sortedVideos = sort === 'Discovery Mix' ? videos : [...videos].sort((a, b) => {
     if (sort === 'Newest') return Date.parse(b.publishedAt) - Date.parse(a.publishedAt);
     const aValue = sort === 'Most Likes' ? a.likeCount : a.viewCount;
     const bValue = sort === 'Most Likes' ? b.likeCount : b.viewCount;
@@ -105,7 +105,7 @@ export default function TrendIntelligence() {
   const channels = new Set(videos.map((video) => video.channelId)).size;
 
   return (
-    <Page title="YouTube Trend Sample" eyebrow="BOUNDED API SAMPLE" showBack subtitle="Inspect a paginated sample from YouTube's official API. This is not a global market ranking or a demand forecast.">
+    <Page title="YouTube Trend Sample" eyebrow="BOUNDED API SAMPLE" showBack subtitle="Discover videos through official YouTube search lanes, then continue into independent web research and the in-app browser.">
       <Txt muted>Measure YouTube separately from search interest and publisher news. This view uses the official YouTube Data API, not scraping.</Txt>
       {linkedIdea ? <Txt muted>Research context: {linkedIdea.topic}. Only video links you explicitly save below become durable personal references.</Txt> : null}
       <Panel>
@@ -122,13 +122,15 @@ export default function TrendIntelligence() {
         />
         <Choices
           label="Sort sample by"
-          options={['Newest', 'Most Views', 'Most Likes']}
+          options={['Discovery Mix', 'Newest', 'Most Views', 'Most Likes']}
           selected={[sort]}
           onChange={(values) => { setSort(values[0]); resetSample(); }}
         />
         <Action busy={op.busy} disabled={!topic.trim()} onPress={run}>Sample YouTube videos</Action>
-        <Txt muted>{sort === 'Most Likes' ? 'Each page samples two discovery pools (relevance and view-count order), then ranks only returned videos by actual public like counts. Estimate: about 202 quota units per page. This is not a global like-count ranking.' : 'Each page uses one official search request plus batched video and channel statistics (about 102 quota units). Newest sorts the returned sample by publication timestamp; Most Views sorts by actual public view counts.'}</Txt>
-        <Txt muted>Use Load next 50 to expand the same search. This remains a bounded sample, not a complete market ranking; nothing loads automatically in the background.</Txt>
+        <Txt muted>{sort === 'Discovery Mix' ? 'Each page samples three official YouTube search lanes (view-count order, newest-first and relevance) and interleaves distinct results without calculating a growth score. Estimate: about 302 quota units per page.' : sort === 'Most Likes' ? 'Each page samples two discovery pools (relevance and view-count order), then compares raw public like counts within the returned sample. Estimate: about 202 quota units per page; this is not a global ranking.' : 'Each page uses one official search request plus video and channel statistics (about 102 quota units). Newest follows YouTube publication-date order; Most Views follows YouTube view-count order.'}</Txt>
+        <Txt muted>Use Load next 50 to expand the same bounded sample. Discovery Mix spends more API quota to cover three official result lanes. Nothing scans automatically in the background.</Txt>
+        <Action secondary disabled={!topic.trim()} onPress={() => router.push({ pathname: '/deep-research', params: { topic: topic.trim() } })}>Research independent web and news sources</Action>
+        <Action secondary onPress={() => router.push('/browser')}>Open internal web browser</Action>
       </Panel>
       {Boolean(warning) && <Txt muted>{warning}</Txt>}
       {videos.length > 0 && (

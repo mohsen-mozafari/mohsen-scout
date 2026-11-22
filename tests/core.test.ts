@@ -327,6 +327,98 @@ void test('YouTube likes cursor advances both discovery pools independently', as
   assert.ok(second.nextPageToken);
 });
 
+void test('YouTube Discovery Mix samples view-count, recent and relevance lanes and interleaves unique results', async () => {
+  const orders: string[] = [];
+  let charged = 0;
+  const makeVideo = (id: string) => ({
+    id: { videoId: id },
+    snippet: {
+      title: 'MOCK discovery video ' + id,
+      description: 'MOCK independent test fixture',
+      channelTitle: 'MOCK channel',
+      channelId: 'UCmockchannel',
+      publishedAt: '2026-11-10T12:00:00Z',
+      thumbnails: { high: { url: 'https://example.com/' + id + '.jpg' } },
+    },
+  });
+  const result = await searchYouTubeSample('Mars discoveries', {
+    key: 'MOCK_DISCOVERY_KEY',
+    charge: async (units) => { charged += units; },
+    fetcher: async (url) => {
+      const parsed = new URL(typeof url === 'string' ? url : url instanceof URL ? url.href : url.url);
+      if (parsed.pathname.endsWith('/search')) {
+        const order = parsed.searchParams.get('order') ?? '';
+        orders.push(order);
+        assert.equal(parsed.searchParams.get('maxResults'), '2');
+        const ids = order === 'viewCount'
+          ? ['dQw4w9WgXcQ', 'M7lc1UVf-VE']
+          : order === 'date'
+            ? ['VYOjWnS4cMY', 'M7lc1UVf-VE']
+            : ['3JZ_D3ELwOQ', 'dQw4w9WgXcQ'];
+        return response({
+          nextPageToken: order + '-next',
+          items: ids.map(makeVideo),
+        });
+      }
+      if (parsed.pathname.endsWith('/videos')) return response({ items: [] });
+      if (parsed.pathname.endsWith('/channels')) return response({ items: [] });
+      throw new Error('Unexpected endpoint: ' + parsed.pathname);
+    },
+  }, 6, { order: 'discovery', days: 0 });
+  assert.deepEqual(orders, ['viewCount', 'date', 'relevance']);
+  assert.deepEqual(result.videos.map((item) => item.id), [
+    'dQw4w9WgXcQ', 'VYOjWnS4cMY', '3JZ_D3ELwOQ', 'M7lc1UVf-VE',
+  ]);
+  assert.equal(charged, 5);
+  assert.match(result.nextPageToken ?? '', /^mohsen-scout-discovery-v1:/);
+  assert.match(result.warning, /no growth or market score/i);
+});
+
+void test('YouTube Discovery Mix advances each official search lane with its own page token', async () => {
+  const seen: { order: string; token: string }[] = [];
+  const makeVideo = (id: string) => ({
+    id: { videoId: id },
+    snippet: {
+      title: 'MOCK cursor discovery video',
+      description: '',
+      channelTitle: 'MOCK channel',
+      channelId: 'UCmockchannel',
+      publishedAt: '2026-11-10T12:00:00Z',
+      thumbnails: {},
+    },
+  });
+  const options = {
+    key: 'MOCK_DISCOVERY_CURSOR_KEY',
+    charge: async () => {},
+    fetcher: async (url: string | URL | Request) => {
+      const parsed = new URL(typeof url === 'string' ? url : url instanceof URL ? url.href : url.url);
+      if (parsed.pathname.endsWith('/search')) {
+        const order = parsed.searchParams.get('order') ?? '';
+        const token = parsed.searchParams.get('pageToken') ?? '';
+        seen.push({ order, token });
+        return response({
+          nextPageToken: token ? undefined : order + '-next',
+          items: [makeVideo(order === 'viewCount' ? 'dQw4w9WgXcQ' : order === 'date' ? 'M7lc1UVf-VE' : 'VYOjWnS4cMY')],
+        });
+      }
+      if (parsed.pathname.endsWith('/videos')) return response({ items: [] });
+      if (parsed.pathname.endsWith('/channels')) return response({ items: [] });
+      throw new Error('Unexpected endpoint: ' + parsed.pathname);
+    },
+  };
+  const first = await searchYouTubeSample('JWST', options, 9, { order: 'discovery', days: 0 });
+  assert.ok(first.nextPageToken);
+  await searchYouTubeSample('JWST', options, 9, { order: 'discovery', days: 0, pageToken: first.nextPageToken });
+  assert.deepEqual(seen, [
+    { order: 'viewCount', token: '' },
+    { order: 'date', token: '' },
+    { order: 'relevance', token: '' },
+    { order: 'viewCount', token: 'viewCount-next' },
+    { order: 'date', token: 'date-next' },
+    { order: 'relevance', token: 'relevance-next' },
+  ]);
+});
+
 void test('YouTube likes sample rejects a malformed versioned cursor before making requests', async () => {
   let calls = 0;
   await assert.rejects(

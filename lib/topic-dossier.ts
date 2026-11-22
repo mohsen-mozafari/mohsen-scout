@@ -10,7 +10,7 @@ export type TopicVideoCriteria = {
   days: 0 | 7 | 30 | 90;
   region: Region;
   language: string;
-  order: 'date' | 'viewCount' | 'relevance';
+  order: 'date' | 'viewCount' | 'relevance' | 'discovery';
 };
 
 export type TopicDossier = {

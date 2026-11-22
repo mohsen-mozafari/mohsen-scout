@@ -333,6 +333,7 @@ export default function DeepResearch() {
     <Page title="Deep Research" eyebrow="3-STEP RESEARCH WORKSPACE" showBack subtitle="Choose a question, build one evidence-backed brief, then review the sections you need.">
       <Txt muted>Step 1 · Choose the topic. Step 2 · Build the brief. Step 3 · Review the evidence, sources and production plan. Research begins only when you press the action.</Txt>
       {linkedIdea ? <Action secondary onPress={() => router.push({ pathname: '/detail', params: { idea: linkedIdea.id } })}>{'Research linked to: ' + linkedIdea.topic + ' · Open idea'}</Action> : null}
+      <Action secondary onPress={() => router.push('/browser')}>Open internal web browser</Action>
       <Panel>
         <Heading>1 · Choose the research question</Heading>
         <Field label="What should this brief investigate?" value={topic} onChange={setTopic} placeholder="e.g. What JWST has found in exoplanet atmospheres" multiline />
