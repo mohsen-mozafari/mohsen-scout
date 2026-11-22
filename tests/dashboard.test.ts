@@ -8,6 +8,7 @@ import {
   engineReviewCacheKey,
   findCachedEngineReview,
   rankDashboardIdeas,
+  selectDashboardFeaturedIdeas,
   selectDashboardIdeas,
   runSingleFlight,
   selectDashboardVideos,
@@ -77,6 +78,39 @@ void test('dashboard chooses the strongest active idea and excludes archived, re
   const newestStrong = idea('newest-strong', 'Strong Opportunity', { sourceUrl: 'https://example.com/source', createdAt: now });
   assert.equal(chooseBestIdea([completed, rejected, archived, promising, strong, newestStrong])?.id, 'newest-strong');
   assert.deepEqual(rankDashboardIdeas([completed, rejected, archived]).map((item) => item.id), []);
+});
+
+void test('dashboard featured priorities use the same scored, active, displayable ranking as the Ideas page', () => {
+  const best = idea('best', 'Strong Opportunity', {
+    engineGenerated: true, engineScore: 96, topic: 'A high-potential topic',
+  });
+  const duplicate = idea('duplicate', 'Strong Opportunity', {
+    engineGenerated: true, engineScore: 93, topic: 'A high-potential topic',
+  });
+  const runnerUp = idea('runner-up', 'Promising', {
+    engineGenerated: true, engineScore: 81,
+  });
+  const unscored = idea('unscored', 'Strong Opportunity', { engineGenerated: true });
+  const archived = idea('archived-high', 'Strong Opportunity', {
+    engineGenerated: true, engineScore: 100, archived: true,
+  });
+  const completed = idea('completed-high', 'Strong Opportunity', {
+    engineGenerated: true, engineScore: 99, status: 'Completed Research',
+  });
+  const rejected = idea('rejected-high', 'Strong Opportunity', {
+    engineGenerated: true, engineScore: 98, status: 'Rejected Ideas',
+  });
+  const placeholder = idea('placeholder', 'Uncertain', {
+    engineGenerated: true, engineScore: 97, topic: 'Untitled Idea', concept: '',
+  });
+
+  assert.deepEqual(
+    selectDashboardFeaturedIdeas(
+      [unscored, duplicate, archived, completed, rejected, placeholder, runnerUp, best],
+      5,
+    ).map((item) => item.id),
+    ['best', 'runner-up'],
+  );
 });
 
 void test('dashboard selects source-linked radar ideas without a report ID', () => {
