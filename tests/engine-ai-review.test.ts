@@ -70,7 +70,7 @@ void test('internal engine retains unmatched publisher evidence and excludes You
   assert.equal(result.intelligence.selfEvaluation.uniqueNewsCount, 2);
   assert.equal(result.intelligence.selfEvaluation.topicMatchedNewsCount, 1);
   assert.equal(result.intelligence.sourceQuality.uniqueStories, 2);
-  assert.equal(result.intelligence.selfEvaluation.youtubeSampleCount, 0);
+  assert.equal(result.intelligence.selfEvaluation.youtubeSampleCount, 2);
   assert.equal(result.intelligence.selfEvaluation.allTimeMatchedVideoCount, 0);
   assert.equal(result.intelligence.selfEvaluation.recentMatchedVideoCount, 0);
   assert.equal(result.intelligence.selfEvaluation.outsideVideoWindowCount, 0);
