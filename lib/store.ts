@@ -500,9 +500,17 @@ export const useScout = create<State>((set, get) => ({
         topic,
         news: engineNews,
         wiki,
-        // The raw API sample reaches the engine's isolated pass-through slot;
-        // the engine must not derive scores, summaries or editorial ideas from it.
-        videos: youtubeResult?.videos ?? [],
+        // Map the stored video record into the engine's transient raw-only input shape.
+        // Do not add this payload to the analysis result, persistence or external prompts.
+        videos: (youtubeResult?.videos ?? []).map((video) => ({
+          id: video.id,
+          title: video.title,
+          description: video.description,
+          channel: video.channel,
+          publishedAt: video.publishedAt,
+          viewCount: video.viewCount ?? null,
+          likeCount: video.likeCount ?? null,
+        })),
         priorMemory,
         language: currentData.preferences.uiLanguage ?? 'fa',
       });
