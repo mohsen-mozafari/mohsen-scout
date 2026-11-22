@@ -6,6 +6,10 @@ import { structuredSecondOpinionPrompt } from '../lib/api';
 
 const publishedAt = '2026-11-20T12:00:00.000Z';
 
+function isJsonObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 void test('idea generation ignores legacy YouTube samples and scores independent publisher evidence only', () => {
   const ideas = generateEditorialIdeas({
     topic: 'Mars Sample Return',
@@ -58,9 +62,7 @@ void test('Firecrawl keyless search uses independent web/news results and exclud
       const body = init?.body;
       if (typeof body !== 'string') throw new Error('Expected a JSON request body.');
       const parsed: unknown = JSON.parse(body);
-      if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-        throw new Error('Expected a JSON object request body.');
-      }
+      if (!isJsonObject(parsed)) throw new Error('Expected a JSON object request body.');
       requestBody = parsed;
       authorization = new Headers(init?.headers).get('Authorization');
       return new Response(JSON.stringify({
