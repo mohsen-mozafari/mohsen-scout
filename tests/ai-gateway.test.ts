@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { structuredSecondOpinionPrompt } from '../lib/api';
 import {
   discoverSecondOpinionModels,
+  SecondOpinionProviderError,
   requestSecondOpinionWithFallback,
   type SecondOpinionProviderConfig,
 } from '../lib/ai-gateway';
@@ -192,4 +193,34 @@ void test('model discovery reads active Gemini, Groq and Cloudflare model catalo
     return jsonResponse({ success: true, result: [{ name: '@cf/meta/llama-3.3-70b-instruct-fp8-fast', description: 'Hosted text model' }] });
   });
   assert.equal(cloudflare[0].id, '@cf/meta/llama-3.3-70b-instruct-fp8-fast');
+});
+
+void test('all-provider failure preserves a redacted audit trail for the Research Activity panel', async () => {
+  let calls = 0;
+  await assert.rejects(
+    () => requestSecondOpinionWithFallback([
+      { provider: 'gemini', key: 'never-log-this-key', model: 'gemini-3.8-flash' },
+      { provider: 'groq', key: 'also-secret', model: 'openai/gpt-oss-120b' },
+    ], 'approved editorial prompt', async (input) => {
+      calls += 1;
+      const url = requestUrl(input);
+      if (url.includes('generativelanguage')) {
+        return jsonResponse({ error: { message: 'redacted' } }, 401);
+      }
+      return jsonResponse({ error: { message: 'temporarily unavailable' } }, 503);
+    }),
+    (error: unknown) => {
+      assert.ok(error instanceof SecondOpinionProviderError);
+      assert.deepEqual(error.attempts.map((attempt) => ({
+        provider: attempt.provider,
+        status: attempt.status,
+      })), [
+        { provider: 'gemini', status: 'invalid-key' },
+        { provider: 'groq', status: 'unavailable' },
+      ]);
+      assert.doesNotMatch(JSON.stringify(error.attempts), /never-log-this-key|also-secret/);
+      return true;
+    },
+  );
+  assert.equal(calls, 2);
 });
