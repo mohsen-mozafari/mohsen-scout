@@ -487,6 +487,28 @@ export function buildInternalResearch(input: InternalResearchInput): InternalRes
     }
     if (potentialContradictions.length >= 4) break;
   }
+  const paradigms = buildMultiParadigmAnalysis({
+    topic,
+    news: matchedNews.map(({ item }) => ({
+      title: item.title,
+      summary: item.summary,
+      sourceName: item.sourceName,
+      sourceId: item.sourceId,
+      publishedAt: item.publishedAt,
+    })),
+    wikiObservations: input.wiki?.monthlyViews ?? [],
+    trend,
+    independentPublisherFamilies: matchedSourceQuality.independentPublishers,
+    undatedPublisherItems: matchedSourceQuality.undatedItems,
+    stalePublisherItems: matchedSourceQuality.staleItems,
+    entities: entityCandidates,
+    relations: entityRelations,
+    gaps,
+    contradictions: potentialContradictions,
+    now,
+    language: input.language,
+  });
+
   const selfEvaluation = {
     inputNewsCount: originalNews.length,
     uniqueNewsCount: allNews.length,
@@ -515,27 +537,7 @@ export function buildInternalResearch(input: InternalResearchInput): InternalRes
     processingMs: Math.max(0, Date.now() - startedAt),
     limitations: [...gaps],
   };
-  const paradigms = buildMultiParadigmAnalysis({
-    topic,
-    news: matchedNews.map(({ item }) => ({
-      title: item.title,
-      summary: item.summary,
-      sourceName: item.sourceName,
-      sourceId: item.sourceId,
-      publishedAt: item.publishedAt,
-    })),
-    wikiObservations: input.wiki?.monthlyViews ?? [],
-    trend,
-    independentPublisherFamilies: matchedSourceQuality.independentPublishers,
-    undatedPublisherItems: matchedSourceQuality.undatedItems,
-    stalePublisherItems: matchedSourceQuality.staleItems,
-    entities: entityCandidates,
-    relations: entityRelations,
-    gaps,
-    contradictions: potentialContradictions,
-    now,
-    language: input.language,
-  });
+
   const intelligence = {
     sourceQuality,
     trend,
