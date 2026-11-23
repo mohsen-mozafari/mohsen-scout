@@ -18,7 +18,8 @@ import { generateEditorialIdeas } from '@/lib/idea-generation';
 import { buildPublisherIntelligence, type PublisherIntelligence } from '@/lib/news-intelligence';
 import { createResearchMemoryEntry } from '@/lib/research-memory';
 import { recordRuntimeFinish, recordRuntimeStart } from '@/lib/runtime-metrics';
-import { searchYouTubeSample, type YouTubeSampleVideo } from '@/lib/api';
+import { type YouTubeSampleVideo } from '@/lib/api';
+import { runAutonomousYouTubeResearch } from '@/lib/autonomous-youtube-research';
 import {
   SPACE_NICHES, fetchSpaceNews, newsForNiche, getWikipediaSignal, buildResearchOutline,
   type SpaceNewsItem, type WikiSignal,
@@ -137,12 +138,16 @@ export default function DeepResearch() {
         if (key) {
           recordRuntimeStart('YouTube');
           try {
-            const sample = await searchYouTubeSample(query, {
+            const sample = await runAutonomousYouTubeResearch(query, {
               key,
               charge: useScout.getState().charge,
               onQuota: () => useScout.getState().commit((data) => ({ ...data, budget: { ...data.budget, exhausted: true } })),
-            }, 25, { days: preferences.defaultResearchDays ?? 30, region: preferences.region, language: preferences.languages[0] });
+            }, { days: preferences.defaultResearchDays ?? 30, region: preferences.region, language: preferences.languages[0] }, { rounds: 2, resultsPerQuery: 10 });
             videos = sample.videos;
+            warnings.push(preferences.uiLanguage === 'fa'
+              ? 'اکتشاف چندمرحله‌ای YouTube اجرا شد: ' + sample.queries.join(' ← ') + ' | ویدئوهای تکراری ادغام شدند.'
+              : 'Iterative YouTube exploration ran: ' + sample.queries.join(' → ') + ' | duplicate videos merged.');
+            warnings.push(...sample.warnings);
             videoCriteria = {
               days: preferences.defaultResearchDays ?? 30,
               region: preferences.region,
