@@ -6,6 +6,7 @@ on:
     branches: [feature/v1.15.0-youtube-opportunity-engine, feature/v1.16.0-autonomous-youtube-discovery]
     paths:
       - '.github/workflows/android-apk-v1.15.0.yml'
+      - '.github/workflows/android-apk-v1.16.0-autonomous.yml'
       - 'app.config.ts'
       - 'package.json'
       - 'package-lock.json'
