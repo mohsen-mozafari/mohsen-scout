@@ -26,7 +26,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: mohsenscout-v1.15.1-${{ github.ref }}
+  group: mohsenscout-v1.16.0-autonomous-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
