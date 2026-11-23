@@ -150,7 +150,7 @@ jobs:
         with:
           name: mohsen-scout-v1.16-autonomous-apk
           path: |
-            dist/MOHSEN-SCOUT-1.15.1-arm64.apk
+            dist/MOHSEN-SCOUT-1.16.0-arm64.apk
             dist/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 1
