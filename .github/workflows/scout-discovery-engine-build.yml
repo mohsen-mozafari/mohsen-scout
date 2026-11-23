@@ -1,0 +1,81 @@
+name: Scout discovery engine branch build
+on:
+  push:
+    branches: [feature/scout-discovery-engine-v2-from-build-26]
+    paths:
+      - 'lib/**'
+      - 'tests/**'
+      - '.github/workflows/scout-discovery-engine-build.yml'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'app.config.ts'
+      - 'scripts/**'
+      - 'plugins/**'
+      - 'assets/**'
+permissions:
+  contents: read
+concurrency:
+  group: scout-discovery-v2-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  test-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
+        with:
+          packages: platform-tools
+      - name: Install Android SDK packages
+        run: sdkmanager "platforms;android-37.0" "build-tools;37.0.0" "ndk;27.1.12297006"
+      - name: Resolve aligned SDK lockfile
+        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+      - run: npm ci
+      - name: Run regression tests
+        run: npm test
+      - name: Run lint and type checks
+        run: npm run lint
+      - name: Run CSS lint
+        run: npm run lint:css
+      - name: Verify Expo dependency alignment
+        run: npx expo-doctor
+      - name: Apply WebView Android Gradle compatibility fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          FILE="node_modules/react-native-webview/android/build.gradle"
+          if grep -q 'com.android.tools.build:gradle:7.0.4' "$FILE"; then
+            sed -i 's/com.android.tools.build:gradle:7.0.4/com.android.tools.build:gradle:9.2.1/' "$FILE"
+          fi
+      - run: node --check scripts/scout-icon.cjs
+      - run: npx expo prebuild --platform android --no-install
+      - run: bash scripts/verify-android-proguard.sh
+      - name: Configure signing
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: bash scripts/setup-android-signing.sh
+      - name: Build APK
+        working-directory: android
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: ./gradlew :app:assembleRelease --no-daemon -PreactNativeArchitectures=arm64-v8a
+      - name: Verify signed APK
+        run: $ANDROID_HOME/build-tools/37.0.0/apksigner verify --verbose --print-certs android/app/build/outputs/apk/release/app-release.apk
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: scout-discovery-engine-v2-apk
+          path: android/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+          retention-days: 7
