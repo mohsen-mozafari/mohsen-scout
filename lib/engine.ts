@@ -423,17 +423,6 @@ export function buildInternalResearch(input: InternalResearchInput): InternalRes
   if (!input.wiki || trend.observations < 4) gaps.push(text('There is not enough monthly public-interest history to infer a reliable direction.', 'سابقه ماهانه توجه عمومی برای تشخیص جهت قابل اعتماد کافی نیست.'));
   if (sourceQuality.undatedItems > 0) gaps.push(text('Some source items have no publication date.', 'تاریخ انتشار بعضی منابع مشخص نیست.'));
   if (sourceQuality.staleItems > 0) gaps.push(text('Some source items are older than 90 days.', 'بعضی منابع بیش از ۹۰ روز قدمت دارند.'));
-  const plannedQueries = buildResearchQueryPlan(topic, input.language ?? 'en');
-  const gapDrivenQueries = fa ? [
-    ...(matchedSourceQuality.independentPublishers < 2 ? [topic + ' منبع اولیه مستقل'] : []),
-    ...(!input.wiki || trend.observations < 4 ? [topic + ' سابقه ماهانه توجه عمومی'] : []),
-    ...(potentialContradictions.length ? [topic + ' بررسی اختلاف گزارش‌ها و روش اندازه‌گیری'] : []),
-  ] : [
-    ...(matchedSourceQuality.independentPublishers < 2 ? [topic + ' independent primary source'] : []),
-    ...(!input.wiki || trend.observations < 4 ? [topic + ' monthly public-interest history'] : []),
-    ...(potentialContradictions.length ? [topic + ' conflicting reports and measurement methods'] : []),
-  ];
-  const followUpQueries = [...new Set([...gapDrivenQueries, ...plannedQueries.map((item) => item.query)])].slice(0, 5);
   const topicConceptTerms = new Set(tokenizeResearchText(topic));
   const conceptSourceGroups = new Map<string, Set<string>>();
   for (const entry of matchedNews) {
@@ -487,6 +476,17 @@ export function buildInternalResearch(input: InternalResearchInput): InternalRes
     }
     if (potentialContradictions.length >= 4) break;
   }
+  const plannedQueries = buildResearchQueryPlan(topic, input.language ?? 'en');
+  const gapDrivenQueries = fa ? [
+    ...(matchedSourceQuality.independentPublishers < 2 ? [topic + ' منبع اولیه مستقل'] : []),
+    ...(!input.wiki || trend.observations < 4 ? [topic + ' سابقه ماهانه توجه عمومی'] : []),
+    ...(potentialContradictions.length ? [topic + ' بررسی اختلاف گزارش‌ها و روش اندازه‌گیری'] : []),
+  ] : [
+    ...(matchedSourceQuality.independentPublishers < 2 ? [topic + ' independent primary source'] : []),
+    ...(!input.wiki || trend.observations < 4 ? [topic + ' monthly public-interest history'] : []),
+    ...(potentialContradictions.length ? [topic + ' conflicting reports and measurement methods'] : []),
+  ];
+  const followUpQueries = [...new Set([...gapDrivenQueries, ...plannedQueries.map((item) => item.query)])].slice(0, 5);
   const paradigms = buildMultiParadigmAnalysis({
     topic,
     news: matchedNews.map(({ item }) => ({
