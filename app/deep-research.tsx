@@ -154,8 +154,7 @@ export default function DeepResearch() {
               language: preferences.languages[0] ?? '',
               order: 'viewCount',
             };
-            recordRuntimeFinish('YouTube', sample.warning ? 'partial' : videos.length ? 'success' : 'partial');
-            if (sample.warning) warnings.push(sample.warning);
+            recordRuntimeFinish('YouTube', sample.warnings.length ? 'partial' : videos.length ? 'success' : 'partial');
           } catch (error) {
             recordRuntimeFinish('YouTube', 'error', error instanceof Error ? error.message : String(error));
             throw error;
