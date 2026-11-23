@@ -19,7 +19,7 @@ export type ExplorationState = {
   maxDepth: number;
   maxQueries: number;
 };
-const normalize = (s: string) => s.toLowerCase().normalize('NFKC').replace(/[^p{L}p{N}]+/gu, ' ').trim();
+const normalize = (s: string) => s.toLowerCase().normalize('NFKC').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 const stop = new Set(['the','and','for','with','from','that','this','what','how','why','you','are','was','into','your','video','videos','youtube','explained','about','new','latest']);
 function terms(s: string) { return normalize(s).split(' ').filter(x=>x.length>2&&!stop.has(x)); }
 export function createExplorationState(seed:string, maxDepth=2, maxQueries=8):ExplorationState {
