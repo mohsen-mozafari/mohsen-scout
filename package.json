@@ -98,6 +98,8 @@
     "minimatch": "^11.0.1",
     "tmp": "^0.2.6",
     "tinypool": "^2.1.2",
-    "zod": "$zod"
+    "eslint-plugin-react-compiler": {
+      "zod": "^3.25.77"
+    }
   }
 }
