@@ -44,7 +44,7 @@ jobs:
           node-version: 22
           cache: npm
       - name: Refresh compatible lockfile security fixes
-        run: npm audit fix --package-lock-only --ignore-scripts --no-fund
+        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
       - name: Install exact lockfile
         run: npm ci
       - name: Enforce dependency security gate
@@ -93,7 +93,7 @@ jobs:
         run: sdkmanager "platforms;android-37.0" "build-tools;37.0.0" "ndk;27.1.12297006"
       - name: Resolve compatible lockfile and install dependencies
         run: |
-          npm audit fix --package-lock-only --ignore-scripts --no-fund
+          npm install --package-lock-only --ignore-scripts --no-audit --no-fund
           npm ci
           npm audit --audit-level=high
       - name: Apply React Native WebView Android Gradle compatibility fix

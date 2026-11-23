@@ -112,7 +112,7 @@ export function buildMultiParadigmAnalysis(input: MultiParadigmInput): ResearchP
     fa ? 'از واژه‌های اصلی موضوع، ' + (lexicalCoverage * 100).toFixed(0) + '٪ در خبرها و ویدئوهای بررسی‌شده پیدا شد.'
       : 'Lexical coverage of topic terms in independent publisher records is ' + (lexicalCoverage * 100).toFixed(0) + '%.',
     sharedTerms.length
-      ? (fa ? 'مفاهیم پرتکرار در گزارش‌های ناشران: ' : 'Terms shared by publisher records and sampled videos: ') + sharedTerms.join(fa ? '، ' : ', ')
+      ? (fa ? 'مفاهیم پرتکرار در گزارش‌های ناشران: ' : 'Recurring concepts across publisher records: ') + sharedTerms.join(fa ? '، ' : ', ')
       : (fa ? 'عبارت مشترک روشنی میان خبرها و ویدئوهای این نمونه پیدا نشد.' : 'No recurring concept terms were found in the publisher sample.'),
   ];
   const temporalEnough = datedNews.length >= 4 || input.wikiObservations.length >= 4;
@@ -146,7 +146,7 @@ export function buildMultiParadigmAnalysis(input: MultiParadigmInput): ResearchP
 
   const causalFindings = [
     fa ? 'اینکه خبرها، بازدید مقاله و ویدئوها در یک زمان دیده شوند، ثابت نمی‌کند یکی باعث دیگری شده است.'
-      : 'Co-occurrence among news, article pageviews and sampled videos does not establish causality.',
+      : 'Co-occurrence among publisher coverage and article pageviews does not establish causality.',
     fa ? 'برای گفتن اینکه یک عامل باعث عامل دیگر شده، به آزمایش، مقایسه درست یا توضیح مستند در منبع اولیه نیاز داریم.'
       : 'Causal claims require an experiment, a defensible counterfactual comparison or a mechanism documented by a primary source.',
   ];
@@ -178,9 +178,6 @@ export function buildMultiParadigmAnalysis(input: MultiParadigmInput): ResearchP
   if (input.wikiObservations.length < 4) actions.push(fa
     ? 'برای بررسی روند، دست‌کم چهار ماه داده با روش یکسان جمع کن.'
     : 'Collect at least four consistently defined monthly observations before interpreting a trend.');
-  if (input.videos.length < 3) actions.push(fa
-    ? 'ویدئوهای بیشتری را بررسی کن؛ چند نمونه محدود را نماینده همه محتواها ندان.'
-    : 'Broaden the video sample; do not treat a small sample as representative of the whole market.');
   if (input.entities.length < 3 || input.relations.length < 2) actions.push(fa
     ? 'نام‌ها و ارتباط‌های مهم را از متن منبع اصلی استخراج و بررسی کن.'
     : 'Extract related entities and relationships from primary sources, then verify them.');
