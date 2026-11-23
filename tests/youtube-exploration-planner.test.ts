@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createExplorationState, expandExploration, takeExplorationPath, explorationCoverage } from '../lib/youtube-exploration-planner';
 
-test('planner creates seed and bounded initial paths',()=>{
+void test('planner creates seed and bounded initial paths',()=>{
   const state=createExplorationState('solar sails');
   assert.equal(state.queue.length,4);
   assert.equal(state.maxDepth,2);
