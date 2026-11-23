@@ -10,11 +10,6 @@ const sample = (): MultiParadigmInput => ({
     { title: 'JWST exoplanet atmosphere analysis updated', summary: 'A new paper compares the measurement method.', sourceName: 'Science Daily', sourceId: 'science-daily', publishedAt: '2026-11-05T10:00:00.000Z' },
     { title: 'JWST spectroscopy and atmospheric molecules', summary: 'Researchers report spectral observations.', sourceName: 'NASA', sourceId: 'nasa', publishedAt: '2026-10-25T10:00:00.000Z' },
   ],
-  videos: [
-    { id: 'v1', title: 'JWST exoplanet atmosphere explained', channel: 'Science A', publishedAt: '2026-11-12T10:00:00.000Z' },
-    { id: 'v2', title: 'What JWST found in an exoplanet atmosphere', channel: 'Science B', publishedAt: '2026-11-08T10:00:00.000Z' },
-    { id: 'v3', title: 'Exoplanet atmosphere spectroscopy explained', channel: 'Science C', publishedAt: '2026-11-01T10:00:00.000Z' },
-  ],
   wikiObservations: [
     { month: '2026-06', views: 100 }, { month: '2026-07', views: 110 },
     { month: '2026-08', views: 105 }, { month: '2026-09', views: 130 },
@@ -48,7 +43,7 @@ void test('returns eight independent reasoning lenses, not a single composite sc
 
 void test('empty evidence stays exploratory and never fabricates causal support', () => {
   const input = sample();
-  input.news = []; input.videos = []; input.wikiObservations = []; input.entities = []; input.relations = [];
+  input.news = []; input.wikiObservations = []; input.entities = []; input.relations = [];
   input.independentPublisherFamilies = 0;
   input.trend = { direction: 'insufficient-data', observations: 0, changePercent: null, anomaly: null };
   input.gaps = ['No primary source was supplied.'];

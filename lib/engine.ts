@@ -524,12 +524,6 @@ export function buildInternalResearch(input: InternalResearchInput): InternalRes
       sourceId: item.sourceId,
       publishedAt: item.publishedAt,
     })),
-    videos: videos.map((video) => ({
-      id: video.id,
-      title: video.title,
-      channel: video.channel,
-      publishedAt: video.publishedAt,
-    })),
     wikiObservations: input.wiki?.monthlyViews ?? [],
     trend,
     independentPublisherFamilies: matchedSourceQuality.independentPublishers,

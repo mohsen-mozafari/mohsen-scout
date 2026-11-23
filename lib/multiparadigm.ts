@@ -62,18 +62,14 @@ export function buildMultiParadigmAnalysis(input: MultiParadigmInput): ResearchP
   const fa = input.language === 'fa';
   const topicTerms = new Set(tokenizeResearchText(input.topic).filter((term) => term.length > 1));
   const publisherTerms = new Set<string>();
-  const videoTerms = new Set<string>();
   for (const item of input.news) {
     for (const term of tokenizeResearchText(item.title + ' ' + item.summary)) publisherTerms.add(term);
   }
-  for (const video of input.videos) {
-    for (const term of tokenizeResearchText(video.title)) videoTerms.add(term);
-  }
   let coveredTerms = 0;
-  for (const term of topicTerms) if (publisherTerms.has(term) || videoTerms.has(term)) coveredTerms += 1;
+  for (const term of topicTerms) if (publisherTerms.has(term)) coveredTerms += 1;
   const lexicalCoverage = topicTerms.size ? coveredTerms / topicTerms.size : 0;
   const sharedTerms = [...publisherTerms]
-    .filter((term) => videoTerms.has(term) && !topicTerms.has(term))
+    .filter((term) => !topicTerms.has(term))
     .sort((a, b) => a.localeCompare(b)).slice(0, 8);
 
   const datedNews = input.news.filter((item) => {
@@ -114,10 +110,10 @@ export function buildMultiParadigmAnalysis(input: MultiParadigmInput): ResearchP
 
   const semanticFindings = [
     fa ? 'از واژه‌های اصلی موضوع، ' + (lexicalCoverage * 100).toFixed(0) + '٪ در خبرها و ویدئوهای بررسی‌شده پیدا شد.'
-      : 'Lexical coverage of topic terms in the inspected corpus is ' + (lexicalCoverage * 100).toFixed(0) + '%.',
+      : 'Lexical coverage of topic terms in independent publisher records is ' + (lexicalCoverage * 100).toFixed(0) + '%.',
     sharedTerms.length
-      ? (fa ? 'عبارت‌های مشترک در خبرها و ویدئوها: ' : 'Terms shared by publisher records and sampled videos: ') + sharedTerms.join(fa ? '، ' : ', ')
-      : (fa ? 'عبارت مشترک روشنی میان خبرها و ویدئوهای این نمونه پیدا نشد.' : 'No clear lexical overlap was found between the two collections.'),
+      ? (fa ? 'مفاهیم پرتکرار در گزارش‌های ناشران: ' : 'Terms shared by publisher records and sampled videos: ') + sharedTerms.join(fa ? '، ' : ', ')
+      : (fa ? 'عبارت مشترک روشنی میان خبرها و ویدئوهای این نمونه پیدا نشد.' : 'No recurring concept terms were found in the publisher sample.'),
   ];
   const temporalEnough = datedNews.length >= 4 || input.wikiObservations.length >= 4;
   const temporalFindings = [
@@ -193,10 +189,10 @@ export function buildMultiParadigmAnalysis(input: MultiParadigmInput): ResearchP
     : 'State a rival interpretation and identify evidence needed to falsify or support it.');
   const nextActions = unique(actions, 6);
 
-  const hasEvidence = input.news.length > 0 || input.videos.length > 0 || input.wikiObservations.length > 0;
+  const hasEvidence = input.news.length > 0 || input.wikiObservations.length > 0;
   const readiness: ResearchParadigmAnalysis['readiness'] = !hasEvidence ? 'exploratory' :
     input.independentPublisherFamilies >= 2 && input.news.length >= 3 &&
-    (input.wikiObservations.length >= 4 || input.videos.length >= 3) && !contradictionCount
+    input.wikiObservations.length >= 4 && !contradictionCount
       ? 'well-supported' : 'developing';
   const readinessLabel = fa
     ? readiness === 'well-supported' ? 'پشتوانه چندمنبعی مناسب؛ محدود به نمونه فعلی' :
@@ -210,7 +206,7 @@ export function buildMultiParadigmAnalysis(input: MultiParadigmInput): ResearchP
       evidenceFindings, [fa ? 'چند خوراک از یک خانواده ناشر، تأیید مستقل متعدد نیست.' : 'Multiple feeds from one publisher family are not multiple independent confirmations.'], fa),
     makeLens('semantic', fa ? '۲. ارتباط موضوعی خبرها و ویدئوها' : '2. Semantic and lexical alignment',
       sharedTerms.length >= 2 ? 'mixed' : 'limited',
-      fa ? 'بررسی می‌کند خبرها و ویدئوهای نمونه واقعاً درباره کدام بخش از موضوع‌اند.' : 'Compares topic vocabulary, publisher reports and sampled video titles.',
+      fa ? 'بررسی می‌کند گزارش‌های مستقل واقعاً کدام بخش از موضوع را پوشش می‌دهند.' : 'Compares topic vocabulary across independent publisher reports.',
       semanticFindings, [fa ? 'مشترک بودن چند واژه به معنی یکی بودن محتوا یا تأیید متقابل خبرها نیست.' : 'Lexical overlap does not prove deep understanding or factual agreement.'], fa),
     makeLens('temporal', fa ? '۳. تغییرات در طول زمان' : '3. Temporal dynamics', temporalEnough ? 'mixed' : 'limited',
       fa ? 'تازه بودن خبرها را از تغییر بازدید مقاله‌های ویکی‌پدیا جداگانه بررسی می‌کند.' : 'Separates publication recency from the Wikimedia time-series direction.',

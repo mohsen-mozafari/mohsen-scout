@@ -14,22 +14,12 @@ export type WebResearchResult = {
   warnings: string[];
 };
 
-import { canonicalizeResearchUrl } from './intelligence';
-import { buildResearchQueryPlan, type PlannedResearchQuery } from './research-plan';
-
 export type WebResearchOptions = {
   apiKey?: string;
   limit?: number;
   days?: number;
   includeContent?: boolean;
   fetcher?: typeof fetch;
-  language?: 'fa' | 'en';
-};
-
-export type WebResearchPlanResult = {
-  items: WebResearchItem[];
-  queries: PlannedResearchQuery[];
-  warnings: string[];
 };
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
@@ -191,68 +181,6 @@ export async function fetchWebResearch(
   } finally {
     clearTimeout(timeout);
   }
-}
-
-
-/**
- * Executes a bounded three-angle research plan sequentially. Results are
- * de-duplicated by canonical URL, while partial failures are retained as
- * warnings so publisher feeds and Wikimedia can still complete the run.
- */
-export async function fetchPlannedWebResearch(
-  topic: string,
-  options: WebResearchOptions = {},
-): Promise<WebResearchPlanResult> {
-  const queries = buildResearchQueryPlan(topic, options.language ?? 'en');
-  if (!queries.length) throw new Error('Enter a research topic before searching the web.');
-
-  const totalLimit = Number.isFinite(options.limit)
-    ? Math.max(1, Math.min(8, Math.floor(options.limit!)))
-    : 6;
-  const perQueryLimit = Math.max(1, Math.ceil(totalLimit / queries.length));
-  const itemsByUrl = new Map<string, WebResearchItem>();
-  const warnings: string[] = [];
-
-  for (const planned of queries) {
-    try {
-      const result = await fetchWebResearch(planned.query, {
-        ...options,
-        limit: perQueryLimit,
-      });
-      warnings.push(...result.warnings.map((warning) => planned.intent + ': ' + warning));
-      for (const item of result.items) {
-        const canonical = canonicalizeResearchUrl(item.url);
-        if (!canonical) continue;
-        const previous = itemsByUrl.get(canonical);
-        if (!previous) {
-          itemsByUrl.set(canonical, item);
-          continue;
-        }
-        const sourceNames = [...new Set([previous.sourceName, item.sourceName].filter(Boolean))];
-        itemsByUrl.set(canonical, {
-          ...previous,
-          sourceName: sourceNames.join(' · ').slice(0, 160),
-          summary: [previous.summary, item.summary]
-            .filter((value, index, all) => value && all.indexOf(value) === index)
-            .sort((a, b) => b.length - a.length)
-            .slice(0, 2)
-            .join(' '),
-          publishedAt: previous.publishedAt ?? item.publishedAt,
-        });
-      }
-    } catch (error) {
-      warnings.push(
-        planned.intent + ': ' +
-        (error instanceof Error ? error.message : 'This search angle was unavailable.'),
-      );
-    }
-  }
-
-  const items = [...itemsByUrl.values()].slice(0, totalLimit);
-  if (!items.length) {
-    warnings.push('The bounded web research plan returned no usable independent source. Publisher feeds and Wikimedia remain available.');
-  }
-  return { items, queries, warnings: [...new Set(warnings)].slice(0, 12) };
 }
 
 export async function testFirecrawlKey(key: string, fetcher: typeof fetch = fetch): Promise<void> {

@@ -1,0 +1,207 @@
+name: Build and validate MOHSEN SCOUT v1.16.0
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [feature/v1.16.0-research-engine]
+    paths:
+      - '.github/workflows/research-engine-v1.16.0.yml'
+      - 'app/**'
+      - 'lib/**'
+      - 'components/**'
+      - 'tests/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'app.config.ts'
+      - 'scripts/**'
+      - 'plugins/**'
+      - 'assets/**'
+      - 'public/icons/**'
+      - 'README_FA.md'
+  pull_request:
+    branches: [feature/v1.16.0-research-engine]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mohsenscout-v1.16.0-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Security, tests and source quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+      - name: Refresh compatible lockfile security fixes
+        run: npm audit fix --package-lock-only --ignore-scripts --no-fund
+      - name: Install exact lockfile
+        run: npm ci
+      - name: Enforce dependency security gate
+        run: npm audit --audit-level=high
+      - name: Run regression suite
+        run: npm test
+      - name: Run source lint and type checks
+        run: npm run lint
+      - name: Run CSS lint
+        run: npm run lint:css
+      - name: Check formatting
+        run: npm run format:check
+      - name: Verify Expo dependency alignment
+        run: npx expo-doctor
+      - name: Verify app config
+        run: npx expo config --type public --json > /tmp/mohsen-scout-expo-config.json
+
+  build-android:
+    name: Build signed Android ARM64 APK
+    needs: validate
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 65
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+      - name: Set up Java
+        uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
+        with:
+          packages: platform-tools
+      - name: Install Android SDK packages
+        run: sdkmanager "platforms;android-37.0" "build-tools;37.0.0" "ndk;27.1.12297006"
+      - name: Resolve compatible lockfile and install dependencies
+        run: |
+          npm audit fix --package-lock-only --ignore-scripts --no-fund
+          npm ci
+          npm audit --audit-level=high
+      - name: Apply React Native WebView Android Gradle compatibility fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          FILE="node_modules/react-native-webview/android/build.gradle"
+          if grep -q 'com.android.tools.build:gradle:7.0.4' "$FILE"; then
+            sed -i 's/com.android.tools.build:gradle:7.0.4/com.android.tools.build:gradle:9.2.1/' "$FILE"
+          fi
+          grep -n 'com.android.tools.build:gradle' "$FILE"
+      - name: Validate icon generator
+        run: node --check scripts/scout-icon.cjs
+      - name: Generate Android project
+        run: npx expo prebuild --platform android --no-install
+      - name: Verify WorkManager R8 rules
+        run: bash scripts/verify-android-proguard.sh
+      - name: Configure Android signing
+        shell: bash
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: bash scripts/setup-android-signing.sh
+      - name: Build release APK
+        working-directory: android
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: ./gradlew :app:assembleRelease --no-daemon -PreactNativeArchitectures=arm64-v8a
+      - name: Verify signed APK
+        run: $ANDROID_HOME/build-tools/37.0.0/apksigner verify --verbose --print-certs android/app/build/outputs/apk/release/app-release.apk
+      - name: Verify package identity and ABI
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="android/app/build/outputs/apk/release/app-release.apk"
+          BADGING="$("$ANDROID_HOME/build-tools/37.0.0/aapt" dump badging "$APK")"
+          echo "$BADGING" | grep -F "package: name='me.bilt.mohsenscout' versionCode='36' versionName='1.16.0'"
+          echo "$BADGING" | grep -F "native-code: 'arm64-v8a'"
+          CERT_SHA="$("$ANDROID_HOME/build-tools/37.0.0/apksigner" verify --print-certs "$APK" | awk -F': ' '/certificate SHA-256 digest:/ {print tolower($NF); exit}')"
+          EXPECTED_CERT_SHA="8e951f99da896948aa6af5fae37a6ae870c4263bde99ce942d3ef5fb507364de"
+          if [[ "$CERT_SHA" != "$EXPECTED_CERT_SHA" ]]; then
+            echo "::error::APK signer certificate fingerprint mismatch."
+            exit 1
+          fi
+      - name: Prepare APK and checksum
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          APK_NAME="MOHSEN-SCOUT-1.16.0-arm64.apk"
+          cp android/app/build/outputs/apk/release/app-release.apk "dist/$APK_NAME"
+          sha256sum "dist/$APK_NAME" > dist/SHA256SUMS.txt
+          cat dist/SHA256SUMS.txt
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: mohsen-scout-v1.16.0-apk
+          path: |
+            dist/MOHSEN-SCOUT-1.16.0-arm64.apk
+            dist/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 1
+
+  publish-release:
+    if: github.ref == 'refs/heads/feature/v1.16.0-research-engine' && github.event_name != 'pull_request'
+    needs: build-android
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - name: Verify this is still the branch head
+        id: freshness
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          CURRENT_SHA="$(gh api "repos/${GITHUB_REPOSITORY}/branches/feature/v1.16.0-research-engine" --jq '.commit.sha')"
+          if [[ "$CURRENT_SHA" != "$GITHUB_SHA" ]]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Download built APK
+        if: steps.freshness.outputs.skip != 'true'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: mohsen-scout-v1.16.0-apk
+          path: dist
+      - name: Publish immutable versioned release
+        if: steps.freshness.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="v1.16.0"
+          APK="dist/MOHSEN-SCOUT-1.16.0-arm64.apk"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::Release tag $TAG already exists; refusing to overwrite a published binary."
+            exit 1
+          fi
+          gh release create "$TAG" "$APK" dist/SHA256SUMS.txt             --repo "$GITHUB_REPOSITORY"             --title "MOHSEN SCOUT v1.16.0"             --notes "Signed Android ARM64 release. SHA256 is included in SHA256SUMS.txt."             --target "$GITHUB_SHA"
+          mkdir -p release-verification
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "MOHSEN-SCOUT-1.16.0-arm64.apk" --dir release-verification
+          LOCAL_SHA="$(sha256sum "$APK" | awk '{print $1}')"
+          DOWNLOADED_SHA="$(sha256sum release-verification/MOHSEN-SCOUT-1.16.0-arm64.apk | awk '{print $1}')"
+          test "$LOCAL_SHA" = "$DOWNLOADED_SHA"
+          unzip -t release-verification/MOHSEN-SCOUT-1.16.0-arm64.apk >/dev/null
+          echo "Verified APK SHA256: $LOCAL_SHA" | tee -a "$GITHUB_STEP_SUMMARY"
