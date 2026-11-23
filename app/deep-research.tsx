@@ -8,7 +8,7 @@ import { useScout } from '@/lib/store';
 import { translateText } from '@/lib/i18n';
 import { uid, RETENTION_MS, type Idea } from '@/lib/types';
 import { getKey } from '@/lib/vault';
-import { fetchWebResearch, type WebResearchItem } from '@/lib/web-research';
+import { fetchPlannedWebResearch, type WebResearchItem } from '@/lib/web-research';
 import { buildInternalResearch, rankNewsForTopic, type InternalResearchResult } from '@/lib/engine';
 import { buildResearchInterestProfile, normalizeResearchText } from '@/lib/intelligence';
 import { MediaPreview } from '@/components/MediaPreview';
@@ -29,6 +29,7 @@ type Brief = {
   createdAt: number;
   news: SpaceNewsItem[];
   webResults: WebResearchItem[];
+  researchQueries: string[];
   wiki?: WikiSignal;
   videos: YouTubeSampleVideo[];
   warnings: string[];
@@ -78,15 +79,18 @@ export default function DeepResearch() {
     warnings.push(...newsResult.warnings);
     if (cachedNews.length) warnings.push(preferences.uiLanguage === 'fa' ? 'شواهد خبری تازه از پرونده محلی موضوع دوباره استفاده شد؛ درخواست دیگری برای خوراک خبری ارسال نشد.' : 'Reused recent publisher evidence from the local topic dossier; no additional feed request was made.');
     let webResults: WebResearchItem[] = [];
+    let researchQueries: string[] = [];
     if (preferences.webResearchEnabled) {
       try {
         const firecrawlKey = await getKey('firecrawl').catch(() => undefined);
-        const web = await fetchWebResearch(query, {
+        const web = await fetchPlannedWebResearch(query, {
           apiKey: firecrawlKey ?? undefined,
           limit: 6,
           days: preferences.defaultResearchDays,
+          language: preferences.uiLanguage ?? 'fa',
         });
         webResults = web.items;
+        researchQueries = web.queries.map((item) => item.query);
         warnings.push(...web.warnings);
       } catch (error) {
         warnings.push('Independent web search unavailable: ' + (error instanceof Error ? error.message : 'Firecrawl request failed.') + ' Official feeds and Wikimedia continue independently.');
@@ -266,6 +270,7 @@ export default function DeepResearch() {
       createdAt: Date.now(),
       news: selectedNews,
       webResults,
+      researchQueries,
       wiki,
       videos,
       warnings,
@@ -345,7 +350,8 @@ export default function DeepResearch() {
           <Panel>
             <Heading>Research overview · {brief.topic}</Heading>
             <Text style={styles.badge}>Prepared {new Date(brief.createdAt).toLocaleString()}</Text>
-            <Txt muted>{brief.news.length} publisher reports · {brief.videos.length} YouTube sample videos · {brief.generatedIdeas.length} generated ideas · {brief.wiki ? 'Wikimedia context available' : 'No Wikimedia result'}.</Txt>
+            <Txt muted>{brief.news.length} publisher reports · {brief.webResults.length} independent web results · {brief.videos.length} separately displayed YouTube sample videos · {brief.generatedIdeas.length} generated ideas · {brief.wiki ? 'Wikimedia context available' : 'No Wikimedia result'}.</Txt>
+            {brief.researchQueries.length ? <Fold title={preferences.uiLanguage === 'fa' ? 'پرس‌وجوهای تحقیق اجراشده' : 'Research queries used'} summary={brief.researchQueries.length + ' bounded search angles'}>{brief.researchQueries.map((item) => <Txt muted key={item}>{item}</Txt>)}</Fold> : null}
             <Txt muted>Wikimedia pageviews indicate article attention, not YouTube demand. Treat generated angles as research candidates and verify claims against the linked primary sources.</Txt>
             {brief.warnings.length ? <Fold title="Coverage limits & warnings" summary={brief.warnings.length + ' item(s) to review'}>{brief.warnings.map((warning) => <Txt muted key={warning}>Limitation: {warning}</Txt>)}</Fold> : null}
           </Panel>

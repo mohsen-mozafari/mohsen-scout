@@ -18,7 +18,7 @@ import { getKey } from './vault';
 import { localDateKey, nextBudget, nextOpenRouterUsage, searchYouTube, type YouTubeQuotaKind, type YouTubeQuotaOrigin } from './api';
 import { buildInternalResearch } from './engine';
 import { createResearchMemoryEntry } from './research-memory';
-import { fetchWebResearch } from './web-research';
+import { fetchPlannedWebResearch } from './web-research';
 import { reviewIdeasAutomatically } from './ai-review';
 import { generateEditorialIdeas, type IdeaGenerationCategory } from './idea-generation';
 import { attachReportToIdea as attachReport, attachVideoReferenceToIdea as attachVideoReference, getOrCreateSourceIdea, type SourceIdeaInput } from './idea-research';
@@ -227,7 +227,8 @@ export const useScout = create<State>((set, get) => ({
       let youtubeResult: Awaited<ReturnType<typeof searchYouTube>> | undefined;
       let publisherNews = getCachedSpaceNews(get().data.feedRegistry, initialPreferences.spaceNewsSources);
       let feedRegistry = get().data.feedRegistry;
-      let webItems: Awaited<ReturnType<typeof fetchWebResearch>>['items'] = [];
+      let webItems: Awaited<ReturnType<typeof fetchPlannedWebResearch>>['items'] = [];
+      let webQueries: string[] = [];
       let wiki: Awaited<ReturnType<typeof getWikipediaSignal>> | undefined;
 
       const splitSourcesByFeedback = <T extends { url: string }>(items: readonly T[]) => {
@@ -368,11 +369,13 @@ export const useScout = create<State>((set, get) => ({
         set({ progress: 'Searching independent web and news sources…' });
         try {
           const webKey = await getKey('firecrawl').catch(() => undefined);
-          const result = await fetchWebResearch(topic, {
+          const result = await fetchPlannedWebResearch(topic, {
             apiKey: webKey ?? undefined,
             limit: 6,
             days: normalizedInput.days,
+            language: initialPreferences.uiLanguage ?? 'fa',
           });
+          webQueries = result.queries.map((item) => item.query);
           const split = splitSourcesByFeedback(result.items);
           webItems = split.included;
           warnings.push(...result.warnings);
@@ -381,6 +384,7 @@ export const useScout = create<State>((set, get) => ({
             ...(split.excluded.length ? [split.excluded.length + ' Firecrawl result(s) were excluded using saved source feedback.'] : []),
           ];
           await finishActivity(activityId, {
+            query: result.queries.map((item) => item.intent + ': ' + item.query).join(' ; '),
             status: result.items.length
               ? (activityWarnings.length || !webItems.length ? 'partial' : 'success')
               : 'empty',
@@ -520,7 +524,7 @@ export const useScout = create<State>((set, get) => ({
         videos: youtubeResult?.videos ?? [],
         queries: [
           ...(youtubeResult?.queries ?? []),
-          ...(webItems.length ? ['Firecrawl web/news search: ' + topic] : []),
+          ...webQueries.map((query) => 'Independent web research: ' + query),
         ],
         warnings: [...new Set(warnings)],
         id: researchReportId,

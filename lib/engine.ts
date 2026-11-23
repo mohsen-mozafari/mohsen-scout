@@ -1,5 +1,6 @@
 import { type Report, type Idea, type ResearchMemoryEntry, uid } from './types';
 import { buildMultiParadigmAnalysis, type ResearchParadigmAnalysis } from './multiparadigm';
+import { buildResearchQueryPlan } from './research-plan';
 import type { WikiSignal } from './space';
 import type { YouTubeSampleVideo } from './api';
 import {
@@ -422,15 +423,17 @@ export function buildInternalResearch(input: InternalResearchInput): InternalRes
   if (!input.wiki || trend.observations < 4) gaps.push(text('There is not enough monthly public-interest history to infer a reliable direction.', 'سابقه ماهانه توجه عمومی برای تشخیص جهت قابل اعتماد کافی نیست.'));
   if (sourceQuality.undatedItems > 0) gaps.push(text('Some source items have no publication date.', 'تاریخ انتشار بعضی منابع مشخص نیست.'));
   if (sourceQuality.staleItems > 0) gaps.push(text('Some source items are older than 90 days.', 'بعضی منابع بیش از ۹۰ روز قدمت دارند.'));
-  const followUpQueries = (fa ? [
-    ...(sourceQuality.independentPublishers < 2 ? [topic + ' منبع اولیه مستقل'] : []),
+  const plannedQueries = buildResearchQueryPlan(topic, input.language ?? 'en');
+  const gapDrivenQueries = fa ? [
+    ...(matchedSourceQuality.independentPublishers < 2 ? [topic + ' منبع اولیه مستقل'] : []),
     ...(!input.wiki || trend.observations < 4 ? [topic + ' سابقه ماهانه توجه عمومی'] : []),
-    ...(matchedNews.length ? [topic + ' محدودیت‌های روش‌شناسی'] : [topic + ' تازه‌ترین پژوهش رسمی']),
+    ...(potentialContradictions.length ? [topic + ' بررسی اختلاف گزارش‌ها و روش اندازه‌گیری'] : []),
   ] : [
-    ...(sourceQuality.independentPublishers < 2 ? [topic + ' independent primary source'] : []),
-    ...(!input.wiki || trend.observations < 4 ? [topic + ' monthly interest history'] : []),
-    ...(matchedNews.length ? [topic + ' methodology limitations'] : [topic + ' latest official research']),
-  ]).slice(0, 4);
+    ...(matchedSourceQuality.independentPublishers < 2 ? [topic + ' independent primary source'] : []),
+    ...(!input.wiki || trend.observations < 4 ? [topic + ' monthly public-interest history'] : []),
+    ...(potentialContradictions.length ? [topic + ' conflicting reports and measurement methods'] : []),
+  ];
+  const followUpQueries = [...new Set([...gapDrivenQueries, ...plannedQueries.map((item) => item.query)])].slice(0, 5);
   const topicConceptTerms = new Set(tokenizeResearchText(topic));
   const conceptSourceGroups = new Map<string, Set<string>>();
   for (const entry of matchedNews) {

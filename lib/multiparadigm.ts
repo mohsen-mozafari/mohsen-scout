@@ -23,7 +23,6 @@ export type ResearchParadigmAnalysis = {
 export type MultiParadigmInput = {
   topic: string;
   news: readonly { title: string; summary: string; sourceName: string; sourceId?: string; publishedAt: string | null }[];
-  videos: readonly { id: string; title: string; channel: string; publishedAt: string }[];
   wikiObservations: readonly { month: string; views: number }[];
   trend: { direction: 'rising' | 'falling' | 'stable' | 'insufficient-data'; observations: number; changePercent: number | null; anomaly: 'spike' | 'drop' | null };
   independentPublisherFamilies: number;
