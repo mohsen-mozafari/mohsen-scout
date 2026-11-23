@@ -142,11 +142,11 @@ export default function DeepResearch() {
               key,
               charge: useScout.getState().charge,
               onQuota: () => useScout.getState().commit((data) => ({ ...data, budget: { ...data.budget, exhausted: true } })),
-            }, { days: preferences.defaultResearchDays ?? 30, region: preferences.region, language: preferences.languages[0] }, { rounds: 2, resultsPerQuery: 10 });
+            }, { days: preferences.defaultResearchDays ?? 30, region: preferences.region, language: preferences.languages[0] }, { rounds: 3, resultsPerQuery: 10, maxQueries: 6 });
             videos = sample.videos;
             warnings.push(preferences.uiLanguage === 'fa'
-              ? 'اکتشاف چندمرحله‌ای YouTube اجرا شد: ' + sample.queries.join(' ← ') + ' | ویدئوهای تکراری ادغام شدند.'
-              : 'Iterative YouTube exploration ran: ' + sample.queries.join(' → ') + ' | duplicate videos merged.');
+              ? 'اکتشاف خودکار YouTube (' + sample.exploration.rounds + ' دور): ' + sample.queries.join(' ← ') + ' | ویدئوهای تکراری ادغام شدند.'
+              : 'Autonomous YouTube discovery ran (' + sample.exploration.rounds + ' rounds): ' + sample.queries.join(' → ') + ' | duplicates merged.');
             warnings.push(...sample.warnings);
             videoCriteria = {
               days: preferences.defaultResearchDays ?? 30,
