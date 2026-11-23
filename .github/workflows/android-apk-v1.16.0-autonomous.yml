@@ -31,7 +31,7 @@ concurrency:
 
 jobs:
   build-android:
-    name: Test and build signed Android APK
+    name: Test autonomous discovery and build signed APK
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
@@ -138,7 +138,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist
-          APK_NAME="MOHSEN-SCOUT-1.15.1-arm64.apk"
+          APK_NAME="MOHSEN-SCOUT-1.16.0-arm64.apk"
           APK="dist/$APK_NAME"
           cp android/app/build/outputs/apk/release/app-release.apk "$APK"
           sha256sum "$APK" > dist/SHA256SUMS.txt
@@ -148,7 +148,7 @@ jobs:
       - name: Upload APK for release job
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: mohsen-scout-release-apk
+          name: mohsen-scout-v1.16-autonomous-apk
           path: |
             dist/MOHSEN-SCOUT-1.15.1-arm64.apk
             dist/SHA256SUMS.txt
