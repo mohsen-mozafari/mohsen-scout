@@ -246,6 +246,7 @@ export default function DeepResearch() {
       let outcome = await runResearchAgent({
         topic: query,
         evidence: researchEvidence,
+        youtubeSignals: videos,
         preferences,
         previous: priorMemory?.researchDossier,
         alreadyAsked,
