@@ -182,10 +182,12 @@ void test('deep research dossier and verbatim citations survive local validation
     completedQueries: [],
     contradictions: [],
     gaps: ['Long-term follow-up evidence is missing.'],
-    conclusion: 'Moderate support, with scope limitations.',
+    conclusion: 'Independent review confirmed one limited claim.',
+    provisionalConclusion: 'The first researcher suggested broad support, pending verification.',
     confidence: 'moderate',
     stoppingReason: 'No additional primary documents were found.',
     reviewStatus: 'independently-reviewed',
+    reviewedEvidenceCount: 2,
     reviewerProvider: 'groq',
     reviewerModel: 'reviewer-model',
     fullTextEvidenceCount: 2,
@@ -212,4 +214,7 @@ void test('deep research dossier and verbatim citations survive local validation
   const restored = importBackup(exportBackup(locallyValidated));
   assert.equal(restored.researchMemory[0]?.researchDossier?.reviewerProvider, 'groq');
   assert.equal(restored.researchMemory[0]?.researchDossier?.verifiedCitationCount, 2);
+  assert.equal(restored.researchMemory[0]?.researchDossier?.reviewedEvidenceCount, 2);
+  assert.equal(restored.researchMemory[0]?.researchDossier?.provisionalConclusion,
+    'The first researcher suggested broad support, pending verification.');
 });

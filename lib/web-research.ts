@@ -24,6 +24,24 @@ export type WebResearchOptions = {
   fetcher?: typeof fetch;
 };
 
+function cleanSourceText(value: unknown, maxLength: number): string {
+  if (typeof value !== 'string') return '';
+  return value
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<br\s*\/?\s*>/gi, '\n')
+    .replace(/<\/(?:p|div|h[1-6]|li|section|article|blockquote)>/gi, '\n')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')
+    .replace(/\[([^\]]*)\]\(https?:\/\/[^)]+\)/g, '$1')
+    .replace(/[\x60*_>#]+/g, ' ')
+    .split(/\r?\n/)
+    .map((line) => line.replace(/\s+/g, ' ').trim())
+    .filter(Boolean)
+    .join('\n')
+    .slice(0, maxLength);
+}
+
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? value as Record<string, unknown>
@@ -92,7 +110,7 @@ function parseFirecrawlItems(raw: unknown, limit: number): WebResearchItem[] {
       const rawSourceText = typeof item.markdown === 'string' ? item.markdown
         : typeof item.content === 'string' ? item.content
           : typeof item.text === 'string' ? item.text : '';
-      const sourceText = cleanText(rawSourceText, 12000);
+      const sourceText = cleanSourceText(rawSourceText, 12000);
       const summary = cleanText(item.summary ?? item.description ?? item.snippet ?? rawSourceText, 1500);
       const dateRaw = item.publishedDate ?? item.publishedAt ?? item.date;
       const publishedAt = typeof dateRaw === 'string' && Number.isFinite(Date.parse(dateRaw))
@@ -254,7 +272,7 @@ export async function enrichResearchEvidence(
         const raw: unknown = await response.json();
         const root = asRecord(raw);
         const data = root && asRecord(root.data);
-        const markdown = cleanText(data?.markdown ?? data?.content ?? root?.markdown ?? '', 12000);
+        const markdown = cleanSourceText(data?.markdown ?? data?.content ?? root?.markdown ?? '', 12000);
         if (markdown.length < 300) {
           failedCount += 1;
           continue;

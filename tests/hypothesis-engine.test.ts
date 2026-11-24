@@ -8,13 +8,16 @@ const evidence = [
   { id: 'c', title: 'Battery recycling limitations and criticism', summary: 'The report disputes the claimed recovery benefit and notes uncertainty.', url: 'https://policy.example.com/c' },
 ];
 
-void test('hypothesis review separates support, challenge and context instead of treating search rank as truth', () => {
+void test('lexical hypothesis discovery remains provisional and never self-certifies support or contradiction', () => {
   const result = reviewResearchHypotheses('battery recycling', evidence);
   assert.equal(result.usableEvidenceCount, 3);
   assert.ok(result.independentHostCount >= 3);
   assert.ok(result.hypotheses.length > 0);
-  assert.ok(result.hypotheses.some((item) => item.status === 'contested'));
-  assert.ok(result.hypotheses.every((item) => item.rationale.length > 0));
+  assert.ok(result.hypotheses.every((item) => item.status === 'insufficient-evidence'));
+  assert.ok(result.hypotheses.every((item) => item.confidence === 'low'));
+  assert.ok(result.hypotheses.every((item) => item.supportingEvidenceIds.length === 0));
+  assert.ok(result.hypotheses.every((item) => item.challengingEvidenceIds.length === 0));
+  assert.ok(result.hypotheses.every((item) => item.rationale.includes('Exploration candidate')));
 });
 
 void test('hypothesis review excludes YouTube and invalid URLs from independent evidence', () => {

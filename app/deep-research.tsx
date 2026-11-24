@@ -624,11 +624,18 @@ export default function DeepResearch() {
               <Panel>
                 <Heading>{preferences.uiLanguage === 'fa' ? 'جمع‌بندی انتقادی' : 'Critical synthesis'}</Heading>
                 <Txt>{brief.researchDossier.conclusion || (preferences.uiLanguage === 'fa' ? 'جمع‌بندی کافی در دسترس نیست.' : 'No sufficient synthesis is available.')}</Txt>
+                {brief.researchDossier.provisionalConclusion ? (
+                  <View style={{ gap: 3 }}>
+                    <Txt muted>{preferences.uiLanguage === 'fa' ? 'جمع‌بندی مقدماتی پژوهشگر اول — هنوز تأیید مستقل نشده' : 'First researcher draft — not independently verified'}</Txt>
+                    <Txt muted>{brief.researchDossier.provisionalConclusion}</Txt>
+                  </View>
+                ) : null}
                 <Txt muted>{'Confidence: ' + brief.researchDossier.confidence + ' · ' + brief.researchDossier.stoppingReason}</Txt>
                 <Txt muted>{'Independent review: ' + (brief.researchDossier.reviewStatus ?? 'not available') +
                   (brief.researchDossier.reviewerProvider ? ' · reviewer: ' + brief.researchDossier.reviewerProvider + ' / ' + brief.researchDossier.reviewerModel : '')}</Txt>
                 <Txt muted>{'Original text records: ' + (brief.researchDossier.fullTextEvidenceCount ?? 0) +
                   ' · summary-only: ' + (brief.researchDossier.summaryOnlyEvidenceCount ?? 0) +
+                  ' · independently assessed evidence records: ' + (brief.researchDossier.reviewedEvidenceCount ?? 0) +
                   ' · publisher groups (heuristic): ' + (brief.researchDossier.publisherFamilyCount ?? 0) +
                   ' · checked quotes: ' + (brief.researchDossier.verifiedCitationCount ?? 0)}</Txt>
                 <Heading>{preferences.uiLanguage === 'fa' ? 'فرضیه‌های قابل آزمون' : 'Testable hypotheses'}</Heading>

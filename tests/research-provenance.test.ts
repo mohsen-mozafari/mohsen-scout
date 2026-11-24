@@ -181,3 +181,45 @@ void test('both research prompts include evidence records beyond the old first-2
   assert.ok(independent.includes('evidence-47'));
   assert.ok(!independent.includes('youtube-private'));
 });
+
+
+void test('independent source reviews ignore summary-only credibility claims and validate every evidence ID', () => {
+  const records = [
+    ...evidence,
+    {
+      id: 'summary-only',
+      url: 'https://publisher-summary.org/brief',
+      title: 'Summary-only coverage',
+      summary: 'A short publisher summary without original text.',
+      sourceName: 'Summary publisher',
+      category: 'news' as const,
+    },
+  ];
+  const dossier = pendingDossier(records);
+  const reviewed = applyIndependentResearchReview(dossier, {
+    reviews: [{
+      hypothesisId: 'h1',
+      verdict: 'support',
+      supportingCitations: [
+        { evidenceId: 'e1', quote: quoteA },
+        { evidenceId: 'e2', quote: quoteB },
+      ],
+      challengingCitations: [],
+    }],
+    evidenceReviews: [
+      { evidenceId: 'e1', role: 'supports', credibility: 'high', sourceType: 'primary', freshness: 'recent', reason: 'Original experimental report.' },
+      { evidenceId: 'e2', role: 'supports', credibility: 'medium', sourceType: 'secondary', freshness: 'recent', reason: 'Independent technical review.' },
+      { evidenceId: 'summary-only', role: 'supports', credibility: 'high', sourceType: 'primary', freshness: 'recent', reason: 'Only a search snippet was supplied.' },
+      { evidenceId: 'invented', role: 'supports', credibility: 'high', sourceType: 'primary', freshness: 'recent', reason: 'Fabricated ID.' },
+    ],
+  }, records, 'groq', 'reviewer-model');
+  assert.equal(reviewed.reviewedEvidenceCount, 3);
+  assert.equal(reviewed.evidenceReviews.length, 3);
+  const summary = reviewed.evidenceReviews.find((item) => item.evidenceId === 'summary-only');
+  assert.equal(summary?.role, 'context');
+  assert.equal(summary?.credibility, 'unknown');
+  assert.equal(summary?.sourceType, 'unknown');
+  assert.notEqual(reviewed.conclusion, reviewed.provisionalConclusion);
+  assert.ok(reviewed.conclusion.includes('فرضیه') || reviewed.conclusion.includes('hypothesis'));
+  assert.ok(reviewed.provisionalConclusion);
+});

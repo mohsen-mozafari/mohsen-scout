@@ -1,4 +1,5 @@
 import { normalizeResearchText } from './intelligence';
+import { publisherFamilyKey } from './research-provenance';
 
 export type HypothesisEvidence = {
   id: string;
@@ -50,18 +51,6 @@ const STOP = new Set([
   'را','از','به','در','با','یا','و','بر','تا','یک','هر','چه','چرا','چگونه',
 ]);
 
-const SUPPORT_CUES = [
-  'confirms','confirmed','supports','supported','demonstrates','demonstrated',
-  'evidence for','consistent with','shows that','found that','تأیید می‌کند',
-  'تایید می‌کند','نشان می‌دهد','حمایت می‌کند','شواهدی برای',
-];
-const CHALLENGE_CUES = [
-  'contradicts','contradicted','disputes','disputed','refutes','refuted',
-  'no evidence','failed to','does not support','not supported','unlikely',
-  'uncertain','controversy','limitation','limitations','criticism','criticized',
-  'رد می‌کند','رد شد','تردید','ابهام','شواهدی وجود ندارد','محدودیت','نقض می‌کند',
-];
-
 function words(value: string): string[] {
   return normalizeResearchText(value)
     .match(/[a-z0-9]{3,}|[\u0600-\u06ff]{3,}/g)
@@ -71,25 +60,15 @@ function words(value: string): string[] {
 function hostFamily(value: string): string | undefined {
   try {
     const url = new URL(value);
-    if (url.protocol !== 'https:' && url.protocol !== 'http:') return undefined;
-    const host = url.hostname.toLowerCase().replace(/^www\./, '');
+    const host = url.hostname.toLowerCase();
     if (host === 'youtube.com' || host.endsWith('.youtube.com') ||
-        host === 'youtu.be' || host.endsWith('.googlevideo.com')) return undefined;
-    const labels = host.split('.');
-    if (labels.length < 2) return host;
-    const suffix = labels.slice(-2).join('.');
-    const multiPartSuffixes = new Set(['co.uk','org.uk','ac.uk','com.au','net.au','co.jp','com.br','co.in']);
-    return multiPartSuffixes.has(suffix) && labels.length >= 3
-      ? labels.slice(-3).join('.')
-      : suffix;
+        host === 'youtu.be' || host.endsWith('.youtu.be') ||
+        host === 'youtube-nocookie.com' || host.endsWith('.youtube-nocookie.com') ||
+        host === 'googlevideo.com' || host.endsWith('.googlevideo.com')) return undefined;
+    return publisherFamilyKey(value);
   } catch {
     return undefined;
   }
-}
-
-function hasCue(text: string, cues: readonly string[]): boolean {
-  const normalized = normalizeResearchText(text);
-  return cues.some((cue) => normalized.includes(normalizeResearchText(cue)));
 }
 
 function unique<T>(values: readonly T[]): T[] {
@@ -161,30 +140,12 @@ export function reviewResearchHypotheses(
     const matched = evidence.filter((item) => candidate.ids.includes(item.id));
     const supportingEvidenceIds: string[] = [];
     const challengingEvidenceIds: string[] = [];
-    const contextEvidenceIds: string[] = [];
-    for (const item of matched) {
-      const text = item.title + ' ' + item.summary;
-      const support = hasCue(text, SUPPORT_CUES);
-      const challenge = hasCue(text, CHALLENGE_CUES);
-      if (support && !challenge) supportingEvidenceIds.push(item.id);
-      else if (challenge) challengingEvidenceIds.push(item.id);
-      else contextEvidenceIds.push(item.id);
-    }
-    const supportingHosts = unique(supportingEvidenceIds.map((id) => hostById.get(id) ?? '').filter(Boolean));
-    const contested = challengingEvidenceIds.length > 0 &&
-      (supportingEvidenceIds.length > 0 || challengingEvidenceIds.length >= 2);
-    const supported = supportingHosts.length >= 2 && challengingEvidenceIds.length === 0;
-    const status = contested ? 'contested' : supported ? 'supported' : 'insufficient-evidence';
-    const confidence = supportingHosts.length >= 3 && challengingEvidenceIds.length === 0
-      ? 'high'
-      : supportingHosts.length >= 2 && challengingEvidenceIds.length === 0
-        ? 'moderate'
-        : 'low';
-    const rationale = contested
-      ? 'Both supportive and challenging language signals were found; inspect the cited sources before deciding.'
-      : supported
-        ? 'Explicit supportive language appears across multiple host families; this is corroboration to review, not proof.'
-        : 'The available material does not contain enough explicit, cross-domain support to validate this hypothesis.';
+    // Headlines and summaries can create discovery candidates, but cannot prove
+    // entailment. Only the cross-provider, verbatim-quote verifier assigns a verdict.
+    const contextEvidenceIds = matched.map((item) => item.id);
+    const status: ResearchHypothesis['status'] = 'insufficient-evidence';
+    const confidence: ResearchHypothesis['confidence'] = 'low';
+    const rationale = 'Exploration candidate generated from topic overlap only. Lexical wording and search summaries do not prove support or contradiction; original text and independent verification are required.';
     return {
       id: 'hypothesis:' + index + ':' + normalizeResearchText(candidate.focus).replace(/\s+/g, '-').slice(0, 64),
       statement: 'Whether "' + candidate.focus + '" is materially connected to "' + cleanTopic + '".',
@@ -238,9 +199,9 @@ export function reviewResearchHypotheses(
     usableEvidenceCount: evidence.length,
     independentHostCount: allHosts.length,
     limitations: [
-      'Different host names do not prove different ownership or independent reporting.',
-      'Keyword and wording signals do not establish that a source logically proves or disproves a claim.',
-      'A source with no explicit stance cue is treated as context, not as confirmation.',
+      'These are discovery candidates, not validated hypotheses or facts.',
+      'Different hosts and registrable-domain families are only provenance proxies; they do not prove different ownership or independent reporting.',
+      'Titles and summaries are not evidence of logical entailment. Final verdicts require locally verified original-text quotations and independent cross-provider review.',
     ],
   };
 }

@@ -108,7 +108,7 @@ void test('external review prompt contains independent evidence and excludes You
 
 
 void test('Firecrawl search retrieves markdown source text only when the user key is configured', async () => {
-  const originalText = ('The primary research team published its experimental method and measured results in the original report. ').repeat(8);
+  const originalText = ('The primary research team published its experimental method and measured results in the original report.\n\n').repeat(4);
   let requestBody: Record<string, unknown> | undefined;
   const result = await fetchWebResearch('primary research report', {
     apiKey: 'fc-test-key',
@@ -125,6 +125,7 @@ void test('Firecrawl search retrieves markdown source text only when the user ke
   const scrapeOptions = requestBody?.scrapeOptions as { formats?: unknown[] } | undefined;
   assert.deepEqual(scrapeOptions?.formats, [{ type: 'markdown' }]);
   assert.ok(result.items[0]?.sourceText?.includes('experimental method'));
+  assert.ok(result.items[0]?.sourceText?.includes('\n'));
   assert.ok((result.items[0]?.sourceText?.length ?? 0) >= 300);
 });
 

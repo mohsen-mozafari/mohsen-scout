@@ -1,4 +1,3 @@
-import { getFreeModels, selectFreeModel } from './api';
 import {
   requestResearchAgentWithFallback,
   type ProviderAttempt,
@@ -29,22 +28,21 @@ export async function runResearchAgent(input: ResearchAgentInput): Promise<Resea
   const warnings: string[] = [];
   const order = input.preferences.secondOpinionOrder?.length
     ? input.preferences.secondOpinionOrder
-    : (['gemini', 'groq', 'cloudflare', 'openrouter'] as SecondOpinionProvider[]);
+    : (['gemini', 'groq', 'cloudflare'] as SecondOpinionProvider[]);
   const configs: SecondOpinionProviderConfig[] = [];
   for (const provider of new Set(order)) {
+    if (provider === 'openrouter') {
+      warnings.push('OpenRouter is excluded from Deep Research because project privacy policy prohibits sending external news and source text to OpenRouter.');
+      continue;
+    }
     try {
       const key = await getKey(provider);
       if (!key) continue;
       const accountId = provider === 'cloudflare'
         ? await getKey('cloudflare-account-id') ?? undefined
         : undefined;
-      let models = [input.preferences.secondOpinionModels?.[provider] ?? ''];
-      if (provider === 'openrouter') {
-        const available = await getFreeModels();
-        const preferred = selectFreeModel(available, models[0]);
-        models = [preferred, ...available.map((item) => item.id).filter((id) => id !== preferred)].filter(Boolean).slice(0, 5);
-      }
-      models = [...new Set(models.map((model) => model.trim()).filter(Boolean))];
+      const models = [...new Set([input.preferences.secondOpinionModels?.[provider] ?? '']
+        .map((model) => model.trim()).filter(Boolean))];
       if (!models.length) {
         warnings.push(provider + ' research analysis skipped: no supported model is selected or available.');
         continue;
@@ -83,7 +81,7 @@ export async function runResearchAgent(input: ResearchAgentInput): Promise<Resea
     // Independent validation requires a different configured provider.
     const independentConfigs = configs.filter((config) => config.provider !== response.provider);
     if (!independentConfigs.length) {
-      dossier = markResearchReviewUnavailable(dossier, input.evidence);
+      dossier = markResearchReviewUnavailable(dossier, input.evidence, input.preferences.uiLanguage ?? 'fa');
       warnings.push('Independent cross-provider review was not possible because no second AI provider is configured. All hypotheses remain unverified and low-confidence.');
     } else {
       try {
@@ -106,10 +104,11 @@ export async function runResearchAgent(input: ResearchAgentInput): Promise<Resea
           reviewResponse.provider,
           reviewResponse.model,
           input.now ?? Date.now(),
+          input.preferences.uiLanguage ?? 'fa',
         );
         attempts = [...attempts, ...reviewResponse.attempts];
       } catch (reviewError) {
-        dossier = markResearchReviewUnavailable(dossier, input.evidence);
+        dossier = markResearchReviewUnavailable(dossier, input.evidence, input.preferences.uiLanguage ?? 'fa');
         warnings.push(
           'Independent cross-provider review failed. The dossier was retained, but all hypotheses were downgraded to insufficient evidence: ' +
           (reviewError instanceof Error ? reviewError.message : 'review unavailable.'),

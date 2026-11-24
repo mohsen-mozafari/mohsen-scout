@@ -252,8 +252,11 @@ export type ResearchDossier = {
   gaps: string[];
   conclusion: string;
   confidence: 'low' | 'moderate' | 'high';
+  /** First research model's conclusion, preserved as provisional only. */
+  provisionalConclusion?: string;
   stoppingReason: string;
-  reviewStatus?: 'pending-independent-review' | 'independently-reviewed' | 'review-unavailable';
+  reviewedEvidenceCount?: number;
+  reviewStatus?: 'pending-independent-review' | 'partially-reviewed' | 'independently-reviewed' | 'review-unavailable';
   reviewerProvider?: SecondOpinionProvider;
   reviewerModel?: string;
   fullTextEvidenceCount?: number;
