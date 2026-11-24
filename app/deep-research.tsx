@@ -300,6 +300,7 @@ export default function DeepResearch() {
         const nextOutcome = await runResearchAgent({
           topic: query,
           evidence: researchEvidence,
+          youtubeSignals: videos,
           preferences,
           previous: researchDossier,
           alreadyAsked,
