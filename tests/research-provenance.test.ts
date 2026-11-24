@@ -93,9 +93,9 @@ void test('independent cross-provider reviewer plus exact quotes from two publis
       challengingCitations: [],
       reason: 'Both original reports independently describe the same measured outcome.',
     }],
-  }, evidence, 'groq', 'reviewer-model', 1764000000000);
+  }, evidence, 'xai', 'reviewer-model', 1764000000000);
   assert.equal(reviewed.reviewStatus, 'independently-reviewed');
-  assert.equal(reviewed.reviewerProvider, 'groq');
+  assert.equal(reviewed.reviewerProvider, 'xai');
   assert.equal(reviewed.hypotheses[0]?.status, 'supported');
   assert.equal(reviewed.hypotheses[0]?.confidence, 'moderate');
   assert.equal(reviewed.hypotheses[0]?.supportingQuotes?.length, 2);
@@ -112,7 +112,7 @@ void test('a model cannot validate citations that are absent from the fetched so
       supportingCitations: evidence.map((source) => ({ evidenceId: source.id, quote: quoteA })),
       challengingCitations: [],
     }],
-  }, summaryOnly, 'groq', 'reviewer-model');
+  }, summaryOnly, 'xai', 'reviewer-model');
   assert.equal(reviewed.hypotheses[0]?.status, 'insufficient-evidence');
   assert.equal(reviewed.hypotheses[0]?.confidence, 'low');
   assert.equal(reviewed.verifiedCitationCount, 0);
@@ -131,7 +131,7 @@ void test('independent reviewer cannot count two subdomains of the same publishe
       supportingCitations: [{ evidenceId: 'e1', quote: quoteA }, { evidenceId: 'e2', quote: quoteB }],
       challengingCitations: [],
     }],
-  }, sameFamily, 'groq', 'reviewer-model');
+  }, sameFamily, 'xai', 'reviewer-model');
   assert.equal(reviewed.hypotheses[0]?.status, 'insufficient-evidence');
   assert.equal(reviewed.hypotheses[0]?.confidence, 'low');
 });
@@ -146,7 +146,7 @@ void test('validated counterevidence makes a claim contested instead of hiding d
       supportingCitations: [{ evidenceId: 'e1', quote: quoteA }, { evidenceId: 'e2', quote: quoteB }],
       challengingCitations: [{ evidenceId: 'e3', quote: 'The follow up audit found the claimed energy reduction was not statistically significant in the full production sample.' }],
     }],
-  }, records, 'groq', 'reviewer-model');
+  }, records, 'xai', 'reviewer-model');
   assert.equal(reviewed.hypotheses[0]?.status, 'contested');
   assert.equal(reviewed.hypotheses[0]?.challengingQuotes?.length, 1);
 });
@@ -212,7 +212,7 @@ void test('independent source reviews ignore summary-only credibility claims and
       { evidenceId: 'summary-only', role: 'supports', credibility: 'high', sourceType: 'primary', freshness: 'recent', reason: 'Only a search snippet was supplied.' },
       { evidenceId: 'invented', role: 'supports', credibility: 'high', sourceType: 'primary', freshness: 'recent', reason: 'Fabricated ID.' },
     ],
-  }, records, 'groq', 'reviewer-model');
+  }, records, 'xai', 'reviewer-model');
   assert.equal(reviewed.reviewedEvidenceCount, 3);
   assert.equal(reviewed.evidenceReviews.length, 3);
   const summary = reviewed.evidenceReviews.find((review) => review.evidenceId === 'summary-only');

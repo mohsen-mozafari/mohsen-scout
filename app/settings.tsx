@@ -36,7 +36,7 @@ function providerName(provider: SecondOpinionProvider): string {
 }
 function normalizePreferences(value?: Partial<Preferences>): Preferences {
   const fallback = defaults().preferences;
-  const legacy = value as (Partial<Preferences> & { secondOpinionProvider?: string; secondOpinionOrder?: string[]; secondOpinionModels?: Record<string, string> }) | undefined;
+  const legacy = value as (Omit<Partial<Preferences>, 'secondOpinionProvider' | 'secondOpinionOrder' | 'secondOpinionModels'> & { secondOpinionProvider?: string; secondOpinionOrder?: string[]; secondOpinionModels?: Record<string, string> }) | undefined;
   const legacyModels = legacy?.secondOpinionModels ?? {};
   const migratedOrder = Array.isArray(legacy?.secondOpinionOrder)
     ? legacy.secondOpinionOrder.map((provider) => provider === 'groq' ? 'xai' : provider).filter((provider): provider is SecondOpinionProvider => ['gemini', 'xai', 'cloudflare', 'openrouter'].includes(provider))

@@ -62,7 +62,7 @@ function reviewed(
       challengingCitations: challenging,
       reason: 'Synthetic gold-standard reviewer fixture.',
     }],
-  }, records, 'groq', 'independent-review-model', 1764000000000, 'en');
+  }, records, 'xai', 'independent-review-model', 1764000000000, 'en');
 }
 
 void test('synthetic gold-standard benchmark: only exact quotes from independent publisher families can support claims', () => {
