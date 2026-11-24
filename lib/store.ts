@@ -752,6 +752,7 @@ export const useScout = create<State>((set, get) => ({
         })),
         analysis: internalAnalysis,
         previous: priorMemory,
+        researchDossier: webResearchDossier,
         language: currentData.preferences.uiLanguage ?? 'fa',
       });
 
