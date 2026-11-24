@@ -1,4 +1,4 @@
-name: Build MOHSEN SCOUT APK v1.20.1 · Adaptive Deep Research
+name: Build MOHSEN SCOUT APK v1.20.1 · Grok + Cloudflare AI
 
 on:
   workflow_dispatch:
