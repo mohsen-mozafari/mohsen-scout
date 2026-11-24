@@ -218,7 +218,7 @@ async function postOpinion(
   }
 }
 
-/** One user action may fall back across providers; no individual generation POST is retried. */
+/** One user action may try distinct configured models, including several free OpenRouter models, then fall back across providers. */
 export async function requestSecondOpinionWithFallback(
   configs: readonly SecondOpinionProviderConfig[],
   prompt: string,
@@ -227,10 +227,11 @@ export async function requestSecondOpinionWithFallback(
 ): Promise<SecondOpinionResult> {
   if (!prompt.trim()) throw new SecondOpinionProviderError('The approved topic and candidate concept are required.', 'invalid-response');
   const attempts: ProviderAttempt[] = [];
-  const seen = new Set<SecondOpinionProvider>();
+  const seen = new Set<string>();
   for (const config of configs) {
-    if (seen.has(config.provider)) continue;
-    seen.add(config.provider);
+    const candidateKey = config.provider + ':' + config.model.trim();
+    if (seen.has(candidateKey)) continue;
+    seen.add(candidateKey);
     if (!config.key.trim()) {
       attempts.push({ provider: config.provider, model: config.model, status: 'disabled', message: 'No key is saved.' });
       continue;
@@ -338,7 +339,7 @@ async function postResearchPrompt(
 /**
  * Uses the same configured personal AI providers as the app's second-opinion feature,
  * but returns bounded structured research JSON for the local validator to inspect.
- * Each provider is attempted at most once; generation requests are never retried.
+ * Each provider/model pair is attempted at most once; failed models do not block the next candidate.
  */
 export async function requestResearchAgentWithFallback(
   configs: readonly SecondOpinionProviderConfig[],
