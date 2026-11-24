@@ -18,7 +18,7 @@ import {
 } from './intelligence';
 
 export const limitations =
-  'This is a limited YouTube search sample, not a real-time trend report. Region controls availability, not audience location. Language is a relevance hint, not a strict language filter. Search ordering is supplied by YouTube. No demand, growth, competition score, or viral prediction is inferred.';
+  'This is a limited YouTube search sample, not a real-time trend report. Region controls availability, not audience location. Language is a relevance hint, not a strict language filter. Search ordering is supplied by YouTube. No temporal growth rate, competition score, or viral prediction is inferred from a single snapshot.';
 
 export type EngineNewsItem = {
   title: string;
@@ -163,8 +163,9 @@ export function buildInternalResearch(input: InternalResearchInput): InternalRes
   const videoWindowDays = Number.isFinite(input.videoWindowDays) ? Math.max(0, Math.min(90, Math.floor(input.videoWindowDays!))) : 30;
   const videoWindowStart = videoWindowDays === 0 ? Number.NEGATIVE_INFINITY : now - videoWindowDays * 86400000;
   const topic = cleanTopic(input.topic);
-  // Preserve the user's current YouTube sample as an isolated raw payload. All
-  // analytical paths below deliberately continue to use independent evidence only.
+  // YouTube API records are first-class discovery signals. They may inform
+  // relevance, entity extraction and cross-source hypotheses, but remain clearly
+  // labelled platform observations rather than independent publisher evidence.
   const youtubeSample = input.videos ?? [];
   const fa = input.language === 'fa';
   const text = (english: string, persian: string) => fa ? persian : english;
@@ -191,9 +192,9 @@ export function buildInternalResearch(input: InternalResearchInput): InternalRes
   const declaredPublisherCount = Math.max(0, ...news.map((item) => item.sourceCount ?? 0));
   const publisherCount = Math.max(publisherNames.length, declaredPublisherCount);
 
-  // Strict derived-data firewall: only `youtubeSample` above receives API records.
-  // Keep every analysis input empty so API metadata/statistics cannot affect findings.
-  const inputVideos: NonNullable<InternalResearchInput['videos']> = [];
+  // Analyze the supplied YouTube sample directly. These records are not counted
+  // as independent publishers and do not become web citations.
+  const inputVideos: NonNullable<InternalResearchInput['videos']> = youtubeSample;
   const recentVideoCandidates = inputVideos.filter((video) => {
     const published = Date.parse(video.publishedAt);
     return Number.isFinite(published) && published >= videoWindowStart && published <= now + 86400000;
