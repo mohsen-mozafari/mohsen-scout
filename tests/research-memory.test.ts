@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createResearchMemoryEntry } from '../lib/research-memory';
 import { defaults, type ResearchDossier } from '../lib/types';
 import { exportBackup, importBackup } from '../lib/backup';
-import { validateLocal } from '../lib/validation';
+import { researchDossierSchema, validateLocal } from '../lib/validation';
 
 const analysis = (confidence: 'low' | 'moderate' | 'high' = 'moderate') => ({
   evidence: [{ id: 'publisher-news', detail: 'Two selected official publisher reports were compared.' }],
@@ -188,7 +188,7 @@ void test('deep research dossier and verbatim citations survive local validation
     stoppingReason: 'No additional primary documents were found.',
     reviewStatus: 'independently-reviewed',
     reviewedEvidenceCount: 2,
-    reviewerProvider: 'groq',
+    reviewerProvider: 'xai',
     reviewerModel: 'reviewer-model',
     fullTextEvidenceCount: 2,
     summaryOnlyEvidenceCount: 1,
@@ -212,9 +212,42 @@ void test('deep research dossier and verbatim citations survive local validation
   assert.equal(locallyValidated.researchMemory[0]?.researchDossier?.hypotheses[0]?.supportingQuotes?.[0]?.quote,
     dossier.hypotheses[0]?.supportingQuotes?.[0]?.quote);
   const restored = importBackup(exportBackup(locallyValidated));
-  assert.equal(restored.researchMemory[0]?.researchDossier?.reviewerProvider, 'groq');
+  assert.equal(restored.researchMemory[0]?.researchDossier?.reviewerProvider, 'xai');
   assert.equal(restored.researchMemory[0]?.researchDossier?.verifiedCitationCount, 2);
   assert.equal(restored.researchMemory[0]?.researchDossier?.reviewedEvidenceCount, 2);
   assert.equal(restored.researchMemory[0]?.researchDossier?.provisionalConclusion,
     'The first researcher suggested broad support, pending verification.');
+});
+
+
+void test('legacy Groq provider identifiers migrate to xAI without changing dossier content', () => {
+  const data = defaults();
+  const rawPreferences = {
+    ...data.preferences,
+    secondOpinionProvider: 'groq',
+    secondOpinionOrder: ['gemini', 'groq', 'cloudflare'],
+  };
+  const migrated = validateLocal({ ...data, preferences: rawPreferences });
+  assert.equal(migrated.preferences.secondOpinionProvider, 'xai');
+  assert.deepEqual(migrated.preferences.secondOpinionOrder, ['gemini', 'xai', 'cloudflare']);
+
+  const rawDossier = {
+    version: 1,
+    updatedAt: 100,
+    provider: 'groq',
+    model: 'old-model',
+    hypotheses: [],
+    evidenceReviews: [],
+    nextQueries: [],
+    completedQueries: [],
+    contradictions: [],
+    gaps: [],
+    conclusion: 'Legacy record',
+    confidence: 'low',
+    stoppingReason: 'Legacy',
+    reviewerProvider: 'groq',
+  };
+  const dossier = researchDossierSchema.parse(rawDossier);
+  assert.equal(dossier.provider, 'xai');
+  assert.equal(dossier.reviewerProvider, 'xai');
 });

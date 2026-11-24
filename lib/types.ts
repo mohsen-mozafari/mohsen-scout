@@ -170,6 +170,7 @@ export type SpaceNewsSourceId = 'nasa' | 'jpl' | 'cneos' | 'esa-space' | 'esa-sc
 export type WikiLanguage = 'en' | 'fa' | 'de' | 'fr' | 'es' | 'ja';
 export type UiLanguage = 'fa' | 'en';
 export type SecondOpinionProvider = 'gemini' | 'xai' | 'cloudflare' | 'openrouter';
+export const DEFAULT_CLOUDFLARE_FREE_MODEL = '@cf/zai-org/glm-4.7-flash';
 export const DEFAULT_SECOND_OPINION_ORDER: SecondOpinionProvider[] = ['gemini', 'xai', 'cloudflare', 'openrouter'];
 export type Preferences = {
   uiLanguage: UiLanguage;
@@ -400,7 +401,7 @@ export function defaults(): LocalData {
       automaticExternalReview: true,
       secondOpinionProvider: 'gemini',
       secondOpinionOrder: [...DEFAULT_SECOND_OPINION_ORDER],
-      secondOpinionModels: { gemini: 'gemini-3.8-flash', xai: 'grok-4.7', cloudflare: '@cf/meta/llama-3.3-70b-instruct-fp8-fast', openrouter: '' },
+      secondOpinionModels: { gemini: 'gemini-3.8-flash', xai: 'grok-4.7', cloudflare: DEFAULT_CLOUDFLARE_FREE_MODEL, openrouter: '' },
       schedule: 'Daily',
       paused: false,
       spaceNewsSources: [...DEFAULT_SPACE_NEWS_SOURCE_IDS],

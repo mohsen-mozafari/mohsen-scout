@@ -1,10 +1,12 @@
 import { z } from 'zod';
-import { DEFAULT_SECOND_OPINION_ORDER, type LocalData, regions, statuses } from './types';
+import { DEFAULT_CLOUDFLARE_FREE_MODEL, DEFAULT_SECOND_OPINION_ORDER, type LocalData, type SecondOpinionProvider, regions, statuses } from './types';
 import type { RecordDomain } from './storage-records';
 
 const id = z.string().min(1);
 const text = z.string();
 const time = z.number().finite().nonnegative();
+const secondOpinionProviderSchema = z.enum(['gemini', 'xai', 'groq', 'cloudflare', 'openrouter'])
+  .transform((provider): SecondOpinionProvider => provider === 'groq' ? 'xai' : provider);
 export const inputSchema = z.object({
   topic: text,
   region: z.enum(regions),
@@ -17,7 +19,7 @@ export const inputSchema = z.object({
 export const researchDossierSchema = z.object({
   version: z.literal(1),
   updatedAt: time,
-  provider: z.enum(['gemini', 'xai', 'cloudflare', 'openrouter']),
+  provider: secondOpinionProviderSchema,
   model: text.max(160),
   hypotheses: z.array(z.object({
     id: id.max(90), claim: text.max(420), rationale: text.max(1400),
@@ -57,7 +59,7 @@ export const researchDossierSchema = z.object({
   stoppingReason: text.max(420),
   reviewedEvidenceCount: z.number().int().min(0).max(48).optional(),
   reviewStatus: z.enum(['pending-independent-review', 'partially-reviewed', 'independently-reviewed', 'review-unavailable']).optional(),
-  reviewerProvider: z.enum(['gemini', 'xai', 'cloudflare', 'openrouter']).optional(),
+  reviewerProvider: secondOpinionProviderSchema.optional(),
   reviewerModel: text.max(160).optional(),
   fullTextEvidenceCount: z.number().int().min(0).max(48).optional(),
   summaryOnlyEvidenceCount: z.number().int().min(0).max(48).optional(),
@@ -111,9 +113,9 @@ const schema = z.object({
     hybridIntelligence: z.boolean().optional().default(false),
     webResearchEnabled: z.boolean().optional().default(true),
     automaticExternalReview: z.boolean().optional().default(true),
-    secondOpinionProvider: z.enum(['gemini', 'xai', 'cloudflare', 'openrouter']).optional().default('gemini'),
-    secondOpinionOrder: z.array(z.enum(['gemini', 'xai', 'cloudflare', 'openrouter'])).min(1).max(4).optional().default(DEFAULT_SECOND_OPINION_ORDER),
-    secondOpinionModels: z.object({ gemini: z.string().max(120).optional().default('gemini-3.8-flash'), xai: z.string().max(120).optional().default('grok-4.7'), cloudflare: z.string().max(160).optional().default('@cf/meta/llama-3.3-70b-instruct-fp8-fast'), openrouter: z.string().max(160).optional().default('') }).optional().default({ gemini: 'gemini-3.8-flash', xai: 'grok-4.7', cloudflare: '@cf/meta/llama-3.3-70b-instruct-fp8-fast', openrouter: '' }),
+    secondOpinionProvider: secondOpinionProviderSchema.optional().default('gemini'),
+    secondOpinionOrder: z.array(secondOpinionProviderSchema).min(1).max(4).optional().default(DEFAULT_SECOND_OPINION_ORDER),
+    secondOpinionModels: z.object({ gemini: z.string().max(120).optional().default('gemini-3.8-flash'), xai: z.string().max(120).optional().default('grok-4.7'), cloudflare: z.string().max(160).optional().default(DEFAULT_CLOUDFLARE_FREE_MODEL), openrouter: z.string().max(160).optional().default('') }).optional().default({ gemini: 'gemini-3.8-flash', xai: 'grok-4.7', cloudflare: DEFAULT_CLOUDFLARE_FREE_MODEL, openrouter: '' }),
     openRouterUsageDay: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
     openRouterRequestsToday: z.number().int().min(0).max(10000).optional(),
     openRouterDailyLimit: z.number().int().min(0).max(10000).optional(),

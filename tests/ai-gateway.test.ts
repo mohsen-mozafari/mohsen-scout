@@ -80,38 +80,56 @@ void test('Grok (xAI) adapter uses its OpenAI-compatible chat-completions contra
   assert.deepEqual(body.messages, [{ role: 'user', content: 'topic and candidate only' }]);
 });
 
-void test('Cloudflare adapter uses the account-scoped Workers AI route and requires a valid account ID', async () => {
+void test('Cloudflare adapter uses the OpenAI-compatible Workers AI chat route and requires a valid account ID', async () => {
   let capturedUrl = '';
   let capturedInit: RequestInit | undefined;
   const fetcher: typeof fetch = async (input, init) => {
     capturedUrl = requestUrl(input);
     capturedInit = init;
-    return jsonResponse({ success: true, result: { response: validOpinion } });
+    return jsonResponse({ choices: [{ message: { content: validOpinion } }] });
   };
   const result = await requestSecondOpinionWithFallback([
-    {
-      provider: 'cloudflare',
-      key: 'cloudflare-secret',
-      accountId: '023e105f4ecef8ad9ca31a8372d0c353',
-      model: '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
-    },
-  ], 'only approved text', fetcher);
+    { provider: 'cloudflare', key: 'cloudflare-secret', accountId: '023e105f4ecef8ad9ca31a8372d0c353', model: '@cf/zai-org/glm-4.7-flash' },
+  ], 'Return JSON for only approved text', fetcher);
   assert.equal(result.provider, 'cloudflare');
-  assert.match(capturedUrl, /accounts\/023e105f4ecef8ad9ca31a8372d0c353\/ai\/run\/@cf\/meta\/llama-3\.3-70b-instruct-fp8-fast/);
+  assert.equal(capturedUrl, 'https://api.cloudflare.com/client/v4/accounts/023e105f4ecef8ad9ca31a8372d0c353/ai/v1/chat/completions');
   assert.equal(requestHeader(capturedInit, 'Authorization'), 'Bearer cloudflare-secret');
+  assert.equal(requestHeader(capturedInit, 'cf-aig-gateway-id'), 'default');
   assert.deepEqual(JSON.parse(requestBody(capturedInit)), {
-    prompt: 'only approved text', max_tokens: 900, temperature: 0.2,
+    model: '@cf/zai-org/glm-4.7-flash',
+    messages: [{ role: 'user', content: 'Return JSON for only approved text' }],
+    max_tokens: 900,
+    temperature: 0.2,
+    response_format: { type: 'json_object' },
   });
   let calls = 0;
   await assert.rejects(() => requestSecondOpinionWithFallback([
-    { provider: 'cloudflare', key: 'cloudflare-secret', accountId: 'bad-id', model: '@cf/meta/llama-3.3-70b-instruct-fp8-fast' },
+    { provider: 'cloudflare', key: 'cloudflare-secret', accountId: 'bad-id', model: '@cf/zai-org/glm-4.7-flash' },
   ], 'prompt', async () => {
     calls += 1;
-    return jsonResponse({ success: true, result: { response: validOpinion } });
+    return jsonResponse({ choices: [{ message: { content: validOpinion } }] });
   }));
   assert.equal(calls, 0);
 });
-
+void test('Cloudflare research agent uses the same OpenAI-compatible route and gateway header', async () => {
+  let capturedUrl = '';
+  let capturedInit: RequestInit | undefined;
+  const result = await requestResearchAgentWithFallback([
+    { provider: 'cloudflare', key: 'cloudflare-secret', accountId: '023e105f4ecef8ad9ca31a8372d0c353', model: '@cf/zai-org/glm-4.7-flash' },
+  ], 'Return JSON for approved research input', async (input, init) => {
+    capturedUrl = requestUrl(input);
+    capturedInit = init;
+    return jsonResponse({ choices: [{ message: { content: '{"hypotheses":[]}' } }] });
+  });
+  assert.equal(result.provider, 'cloudflare');
+  assert.equal(capturedUrl, 'https://api.cloudflare.com/client/v4/accounts/023e105f4ecef8ad9ca31a8372d0c353/ai/v1/chat/completions');
+  assert.equal(requestHeader(capturedInit, 'cf-aig-gateway-id'), 'default');
+  const body = JSON.parse(requestBody(capturedInit));
+  assert.equal(body.model, '@cf/zai-org/glm-4.7-flash');
+  assert.deepEqual(body.messages, [{ role: 'user', content: 'Return JSON for approved research input' }]);
+  assert.equal(body.max_tokens, 4200);
+  assert.deepEqual(body.response_format, { type: 'json_object' });
+});
 void test('provider fallback advances after a rate limit and sends at most one generation request per provider', async () => {
   const calls: string[] = [];
   const configs: SecondOpinionProviderConfig[] = [
@@ -192,9 +210,10 @@ void test('model discovery reads active Gemini, Grok (xAI) and Cloudflare model 
   }, async (input, init) => {
     assert.match(requestUrl(input), /ai\/models\/search/);
     assert.equal(requestHeader(init, 'Authorization'), 'Bearer cf-key');
-    return jsonResponse({ success: true, result: [{ name: '@cf/meta/llama-3.3-70b-instruct-fp8-fast', description: 'Hosted text model' }] });
+    return jsonResponse({ success: true, result: [{ name: '@cf/google/gemma-4-26b-a4b-it', description: 'Hosted text model' }] });
   });
-  assert.equal(cloudflare[0].id, '@cf/meta/llama-3.3-70b-instruct-fp8-fast');
+  assert.equal(cloudflare[0].id, '@cf/zai-org/glm-4.7-flash');
+  assert.ok(cloudflare.some((model) => model.id === '@cf/google/gemma-4-26b-a4b-it'));
 });
 
 void test('all-provider failure preserves a redacted audit trail for the Research Activity panel', async () => {

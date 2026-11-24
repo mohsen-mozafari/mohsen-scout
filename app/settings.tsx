@@ -18,7 +18,7 @@ import {
   useOperation,
 } from '@/components/ScoutUI';
 import { useScout } from '@/lib/store';
-import { type Preferences, type SecondOpinionProvider, DEFAULT_SECOND_OPINION_ORDER, defaults, regions, languages } from '@/lib/types';
+import { type Preferences, type SecondOpinionProvider, DEFAULT_CLOUDFLARE_FREE_MODEL, DEFAULT_SECOND_OPINION_ORDER, defaults, regions, languages } from '@/lib/types';
 import { getKey, setKey, deleteKey, credentialPersistence, type Credential } from '@/lib/vault';
 import { getFreeModels, getOpenRouterDailyQuota, testYouTube, testOpenRouter, quotaDay, localDateKey } from '@/lib/api';
 import { discoverSecondOpinionModels, testSecondOpinionCredential } from '@/lib/ai-gateway';
@@ -41,7 +41,7 @@ function normalizePreferences(value?: Partial<Preferences>): Preferences {
   const migratedOrder = Array.isArray(legacy?.secondOpinionOrder)
     ? legacy.secondOpinionOrder.map((provider) => provider === 'groq' ? 'xai' : provider).filter((provider): provider is SecondOpinionProvider => ['gemini', 'xai', 'cloudflare', 'openrouter'].includes(provider))
     : fallback.secondOpinionOrder;
-  const migratedModel = legacyModels.xai || (legacyModels.groq && legacyModels.groq !== 'openai/gpt-oss-120b' ? legacyModels.groq : 'grok-4.7');
+  const migratedModel = legacyModels.xai || 'grok-4.7';
   return {
     ...fallback,
     ...value,
@@ -489,9 +489,9 @@ export default function Settings() {
         />
         <Field
           label={'Cloudflare Workers AI model'}
-          value={prefs.secondOpinionModels?.cloudflare ?? '@cf/meta/llama-3.3-70b-instruct-fp8-fast'}
+          value={prefs.secondOpinionModels?.cloudflare ?? DEFAULT_CLOUDFLARE_FREE_MODEL}
           onChange={(value) => setPrefs({ ...prefs, secondOpinionModels: { ...prefs.secondOpinionModels, cloudflare: value } })}
-          placeholder="@cf/meta/llama-3.3-70b-instruct-fp8-fast"
+          placeholder={DEFAULT_CLOUDFLARE_FREE_MODEL}
         />
         <Field
           label={'OpenRouter model (must be in its live free-model list)'}
@@ -525,7 +525,9 @@ export default function Settings() {
         <Fold title="Cloudflare Workers AI" summary={credentialStatus.cloudflare && credentialStatus['cloudflare-account-id'] ? 'Token and Account ID saved' : 'Token or Account ID missing'}>
           <CredentialSection kind="cloudflare-account-id" label="Cloudflare Account ID" onStatusChange={handleCredentialStatus} />
           <CredentialSection kind="cloudflare" label="Cloudflare API token" onStatusChange={handleCredentialStatus} />
-          <Txt muted>Use an API token with Workers AI Read/Run permissions. Model usage can be billable; the app does not assume a free tier.</Txt>
+          <Txt muted>{fa
+            ? 'راه ساده: در داشبورد Workers AI گزینهٔ Use REST API و سپس Create a Workers AI API Token را بزن؛ همان‌جا Account ID را هم بردار. اگر توکن را دستی می‌سازی، مجوزهای AI Gateway - Read، AI Gateway - Edit و Workers AI - Read را بده. مدل پیش‌فرض رایگان: @cf/zai-org/glm-4.7-flash. پلن رایگان روزانه ۱۰٬۰۰۰ Neurons دارد و سهمیه در ساعت ۰۰:۰۰ UTC صفر می‌شود؛ با تمام‌شدن سهمیه، درخواست‌ها متوقف می‌شوند.'
+            : 'Easy setup: In the Workers AI dashboard choose Use REST API, then Create a Workers AI API Token; copy the Account ID shown there too. For a manually created token, grant AI Gateway - Read, AI Gateway - Edit, and Workers AI - Read. Default free model: @cf/zai-org/glm-4.7-flash. The Free plan includes 10,000 Neurons per day, resetting at 00:00 UTC; requests stop when the daily allocation is exhausted.'}</Txt>
           <Action secondary onPress={() => void Linking.openURL('https://dash.cloudflare.com/?to=/:account/ai/workers-ai')}>Open Workers AI dashboard</Action>
         </Fold>
         <Fold title="OpenRouter" summary={credentialStatus.openrouter ? 'Key saved securely' : 'Key not set'}>

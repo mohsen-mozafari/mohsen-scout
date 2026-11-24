@@ -1,5 +1,5 @@
 import { parseStructuredSecondOpinion, type StructuredSecondOpinion } from './api';
-import type { SecondOpinionProvider } from './types';
+import { DEFAULT_CLOUDFLARE_FREE_MODEL, type SecondOpinionProvider } from './types';
 
 export type ProviderCredentials = {
   gemini?: string;
@@ -42,7 +42,7 @@ export type Fetcher = typeof fetch;
 export const DEFAULT_SECOND_OPINION_MODELS: ProviderModels = {
   gemini: 'gemini-3.8-flash',
   xai: 'grok-4.7',
-  cloudflare: '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
+  cloudflare: DEFAULT_CLOUDFLARE_FREE_MODEL,
   openrouter: '',
 };
 
@@ -137,16 +137,42 @@ function readGeminiText(raw: unknown): string {
   return text;
 }
 
-function readCloudflareText(raw: unknown): string {
-  if (!raw || typeof raw !== 'object') throw new SecondOpinionProviderError('Cloudflare Workers AI returned an invalid response.', 'invalid-response');
-  const root = raw as { success?: boolean; result?: { response?: unknown; text?: unknown }; errors?: unknown[] };
-  const text = typeof root.result?.response === 'string'
-    ? root.result.response
-    : typeof root.result?.text === 'string' ? root.result.text : '';
-  if (root.success === false || !text.trim()) {
-    throw new SecondOpinionProviderError('Cloudflare Workers AI returned no readable answer. Check model support and token permissions.', 'invalid-response');
+async function postCloudflareChatCompletion(
+  config: SecondOpinionProviderConfig,
+  prompt: string,
+  maxTokens: number,
+  temperature: number,
+  fetcher: Fetcher,
+): Promise<string> {
+  const accountId = config.accountId?.trim() ?? '';
+  if (!/^[a-f0-9]{32}$/i.test(accountId)) {
+    throw new SecondOpinionProviderError('Cloudflare Account ID is missing or invalid.', 'disabled');
   }
-  return text.trim();
+  if (!/^@cf\/[a-z0-9._-]+\/[a-z0-9._-]+$/i.test(config.model)) {
+    throw new SecondOpinionProviderError('Cloudflare model ID must use the @cf/author/model format.', 'unavailable');
+  }
+  const raw = await requestOnce(
+    'https://api.cloudflare.com/client/v4/accounts/' + accountId + '/ai/v1/chat/completions',
+    {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer ' + config.key,
+        'Content-Type': 'application/json',
+        'cf-aig-gateway-id': 'default',
+      },
+      body: JSON.stringify({
+        model: config.model,
+        messages: [{ role: 'user', content: prompt }],
+        max_tokens: maxTokens,
+        temperature,
+        response_format: { type: 'json_object' },
+      }),
+    },
+    fetcher,
+    'cloudflare',
+    maxTokens > 1000 ? 40000 : 25000,
+  );
+  return readOpenAICompatibleText(raw, 'cloudflare');
 }
 
 async function postOpinion(
@@ -191,24 +217,7 @@ async function postOpinion(
     }, fetcher, provider);
     content = readOpenAICompatibleText(raw, provider);
   } else {
-    const accountId = config.accountId?.trim() ?? '';
-    if (!/^[a-f0-9]{32}$/i.test(accountId)) {
-      throw new SecondOpinionProviderError('Cloudflare Account ID is missing or invalid.', 'disabled');
-    }
-    if (!/^@?[a-z0-9._-]+(?:\/[a-z0-9._-]+)+$/i.test(model)) {
-      throw new SecondOpinionProviderError('Cloudflare model ID contains unsupported characters.', 'unavailable');
-    }
-    raw = await requestOnce(
-      'https://api.cloudflare.com/client/v4/accounts/' + accountId + '/ai/run/' + model,
-      {
-        method: 'POST',
-        headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt, max_tokens: 900, temperature: 0.2 }),
-      },
-      fetcher,
-      provider,
-    );
-    content = readCloudflareText(raw);
+    content = await postCloudflareChatCompletion(config, prompt, 900, 0.2, fetcher);
   }
 
   try {
@@ -312,25 +321,7 @@ async function postResearchPrompt(
     }, fetcher, provider, 40000);
     content = readOpenAICompatibleText(raw, provider);
   } else {
-    const accountId = config.accountId?.trim() ?? '';
-    if (!/^[a-f0-9]{32}$/i.test(accountId)) {
-      throw new SecondOpinionProviderError('Cloudflare Account ID is missing or invalid.', 'disabled');
-    }
-    if (!/^@?[a-z0-9._-]+(?:\/[a-z0-9._-]+)+$/i.test(model)) {
-      throw new SecondOpinionProviderError('Cloudflare model ID contains unsupported characters.', 'unavailable');
-    }
-    raw = await requestOnce(
-      'https://api.cloudflare.com/client/v4/accounts/' + accountId + '/ai/run/' + model,
-      {
-        method: 'POST',
-        headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt, max_tokens: 4200, temperature: 0.15 }),
-      },
-      fetcher,
-      provider,
-      40000,
-    );
-    content = readCloudflareText(raw);
+    content = await postCloudflareChatCompletion(config, prompt, 4200, 0.15, fetcher);
   }
   if (!content.trim()) throw new SecondOpinionProviderError(provider + ' returned an empty research response.', 'invalid-response');
   return content.trim();
@@ -418,12 +409,16 @@ export async function discoverSecondOpinionModels(
       headers: { Authorization: 'Bearer ' + credentials.key },
     }, fetcher, provider);
     const data = raw as { success?: boolean; result?: Array<{ name?: string; id?: string; description?: string; task?: { name?: string } }> };
-    return (data.result ?? [])
+    const discovered = (data.result ?? [])
       .filter((model) => model.name || model.id)
       .map((model) => {
         const id = model.name || model.id!;
         return { id, name: id + (model.description ? ' · ' + model.description.slice(0, 80) : '') };
       });
+    return [
+      { id: DEFAULT_CLOUDFLARE_FREE_MODEL, name: DEFAULT_CLOUDFLARE_FREE_MODEL + ' · Free plan' },
+      ...discovered.filter((model) => model.id !== DEFAULT_CLOUDFLARE_FREE_MODEL),
+    ];
   }
   const { getFreeModels } = await import('./api');
   return getFreeModels(fetcher);
