@@ -41,7 +41,7 @@ export type Fetcher = typeof fetch;
 
 export const DEFAULT_SECOND_OPINION_MODELS: ProviderModels = {
   gemini: 'gemini-3.8-flash',
-  xai: 'grok-4-1-fast',
+  xai: 'grok-4.7',
   cloudflare: '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
   openrouter: '',
 };
