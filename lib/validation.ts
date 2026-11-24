@@ -113,7 +113,7 @@ const schema = z.object({
     automaticExternalReview: z.boolean().optional().default(true),
     secondOpinionProvider: z.enum(['gemini', 'xai', 'cloudflare', 'openrouter']).optional().default('gemini'),
     secondOpinionOrder: z.array(z.enum(['gemini', 'xai', 'cloudflare', 'openrouter'])).min(1).max(4).optional().default(DEFAULT_SECOND_OPINION_ORDER),
-    secondOpinionModels: z.object({ gemini: z.string().max(120).optional().default('gemini-3.8-flash'), xai: z.string().max(120).optional().default('grok-4-1-fast'), cloudflare: z.string().max(160).optional().default('@cf/meta/llama-3.3-70b-instruct-fp8-fast'), openrouter: z.string().max(160).optional().default('') }).optional().default({ gemini: 'gemini-3.8-flash', groq: 'grok-4-1-fast', cloudflare: '@cf/meta/llama-3.3-70b-instruct-fp8-fast', openrouter: '' }),
+    secondOpinionModels: z.object({ gemini: z.string().max(120).optional().default('gemini-3.8-flash'), xai: z.string().max(120).optional().default('grok-4-1-fast'), cloudflare: z.string().max(160).optional().default('@cf/meta/llama-3.3-70b-instruct-fp8-fast'), openrouter: z.string().max(160).optional().default('') }).optional().default({ gemini: 'gemini-3.8-flash', xai: 'grok-4-1-fast', cloudflare: '@cf/meta/llama-3.3-70b-instruct-fp8-fast', openrouter: '' }),
     openRouterUsageDay: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
     openRouterRequestsToday: z.number().int().min(0).max(10000).optional(),
     openRouterDailyLimit: z.number().int().min(0).max(10000).optional(),
