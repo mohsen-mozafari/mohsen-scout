@@ -200,6 +200,47 @@ export type ResearchMemorySnapshot = {
   confidence: 'low' | 'moderate' | 'high';
   changes: string[];
 };
+export type ResearchDossierEvidenceReview = {
+  evidenceId: string;
+  role: 'supports' | 'challenges' | 'context' | 'irrelevant';
+  credibility: 'high' | 'medium' | 'low' | 'unknown';
+  sourceType: 'primary' | 'secondary' | 'opinion' | 'unknown';
+  freshness: 'recent' | 'old' | 'unknown';
+  reason: string;
+};
+export type ResearchDossierHypothesis = {
+  id: string;
+  claim: string;
+  rationale: string;
+  status: 'supported' | 'contested' | 'insufficient-evidence';
+  confidence: 'low' | 'moderate' | 'high';
+  supportingEvidenceIds: string[];
+  challengingEvidenceIds: string[];
+  missingEvidence: string[];
+};
+export type ResearchDossierQuery = {
+  query: string;
+  purpose: 'independent-confirmation' | 'counterevidence' | 'mechanism' | 'alternate-explanation' | 'primary-source';
+  hypothesisId: string;
+  priority: number;
+  reason: string;
+  searchedAt?: number;
+};
+export type ResearchDossier = {
+  version: 1;
+  updatedAt: number;
+  provider: SecondOpinionProvider;
+  model: string;
+  hypotheses: ResearchDossierHypothesis[];
+  evidenceReviews: ResearchDossierEvidenceReview[];
+  nextQueries: ResearchDossierQuery[];
+  completedQueries: ResearchDossierQuery[];
+  contradictions: { description: string; evidenceIds: string[] }[];
+  gaps: string[];
+  conclusion: string;
+  confidence: 'low' | 'moderate' | 'high';
+  stoppingReason: string;
+};
 export type ResearchMemoryEntry = {
   topic: string;
   updatedAt: number;
@@ -210,6 +251,8 @@ export type ResearchMemoryEntry = {
   confidence: 'low' | 'moderate' | 'high';
   /** Bounded, versioned snapshots. Legacy entries without history remain valid. */
   history?: ResearchMemorySnapshot[];
+  /** Model-reviewed independent-source dossier; contains no raw YouTube API metadata. */
+  researchDossier?: ResearchDossier;
 };
 export type FeedRegistryRecord = {
   sourceId: SpaceNewsSourceId;
