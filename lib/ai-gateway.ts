@@ -71,9 +71,10 @@ async function requestOnce(
   init: RequestInit,
   fetcher: Fetcher,
   provider: SecondOpinionProvider,
+  timeoutMs = 25000,
 ): Promise<unknown> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 25000);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     let response: Response;
     try {
@@ -257,6 +258,128 @@ export async function requestSecondOpinionWithFallback(
     attempts,
   );
 }
+
+
+export type ResearchAgentTextResult = {
+  provider: SecondOpinionProvider;
+  model: string;
+  content: string;
+  attempts: ProviderAttempt[];
+};
+
+async function postResearchPrompt(
+  config: SecondOpinionProviderConfig,
+  prompt: string,
+  fetcher: Fetcher,
+): Promise<string> {
+  const { provider, key, model } = config;
+  if (!key.trim()) throw new SecondOpinionProviderError(provider + ' is disabled because no key is saved.', 'disabled');
+  if (!model.trim()) throw new SecondOpinionProviderError(provider + ' has no selected model.', 'unavailable');
+
+  let raw: unknown;
+  let content = '';
+  if (provider === 'gemini') {
+    raw = await requestOnce(
+      'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent',
+      {
+        method: 'POST',
+        headers: { 'x-goog-api-key': key, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ role: 'user', parts: [{ text: prompt }] }],
+          generationConfig: { maxOutputTokens: 2600, temperature: 0.15, responseMimeType: 'application/json' },
+        }),
+      },
+      fetcher,
+      provider,
+      40000,
+    );
+    content = readGeminiText(raw);
+  } else if (provider === 'groq' || provider === 'openrouter') {
+    const url = provider === 'groq'
+      ? 'https://api.groq.com/openai/v1/chat/completions'
+      : 'https://openrouter.ai/api/v1/chat/completions';
+    raw = await requestOnce(url, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model,
+        max_tokens: 2600,
+        temperature: 0.15,
+        response_format: { type: 'json_object' },
+        messages: [{ role: 'user', content: prompt }],
+      }),
+    }, fetcher, provider, 40000);
+    content = readOpenAICompatibleText(raw, provider);
+  } else {
+    const accountId = config.accountId?.trim() ?? '';
+    if (!/^[a-f0-9]{32}$/i.test(accountId)) {
+      throw new SecondOpinionProviderError('Cloudflare Account ID is missing or invalid.', 'disabled');
+    }
+    if (!/^@?[a-z0-9._-]+(?:\/[a-z0-9._-]+)+$/i.test(model)) {
+      throw new SecondOpinionProviderError('Cloudflare model ID contains unsupported characters.', 'unavailable');
+    }
+    raw = await requestOnce(
+      'https://api.cloudflare.com/client/v4/accounts/' + accountId + '/ai/run/' + model,
+      {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt, max_tokens: 2600, temperature: 0.15 }),
+      },
+      fetcher,
+      provider,
+      40000,
+    );
+    content = readCloudflareText(raw);
+  }
+  if (!content.trim()) throw new SecondOpinionProviderError(provider + ' returned an empty research response.', 'invalid-response');
+  return content.trim();
+}
+
+/**
+ * Uses the same configured personal AI providers as the app's second-opinion feature,
+ * but returns bounded structured research JSON for the local validator to inspect.
+ * Each provider is attempted at most once; generation requests are never retried.
+ */
+export async function requestResearchAgentWithFallback(
+  configs: readonly SecondOpinionProviderConfig[],
+  prompt: string,
+  fetcher: Fetcher = fetch,
+  beforeProviderRequest?: (config: SecondOpinionProviderConfig) => Promise<void>,
+): Promise<ResearchAgentTextResult> {
+  if (!prompt.trim()) throw new SecondOpinionProviderError('The research topic and evidence are required.', 'invalid-response');
+  const attempts: ProviderAttempt[] = [];
+  const seen = new Set<SecondOpinionProvider>();
+  for (const config of configs) {
+    if (seen.has(config.provider)) continue;
+    seen.add(config.provider);
+    if (!config.key.trim()) {
+      attempts.push({ provider: config.provider, model: config.model, status: 'disabled', message: 'No key is saved.' });
+      continue;
+    }
+    try {
+      await beforeProviderRequest?.(config);
+      const content = await postResearchPrompt(config, prompt, fetcher);
+      attempts.push({ provider: config.provider, model: config.model, status: 'success', message: 'Research JSON returned; local schema validation is still required.' });
+      return { provider: config.provider, model: config.model, content, attempts };
+    } catch (error) {
+      const failure = error instanceof SecondOpinionProviderError
+        ? error
+        : new SecondOpinionProviderError(config.provider + ' research request failed safely.', 'unavailable');
+      attempts.push({ provider: config.provider, model: config.model, status: failure.code, message: failure.message });
+    }
+  }
+  const activeAttempts = attempts.filter((attempt) => attempt.status !== 'disabled');
+  const detail = activeAttempts.map((attempt) => attempt.provider + ': ' + attempt.status).join(' · ');
+  throw new SecondOpinionProviderError(
+    activeAttempts.length
+      ? 'All configured research providers failed or returned unusable responses. ' + detail
+      : 'No research AI provider key is saved. Add a personal Gemini, Groq, Cloudflare or OpenRouter key in Settings.',
+    activeAttempts[activeAttempts.length - 1]?.status ?? 'disabled',
+    undefined,
+    attempts,
+  );
+}
+
 
 export type DiscoveredProviderModel = { id: string; name: string };
 
