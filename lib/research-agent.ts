@@ -28,7 +28,7 @@ export async function runResearchAgent(input: ResearchAgentInput): Promise<Resea
   const warnings: string[] = [];
   const order = input.preferences.secondOpinionOrder?.length
     ? input.preferences.secondOpinionOrder
-    : (['gemini', 'groq', 'cloudflare'] as SecondOpinionProvider[]);
+    : (['gemini', 'xai', 'cloudflare'] as SecondOpinionProvider[]);
   const configs: SecondOpinionProviderConfig[] = [];
   for (const provider of new Set(order)) {
     if (provider === 'openrouter') {
