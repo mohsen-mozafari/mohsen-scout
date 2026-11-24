@@ -4,8 +4,11 @@ Base: Build 26 commit `df2917dca62ef0882fdca0621a42e83b9f84dca2`.
 This release candidate is isolated on `feature/v1.16.0-research-discovery-from-build-26`; it does not modify `main`.
 
 ## Implemented
+- Replaced one-shot keyword-frequency follow-up planning with an iterative hypothesis-review loop. After each web/news round, the engine rebuilds candidate hypotheses from accumulated evidence and selects a new branch for independent confirmation, counterevidence, or mechanism checks.
+- Added an auditable hypothesis review record to source activity: provisional status, confidence, linked evidence IDs, support/challenge signal counts, and host-family diversity. Explicitly labels these as lexical signals and domain proxies, not semantic proof or verified ownership independence.
+- Added tests for contested hypotheses, exclusion of YouTube/invalid URLs from independent evidence, counterevidence planning, and repeat-query suppression.
 - YouTube collection is now the first source phase. A missing key, exhausted quota, network error, or empty YouTube result does not prevent the independent feed, web/news, and Wikimedia phases from running.
-- Independent web/news research now performs one initial search and up to two bounded follow-up searches. Follow-up terms are generated deterministically from returned independent web evidence, deduplicated, and capped. Search ranking is not treated as source credibility.
+- Independent web/news research now performs one initial search plus up to three bounded adaptive follow-up searches. Each round re-evaluates the accumulated evidence and may branch toward independent confirmation, counterevidence, or mechanism checks. Search ranking is not treated as source credibility.
 - Added unit tests for bounded query planning, URL validation, and duplicate-query suppression. The planner now suppresses follow-up terms already explored in the current run.
 - Added a device-local pending-research checkpoint using AsyncStorage. A run records its input before network work; after an unexpected process exit, the next successful app launch automatically restarts that topic as a fresh research pass. The checkpoint is cleared only after a completed run and expires after 14 days.
 - Added an isolated Android 1.16.0 workflow with package version 1.16.0 / Android versionCode 36, preserving signed ARM64 build verification and release publishing.
