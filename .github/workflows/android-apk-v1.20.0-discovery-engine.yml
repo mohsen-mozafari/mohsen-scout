@@ -3,9 +3,9 @@ name: Build MOHSEN SCOUT APK v1.20.0 · Adaptive Deep Research
 on:
   workflow_dispatch:
   push:
-    branches: [release/v1.20.0-researcher]
+    branches: [release/v1.20.0-discovery-engine]
     paths:
-      - '.github/workflows/android-apk-v1.20.0-researcher.yml'
+      - '.github/workflows/android-apk-v1.20.0-discovery-engine.yml'
       - 'app.config.ts'
       - 'package.json'
       - 'package-lock.json'
