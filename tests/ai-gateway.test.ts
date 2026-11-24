@@ -128,7 +128,7 @@ void test('provider fallback advances after a rate limit and sends at most one g
         headers: { 'Retry-After': '120', 'Content-Type': 'application/json' },
       });
     }
-    if (url.includes('api.xai.com')) return jsonResponse({ choices: [{ message: { content: validOpinion } }] });
+    if (url.includes('api.x.ai')) return jsonResponse({ choices: [{ message: { content: validOpinion } }] });
     return jsonResponse({ success: true, result: { response: validOpinion } });
   };
   const result = await requestSecondOpinionWithFallback(configs, 'approved prompt', fetcher);
@@ -182,7 +182,8 @@ void test('model discovery reads active Gemini, Grok (xAI) and Cloudflare model 
 
   const xai = await discoverSecondOpinionModels('xai', { key: 'r-key' }, async (_input, init) => {
     assert.equal(requestHeader(init, 'Authorization'), 'Bearer r-key');
-    return jsonResponse({ data: [{ id: 'grok-4-1-fast', owned_by: 'OpenAI' }] });
+    assert.equal(requestUrl(_input), 'https://api.x.ai/v1/models');
+    return jsonResponse({ data: [{ id: 'grok-4-1-fast', owned_by: 'xAI' }] });
   });
   assert.equal(xai[0].id, 'grok-4-1-fast');
 
