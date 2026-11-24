@@ -92,6 +92,7 @@ export async function runResearchAgent(input: ResearchAgentInput): Promise<Resea
             dossier,
             input.evidence,
             input.preferences.uiLanguage ?? 'fa',
+            input.youtubeSignals ?? [],
           ),
           fetch,
           input.beforeProviderRequest,
