@@ -135,7 +135,7 @@ void test('provider fallback advances after a rate limit and sends at most one g
   assert.equal(result.provider, 'xai');
   assert.equal(calls.length, 2);
   assert.equal(calls.filter((url) => url.includes('generativelanguage')).length, 1);
-  assert.equal(calls.filter((url) => url.includes('api.xai.com')).length, 1);
+  assert.equal(calls.filter((url) => url.includes('api.x.ai')).length, 1);
   assert.deepEqual(result.attempts.map((attempt) => attempt.status), ['rate-limited', 'success']);
 });
 
