@@ -159,7 +159,7 @@ jobs:
           retention-days: 1
 
   publish-release:
-    if: github.ref == 'refs/heads/release/v1.20.0-researcher'
+    if: github.ref == 'refs/heads/release/v1.20.0-discovery-engine'
     name: Publish verified APK release
     needs: build-android
     runs-on: ubuntu-latest
