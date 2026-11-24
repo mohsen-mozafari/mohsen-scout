@@ -41,7 +41,7 @@ function normalizePreferences(value?: Partial<Preferences>): Preferences {
   const migratedOrder = Array.isArray(legacy?.secondOpinionOrder)
     ? legacy.secondOpinionOrder.map((provider) => provider === 'groq' ? 'xai' : provider).filter((provider): provider is SecondOpinionProvider => ['gemini', 'xai', 'cloudflare', 'openrouter'].includes(provider))
     : fallback.secondOpinionOrder;
-  const migratedModel = legacyModels.xai || (legacyModels.groq && legacyModels.groq !== 'openai/gpt-oss-120b' ? legacyModels.groq : 'grok-4-1-fast');
+  const migratedModel = legacyModels.xai || (legacyModels.groq && legacyModels.groq !== 'openai/gpt-oss-120b' ? legacyModels.groq : 'grok-4.7');
   return {
     ...fallback,
     ...value,
@@ -483,9 +483,9 @@ export default function Settings() {
         />
         <Field
           label={'Grok (xAI) model'}
-          value={prefs.secondOpinionModels?.xai ?? 'grok-4-1-fast'}
+          value={prefs.secondOpinionModels?.xai ?? 'grok-4.7'}
           onChange={(value) => setPrefs({ ...prefs, secondOpinionModels: { ...prefs.secondOpinionModels, xai: value } })}
-          placeholder="grok-4-1-fast"
+          placeholder="grok-4.7"
         />
         <Field
           label={'Cloudflare Workers AI model'}
