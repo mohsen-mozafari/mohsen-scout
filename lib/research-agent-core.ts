@@ -160,7 +160,7 @@ export function parseResearchDossier(
       const credibility = item.credibility === 'high' || item.credibility === 'medium' || item.credibility === 'low'
         ? item.credibility
         : 'unknown';
-      const freshness = !source.publishedAt ? 'unknown' : (item.freshness === 'recent' || item.freshness === 'old' ? item.freshness : 'unknown');
+      const freshness = item.freshness === 'recent' || item.freshness === 'old' ? item.freshness : 'unknown';
       evidenceReviews.push({
         evidenceId,
         role,
@@ -360,7 +360,7 @@ export function applyIndependentResearchReview(
       const role = hasOriginalText ? proposedRole : (proposedRole === 'irrelevant' ? 'irrelevant' : 'context');
       const sourceType = hasOriginalText && (item.sourceType === 'primary' || item.sourceType === 'secondary' || item.sourceType === 'opinion') ? item.sourceType : 'unknown';
       const credibility = hasOriginalText && (item.credibility === 'high' || item.credibility === 'medium' || item.credibility === 'low') ? item.credibility : 'unknown';
-      const freshness = item.freshness === 'recent' || item.freshness === 'old' ? item.freshness : 'unknown';
+      const freshness = !source.publishedAt ? 'unknown' : (item.freshness === 'recent' || item.freshness === 'old' ? item.freshness : 'unknown');
       reviewerEvidenceReviews.push({ evidenceId, role, sourceType, credibility, freshness, reason: cleanString(item.reason, 500) });
     }
   }
