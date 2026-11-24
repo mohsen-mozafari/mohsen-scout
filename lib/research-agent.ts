@@ -63,6 +63,22 @@ function confidence(value: unknown): 'low' | 'moderate' | 'high' {
   return value === 'high' || value === 'moderate' ? value : 'low';
 }
 
+function isIndependentEvidenceUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    if (url.protocol !== 'https:' && url.protocol !== 'http:') return false;
+    const host = url.hostname.toLowerCase();
+    return !(
+      host === 'youtube.com' || host.endsWith('.youtube.com') ||
+      host === 'youtu.be' || host.endsWith('.youtu.be') ||
+      host === 'youtube-nocookie.com' || host.endsWith('.youtube-nocookie.com') ||
+      host === 'googlevideo.com' || host.endsWith('.googlevideo.com')
+    );
+  } catch {
+    return false;
+  }
+}
+
 export function parseResearchAgentJson(content: string): Record<string, unknown> {
   const cleaned = content.trim()
     .replace(/^\x60{3}(?:json)?\s*/i, '')
@@ -82,7 +98,7 @@ export function parseResearchDossier(
   model: string,
   now: number,
 ): ResearchDossier {
-  const ids = new Set(evidence.map((item) => item.id));
+  const ids = new Set(evidence.filter((item) => isIndependentEvidenceUrl(item.url)).map((item) => item.id));
   const hypotheses: ResearchDossierHypothesis[] = [];
   if (Array.isArray(raw.hypotheses)) {
     for (const value of raw.hypotheses.slice(0, 6)) {
@@ -202,9 +218,9 @@ export function parseResearchDossier(
   };
 }
 
-function buildPrompt(input: ResearchAgentInput): string {
+export function buildResearchAgentPrompt(input: ResearchAgentInput): string {
   const fa = (input.preferences.uiLanguage ?? 'fa') === 'fa';
-  const evidence = input.evidence.slice(0, 24).map((item) => {
+  const evidence = input.evidence.filter((item) => isIndependentEvidenceUrl(item.url)).slice(0, 24).map((item) => {
     let host = '';
     try { host = new URL(item.url).hostname.toLowerCase().replace(/^www\./, ''); } catch { /* validated upstream */ }
     return {
@@ -306,7 +322,7 @@ export async function runResearchAgent(input: ResearchAgentInput): Promise<Resea
   try {
     const response = await requestResearchAgentWithFallback(
       configs,
-      buildPrompt(input),
+      buildResearchAgentPrompt(input),
       fetch,
       input.beforeProviderRequest,
     );
