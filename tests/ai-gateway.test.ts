@@ -70,13 +70,13 @@ void test('Grok (xAI) adapter uses its OpenAI-compatible chat-completions contra
     return jsonResponse({ choices: [{ message: { content: validOpinion } }] });
   };
   const result = await requestSecondOpinionWithFallback([
-    { provider: 'xai', key: 'xai-secret', model: 'grok-4-1-fast' },
+    { provider: 'xai', key: 'xai-secret', model: 'grok-4.7' },
   ], 'topic and candidate only', fetcher);
   assert.equal(result.provider, 'xai');
   assert.equal(capturedUrl, 'https://api.x.ai/v1/chat/completions');
   assert.equal(requestHeader(capturedInit, 'Authorization'), 'Bearer xai-secret');
   const body = JSON.parse(requestBody(capturedInit));
-  assert.equal(body.model, 'grok-4-1-fast');
+  assert.equal(body.model, 'grok-4.7');
   assert.deepEqual(body.messages, [{ role: 'user', content: 'topic and candidate only' }]);
 });
 
@@ -116,7 +116,7 @@ void test('provider fallback advances after a rate limit and sends at most one g
   const calls: string[] = [];
   const configs: SecondOpinionProviderConfig[] = [
     { provider: 'gemini', key: 'gemini-key', model: 'gemini-3.8-flash' },
-    { provider: 'xai', key: 'xai-key', model: 'grok-4-1-fast' },
+    { provider: 'xai', key: 'xai-key', model: 'grok-4.7' },
     { provider: 'cloudflare', key: 'cf-key', accountId: '023e105f4ecef8ad9ca31a8372d0c353', model: '@cf/meta/llama-3.3-70b-instruct-fp8-fast' },
   ];
   const fetcher: typeof fetch = async (input) => {
@@ -143,7 +143,7 @@ void test('an invalid structured answer is rejected and falls back to the next p
   const calls: string[] = [];
   const result = await requestSecondOpinionWithFallback([
     { provider: 'gemini', key: 'g-key', model: 'gemini-3.8-flash' },
-    { provider: 'xai', key: 'r-key', model: 'grok-4-1-fast' },
+    { provider: 'xai', key: 'r-key', model: 'grok-4.7' },
   ], 'approved prompt', async (input) => {
     const url = requestUrl(input);
     calls.push(url);
@@ -159,8 +159,8 @@ void test('missing credentials are skipped and duplicate providers never receive
   let calls = 0;
   const result = await requestSecondOpinionWithFallback([
     { provider: 'gemini', key: '', model: 'gemini-3.8-flash' },
-    { provider: 'xai', key: 'g-key', model: 'grok-4-1-fast' },
-    { provider: 'xai', key: 'another-key', model: 'grok-4-1-fast' },
+    { provider: 'xai', key: 'g-key', model: 'grok-4.7' },
+    { provider: 'xai', key: 'another-key', model: 'grok-4.7' },
   ], 'prompt', async () => {
     calls += 1;
     return jsonResponse({ choices: [{ message: { content: validOpinion } }] });
@@ -183,9 +183,9 @@ void test('model discovery reads active Gemini, Grok (xAI) and Cloudflare model 
   const xai = await discoverSecondOpinionModels('xai', { key: 'r-key' }, async (_input, init) => {
     assert.equal(requestHeader(init, 'Authorization'), 'Bearer r-key');
     assert.equal(requestUrl(_input), 'https://api.x.ai/v1/models');
-    return jsonResponse({ data: [{ id: 'grok-4-1-fast', owned_by: 'xAI' }] });
+    return jsonResponse({ data: [{ id: 'grok-4.7', owned_by: 'xAI' }] });
   });
-  assert.equal(xai[0].id, 'grok-4-1-fast');
+  assert.equal(xai[0].id, 'grok-4.7');
 
   const cloudflare = await discoverSecondOpinionModels('cloudflare', {
     key: 'cf-key', accountId: '023e105f4ecef8ad9ca31a8372d0c353',
@@ -202,7 +202,7 @@ void test('all-provider failure preserves a redacted audit trail for the Researc
   await assert.rejects(
     () => requestSecondOpinionWithFallback([
       { provider: 'gemini', key: 'never-log-this-key', model: 'gemini-3.8-flash' },
-      { provider: 'xai', key: 'also-secret', model: 'grok-4-1-fast' },
+      { provider: 'xai', key: 'also-secret', model: 'grok-4.7' },
     ], 'approved editorial prompt', async (input) => {
       calls += 1;
       const url = requestUrl(input);
@@ -233,7 +233,7 @@ void test('a rate-limited OpenRouter free model falls through to another model f
   const result = await requestSecondOpinionWithFallback([
     { provider: 'openrouter', key: 'router-key', model: 'free/model-a:free' },
     { provider: 'openrouter', key: 'router-key', model: 'free/model-b:free' },
-    { provider: 'xai', key: 'xai-key', model: 'grok-4-1-fast' },
+    { provider: 'xai', key: 'xai-key', model: 'grok-4.7' },
   ], 'approved prompt', async (_input, init) => {
     const body = JSON.parse(requestBody(init));
     attemptedModels.push(body.model);
@@ -254,7 +254,7 @@ void test('research agent falls through multiple OpenRouter models before switch
   const result = await requestResearchAgentWithFallback([
     { provider: 'openrouter', key: 'router-key', model: 'free/research-a:free' },
     { provider: 'openrouter', key: 'router-key', model: 'free/research-b:free' },
-    { provider: 'xai', key: 'xai-key', model: 'grok-4-1-fast' },
+    { provider: 'xai', key: 'xai-key', model: 'grok-4.7' },
   ], 'approved research prompt', async (_input, init) => {
     const request = JSON.parse(requestBody(init));
     attemptedModels.push(request.model);
