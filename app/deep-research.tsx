@@ -85,7 +85,7 @@ export default function DeepResearch() {
     let firecrawlKey: string | undefined;
     if (preferences.webResearchEnabled) {
       try {
-        firecrawlKey = await getKey('firecrawl').catch(() => undefined);
+        firecrawlKey = (await getKey('firecrawl').catch(() => undefined)) ?? undefined;
         const web = await fetchWebResearch(query, {
           apiKey: firecrawlKey ?? undefined,
           limit: 6,
@@ -647,13 +647,13 @@ export default function DeepResearch() {
                     {item.supportingEvidenceIds.length ? <Txt muted>{'Supports: ' + item.supportingEvidenceIds.join(', ')}</Txt> : null}
                     {item.challengingEvidenceIds.length ? <Txt muted>{'Challenges: ' + item.challengingEvidenceIds.join(', ')}</Txt> : null}
                     {(item.supportingQuotes ?? []).map((citation, index) => (
-                      <View key={item.id + '-support-quote-' + index} style={{ gap: 2 }}>
+                      <View key={item.id + '-support-' + citation.evidenceId + '-' + citation.quote.slice(0, 32)} style={{ gap: 2 }}>
                         <Txt muted>{'Verbatim checked · ' + citation.sourceName}</Txt>
                         <SourceText>{'“' + citation.quote + '”'}</SourceText>
                       </View>
                     ))}
                     {(item.challengingQuotes ?? []).map((citation, index) => (
-                      <View key={item.id + '-challenge-quote-' + index} style={{ gap: 2 }}>
+                      <View key={item.id + '-challenge-' + citation.evidenceId + '-' + citation.quote.slice(0, 32)} style={{ gap: 2 }}>
                         <Txt muted>{'Verbatim checked counterevidence · ' + citation.sourceName}</Txt>
                         <SourceText>{'“' + citation.quote + '”'}</SourceText>
                       </View>
@@ -671,7 +671,7 @@ export default function DeepResearch() {
                 <Heading>{preferences.uiLanguage === 'fa' ? 'پرسش‌های اکتشافی بعدی' : 'Next discovery questions'}</Heading>
                 {brief.researchDossier.nextQueries.map((item) => <View key={item.query} style={{ gap: 2 }}><SourceText>{item.query}</SourceText><Txt muted>{item.purpose + ' · priority ' + item.priority + ' — ' + item.reason}</Txt></View>)}
                 {brief.researchDossier.gaps.map((item) => <Txt muted key={item}>{'Research gap: ' + item}</Txt>)}
-                {brief.researchDossier.contradictions.map((item, index) => <Txt muted key={'contradiction-' + index}>{'Contradiction: ' + item.description + ' · ' + item.evidenceIds.join(', ')}</Txt>)}
+                {brief.researchDossier.contradictions.map((item) => <Txt muted key={item.description + '-' + item.evidenceIds.join(',')}>{'Contradiction: ' + item.description + ' · ' + item.evidenceIds.join(', ')}</Txt>)}
               </Panel>
             </Fold>
           ) : null}

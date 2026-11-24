@@ -215,7 +215,7 @@ void test('independent source reviews ignore summary-only credibility claims and
   }, records, 'groq', 'reviewer-model');
   assert.equal(reviewed.reviewedEvidenceCount, 3);
   assert.equal(reviewed.evidenceReviews.length, 3);
-  const summary = reviewed.evidenceReviews.find((item) => item.evidenceId === 'summary-only');
+  const summary = reviewed.evidenceReviews.find((review) => review.evidenceId === 'summary-only');
   assert.equal(summary?.role, 'context');
   assert.equal(summary?.credibility, 'unknown');
   assert.equal(summary?.sourceType, 'unknown');

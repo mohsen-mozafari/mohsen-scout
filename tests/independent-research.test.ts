@@ -1,5 +1,10 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
 import { enrichResearchEvidence, fetchWebResearch } from '../lib/web-research';
 import { generateEditorialIdeas } from '../lib/idea-generation';
 import { structuredSecondOpinionPrompt } from '../lib/api';
@@ -114,7 +119,9 @@ void test('Firecrawl search retrieves markdown source text only when the user ke
     apiKey: 'fc-test-key',
     limit: 1,
     fetcher: async (_url, init) => {
-      const parsed = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      const bodyText = typeof init?.body === 'string' ? init.body : '';
+      const parsed: unknown = JSON.parse(bodyText);
+      if (!isRecord(parsed)) throw new Error('Firecrawl search body was not a JSON object.');
       requestBody = parsed;
       return new Response(JSON.stringify({
         success: true,
@@ -122,8 +129,9 @@ void test('Firecrawl search retrieves markdown source text only when the user ke
       }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     },
   });
-  const scrapeOptions = requestBody?.scrapeOptions as { formats?: unknown[] } | undefined;
-  assert.deepEqual(scrapeOptions?.formats, [{ type: 'markdown' }]);
+  const scrapeOptions = requestBody && isRecord(requestBody.scrapeOptions) ? requestBody.scrapeOptions : undefined;
+  const formats = scrapeOptions && Array.isArray(scrapeOptions.formats) ? scrapeOptions.formats : [];
+  assert.deepEqual(formats, [{ type: 'markdown' }]);
   assert.ok(result.items[0]?.sourceText?.includes('experimental method'));
   assert.ok(result.items[0]?.sourceText?.includes('\n'));
   assert.ok((result.items[0]?.sourceText?.length ?? 0) >= 300);
@@ -142,7 +150,9 @@ void test('selected publisher evidence can be enriched through a bounded authent
   }], 'fc-test-key', 1, async (url, init) => {
     calls += 1;
     assert.equal(url, 'https://api.firecrawl.dev/v2/scrape');
-    const request = JSON.parse(String(init?.body)) as { formats?: unknown[] };
+    const bodyText = typeof init?.body === 'string' ? init.body : '';
+    const request: unknown = JSON.parse(bodyText);
+    if (!isRecord(request)) throw new Error('Firecrawl scrape body was not a JSON object.');
     assert.deepEqual(request.formats, [{ type: 'markdown' }]);
     return new Response(JSON.stringify({ success: true, data: { markdown: originalText } }), {
       status: 200, headers: { 'Content-Type': 'application/json' },

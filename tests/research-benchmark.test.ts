@@ -8,7 +8,6 @@ import {
   parseResearchDossier,
 } from '../lib/research-agent-core';
 
-const topic = 'battery recycling recovery performance';
 const quoteOne = 'The controlled laboratory experiment measured a twenty percent increase in battery material recovery after recycling.';
 const quoteTwo = 'A separate research team measured a twenty percent increase in recovered battery materials during its recycling trials.';
 const quoteChallenge = 'The follow up audit found the claimed recovery increase was not statistically significant in the expanded production sample.';

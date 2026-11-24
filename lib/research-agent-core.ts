@@ -300,7 +300,7 @@ export function applyIndependentResearchReview(
       reason: cleanString(item.reason, 700),
     });
   }
-  const hypotheses = dossier.hypotheses.map((hypothesis) => {
+  const hypotheses: ResearchDossierHypothesis[] = dossier.hypotheses.map((hypothesis) => {
     const review = byHypothesis.get(hypothesis.id);
     if (!review) return {
       ...hypothesis,
@@ -320,8 +320,8 @@ export function applyIndependentResearchReview(
     const contested = challengingQuotes.length > 0 || (review.verdict === 'mixed' && supportingQuotes.length > 0);
     const supported = !contested && review.verdict === 'support' &&
       supportingQuotes.length >= 2 && supportingGroups >= 2;
-    const status = contested ? 'contested' : supported ? 'supported' : 'insufficient-evidence';
-    const confidenceLevel = status !== 'supported'
+    const status: ResearchDossierHypothesis['status'] = contested ? 'contested' : supported ? 'supported' : 'insufficient-evidence';
+    const confidenceLevel: ResearchDossierHypothesis['confidence'] = status !== 'supported'
       ? 'low'
       : supportingGroups >= 4 && supportingQuotes.length >= 4
         ? 'high' : 'moderate';
