@@ -32,9 +32,7 @@ import { palette as p } from '@/lib/theme';
 import { translateText } from '@/lib/i18n';
 import { SPACE_NICHES, SPACE_NEWS_SOURCES, type WikiLanguage } from '@/lib/space';
 function providerName(provider: SecondOpinionProvider): string {
-  return provider === 'cloudflare'
-    ? 'Cloudflare Workers AI'
-    : provider[0].toUpperCase() + provider.slice(1);
+  return provider === 'cloudflare' ? 'Cloudflare Workers AI' : provider === 'xai' ? 'Grok (xAI)' : provider[0].toUpperCase() + provider.slice(1);
 }
 function normalizePreferences(value?: Partial<Preferences>): Preferences {
   const fallback = defaults().preferences;
@@ -431,10 +429,10 @@ export default function Settings() {
         <Choices
           label="Preferred provider"
           options={['Gemini', 'Grok (xAI)', 'Cloudflare Workers AI', 'OpenRouter']}
-          selected={[prefs.secondOpinionProvider === 'cloudflare' ? 'Cloudflare Workers AI' : (prefs.secondOpinionProvider ?? 'gemini').replace(/^./, (value) => value.toUpperCase())]}
+          selected={[providerName(prefs.secondOpinionProvider ?? 'gemini')]}
           onChange={(values) => {
             const selected: Record<string, SecondOpinionProvider> = {
-              Gemini: 'gemini', Grok (xAI): 'xai', 'Cloudflare Workers AI': 'cloudflare', OpenRouter: 'openrouter',
+              Gemini: 'gemini', 'Grok (xAI)': 'xai', 'Cloudflare Workers AI': 'cloudflare', OpenRouter: 'openrouter',
             };
             const provider = selected[values[0]] ?? 'gemini';
             const currentOrder = prefs.secondOpinionOrder ?? DEFAULT_SECOND_OPINION_ORDER;
@@ -487,7 +485,7 @@ export default function Settings() {
           label={'Grok (xAI) model'}
           value={prefs.secondOpinionModels?.xai ?? 'grok-4-1-fast'}
           onChange={(value) => setPrefs({ ...prefs, secondOpinionModels: { ...prefs.secondOpinionModels, xai: value } })}
-          placeholder="openai/gpt-oss-120b"
+          placeholder="grok-4-1-fast"
         />
         <Field
           label={'Cloudflare Workers AI model'}
