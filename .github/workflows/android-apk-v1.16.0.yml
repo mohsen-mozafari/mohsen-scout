@@ -3,7 +3,7 @@ name: Build MOHSEN SCOUT APK v1.16.0
 on:
   workflow_dispatch:
   push:
-    branches: [feature/v1.16.0-youtube-opportunity-engine]
+    branches: [feature/v1.16.0-research-discovery-from-build-26]
     paths:
       - '.github/workflows/android-apk-v1.16.0.yml'
       - 'app.config.ts'
@@ -156,7 +156,7 @@ jobs:
           retention-days: 1
 
   publish-release:
-    if: github.ref == 'refs/heads/feature/v1.16.0-youtube-opportunity-engine'
+    if: github.ref == 'refs/heads/feature/v1.16.0-research-discovery-from-build-26'
     name: Publish verified APK release
     needs: build-android
     runs-on: ubuntu-latest
@@ -171,7 +171,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          CURRENT_SHA="$(gh api "repos/${GITHUB_REPOSITORY}/branches/feature/v1.16.0-youtube-opportunity-engine" --jq '.commit.sha')"
+          CURRENT_SHA="$(gh api "repos/${GITHUB_REPOSITORY}/branches/feature/v1.16.0-research-discovery-from-build-26" --jq '.commit.sha')"
           if [[ "$CURRENT_SHA" != "$GITHUB_SHA" ]]; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
             echo "::notice::Skipping stale release commit $GITHUB_SHA; branch head is $CURRENT_SHA."
