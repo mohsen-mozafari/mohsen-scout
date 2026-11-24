@@ -24,6 +24,7 @@ import { generateEditorialIdeas, type IdeaGenerationCategory } from './idea-gene
 import { attachReportToIdea as attachReport, attachVideoReferenceToIdea as attachVideoReference, getOrCreateSourceIdea, type SourceIdeaInput } from './idea-research';
 import { fetchSpaceNews, getCachedSpaceNews, getWikipediaSignal, hydrateSpaceNewsRegistry } from './space';
 import { buildResearchInterestProfile, normalizeResearchText, type ResearchFeedbackProfile } from './intelligence';
+import { runIndependentResearchStages } from './research-resilience';
 import { recordRuntimeFinish, recordRuntimeStart } from './runtime-metrics';
 import { appendResearchActivity, buildResearchActivityFeedbackProfile, buildResearchActivityResults, buildResearchActivitySourceExclusions, explainResearchActivitySourceExclusion, updateResearchActivityEvent, updateResearchActivityFeedback } from './research-activity';
 type State = {
@@ -461,7 +462,15 @@ export const useScout = create<State>((set, get) => ({
       };
 
       recordRuntimeStart('Sources');
-      await Promise.all([youtubeTask(), feedTask(), webTask(), wikiTask()]);
+      const stageRun = await runIndependentResearchStages([
+        { name: 'YouTube Data API', run: youtubeTask },
+        { name: 'Publisher feeds', run: feedTask },
+        { name: 'Independent web/news search', run: webTask },
+        { name: 'Wikimedia', run: wikiTask },
+      ]);
+      for (const failure of stageRun.failures) {
+        warnings.push(failure.name + ' failed unexpectedly; the other research sources continued independently.');
+      }
       const independentSourcesReady = publisherNews.length > 0 || webItems.length > 0;
       recordRuntimeFinish('Sources', independentSourcesReady ? 'success' : 'partial', independentSourcesReady ? undefined : 'No independent publisher/web evidence was returned.');
       if (!publisherNews.length) warnings.push('No selected publisher-feed items are currently available.');
@@ -612,6 +621,9 @@ export const useScout = create<State>((set, get) => ({
       engineRecorded = true;
 
       if (generatedIdeas.length && get().data.preferences.automaticExternalReview) {
+        let aiActivityId: string | undefined;
+        recordRuntimeStart('AI');
+        try {
         recordRuntimeStart('AI');
         set({ progress: 'Reviewing generated ideas with the configured AI-provider fallback chain…' });
         const aiActivityId = await beginActivity(
@@ -692,6 +704,23 @@ export const useScout = create<State>((set, get) => ({
           results: buildResearchActivityResults(topic, providerActivity),
           warnings: review.warnings.slice(0, 12),
         });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'AI second-opinion review failed.';
+          recordRuntimeFinish('AI', 'partial', message);
+          const warning = 'AI second-opinion review failed; the completed local research and generated ideas were preserved. ' + message.slice(0, 240);
+          warnings.push(warning);
+          await get().commit((data) => ({
+            ...data,
+            reports: data.reports.map((item) => item.id === report.id
+              ? { ...item, warnings: [...new Set([...item.warnings, warning])] }
+              : item),
+          })).catch(() => {});
+          await finishActivity(aiActivityId, {
+            status: 'error',
+            error: message.slice(0, 700),
+            warnings: [message.slice(0, 700)],
+          });
+        }
       }
 
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
