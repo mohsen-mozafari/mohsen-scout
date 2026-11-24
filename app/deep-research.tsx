@@ -241,13 +241,13 @@ export default function DeepResearch() {
         if (!batch.length) break;
         const firecrawlKey = await getKey('firecrawl').catch(() => undefined);
         const retrieved = await Promise.all(batch.map(async (item) => {
-          alreadyAsked.push(item.query);
           try {
             const result = await fetchWebResearch(item.query, {
               apiKey: firecrawlKey ?? undefined,
               limit: 3,
               days: preferences.defaultResearchDays,
             });
+            alreadyAsked.push(item.query);
             warnings.push(...result.warnings);
             return result.items;
           } catch (error) {
