@@ -462,14 +462,21 @@ export const useScout = create<State>((set, get) => ({
       };
 
       recordRuntimeStart('Sources');
-      const stageRun = await runIndependentResearchStages([
+      // YouTube is the first discovery lane. Its quota/key/network failure is isolated;
+      // independent evidence collection always starts afterward.
+      const youtubeStageRun = await runIndependentResearchStages([
         { name: 'YouTube Data API', run: youtubeTask },
+      ]);
+      for (const failure of youtubeStageRun.failures) {
+        warnings.push(failure.name + ' failed unexpectedly; independent evidence collection continued.');
+      }
+      const independentStageRun = await runIndependentResearchStages([
         { name: 'Publisher feeds', run: feedTask },
         { name: 'Independent web/news search', run: webTask },
         { name: 'Wikimedia', run: wikiTask },
       ]);
-      for (const failure of stageRun.failures) {
-        warnings.push(failure.name + ' failed unexpectedly; the other research sources continued independently.');
+      for (const failure of independentStageRun.failures) {
+        warnings.push(failure.name + ' failed unexpectedly; the other independent research sources continued.');
       }
       const independentSourcesReady = publisherNews.length > 0 || webItems.length > 0;
       recordRuntimeFinish('Sources', independentSourcesReady ? 'success' : 'partial', independentSourcesReady ? undefined : 'No independent publisher/web evidence was returned.');
