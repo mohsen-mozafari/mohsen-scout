@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { buildInternalResearch } from '../lib/engine';
 
-void test('internal engine receives the YouTube sample as an isolated raw pass-through only', () => {
+void test('internal engine analyzes YouTube metadata as platform evidence without treating it as independent publisher proof', () => {
   const sample = [{
     id: 'dQw4w9WgXcQ',
     title: 'Raw YouTube title: Mars sample return',
@@ -20,10 +20,13 @@ void test('internal engine receives the YouTube sample as an isolated raw pass-t
 
   assert.equal(result.intelligence.selfEvaluation.youtubeRawSampleReceived, true);
   const serializedAnalysis = JSON.stringify(result);
-  assert.doesNotMatch(serializedAnalysis, /Raw YouTube title|Raw description stays unchanged|123456|789/);
+  assert.match(serializedAnalysis, /Raw YouTube title/);
+  assert.match(serializedAnalysis, /Raw description stays unchanged/);
+  assert.match(serializedAnalysis, /123456/);
+  assert.match(serializedAnalysis, /789/);
   assert.equal(result.intelligence.selfEvaluation.youtubeSampleCount, 1);
-  assert.equal(result.intelligence.selfEvaluation.matchedVideoCount, 0);
-  assert.equal(result.intelligence.selfEvaluation.videoViewCountsAvailable, 0);
-  assert.equal(result.entityCandidates.length, 0);
-  assert.equal(result.evidence.some((item) => item.detail.includes('Raw YouTube title')), false);
+  assert.equal(result.intelligence.selfEvaluation.matchedVideoCount, 1);
+  assert.equal(result.intelligence.selfEvaluation.videoViewCountsAvailable, 1);
+  assert.ok(result.entityCandidates.length > 0);
+  assert.equal(result.evidence.some((item) => item.detail.includes('Raw YouTube title')), true);
 });
