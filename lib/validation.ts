@@ -66,6 +66,23 @@ export const researchDossierSchema = z.object({
   verifiedCitationCount: z.number().int().min(0).max(200).optional(),
 });
 
+const youtubeGrowth = z.object({
+  snapshotCount: z.number().int().min(1).max(10000),
+  deltaViews: z.number().finite().nullable(),
+  viewsPerHour: z.number().finite().nonnegative().nullable(),
+  viewsPerDay: z.number().finite().nonnegative().nullable(),
+  channelBaselineViewsPerDay: z.number().finite().nonnegative().nullable(),
+  channelOutlierRatio: z.number().finite().nonnegative().nullable(),
+  measuredAt: time,
+  status: z.enum(['insufficient-history', 'measured']),
+});
+const youtubeSnapshot = z.object({
+  id, videoId: id, channelId: text.optional(), channel: text,
+  capturedAt: time,
+  viewCount: z.number().nonnegative().nullable(),
+  likeCount: z.number().nonnegative().nullable(),
+  commentCount: z.number().nonnegative().nullable(),
+});
 const video = z.object({
   id,
   title: text,
@@ -77,6 +94,9 @@ const video = z.object({
   query: text,
   viewCount: z.number().nonnegative().nullable().optional(),
   likeCount: z.number().nonnegative().nullable().optional(),
+  commentCount: z.number().nonnegative().nullable().optional(),
+  channelId: text.optional(),
+  growth: youtubeGrowth.optional(),
 });
 const schema = z.object({
   preferences: z.object({
@@ -201,6 +221,7 @@ const schema = z.object({
     }),
   ),
   videos: z.array(video),
+  youtubeSnapshots: z.array(youtubeSnapshot).max(10000).optional().default([]),
   researchActivity: z.array(z.object({
     id: id.max(120),
     engine: z.enum(['YouTube Data API', 'Firecrawl Search', 'Publisher Feeds', 'Wikimedia', 'Internal Engine', 'AI Provider Review']),

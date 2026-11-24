@@ -199,6 +199,7 @@ const searchSchema = z.object({
         title: z.string(),
         description: z.string(),
         channelTitle: z.string(),
+        channelId: z.string().optional(),
         publishedAt: z.string().datetime(),
         thumbnails: z.object({
           medium: z.object({ url: z.string() }).optional(),
@@ -357,7 +358,7 @@ export async function searchYouTube(input: ResearchInput, options: YouTubeOption
     const params: Record<string, string> = {
       part: 'snippet', type: 'video', q: search.query, order: search.order,
       maxResults: '50', videoDuration: input.duration,
-      fields: 'nextPageToken,items(id/videoId,snippet(title,description,channelTitle,publishedAt,thumbnails))',
+      fields: 'nextPageToken,items(id/videoId,snippet(title,description,channelTitle,channelId,publishedAt,thumbnails))',
     };
     const regionCodes: Partial<Record<Region, string>> = {
       'United States': 'US', Iran: 'IR', 'United Kingdom': 'GB', Germany: 'DE',
@@ -381,7 +382,7 @@ export async function searchYouTube(input: ResearchInput, options: YouTubeOption
         if (!candidates.has(id)) {
           candidates.set(id, {
             id, title: item.snippet.title, description: item.snippet.description,
-            channel: item.snippet.channelTitle, publishedAt: item.snippet.publishedAt,
+            channel: item.snippet.channelTitle, channelId: item.snippet.channelId, publishedAt: item.snippet.publishedAt,
             thumbnail: item.snippet.thumbnails.medium?.url ?? item.snippet.thumbnails.default?.url ?? '',
             fetchedAt: Date.now(), query: SEARCH_BUCKET_LABELS[search.bucket](topic),
           });
@@ -469,12 +470,12 @@ export async function searchYouTube(input: ResearchInput, options: YouTubeOption
     try {
       const raw = await youtube('videos', {
         part: 'statistics', id: batch.map((item) => item.id).join(','),
-        fields: 'items(id,statistics(viewCount,likeCount))',
+        fields: 'items(id,statistics(viewCount,likeCount,commentCount))',
       }, options, 1);
       const parsed = z.object({
         items: z.array(z.object({
           id: z.string(),
-          statistics: z.object({ viewCount: z.string().optional(), likeCount: z.string().optional() }).optional(),
+          statistics: z.object({ viewCount: z.string().optional(), likeCount: z.string().optional(), commentCount: z.string().optional() }).optional(),
         })),
       }).safeParse(raw);
       if (!parsed.success) throw new ApiError('Video statistics returned an invalid response.', 'invalid');

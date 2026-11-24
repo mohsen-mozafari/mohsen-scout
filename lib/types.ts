@@ -33,6 +33,26 @@ export type ResearchInput = {
   category: string;
   maxResults: number;
 };
+export type YouTubeSnapshot = {
+  id: string;
+  videoId: string;
+  channelId?: string;
+  channel: string;
+  capturedAt: number;
+  viewCount: number | null;
+  likeCount: number | null;
+  commentCount: number | null;
+};
+export type YouTubeGrowth = {
+  snapshotCount: number;
+  deltaViews: number | null;
+  viewsPerHour: number | null;
+  viewsPerDay: number | null;
+  channelBaselineViewsPerDay: number | null;
+  channelOutlierRatio: number | null;
+  measuredAt: number;
+  status: 'insufficient-history' | 'measured';
+};
 export type Video = {
   id: string;
   title: string;
@@ -44,6 +64,9 @@ export type Video = {
   query: string;
   viewCount?: number | null;
   likeCount?: number | null;
+  commentCount?: number | null;
+  channelId?: string;
+  growth?: YouTubeGrowth;
 };
 export type Assessment =
   | 'Strong Opportunity'
@@ -353,6 +376,7 @@ export type LocalData = {
   opinions: Opinion[];
   reports: Report[];
   videos: Video[];
+  youtubeSnapshots: YouTubeSnapshot[];
   budget: Budget;
 };
 export const uid = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
@@ -391,6 +415,7 @@ export function defaults(): LocalData {
     opinions: [],
     reports: [],
     videos: [],
+    youtubeSnapshots: [],
     budget: { date: '', units: 0, requests: 0, exhausted: false, searchExhausted: false, otherExhausted: false, searchManualRequests: 0, searchAutomaticRequests: 0, searchReserveRequests: 0, otherManualUnits: 0, otherAutomaticUnits: 0, otherReserveUnits: 0 },
   };
 }

@@ -29,6 +29,7 @@ import { fetchSpaceNews, getCachedSpaceNews, getWikipediaSignal, hydrateSpaceNew
 import { buildResearchInterestProfile, normalizeResearchText, type ResearchFeedbackProfile } from './intelligence';
 import { recordRuntimeFinish, recordRuntimeStart } from './runtime-metrics';
 import { readPendingResearch, savePendingResearch, clearPendingResearch } from './pending-research';
+import { captureYouTubeSnapshots } from './youtube-growth';
 import { appendResearchActivity, buildResearchActivityFeedbackProfile, buildResearchActivityResults, buildResearchActivitySourceExclusions, explainResearchActivitySourceExclusion, updateResearchActivityEvent, updateResearchActivityFeedback } from './research-activity';
 type State = {
   data: LocalData;
@@ -634,6 +635,8 @@ export const useScout = create<State>((set, get) => ({
       if (!wiki) warnings.push('No Wikimedia pageview/article signal was available in this run.');
 
       const currentData = get().data;
+      const youtubeSnapshotBatch = captureYouTubeSnapshots(youtubeResult?.videos ?? [], currentData.youtubeSnapshots, Date.now());
+      const researchVideos = youtubeSnapshotBatch.videos;
       const priorMemory = currentData.researchMemory.find(
         (entry) => normalizeResearchText(entry.topic) === normalizeResearchText(topic),
       );
@@ -666,7 +669,7 @@ export const useScout = create<State>((set, get) => ({
         wiki,
         // Map the stored video record into the engine's transient raw-only input shape.
         // Do not add this payload to the analysis result, persistence or external prompts.
-        videos: (youtubeResult?.videos ?? []).map((video) => ({
+        videos: researchVideos.map((video) => ({
           id: video.id,
           title: video.title,
           description: video.description,
@@ -674,6 +677,8 @@ export const useScout = create<State>((set, get) => ({
           publishedAt: video.publishedAt,
           viewCount: video.viewCount ?? null,
           likeCount: video.likeCount ?? null,
+          commentCount: video.commentCount ?? null,
+          growth: video.growth,
         })),
         priorMemory,
         language: currentData.preferences.uiLanguage ?? 'fa',
@@ -681,7 +686,7 @@ export const useScout = create<State>((set, get) => ({
 
       const report: Report = {
         input: normalizedInput,
-        videos: youtubeResult?.videos ?? [],
+        videos: researchVideos,
         queries: [
           ...(youtubeResult?.queries ?? []),
           ...webSearchQueries.map((query) => 'Web research: ' + query),
@@ -764,7 +769,8 @@ export const useScout = create<State>((set, get) => ({
         feedRegistry,
         reports: [report, ...data.reports],
         ideas: [...generatedIdeas, ...data.ideas],
-        videos: [...new Map([...data.videos, ...(youtubeResult?.videos ?? [])].map((video) => [video.id, video])).values()],
+        videos: [...new Map([...data.videos, ...researchVideos].map((video) => [video.id, video])).values()],
+        youtubeSnapshots: [...youtubeSnapshotBatch.snapshots, ...data.youtubeSnapshots].slice(0, 10000),
         researchMemory: memoryEntry
           ? [
               memoryEntry,

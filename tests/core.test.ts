@@ -36,6 +36,7 @@ import {
 } from '../lib/api';
 import { buildIdeas, buildInternalResearch, createManualIdea, rankNewsForTopic, topicRelevanceScore } from '../lib/engine';
 import { scoreEditorialOpportunity, sortResearchVideos } from '../lib/intelligence';
+import { captureYouTubeSnapshots } from '../lib/youtube-growth';
 import { EDITORIAL_PRIORITY_CONFIG, getEditorialPriorityBand } from '../lib/editorial-priority';
 import { rankDashboardIdeas } from '../lib/dashboard';
 import { translateText } from '../lib/i18n';
@@ -1603,4 +1604,24 @@ void test('Editorial scoring is identical with or without raw YouTube API sample
     ],
   });
   assert.deepEqual(withVideoSamples, withoutVideoSamples);
+});
+
+void test('YouTube growth requires two snapshots and computes elapsed-time velocity', () => {
+  const first: Video = { ...video, id: 'growth-video', channel: 'Growth channel', viewCount: 1000, likeCount: 20 };
+  const initial = captureYouTubeSnapshots([first], [], now);
+  assert.equal(initial.videos[0].growth?.status, 'insufficient-history');
+  assert.equal(initial.videos[0].growth?.viewsPerDay, null);
+  const second = captureYouTubeSnapshots([{ ...first, viewCount: 1600 }], initial.snapshots, now + 2 * 86400000);
+  assert.equal(second.videos[0].growth?.status, 'measured');
+  assert.equal(second.videos[0].growth?.deltaViews, 600);
+  assert.equal(second.videos[0].growth?.viewsPerDay, 300);
+  assert.equal(second.snapshots[0].viewCount, 1600);
+});
+
+void test('YouTube growth does not invent velocity for zero or too-short intervals', () => {
+  const first: Video = { ...video, id: 'fast-video', viewCount: 1000 };
+  const initial = captureYouTubeSnapshots([first], [], now);
+  const second = captureYouTubeSnapshots([{ ...first, viewCount: 1500 }], initial.snapshots, now + 5 * 60000);
+  assert.equal(second.videos[0].growth?.status, 'insufficient-history');
+  assert.equal(second.videos[0].growth?.viewsPerHour, null);
 });

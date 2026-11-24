@@ -2,7 +2,7 @@ import type { LocalData, Report, Video } from './types';
 import { RETENTION_MS } from './types';
 
 export const RECORD_DOMAINS = [
-  'ideas', 'links', 'notes', 'opinions', 'researchMemory', 'researchActivity', 'reports', 'videos',
+  'ideas', 'links', 'notes', 'opinions', 'researchMemory', 'researchActivity', 'reports', 'videos', 'youtubeSnapshots',
 ] as const;
 export type RecordDomain = (typeof RECORD_DOMAINS)[number];
 export type RecordCounts = Record<RecordDomain, number>;
@@ -31,7 +31,7 @@ export function isRecordDomain(value: string): value is RecordDomain {
 }
 
 export function recordTable(domain: RecordDomain): 'personal_records' | 'youtube_records' {
-  return domain === 'reports' || domain === 'videos' ? 'youtube_records' : 'personal_records';
+  return domain === 'reports' || domain === 'videos' || domain === 'youtubeSnapshots' ? 'youtube_records' : 'personal_records';
 }
 
 export function recordIdFor(domain: RecordDomain, value: unknown): string {
@@ -55,6 +55,7 @@ export function recordUpdatedAt(domain: RecordDomain, value: unknown, now = Date
       : domain === 'researchMemory' ? record.updatedAt
         : domain === 'researchActivity' ? record.startedAt
           : domain === 'videos' ? record.fetchedAt
+            : domain === 'youtubeSnapshots' ? record.capturedAt
           : domain === 'reports' ? record.createdAt
             : record.createdAt;
   return typeof candidate === 'number' && Number.isFinite(candidate) && candidate >= 0 ? candidate : now;
@@ -62,6 +63,10 @@ export function recordUpdatedAt(domain: RecordDomain, value: unknown, now = Date
 
 export function recordExpiresAt(domain: RecordDomain, value: unknown): number | null {
   const record = value as Record<string, unknown>;
+  if (domain === 'youtubeSnapshots') {
+    const capturedAt = (record as { capturedAt: number }).capturedAt;
+    return Number.isFinite(capturedAt) ? capturedAt + RETENTION_MS : 0;
+  }
   if (domain === 'videos') {
     const fetchedAt = (record as unknown as Video).fetchedAt;
     return Number.isFinite(fetchedAt) ? fetchedAt + RETENTION_MS : 0;
@@ -99,7 +104,7 @@ export function diffRecordCollection(
 export function emptyRecordCounts(): RecordCounts {
   return {
     ideas: 0, links: 0, notes: 0, opinions: 0,
-    researchMemory: 0, researchActivity: 0, reports: 0, videos: 0,
+    researchMemory: 0, researchActivity: 0, reports: 0, videos: 0, youtubeSnapshots: 0,
   };
 }
 
