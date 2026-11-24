@@ -526,6 +526,40 @@ export default function DeepResearch() {
             </Fold>
           </Panel>
 </Fold>          {brief.wiki && (
+          {brief.researchDossier ? (
+            <Fold
+              title={preferences.uiLanguage === 'fa' ? 'پرونده تحقیق عمیق و اکتشاف چندمرحله‌ای' : 'Deep research dossier · iterative discovery'}
+              summary={brief.researchDossier.hypotheses.length + ' hypotheses · ' + brief.researchDossier.completedQueries.length + ' follow-up searches'}
+            >
+              <Panel>
+                <Heading>{preferences.uiLanguage === 'fa' ? 'جمع‌بندی انتقادی' : 'Critical synthesis'}</Heading>
+                <Txt>{brief.researchDossier.conclusion || (preferences.uiLanguage === 'fa' ? 'جمع‌بندی کافی در دسترس نیست.' : 'No sufficient synthesis is available.')}</Txt>
+                <Txt muted>{'Confidence: ' + brief.researchDossier.confidence + ' · ' + brief.researchDossier.stoppingReason}</Txt>
+                <Heading>{preferences.uiLanguage === 'fa' ? 'فرضیه‌های قابل آزمون' : 'Testable hypotheses'}</Heading>
+                {brief.researchDossier.hypotheses.map((item) => (
+                  <View key={item.id} style={{ gap: 4, borderTopWidth: 1, borderTopColor: p.border, paddingTop: 8 }}>
+                    <SourceText>{item.claim}</SourceText>
+                    <Txt muted>{item.rationale}</Txt>
+                    <Text style={styles.badge}>{item.status} · {item.confidence}</Text>
+                    {item.supportingEvidenceIds.length ? <Txt muted>{'Supports: ' + item.supportingEvidenceIds.join(', ')}</Txt> : null}
+                    {item.challengingEvidenceIds.length ? <Txt muted>{'Challenges: ' + item.challengingEvidenceIds.join(', ')}</Txt> : null}
+                    {item.missingEvidence.map((gap) => <Txt muted key={gap}>{'Missing: ' + gap}</Txt>)}
+                  </View>
+                ))}
+                <Heading>{preferences.uiLanguage === 'fa' ? 'ارزیابی منابع' : 'Source assessments'}</Heading>
+                {brief.researchDossier.evidenceReviews.map((item) => (
+                  <View key={item.evidenceId} style={{ gap: 2 }}>
+                    <Txt>{item.evidenceId + ' · ' + item.role}</Txt>
+                    <Txt muted>{item.sourceType + ' · ' + item.credibility + ' · ' + item.freshness + ' — ' + item.reason}</Txt>
+                  </View>
+                ))}
+                <Heading>{preferences.uiLanguage === 'fa' ? 'پرسش‌های اکتشافی بعدی' : 'Next discovery questions'}</Heading>
+                {brief.researchDossier.nextQueries.map((item) => <View key={item.query} style={{ gap: 2 }}><SourceText>{item.query}</SourceText><Txt muted>{item.purpose + ' · priority ' + item.priority + ' — ' + item.reason}</Txt></View>)}
+                {brief.researchDossier.gaps.map((item) => <Txt muted key={item}>{'Research gap: ' + item}</Txt>)}
+                {brief.researchDossier.contradictions.map((item, index) => <Txt muted key={'contradiction-' + index}>{'Contradiction: ' + item.description + ' · ' + item.evidenceIds.join(', ')}</Txt>)}
+              </Panel>
+            </Fold>
+          ) : null}
           <Fold title="5 · Wikimedia context" summary={brief.wiki.articleTitle}>            <Panel>
               <Heading>Public-interest context · Wikimedia</Heading>
               <SourceText>{brief.wiki.articleTitle}</SourceText>
