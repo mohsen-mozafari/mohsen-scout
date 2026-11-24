@@ -57,3 +57,13 @@ Do not assume the optional audited analytics amendment applies to this app or th
 - Firecrawl is optional. Keyless Search can be rate-limited; the research flow must preserve RSS/Wikimedia results when it is unavailable. A user key is held only in SecureStore and never sent with YouTube data.
 - Automatic critique is controlled by the persisted Settings preference. It may send the idea title/concept and independent source summaries/links to the configured provider fallback chain. Never include YouTube metadata, scores, identifiers, thumbnails or personal notes.
 - Do not derive custom metrics from YouTube API data unless the app developer has completed YouTube's required API Compliance Audit and YouTube has explicitly accepted the applicable analytics use case and derived-metrics/data-storage permissions. The owner's in-app or chat consent is not a substitute for YouTube approval. Until that approval is documented for this project, do not calculate ratios, views/hour, growth or velocity scores, API-derived rankings, demand forecasts or composite scores from API data. You may display raw API statistics and use YouTube's own documented search ordering; label samples as bounded and incomplete.
+
+
+## 1.18.0 adaptive deep-research policy
+
+- Deep Research follow-up is adaptive but strictly bounded: maximum 4 follow-up rounds, 8 focused searches total, 2 queries per round, 4 returned items per query, and 48 independent evidence records per run.
+- A query is marked attempted before the network request, including failed requests; do not repeat failed searches automatically in the same run.
+- Canonicalize safe HTTP(S) evidence URLs, remove common tracking parameters, reject YouTube/video hosts, and deduplicate before dossier review or idea context.
+- Stop when no novel query remains, a hard budget is reached, the evidence ceiling is reached, or a completed round yields no new independent URL. Preserve an explicit stopping reason and unresolved questions.
+- Distinct web hosts and publication-date coverage are descriptive provenance checks only; do not equate host diversity with independent ownership or use them as audience-demand metrics.
+- Preserve all earlier YouTube API isolation, derived-metrics, privacy, opt-in provider, local-first, retention and no-scraping guardrails.

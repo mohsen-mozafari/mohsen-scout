@@ -18,6 +18,7 @@ import { generateEditorialIdeas } from '@/lib/idea-generation';
 import { buildPublisherIntelligence, type PublisherIntelligence } from '@/lib/news-intelligence';
 import { createResearchMemoryEntry } from '@/lib/research-memory';
 import { runResearchAgent } from '@/lib/research-agent';
+import { assessResearchEvidenceCoverage, MAX_DEEP_RESEARCH_RESULTS_PER_QUERY, MAX_DEEP_RESEARCH_ROUNDS, mergeIndependentResearchEvidence, planResearchRound } from '@/lib/research-orchestrator';
 import { recordRuntimeFinish, recordRuntimeStart } from '@/lib/runtime-metrics';
 import { searchYouTubeSample, type YouTubeSampleVideo } from '@/lib/api';
 import {
@@ -209,7 +210,7 @@ export default function DeepResearch() {
     // Run a bounded, source-led research loop. The model proposes falsifiable
     // questions; Firecrawl retrieves new evidence; the model then re-evaluates it.
     // YouTube API metadata is deliberately excluded from this external review.
-    const researchEvidence: WebResearchItem[] = [
+    const initialResearchEvidence: WebResearchItem[] = [
       ...selectedNews.map((item) => ({
         id: 'publisher:' + item.id,
         title: item.title,
@@ -221,6 +222,7 @@ export default function DeepResearch() {
       })),
       ...webResults,
     ];
+    const researchEvidence: WebResearchItem[] = mergeIndependentResearchEvidence([], initialResearchEvidence).items;
     const alreadyAsked: string[] = [];
     let researchDossier: ResearchDossier | undefined;
     try {
@@ -234,39 +236,50 @@ export default function DeepResearch() {
       });
       warnings.push(...outcome.warnings);
       if (outcome.dossier) researchDossier = outcome.dossier;
-      // Two bounded discovery rounds; at most two focused searches per round.
-      for (let round = 0; round < 2 && researchDossier?.nextQueries.length; round++) {
-        const batch = researchDossier.nextQueries.slice(0, 2)
-          .filter((item) => !alreadyAsked.some((asked) => normalizeResearchText(asked) === normalizeResearchText(item.query)));
-        if (!batch.length) break;
+      // Adaptive evidence-led discovery: bounded by rounds, searches and evidence size.
+      // Failed searches are marked attempted too, so one failing query cannot loop forever.
+      let previousRoundNewEvidenceCount: number | undefined;
+      let researchStopReason = '';
+      for (let round = 1; round <= MAX_DEEP_RESEARCH_ROUNDS; round += 1) {
+        const plan = planResearchRound({
+          round,
+          queriesAttempted: alreadyAsked.length,
+          evidenceCount: researchEvidence.length,
+          previousRoundNewEvidenceCount,
+          nextQueries: researchDossier?.nextQueries ?? [],
+          alreadyAsked,
+        });
+        if (!plan.queries.length) {
+          researchStopReason = plan.stopReason;
+          break;
+        }
+        const beforeCount = researchEvidence.length;
         const firecrawlKey = await getKey('firecrawl').catch(() => undefined);
-        const retrieved = await Promise.all(batch.map(async (item) => {
+        for (const plannedQuery of plan.queries) {
+          alreadyAsked.push(plannedQuery.query);
           try {
-            const result = await fetchWebResearch(item.query, {
+            const result = await fetchWebResearch(plannedQuery.query, {
               apiKey: firecrawlKey ?? undefined,
-              limit: 3,
+              limit: MAX_DEEP_RESEARCH_RESULTS_PER_QUERY,
               days: preferences.defaultResearchDays,
             });
-            alreadyAsked.push(item.query);
             warnings.push(...result.warnings);
-            return result.items;
+            const mergedEvidence = mergeIndependentResearchEvidence(researchEvidence, result.items);
+            researchEvidence.splice(0, researchEvidence.length, ...mergedEvidence.items);
+            const mergedWeb = mergeIndependentResearchEvidence(webResults, mergedEvidence.addedItems);
+            webResults.splice(0, webResults.length, ...mergedWeb.items);
+            if (mergedEvidence.rejectedCount) {
+              warnings.push('Some follow-up results were excluded because their URL was invalid, duplicated, or outside the independent-web evidence boundary.');
+            }
           } catch (error) {
             warnings.push('Follow-up research search failed: ' + (error instanceof Error ? error.message : 'Search unavailable.'));
-            return [];
           }
-        }));
-        const knownUrls = new Set(researchEvidence.map((item) => {
-          try { return new URL(item.url).href.replace(/#.*$/, '').replace(/\/$/, '').toLowerCase(); }
-          catch { return item.url.toLowerCase(); }
-        }));
-        for (const item of retrieved.flat()) {
-          let key = item.url.toLowerCase();
-          try { key = new URL(item.url).href.replace(/#.*$/, '').replace(/\/$/, '').toLowerCase(); } catch { /* keep original */ }
-          if (!knownUrls.has(key)) {
-            knownUrls.add(key);
-            researchEvidence.push(item);
-            webResults.push(item);
-          }
+        }
+        const newEvidenceCount = researchEvidence.length - beforeCount;
+        previousRoundNewEvidenceCount = newEvidenceCount;
+        if (newEvidenceCount === 0) {
+          researchStopReason = 'Research stopped because the latest focused searches added no new independent source URLs.';
+          break;
         }
         const nextOutcome = await runResearchAgent({
           topic: query,
@@ -276,8 +289,24 @@ export default function DeepResearch() {
           alreadyAsked,
         });
         warnings.push(...nextOutcome.warnings);
-        if (!nextOutcome.dossier) break;
+        if (!nextOutcome.dossier) {
+          researchStopReason = 'New evidence was collected, but the configured AI reviewer could not validate the next research state.';
+          break;
+        }
         researchDossier = nextOutcome.dossier;
+      }
+      if (!researchStopReason && researchDossier) {
+        researchStopReason = 'The adaptive research round limit was reached; unresolved questions remain recorded for a later manual review.';
+      }
+      if (researchDossier && researchStopReason) {
+        researchDossier = { ...researchDossier, stoppingReason: researchStopReason };
+      }
+      const evidenceCoverage = assessResearchEvidenceCoverage(researchEvidence);
+      if (evidenceCoverage.uniqueHostCount < 2) {
+        warnings.push('Research evidence currently covers fewer than two distinct web hosts; source independence has not been established.');
+      }
+      if (evidenceCoverage.undatedCount > 0) {
+        warnings.push(evidenceCoverage.undatedCount + ' independent web result(s) have no usable publication date; freshness remains uncertain.');
       }
       recordRuntimeFinish('AI', researchDossier ? 'success' : 'partial');
     } catch (error) {
