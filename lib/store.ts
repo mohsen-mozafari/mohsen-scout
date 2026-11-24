@@ -624,86 +624,86 @@ export const useScout = create<State>((set, get) => ({
         let aiActivityId: string | undefined;
         recordRuntimeStart('AI');
         try {
-        set({ progress: 'Reviewing generated ideas with the configured AI-provider fallback chain…' });
-        aiActivityId = await beginActivity(
-          'AI Provider Review', topic,
-          'Independent second-opinion review after local analysis: ' + generatedIdeas.slice(0, 8).map((idea) => idea.topic).join(' ; '),
-          researchReportId,
-        );
-        const review = await reviewIdeasAutomatically(generatedIdeas, get().data.preferences, {
-          language: get().data.preferences.uiLanguage ?? 'fa',
-          beforeProviderRequest: async (config) => {
-            if (config.provider !== 'openrouter') return;
-            const preferences = get().data.preferences;
-            const usage = nextOpenRouterUsage(
-              preferences.openRouterUsageDay,
-              preferences.openRouterRequestsToday,
-              localDateKey(),
-              preferences.openRouterDailyLimit ?? 50,
-            );
+          set({ progress: 'Reviewing generated ideas with the configured AI-provider fallback chain…' });
+          aiActivityId = await beginActivity(
+            'AI Provider Review', topic,
+            'Independent second-opinion review after local analysis: ' + generatedIdeas.slice(0, 8).map((idea) => idea.topic).join(' ; '),
+            researchReportId,
+          );
+          const review = await reviewIdeasAutomatically(generatedIdeas, get().data.preferences, {
+            language: get().data.preferences.uiLanguage ?? 'fa',
+            beforeProviderRequest: async (config) => {
+              if (config.provider !== 'openrouter') return;
+              const preferences = get().data.preferences;
+              const usage = nextOpenRouterUsage(
+                preferences.openRouterUsageDay,
+                preferences.openRouterRequestsToday,
+                localDateKey(),
+                preferences.openRouterDailyLimit ?? 50,
+              );
+              await get().commit((data) => ({
+                ...data,
+                preferences: { ...data.preferences, ...usage },
+              }));
+            },
+          });
+          if (review.opinions.length || review.warnings.length) {
             await get().commit((data) => ({
               ...data,
-              preferences: { ...data.preferences, ...usage },
+              opinions: [
+                ...review.opinions,
+                ...data.opinions.filter((opinion) => !review.opinions.some((item) => item.ideaId === opinion.ideaId)),
+              ],
+              reports: data.reports.map((item) => item.id === report.id
+                ? { ...item, warnings: [...new Set([...item.warnings, ...review.warnings])] }
+                : item),
             }));
-          },
-        });
-        if (review.opinions.length || review.warnings.length) {
-          await get().commit((data) => ({
-            ...data,
-            opinions: [
-              ...review.opinions,
-              ...data.opinions.filter((opinion) => !review.opinions.some((item) => item.ideaId === opinion.ideaId)),
-            ],
-            reports: data.reports.map((item) => item.id === report.id
-              ? { ...item, warnings: [...new Set([...item.warnings, ...review.warnings])] }
-              : item),
+          }
+          const fallbackUsed = review.providerAttempts.some((attempt) =>
+            attempt.status !== 'success' && attempt.status !== 'disabled',
+          );
+          recordRuntimeFinish('AI', review.opinions.length ? (fallbackUsed ? 'partial' : 'success') : 'partial', review.warnings.join(' '));
+          const groupedAttempts = new Map<string, {
+            provider: string;
+            model: string;
+            statuses: string[];
+            messages: string[];
+            ideaTopics: string[];
+          }>();
+          for (const attempt of review.providerAttempts) {
+            const key = attempt.provider + '/' + attempt.model;
+            const group = groupedAttempts.get(key) ?? {
+              provider: attempt.provider,
+              model: attempt.model,
+              statuses: [],
+              messages: [],
+              ideaTopics: [],
+            };
+            group.statuses.push(attempt.status);
+            group.messages.push(attempt.message.slice(0, 180));
+            if (!group.ideaTopics.includes(attempt.ideaTopic)) group.ideaTopics.push(attempt.ideaTopic);
+            groupedAttempts.set(key, group);
+          }
+          const providerActivity = [...groupedAttempts.values()].map((group) => ({
+            id: group.provider + '/' + group.model,
+            title: group.provider + ' · ' + group.model,
+            summary: group.ideaTopics.slice(0, 3).join(' | ') +
+              ' · ' + group.statuses.length + ' request(s): ' + group.statuses.join(', ') +
+              ' · ' + group.messages.slice(0, 3).join(' | '),
+            sourceName: group.provider,
+            includedInAnalysis: false,
+            decisionReason: 'Advisory second opinion requested after the internal ranking was completed. It is recorded for audit and does not alter internal evidence scores or reorder the local ideas.',
           }));
-        }
-        const fallbackUsed = review.providerAttempts.some((attempt) =>
-          attempt.status !== 'success' && attempt.status !== 'disabled',
-        );
-        recordRuntimeFinish('AI', review.opinions.length ? (fallbackUsed ? 'partial' : 'success') : 'partial', review.warnings.join(' '));
-        const groupedAttempts = new Map<string, {
-          provider: string;
-          model: string;
-          statuses: string[];
-          messages: string[];
-          ideaTopics: string[];
-        }>();
-        for (const attempt of review.providerAttempts) {
-          const key = attempt.provider + '/' + attempt.model;
-          const group = groupedAttempts.get(key) ?? {
-            provider: attempt.provider,
-            model: attempt.model,
-            statuses: [],
-            messages: [],
-            ideaTopics: [],
-          };
-          group.statuses.push(attempt.status);
-          group.messages.push(attempt.message.slice(0, 180));
-          if (!group.ideaTopics.includes(attempt.ideaTopic)) group.ideaTopics.push(attempt.ideaTopic);
-          groupedAttempts.set(key, group);
-        }
-        const providerActivity = [...groupedAttempts.values()].map((group) => ({
-          id: group.provider + '/' + group.model,
-          title: group.provider + ' · ' + group.model,
-          summary: group.ideaTopics.slice(0, 3).join(' | ') +
-            ' · ' + group.statuses.length + ' request(s): ' + group.statuses.join(', ') +
-            ' · ' + group.messages.slice(0, 3).join(' | '),
-          sourceName: group.provider,
-          includedInAnalysis: false,
-          decisionReason: 'Advisory second opinion requested after the internal ranking was completed. It is recorded for audit and does not alter internal evidence scores or reorder the local ideas.',
-        }));
-        await finishActivity(aiActivityId, {
-          status: review.opinions.length
-            ? (fallbackUsed || review.warnings.length ? 'partial' : 'success')
-            : review.providerAttempts.length ? 'error' : 'skipped',
-          resultCount: review.providerAttempts.length,
-          analyzedCount: review.opinions.length,
-          results: buildResearchActivityResults(topic, providerActivity),
-          warnings: review.warnings.slice(0, 12),
-        });
-        } catch (error) {
+          await finishActivity(aiActivityId, {
+            status: review.opinions.length
+              ? (fallbackUsed || review.warnings.length ? 'partial' : 'success')
+              : review.providerAttempts.length ? 'error' : 'skipped',
+            resultCount: review.providerAttempts.length,
+            analyzedCount: review.opinions.length,
+            results: buildResearchActivityResults(topic, providerActivity),
+            warnings: review.warnings.slice(0, 12),
+          });
+          } catch (error) {
           const message = error instanceof Error ? error.message : 'AI second-opinion review failed.';
           recordRuntimeFinish('AI', 'partial', message);
           const warning = 'AI second-opinion review failed; the completed local research and generated ideas were preserved. ' + message.slice(0, 240);
