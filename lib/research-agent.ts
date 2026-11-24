@@ -7,7 +7,10 @@ import {
 import { getKey } from './vault';
 import type { ResearchDossier, SecondOpinionProvider } from './types';
 import {
+  applyIndependentResearchReview,
+  buildIndependentReviewPrompt,
   buildResearchAgentPrompt,
+  markResearchReviewUnavailable,
   parseResearchAgentJson,
   parseResearchDossier,
   type ResearchAgentInput,
@@ -66,7 +69,7 @@ export async function runResearchAgent(input: ResearchAgentInput): Promise<Resea
       input.beforeProviderRequest,
     );
     const raw = parseResearchAgentJson(response.content);
-    const dossier = parseResearchDossier(
+    let dossier = parseResearchDossier(
       raw,
       input.evidence,
       input.previous,
@@ -75,7 +78,51 @@ export async function runResearchAgent(input: ResearchAgentInput): Promise<Resea
       response.model,
       input.now ?? Date.now(),
     );
-    return { dossier, provider: response.provider, model: response.model, attempts: response.attempts, warnings };
+    let attempts = [...response.attempts];
+
+    // Independent validation requires a different configured provider.
+    const independentConfigs = configs.filter((config) => config.provider !== response.provider);
+    if (!independentConfigs.length) {
+      dossier = markResearchReviewUnavailable(dossier, input.evidence);
+      warnings.push('Independent cross-provider review was not possible because no second AI provider is configured. All hypotheses remain unverified and low-confidence.');
+    } else {
+      try {
+        const reviewResponse = await requestResearchAgentWithFallback(
+          independentConfigs,
+          buildIndependentReviewPrompt(
+            input.topic,
+            dossier,
+            input.evidence,
+            input.preferences.uiLanguage ?? 'fa',
+          ),
+          fetch,
+          input.beforeProviderRequest,
+        );
+        const reviewRaw = parseResearchAgentJson(reviewResponse.content);
+        dossier = applyIndependentResearchReview(
+          dossier,
+          reviewRaw,
+          input.evidence,
+          reviewResponse.provider,
+          reviewResponse.model,
+          input.now ?? Date.now(),
+        );
+        attempts = [...attempts, ...reviewResponse.attempts];
+      } catch (reviewError) {
+        dossier = markResearchReviewUnavailable(dossier, input.evidence);
+        warnings.push(
+          'Independent cross-provider review failed. The dossier was retained, but all hypotheses were downgraded to insufficient evidence: ' +
+          (reviewError instanceof Error ? reviewError.message : 'review unavailable.'),
+        );
+      }
+    }
+    return {
+      dossier,
+      provider: response.provider,
+      model: response.model,
+      attempts,
+      warnings,
+    };
   } catch (error) {
     return {
       attempts: error instanceof Error && 'attempts' in error && Array.isArray((error as { attempts?: unknown }).attempts)

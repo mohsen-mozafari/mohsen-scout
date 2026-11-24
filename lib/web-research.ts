@@ -6,6 +6,8 @@ export type WebResearchItem = {
   sourceName: string;
   publishedAt?: string;
   category: 'web' | 'news';
+  /** Transient fetched page text; never persist this field in local memory or backups. */
+  sourceText?: string;
 };
 
 export type WebResearchResult = {
@@ -46,7 +48,7 @@ function safeWebUrl(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined;
   try {
     const url = new URL(value);
-    if (url.protocol !== 'https:' && url.protocol !== 'http:') return undefined;
+    if ((url.protocol !== 'https:' && url.protocol !== 'http:') || url.username || url.password) return undefined;
     const host = url.hostname.toLowerCase();
     if (host === 'youtu.be' || host === 'youtube.com' || host.endsWith('.youtube.com') ||
         host === 'youtube-nocookie.com' || host.endsWith('.youtube-nocookie.com') ||
@@ -87,7 +89,11 @@ function parseFirecrawlItems(raw: unknown, limit: number): WebResearchItem[] {
       const title = cleanText(item.title, 500);
       if (!url || !title || seen.has(url)) continue;
       seen.add(url);
-      const summary = cleanText(item.summary ?? item.markdown ?? item.content ?? item.description ?? item.snippet, 1500);
+      const rawSourceText = typeof item.markdown === 'string' ? item.markdown
+        : typeof item.content === 'string' ? item.content
+          : typeof item.text === 'string' ? item.text : '';
+      const sourceText = cleanText(rawSourceText, 12000);
+      const summary = cleanText(item.summary ?? item.description ?? item.snippet ?? rawSourceText, 1500);
       const dateRaw = item.publishedDate ?? item.publishedAt ?? item.date;
       const publishedAt = typeof dateRaw === 'string' && Number.isFinite(Date.parse(dateRaw))
         ? new Date(dateRaw).toISOString()
@@ -101,6 +107,7 @@ function parseFirecrawlItems(raw: unknown, limit: number): WebResearchItem[] {
         url,
         sourceName,
         ...(publishedAt ? { publishedAt } : {}),
+        ...(sourceText.length >= 300 ? { sourceText } : {}),
         category: group.kind,
       });
       if (output.length >= limit) return output;
@@ -120,8 +127,8 @@ function timeFilter(days?: number): string | undefined {
 
 /**
  * Performs one bounded Firecrawl v2 search. Keyless mode returns snippets and
- * is subject to per-IP daily caps. Full source summaries are requested only
- * when a personal API key is configured, to avoid surprise scrape charges.
+ * is subject to per-IP daily caps. Markdown source text is requested only when
+ * the user has configured a personal Firecrawl key.
  */
 export async function fetchWebResearch(
   query: string,
@@ -150,7 +157,7 @@ export async function fetchWebResearch(
         sources: ['web', 'news'],
         excludeDomains: ['youtube.com', 'youtu.be', 'youtube-nocookie.com'],
         ...(timeFilter(options.days) ? { tbs: timeFilter(options.days) } : {}),
-        ...(includeContent ? { scrapeOptions: { formats: ['summary'], onlyMainContent: true } } : {}),
+        ...(includeContent ? { scrapeOptions: { formats: ['markdown'], onlyMainContent: true } } : {}),
       }),
     });
     if (!response.ok) {
@@ -192,4 +199,78 @@ export async function testFirecrawlKey(key: string, fetcher: typeof fetch = fetc
     fetcher,
   });
   if (!result.items.length) throw new Error('Firecrawl responded, but no test search result was available.');
+}
+
+
+export type EnrichResearchEvidenceResult = {
+  items: WebResearchItem[];
+  enrichedCount: number;
+  warnings: string[];
+};
+
+/**
+ * Fetches original page text for a small, bounded set of selected publisher URLs.
+ * Requires the user's own Firecrawl key. Text remains transient and is not saved
+ * into the ResearchMemoryEntry or backup schemas.
+ */
+export async function enrichResearchEvidence(
+  items: readonly WebResearchItem[],
+  apiKey: string | undefined,
+  maximum = 6,
+  fetcher: typeof fetch = fetch,
+): Promise<EnrichResearchEvidenceResult> {
+  const output = [...items];
+  const warnings: string[] = [];
+  const key = apiKey?.trim();
+  if (!key || maximum <= 0) return { items: output, enrichedCount: 0, warnings };
+  const candidates = output
+    .map((item, index) => ({ item, index }))
+    .filter(({ item }) => !item.sourceText && Boolean(safeWebUrl(item.url)))
+    .slice(0, Math.min(8, Math.max(0, Math.floor(maximum))));
+  let cursor = 0;
+  let enrichedCount = 0;
+  let failedCount = 0;
+  const worker = async () => {
+    while (cursor < candidates.length) {
+      const candidate = candidates[cursor++];
+      if (!candidate) return;
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 22000);
+      try {
+        const response = await fetcher('https://api.firecrawl.dev/v2/scrape', {
+          method: 'POST',
+          headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
+          signal: controller.signal,
+          body: JSON.stringify({
+            url: candidate.item.url,
+            formats: ['markdown'],
+            onlyMainContent: true,
+          }),
+        });
+        if (!response.ok) {
+          failedCount += 1;
+          continue;
+        }
+        const raw: unknown = await response.json();
+        const root = asRecord(raw);
+        const data = root && asRecord(root.data);
+        const markdown = cleanText(data?.markdown ?? data?.content ?? root?.markdown ?? '', 12000);
+        if (markdown.length < 300) {
+          failedCount += 1;
+          continue;
+        }
+        output[candidate.index] = { ...candidate.item, sourceText: markdown };
+        enrichedCount += 1;
+      } catch {
+        failedCount += 1;
+      } finally {
+        clearTimeout(timeout);
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(2, candidates.length) }, () => worker()));
+  if (failedCount) {
+    warnings.push(failedCount + ' selected publisher page(s) could not provide enough readable original text. Their summaries remain context only, not claim-level proof.');
+  }
+  return { items: output, enrichedCount, warnings };
 }

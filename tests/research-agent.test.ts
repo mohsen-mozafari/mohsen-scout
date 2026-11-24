@@ -108,8 +108,12 @@ void test('research dossier filters fabricated and YouTube evidence IDs and dupl
     'test-model',
     1764000000000,
   );
-  assert.deepEqual(dossier.hypotheses[0]?.supportingEvidenceIds, ['web:one']);
-  assert.deepEqual(dossier.hypotheses[0]?.challengingEvidenceIds, ['web:two']);
+  // Model-proposed evidence IDs and verdicts are not proof without fetched text and an independent review.
+  assert.deepEqual(dossier.hypotheses[0]?.supportingEvidenceIds, []);
+  assert.deepEqual(dossier.hypotheses[0]?.challengingEvidenceIds, []);
+  assert.equal(dossier.hypotheses[0]?.status, 'insufficient-evidence');
+  assert.equal(dossier.hypotheses[0]?.confidence, 'low');
+  assert.equal(dossier.reviewStatus, 'pending-independent-review');
   assert.deepEqual(dossier.evidenceReviews.map((item) => item.evidenceId), ['web:one']);
   assert.equal(dossier.nextQueries.length, 1);
   assert.equal(dossier.nextQueries[0]?.query, 'battery recycling primary production dataset');

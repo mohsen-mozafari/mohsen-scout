@@ -287,7 +287,7 @@ async function postResearchPrompt(
         headers: { 'x-goog-api-key': key, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contents: [{ role: 'user', parts: [{ text: prompt }] }],
-          generationConfig: { maxOutputTokens: 2600, temperature: 0.15, responseMimeType: 'application/json' },
+          generationConfig: { maxOutputTokens: 4200, temperature: 0.15, responseMimeType: 'application/json' },
         }),
       },
       fetcher,
@@ -304,7 +304,7 @@ async function postResearchPrompt(
       headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model,
-        max_tokens: 2600,
+        max_tokens: 4200,
         temperature: 0.15,
         response_format: { type: 'json_object' },
         messages: [{ role: 'user', content: prompt }],
@@ -324,7 +324,7 @@ async function postResearchPrompt(
       {
         method: 'POST',
         headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt, max_tokens: 2600, temperature: 0.15 }),
+        body: JSON.stringify({ prompt, max_tokens: 4200, temperature: 0.15 }),
       },
       fetcher,
       provider,

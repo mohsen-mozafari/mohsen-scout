@@ -208,15 +208,28 @@ export type ResearchDossierEvidenceReview = {
   freshness: 'recent' | 'old' | 'unknown';
   reason: string;
 };
+export type ResearchDossierQuote = {
+  evidenceId: string;
+  quote: string;
+  sourceName: string;
+  sourceUrl: string;
+  publisherFamily: string;
+  verification: 'verbatim-checked';
+};
 export type ResearchDossierHypothesis = {
   id: string;
   claim: string;
   rationale: string;
+  /** Final status is assigned only after independent review and local quote checks. */
   status: 'supported' | 'contested' | 'insufficient-evidence';
   confidence: 'low' | 'moderate' | 'high';
   supportingEvidenceIds: string[];
   challengingEvidenceIds: string[];
   missingEvidence: string[];
+  /** First model's suggestion is retained for audit, never treated as a final verdict. */
+  modelProposedStatus?: 'supported' | 'contested' | 'insufficient-evidence';
+  supportingQuotes?: ResearchDossierQuote[];
+  challengingQuotes?: ResearchDossierQuote[];
 };
 export type ResearchDossierQuery = {
   query: string;
@@ -240,6 +253,14 @@ export type ResearchDossier = {
   conclusion: string;
   confidence: 'low' | 'moderate' | 'high';
   stoppingReason: string;
+  reviewStatus?: 'pending-independent-review' | 'independently-reviewed' | 'review-unavailable';
+  reviewerProvider?: SecondOpinionProvider;
+  reviewerModel?: string;
+  fullTextEvidenceCount?: number;
+  summaryOnlyEvidenceCount?: number;
+  publisherFamilyCount?: number;
+  syndicatedItemCount?: number;
+  verifiedCitationCount?: number;
 };
 export type ResearchMemoryEntry = {
   topic: string;

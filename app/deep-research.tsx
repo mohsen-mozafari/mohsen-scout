@@ -8,7 +8,8 @@ import { useScout } from '@/lib/store';
 import { translateText } from '@/lib/i18n';
 import { uid, RETENTION_MS, type Idea, type ResearchDossier } from '@/lib/types';
 import { getKey } from '@/lib/vault';
-import { fetchWebResearch, type WebResearchItem } from '@/lib/web-research';
+import { enrichResearchEvidence, fetchWebResearch, type WebResearchItem } from '@/lib/web-research';
+import { assessEvidenceProvenance } from '@/lib/research-provenance';
 import { buildInternalResearch, rankNewsForTopic, type InternalResearchResult } from '@/lib/engine';
 import { buildResearchInterestProfile, normalizeResearchText } from '@/lib/intelligence';
 import { MediaPreview } from '@/components/MediaPreview';
@@ -81,9 +82,10 @@ export default function DeepResearch() {
     warnings.push(...newsResult.warnings);
     if (cachedNews.length) warnings.push(preferences.uiLanguage === 'fa' ? 'شواهد خبری تازه از پرونده محلی موضوع دوباره استفاده شد؛ درخواست دیگری برای خوراک خبری ارسال نشد.' : 'Reused recent publisher evidence from the local topic dossier; no additional feed request was made.');
     let webResults: WebResearchItem[] = [];
+    let firecrawlKey: string | undefined;
     if (preferences.webResearchEnabled) {
       try {
-        const firecrawlKey = await getKey('firecrawl').catch(() => undefined);
+        firecrawlKey = await getKey('firecrawl').catch(() => undefined);
         const web = await fetchWebResearch(query, {
           apiKey: firecrawlKey ?? undefined,
           limit: 6,
@@ -223,6 +225,18 @@ export default function DeepResearch() {
       ...webResults,
     ];
     const researchEvidence: WebResearchItem[] = mergeIndependentResearchEvidence([], initialResearchEvidence).items;
+    if (preferences.webResearchEnabled && firecrawlKey) {
+      try {
+        const hydration = await enrichResearchEvidence(researchEvidence, firecrawlKey, 6);
+        researchEvidence.splice(0, researchEvidence.length, ...hydration.items);
+        warnings.push(...hydration.warnings);
+        if (hydration.enrichedCount) {
+          warnings.push(hydration.enrichedCount + ' original publisher page(s) were fetched for local quote verification; full page text is used only for this research run.');
+        }
+      } catch {
+        warnings.push('Original publisher page text could not be fetched. Search summaries remain contextual leads, not claim-level proof.');
+      }
+    }
     const alreadyAsked: string[] = [];
     let researchDossier: ResearchDossier | undefined;
     try {
@@ -254,7 +268,6 @@ export default function DeepResearch() {
           break;
         }
         const beforeCount = researchEvidence.length;
-        const firecrawlKey = await getKey('firecrawl').catch(() => undefined);
         for (const plannedQuery of plan.queries) {
           alreadyAsked.push(plannedQuery.query);
           try {
@@ -302,6 +315,17 @@ export default function DeepResearch() {
         researchDossier = { ...researchDossier, stoppingReason: researchStopReason };
       }
       const evidenceCoverage = assessResearchEvidenceCoverage(researchEvidence);
+      const evidenceProvenance = assessEvidenceProvenance(researchEvidence);
+      const fullTextEvidenceCount = researchEvidence.filter((item) => Boolean(item.sourceText && item.sourceText.length >= 300)).length;
+      if (fullTextEvidenceCount < 2) {
+        warnings.push('Fewer than two source documents contain fetched original text. No hypothesis can be treated as established from summaries or headlines alone.');
+      }
+      if (evidenceProvenance.publisherFamilyCount < 2) {
+        warnings.push('Research currently covers fewer than two approximated publisher families. Cross-source independence is not established.');
+      }
+      if (evidenceProvenance.syndicatedItemCount) {
+        warnings.push(evidenceProvenance.syndicatedItemCount + ' likely syndicated or near-identical cross-publisher item pair(s) were grouped together and do not count as separate corroboration.');
+      }
       if (evidenceCoverage.uniqueHostCount < 2) {
         warnings.push('Research evidence currently covers fewer than two distinct web hosts; source independence has not been established.');
       }
@@ -354,6 +378,43 @@ export default function DeepResearch() {
       context: [
         ...webResults.map((item) => ({ title: item.title, summary: item.summary, sourceUrl: item.url, sourceName: item.sourceName, publishedAt: item.publishedAt ?? null })),
         ...(wiki ? [{ title: wiki.articleTitle, summary: wiki.summary, sourceUrl: wiki.articleUrl, sourceName: 'Wikimedia' }] : []),
+        ...(researchDossier ? [{
+          title: 'Research synthesis: ' + researchDossier.conclusion,
+          summary: [
+            'Independent review status: ' + (researchDossier.reviewStatus ?? 'not-reviewed'),
+            'Confidence: ' + researchDossier.confidence,
+            ...researchDossier.gaps.map((gap) => 'Research gap: ' + gap),
+            ...researchDossier.contradictions.map((item) => 'Potential contradiction: ' + item.description),
+          ].join('\n'),
+          sourceName: 'MOHSEN SCOUT Research Dossier',
+          ...(researchDossier.hypotheses.flatMap((hypothesis) => [
+            ...(hypothesis.supportingQuotes ?? []),
+            ...(hypothesis.challengingQuotes ?? []),
+          ])[0]?.sourceUrl ? {
+            sourceUrl: researchDossier.hypotheses.flatMap((hypothesis) => [
+              ...(hypothesis.supportingQuotes ?? []),
+              ...(hypothesis.challengingQuotes ?? []),
+            ])[0]!.sourceUrl,
+          } : {}),
+        }] : []),
+        ...(researchDossier?.hypotheses ?? []).map((hypothesis) => ({
+          title: (hypothesis.status === 'supported' ? 'Cross-reviewed hypothesis: '
+            : hypothesis.status === 'contested' ? 'Contested research question: '
+              : 'Unverified research hypothesis: ') + hypothesis.claim,
+          summary: [
+            'Final status: ' + hypothesis.status,
+            'Confidence: ' + hypothesis.confidence,
+            hypothesis.rationale,
+            ...(hypothesis.supportingQuotes ?? []).map((citation) => 'Verified supporting quote (' + citation.sourceName + '): ' + citation.quote),
+            ...(hypothesis.challengingQuotes ?? []).map((citation) => 'Verified challenging quote (' + citation.sourceName + '): ' + citation.quote),
+            ...hypothesis.missingEvidence.map((gap) => 'Missing evidence: ' + gap),
+          ].join('\n'),
+          sourceName: 'MOHSEN SCOUT Research Dossier',
+          ...((hypothesis.supportingQuotes ?? [])[0]?.sourceUrl
+            ? { sourceUrl: hypothesis.supportingQuotes![0]!.sourceUrl }
+            : (hypothesis.challengingQuotes ?? [])[0]?.sourceUrl
+              ? { sourceUrl: hypothesis.challengingQuotes![0]!.sourceUrl } : {}),
+        })),
       ],
       existingIdeas: useScout.getState().data.ideas,
       region: preferences.region,
@@ -564,6 +625,12 @@ export default function DeepResearch() {
                 <Heading>{preferences.uiLanguage === 'fa' ? 'جمع‌بندی انتقادی' : 'Critical synthesis'}</Heading>
                 <Txt>{brief.researchDossier.conclusion || (preferences.uiLanguage === 'fa' ? 'جمع‌بندی کافی در دسترس نیست.' : 'No sufficient synthesis is available.')}</Txt>
                 <Txt muted>{'Confidence: ' + brief.researchDossier.confidence + ' · ' + brief.researchDossier.stoppingReason}</Txt>
+                <Txt muted>{'Independent review: ' + (brief.researchDossier.reviewStatus ?? 'not available') +
+                  (brief.researchDossier.reviewerProvider ? ' · reviewer: ' + brief.researchDossier.reviewerProvider + ' / ' + brief.researchDossier.reviewerModel : '')}</Txt>
+                <Txt muted>{'Original text records: ' + (brief.researchDossier.fullTextEvidenceCount ?? 0) +
+                  ' · summary-only: ' + (brief.researchDossier.summaryOnlyEvidenceCount ?? 0) +
+                  ' · publisher groups (heuristic): ' + (brief.researchDossier.publisherFamilyCount ?? 0) +
+                  ' · checked quotes: ' + (brief.researchDossier.verifiedCitationCount ?? 0)}</Txt>
                 <Heading>{preferences.uiLanguage === 'fa' ? 'فرضیه‌های قابل آزمون' : 'Testable hypotheses'}</Heading>
                 {brief.researchDossier.hypotheses.map((item) => (
                   <View key={item.id} style={{ gap: 4, borderTopWidth: 1, borderTopColor: p.border, paddingTop: 8 }}>
@@ -572,6 +639,18 @@ export default function DeepResearch() {
                     <Text style={styles.badge}>{item.status} · {item.confidence}</Text>
                     {item.supportingEvidenceIds.length ? <Txt muted>{'Supports: ' + item.supportingEvidenceIds.join(', ')}</Txt> : null}
                     {item.challengingEvidenceIds.length ? <Txt muted>{'Challenges: ' + item.challengingEvidenceIds.join(', ')}</Txt> : null}
+                    {(item.supportingQuotes ?? []).map((citation, index) => (
+                      <View key={item.id + '-support-quote-' + index} style={{ gap: 2 }}>
+                        <Txt muted>{'Verbatim checked · ' + citation.sourceName}</Txt>
+                        <SourceText>{'“' + citation.quote + '”'}</SourceText>
+                      </View>
+                    ))}
+                    {(item.challengingQuotes ?? []).map((citation, index) => (
+                      <View key={item.id + '-challenge-quote-' + index} style={{ gap: 2 }}>
+                        <Txt muted>{'Verbatim checked counterevidence · ' + citation.sourceName}</Txt>
+                        <SourceText>{'“' + citation.quote + '”'}</SourceText>
+                      </View>
+                    ))}
                     {item.missingEvidence.map((gap) => <Txt muted key={gap}>{'Missing: ' + gap}</Txt>)}
                   </View>
                 ))}

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { defaults, type LocalData, regions, statuses, DEFAULT_SPACE_NEWS_SOURCE_IDS } from './types';
+import { researchDossierSchema } from './validation';
 const text = z.string().max(50000);
 const identifierSchema = z.string().min(1).max(200);
 const timestamp = z.number().finite().nonnegative();
@@ -117,6 +118,8 @@ const backupSchema = z.object({
       confidence: z.enum(['low', 'moderate', 'high']),
       changes: z.array(text.max(300)).max(4),
     })).max(8).optional().default([]),
+    }),
+      researchDossier: researchDossierSchema.optional(),
     })).max(40).optional().default([]),
     researchActivity: z.array(z.object({
       id: identifierSchema,

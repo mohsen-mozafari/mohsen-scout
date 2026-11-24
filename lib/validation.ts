@@ -14,6 +14,55 @@ export const inputSchema = z.object({
   category: text,
   maxResults: z.number().int().min(1).max(100),
 });
+export const researchDossierSchema = z.object({
+  version: z.literal(1),
+  updatedAt: time,
+  provider: z.enum(['gemini', 'groq', 'cloudflare', 'openrouter']),
+  model: text.max(160),
+  hypotheses: z.array(z.object({
+    id: id.max(90), claim: text.max(420), rationale: text.max(1400),
+    status: z.enum(['supported', 'contested', 'insufficient-evidence']),
+    confidence: z.enum(['low', 'moderate', 'high']),
+    supportingEvidenceIds: z.array(text.max(120)).max(12),
+    challengingEvidenceIds: z.array(text.max(120)).max(12),
+    missingEvidence: z.array(text.max(280)).max(5),
+    modelProposedStatus: z.enum(['supported', 'contested', 'insufficient-evidence']).optional(),
+    supportingQuotes: z.array(z.object({
+      evidenceId: text.max(120), quote: text.max(260), sourceName: text.max(160),
+      sourceUrl: text.url(), publisherFamily: text.max(180), verification: z.literal('verbatim-checked'),
+    })).max(8).optional(),
+    challengingQuotes: z.array(z.object({
+      evidenceId: text.max(120), quote: text.max(260), sourceName: text.max(160),
+      sourceUrl: text.url(), publisherFamily: text.max(180), verification: z.literal('verbatim-checked'),
+    })).max(8).optional(),
+  })).max(6),
+  evidenceReviews: z.array(z.object({
+    evidenceId: text.max(120), role: z.enum(['supports', 'challenges', 'context', 'irrelevant']),
+    credibility: z.enum(['high', 'medium', 'low', 'unknown']),
+    sourceType: z.enum(['primary', 'secondary', 'opinion', 'unknown']), freshness: z.enum(['recent', 'old', 'unknown']),
+    reason: text.max(500),
+  })).max(48),
+  nextQueries: z.array(z.object({
+    query: text.max(220), purpose: z.enum(['independent-confirmation', 'counterevidence', 'mechanism', 'alternate-explanation', 'primary-source']),
+    hypothesisId: text.max(90), priority: z.number().int().min(1).max(5), reason: text.max(320), searchedAt: time.optional(),
+  })).max(4),
+  completedQueries: z.array(z.object({
+    query: text.max(220), purpose: z.enum(['independent-confirmation', 'counterevidence', 'mechanism', 'alternate-explanation', 'primary-source']),
+    hypothesisId: text.max(90), priority: z.number().int().min(1).max(5), reason: text.max(320), searchedAt: time.optional(),
+  })).max(40),
+  contradictions: z.array(z.object({ description: text.max(500), evidenceIds: z.array(text.max(120)).max(8) })).max(8),
+  gaps: z.array(text.max(420)).max(10), conclusion: text.max(1400),
+  confidence: z.enum(['low', 'moderate', 'high']), stoppingReason: text.max(420),
+  reviewStatus: z.enum(['pending-independent-review', 'independently-reviewed', 'review-unavailable']).optional(),
+  reviewerProvider: z.enum(['gemini', 'groq', 'cloudflare', 'openrouter']).optional(),
+  reviewerModel: text.max(160).optional(),
+  fullTextEvidenceCount: z.number().int().min(0).max(48).optional(),
+  summaryOnlyEvidenceCount: z.number().int().min(0).max(48).optional(),
+  publisherFamilyCount: z.number().int().min(0).max(48).optional(),
+  syndicatedItemCount: z.number().int().min(0).max(48).optional(),
+  verifiedCitationCount: z.number().int().min(0).max(200).optional(),
+});
+
 const video = z.object({
   id,
   title: text,
@@ -229,6 +278,7 @@ const schema = z.object({
       confidence: z.enum(['low', 'moderate', 'high']),
       changes: z.array(text.max(300)).max(4),
     })).optional().default([]),
+    researchDossier: researchDossierSchema.optional(),
   })).optional().default([]),
   budget: z.object({
     date: text, units: z.number().nonnegative(), requests: z.number().int().nonnegative(), exhausted: z.boolean(),
