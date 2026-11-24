@@ -171,7 +171,7 @@ export default function DeepResearch() {
       warnings.push(preferences.uiLanguage === 'fa' ? 'مقاله ناشر با ارتباط مستقیم با این موضوع در دسترس نبود. گزارش داخلی تا زمان یافتن شواهد اولیه اکتشافی باقی می‌ماند.' : 'No directly relevant publisher article was available for this topic. The internal report will remain exploratory until primary evidence is found.');
     }
     if (!wiki) {
-      warnings.push(preferences.uiLanguage === 'fa' ? 'نمونه توجه ویکی‌مدیا در دسترس نبود؛ داده‌های YouTube در بخش جداگانه نمایش داده می‌شوند و برای امتیازدهی ناشران استفاده نمی‌شوند.' : 'No Wikimedia attention sample was available. The separately displayed YouTube sample is not used to infer publisher momentum, demand or competition.');
+      warnings.push(preferences.uiLanguage === 'fa' ? 'نمونه توجه ویکی‌مدیا در دسترس نبود؛ داده‌های YouTube به‌عنوان سیگنال مستقل پلتفرم در کنار خبرها تحلیل می‌شوند، اما یک snapshot به‌تنهایی رشد را اثبات نمی‌کند.' : 'No Wikimedia attention sample was available. The separately displayed YouTube sample is not used to infer publisher momentum, demand or competition.');
     }
     recordRuntimeStart('Engine');
     try {
@@ -205,6 +205,8 @@ export default function DeepResearch() {
         })),
       ],
       wiki,
+      videos,
+      videoWindowDays: preferences.defaultResearchDays ?? 30,
       feedback,
       priorMemory,
       language: preferences.uiLanguage ?? 'fa',
@@ -353,6 +355,8 @@ export default function DeepResearch() {
         publishedAt: item.publishedAt,
         sourceId: item.sourceId,
       })),
+      videos,
+      videoWindowDays: preferences.defaultResearchDays ?? 30,
       feedback,
       priorMemory,
       language: preferences.uiLanguage ?? 'fa',
@@ -509,7 +513,7 @@ export default function DeepResearch() {
       <Panel>
         <Heading>1 · Choose the research question</Heading>
         <Field label="What should this brief investigate?" value={topic} onChange={setTopic} placeholder="e.g. What JWST has found in exoplanet atmospheres" multiline />
-        <Txt muted>Uses selected publisher feeds and a clearly labelled Wikimedia attention proxy for the editorial engine. The separately collected YouTube sample is displayed below and is not merged into publisher scoring or idea generation.</Txt>
+        <Txt muted>Uses selected publisher feeds and a clearly labelled Wikimedia attention proxy for the editorial engine. YouTube metadata is analyzed as a separate platform signal alongside publisher and web evidence; a single snapshot is not treated as growth.</Txt>
         <Action busy={op.busy} disabled={!topic.trim()} onPress={run}>2 · Build research brief</Action>
       </Panel>
       {brief && (
