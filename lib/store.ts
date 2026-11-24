@@ -12,12 +12,14 @@ import {
   type ResearchActivityEngine,
   type ResearchActivityEvent,
   type ResearchActivityFeedback,
+  type ResearchDossier,
 } from './types';
 import { readData, writeData } from './storage';
 import { getKey } from './vault';
 import { localDateKey, nextBudget, nextOpenRouterUsage, searchYouTube, type YouTubeQuotaKind, type YouTubeQuotaOrigin } from './api';
 import { buildInternalResearch } from './engine';
 import { reviewResearchHypotheses } from './hypothesis-engine';
+import { runResearchAgent } from './research-agent';
 import { createResearchMemoryEntry } from './research-memory';
 import { fetchWebResearch } from './web-research';
 import { reviewIdeasAutomatically } from './ai-review';
@@ -250,6 +252,7 @@ export const useScout = create<State>((set, get) => ({
       let feedRegistry = get().data.feedRegistry;
       let webItems: Awaited<ReturnType<typeof fetchWebResearch>>['items'] = [];
       let webSearchQueries: string[] = [];
+      let webResearchDossier: ResearchDossier | undefined;
       let wiki: Awaited<ReturnType<typeof getWikipediaSignal>> | undefined;
 
       const splitSourcesByFeedback = <T extends { url: string }>(items: readonly T[]) => {
@@ -386,7 +389,7 @@ export const useScout = create<State>((set, get) => ({
           warnings.push('Independent web search is disabled in Settings; selected RSS feeds and Wikimedia remain available.');
           return;
         }
-        const activityId = await beginActivity('Firecrawl Search', topic, topic + ' · iterative hypothesis testing and evidence-led discovery', researchReportId);
+        const activityId = await beginActivity('Firecrawl Search', topic, topic + ' · model-led hypothesis testing and adaptive discovery', researchReportId);
         set({ progress: 'Searching independent web and news sources…' });
         try {
           const webKey = await getKey('firecrawl').catch(() => undefined);
@@ -394,18 +397,21 @@ export const useScout = create<State>((set, get) => ({
           const asked = new Set<string>();
           const collected = new Map<string, (typeof webItems)[number]>();
           const queryWarnings: string[] = [];
-          let latestReview: ReturnType<typeof reviewResearchHypotheses> | undefined;
+          let latestAiDossier: ResearchDossier | undefined;
+          let latestFallbackReview: ReturnType<typeof reviewResearchHypotheses> | undefined;
+          let modelAgentEnabled = true;
 
-          // One seed search plus up to three adaptive research rounds. Every round
-          // re-evaluates the accumulated evidence and may branch into confirmation,
-          // counterevidence or mechanism checks; no direction is fixed in advance.
+          // One seed search plus up to three evidence-driven rounds. The configured
+          // language model proposes falsifiable hypotheses, classifies evidence, seeks
+          // counterevidence and chooses the next search. A transparent local planner is
+          // used only when no configured model is available.
           for (let round = 0; round < 4; round++) {
             const query = queries[round];
             if (!query) break;
             asked.add(normalizeResearchText(query));
             set({ progress: round === 0
               ? 'Searching independent web and news sources…'
-              : 'Testing a new hypothesis and searching for counterevidence (' + (round + 1) + '/4)…' });
+              : 'Testing hypotheses and searching for counterevidence (' + (round + 1) + '/4)…' });
             try {
               const result = await fetchWebResearch(query, {
                 apiKey: webKey ?? undefined,
@@ -416,24 +422,63 @@ export const useScout = create<State>((set, get) => ({
               const split = splitSourcesByFeedback(result.items);
               for (const item of split.included) if (!collected.has(item.url)) collected.set(item.url, item);
 
-              latestReview = reviewResearchHypotheses(
-                topic,
-                [...collected.values()].map((item) => ({
-                  id: item.id,
-                  title: item.title,
-                  summary: item.summary,
-                  url: item.url,
-                  sourceName: item.sourceName,
-                  ...(item.publishedAt ? { publishedAt: item.publishedAt } : {}),
-                })),
-                [...asked],
-                3,
-              );
+              if (modelAgentEnabled && collected.size) {
+                const currentResearchMemory = get().data.researchMemory.find(
+                  (entry) => normalizeResearchText(entry.topic) === normalizeResearchText(topic),
+                );
+                const agent = await runResearchAgent({
+                  topic,
+                  evidence: [...collected.values()],
+                  preferences: initialPreferences,
+                  previous: latestAiDossier ?? currentResearchMemory?.researchDossier,
+                  alreadyAsked: [...asked],
+                  beforeProviderRequest: async (config) => {
+                    if (config.provider !== 'openrouter') return;
+                    const preferences = get().data.preferences;
+                    const usage = nextOpenRouterUsage(
+                      preferences.openRouterUsageDay,
+                      preferences.openRouterRequestsToday,
+                      localDateKey(),
+                      preferences.openRouterDailyLimit ?? 50,
+                    );
+                    await get().commit((data) => ({
+                      ...data,
+                      preferences: { ...data.preferences, ...usage },
+                    }));
+                  },
+                });
+                queryWarnings.push(...agent.warnings);
+                if (agent.dossier) {
+                  latestAiDossier = agent.dossier;
+                } else if (agent.attempts.length === 0) {
+                  // No configured model keys: do not repeat empty provider discovery on every round.
+                  modelAgentEnabled = false;
+                }
+              }
 
-              // Generate the next branch from all evidence collected so far,
-              // including a deliberate search for evidence against current hypotheses.
+              // If a configured model produced a dossier, follow its explicit next
+              // research directions. Otherwise fall back to the conservative local planner.
+              if (!latestAiDossier) {
+                latestFallbackReview = reviewResearchHypotheses(
+                  topic,
+                  [...collected.values()].map((item) => ({
+                    id: item.id,
+                    title: item.title,
+                    summary: item.summary,
+                    url: item.url,
+                    sourceName: item.sourceName,
+                    ...(item.publishedAt ? { publishedAt: item.publishedAt } : {}),
+                  })),
+                  [...asked],
+                  3,
+                );
+              }
+
               if (round < 3 && result.items.length) {
-                for (const direction of latestReview.nextDirections) {
+                const directions = latestAiDossier
+                  ? latestAiDossier.nextQueries.map((item) => ({ query: item.query, reason: item.reason }))
+                  : (latestFallbackReview?.nextDirections ?? []).map((item) => ({ query: item.query, reason: item.reason }));
+                for (const direction of directions) {
                   const key = normalizeResearchText(direction.query);
                   if (!key || asked.has(key) || queries.some((item) => normalizeResearchText(item) === key)) continue;
                   if (queries.length >= 4) break;
@@ -441,6 +486,10 @@ export const useScout = create<State>((set, get) => ({
                 }
               }
               if (!result.items.length && round > 0) break;
+              if (round < 3 && queries.length === round + 1) {
+                // The agent found no defensible new direction; do not manufacture more queries.
+                break;
+              }
             } catch (error) {
               const message = error instanceof Error ? error.message : 'Firecrawl request failed.';
               queryWarnings.push('Research round ' + (round + 1) + ': ' + message);
@@ -449,43 +498,65 @@ export const useScout = create<State>((set, get) => ({
           }
 
           webSearchQueries = [...queries];
+          webResearchDossier = latestAiDossier;
           webItems = [...collected.values()];
           warnings.push(...queryWarnings);
-          const hypothesisSummary = latestReview
-            ? ' Hypothesis review: ' + latestReview.hypotheses.length + ' candidate(s), ' +
-              latestReview.hypotheses.filter((item) => item.status === 'contested').length +
-              ' contested; ' + latestReview.independentHostCount + ' host families observed. Host diversity is only a proxy, not proof of independent ownership.'
-            : ' No usable evidence was available for hypothesis review.';
+          const hypothesisSummary = latestAiDossier
+            ? ' Model-led review by ' + latestAiDossier.provider + '/' + latestAiDossier.model +
+              ': ' + latestAiDossier.hypotheses.length + ' hypothesis/hypotheses; ' +
+              latestAiDossier.hypotheses.filter((item) => item.status === 'contested').length +
+              ' contested; confidence ' + latestAiDossier.confidence + '. Conclusion: ' +
+              (latestAiDossier.conclusion || 'No defensible conclusion yet.')
+            : latestFallbackReview
+              ? ' Local fallback review only (no model-backed semantic assessment): ' +
+                latestFallbackReview.hypotheses.length + ' provisional keyword hypotheses; ' +
+                latestFallbackReview.hypotheses.filter((item) => item.status === 'contested').length + ' flagged as contested.'
+              : ' No usable independent evidence was available for hypothesis review.';
+
+          const evidenceActivity = webItems.map((item) => {
+            const assessment = latestAiDossier?.evidenceReviews.find((entry) => entry.evidenceId === item.id);
+            const related = latestAiDossier?.hypotheses.filter((hypothesis) =>
+              hypothesis.supportingEvidenceIds.includes(item.id) ||
+              hypothesis.challengingEvidenceIds.includes(item.id),
+            ) ?? [];
+            const relation = related.slice(0, 3).map((hypothesis) =>
+              hypothesis.status + ': ' + hypothesis.claim,
+            ).join(' | ');
+            const roleText = assessment
+              ? 'Model assessment: ' + assessment.role + '; source type ' + assessment.sourceType +
+                '; credibility ' + assessment.credibility + '; freshness ' + assessment.freshness +
+                '. ' + assessment.reason
+              : 'No model evidence assessment was available for this item; treat it as unverified context.';
+            return {
+              id: item.id,
+              title: item.title,
+              summary: item.summary,
+              sourceName: item.sourceName,
+              url: item.url,
+              publishedAt: item.publishedAt ?? null,
+              sourceAssessment: 'not-assessed' as const,
+              includedInAnalysis: true,
+              decisionReason: roleText + (relation ? ' Linked hypotheses: ' + relation : ''),
+            };
+          });
+          const hypothesisActivity = (latestAiDossier?.hypotheses ?? []).map((hypothesis) => ({
+            id: 'research-hypothesis:' + hypothesis.id,
+            title: hypothesis.claim,
+            summary: hypothesis.rationale,
+            sourceName: 'Research Agent · ' + (latestAiDossier?.provider ?? 'AI'),
+            includedInAnalysis: true,
+            decisionReason: 'Status: ' + hypothesis.status + '; confidence: ' + hypothesis.confidence +
+              '; supporting evidence: ' + hypothesis.supportingEvidenceIds.length +
+              '; challenging evidence: ' + hypothesis.challengingEvidenceIds.length +
+              '. Missing: ' + hypothesis.missingEvidence.join(' | '),
+          }));
+
           await finishActivity(activityId, {
             status: webItems.length ? (queryWarnings.length ? 'partial' : 'success') : 'empty',
             query: queries.join(' ; ') + ' · ' + hypothesisSummary,
-            resultCount: webItems.length,
+            resultCount: webItems.length + hypothesisActivity.length,
             analyzedCount: webItems.length,
-            results: buildResearchActivityResults(topic, webItems.map((item) => {
-              const related = latestReview?.hypotheses.filter((hypothesis) =>
-                hypothesis.supportingEvidenceIds.includes(item.id) ||
-                hypothesis.challengingEvidenceIds.includes(item.id) ||
-                hypothesis.contextEvidenceIds.includes(item.id),
-              ) ?? [];
-              const audit = related.slice(0, 3).map((hypothesis) =>
-                hypothesis.status + ': ' + hypothesis.focus +
-                ' (support ' + hypothesis.supportingEvidenceIds.length +
-                ', challenge ' + hypothesis.challengingEvidenceIds.length + ')',
-              ).join(' | ');
-              return {
-                id: item.id,
-                title: item.title,
-                summary: item.summary,
-                sourceName: item.sourceName,
-                url: item.url,
-                publishedAt: item.publishedAt ?? null,
-                sourceAssessment: 'not-assessed' as const,
-                includedInAnalysis: true,
-                decisionReason: audit
-                  ? 'Evidence role in provisional hypothesis review: ' + audit + '. These are lexical review signals, not proof.'
-                  : 'Independent web/news result retained as context; no validated hypothesis link was established.',
-              };
-            })),
+            results: buildResearchActivityResults(topic, [...evidenceActivity, ...hypothesisActivity]),
             warnings: queryWarnings.slice(0, 12),
           });
         } catch (error) {
