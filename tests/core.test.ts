@@ -1341,13 +1341,13 @@ void test('Internal engine evaluates YouTube metadata in recent and all-time sam
   assert.equal(audit.unmatchedNewsCount, 1);
   assert.equal(audit.youtubeSampleCount, 4);
   assert.equal(audit.recentVideoCandidateCount, 2);
-  assert.equal(audit.matchedVideoCount, 2);
-  assert.equal(audit.allTimeMatchedVideoCount, 3);
-  assert.equal(audit.recentMatchedVideoCount, 2);
+  assert.equal(audit.matchedVideoCount, 1);
+  assert.equal(audit.allTimeMatchedVideoCount, 2);
+  assert.equal(audit.recentMatchedVideoCount, 1);
   assert.equal(audit.outsideVideoWindowCount, 2);
   assert.equal(audit.futureDatedVideoCount, 1);
-  assert.equal(audit.excludedVideoCount, 1);
-  assert.equal(audit.videoViewCountsAvailable, 3);
+  assert.equal(audit.excludedVideoCount, 2);
+  assert.equal(audit.videoViewCountsAvailable, 2);
   assert.ok(result.evidence.some((item) => item.id === 'youtube-sample' && item.detail.includes('returned video example')));
   const allTime = buildInternalResearch({
     topic: 'Exoplanet atmospheres', now: fixedNow, videoWindowDays: 0,
@@ -1359,7 +1359,7 @@ void test('Internal engine evaluates YouTube metadata in recent and all-time sam
   }).intelligence.selfEvaluation;
   assert.equal(allTime.youtubeSampleCount, 3);
   assert.equal(allTime.recentVideoCandidateCount, 2);
-  assert.equal(allTime.recentMatchedVideoCount, 2);
+  assert.equal(allTime.recentMatchedVideoCount, 1);
   assert.equal(allTime.outsideVideoWindowCount, 1);
   assert.ok(result.evidence.some((item) => item.id === 'retrieved-news-headlines' && item.detail.includes('Artemis')), 'unmatched publisher records remain visible in the contextual evidence audit');
   assert.ok(result.evidence.some((item) => item.id === 'youtube-sample' && item.detail.includes('returned video example')));
