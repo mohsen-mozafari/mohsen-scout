@@ -138,7 +138,7 @@ export function reviewResearchHypotheses(
     for (let index = 0; index < tokens.length - 1; index += 1) {
       if (tokens[index] !== tokens[index + 1]) pairs.push(tokens[index] + ' ' + tokens[index + 1]);
     }
-    const candidates = pairs.length ? pairs : tokens;
+    const candidates = [...pairs, ...tokens];
     for (const phrase of unique(candidates).slice(0, 18)) {
       if (phrase.split(' ').some((word) => explored.has(word))) continue;
       const current = candidateMap.get(phrase) ?? { focus: phrase, ids: [], domains: new Set<string>() };
