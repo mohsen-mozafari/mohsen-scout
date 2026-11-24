@@ -349,10 +349,11 @@ export async function requestResearchAgentWithFallback(
 ): Promise<ResearchAgentTextResult> {
   if (!prompt.trim()) throw new SecondOpinionProviderError('The research topic and evidence are required.', 'invalid-response');
   const attempts: ProviderAttempt[] = [];
-  const seen = new Set<SecondOpinionProvider>();
+  const seen = new Set<string>();
   for (const config of configs) {
-    if (seen.has(config.provider)) continue;
-    seen.add(config.provider);
+    const candidateKey = config.provider + ':' + config.model.trim();
+    if (seen.has(candidateKey)) continue;
+    seen.add(candidateKey);
     if (!config.key.trim()) {
       attempts.push({ provider: config.provider, model: config.model, status: 'disabled', message: 'No key is saved.' });
       continue;

@@ -5,6 +5,7 @@ import {
   discoverSecondOpinionModels,
   SecondOpinionProviderError,
   requestSecondOpinionWithFallback,
+  requestResearchAgentWithFallback,
   type SecondOpinionProviderConfig,
 } from '../lib/ai-gateway';
 
@@ -243,5 +244,26 @@ void test('a rate-limited OpenRouter free model falls through to another model f
   assert.equal(result.provider, 'openrouter');
   assert.equal(result.model, 'free/model-b:free');
   assert.deepEqual(attemptedModels, ['free/model-a:free', 'free/model-b:free']);
+  assert.deepEqual(result.attempts.map((attempt) => attempt.status), ['rate-limited', 'success']);
+});
+
+ 
+void test('research agent falls through multiple OpenRouter models before switching providers', async () => {
+  const attemptedModels: string[] = [];
+  const result = await requestResearchAgentWithFallback([
+    { provider: 'openrouter', key: 'router-key', model: 'free/research-a:free' },
+    { provider: 'openrouter', key: 'router-key', model: 'free/research-b:free' },
+    { provider: 'groq', key: 'groq-key', model: 'openai/gpt-oss-120b' },
+  ], 'approved research prompt', async (_input, init) => {
+    const request = JSON.parse(requestBody(init));
+    attemptedModels.push(request.model);
+    if (request.model === 'free/research-a:free') {
+      return jsonResponse({ error: { message: 'rate limited' } }, 429, { 'Retry-After': '30' });
+    }
+    return jsonResponse({ choices: [{ message: { content: '{"hypotheses":[]}' } }] });
+  });
+  assert.equal(result.provider, 'openrouter');
+  assert.equal(result.model, 'free/research-b:free');
+  assert.deepEqual(attemptedModels, ['free/research-a:free', 'free/research-b:free']);
   assert.deepEqual(result.attempts.map((attempt) => attempt.status), ['rate-limited', 'success']);
 });

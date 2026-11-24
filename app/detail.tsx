@@ -86,9 +86,9 @@ export default function Detail() {
             if (provider === 'openrouter') {
               const liveFreeModels = await getFreeModels();
               const preferred = selectFreeModel(liveFreeModels, models[0]);
-              models = [preferred, ...liveFreeModels.map((item) => item.id).filter((id) => id !== preferred)]
-                .filter(Boolean)
-                .slice(0, 5);
+              models = liveFreeModels.map((item) => item.id).filter((id) => id !== preferred);
+              if (preferred) models.unshift(preferred);
+              models = models.filter(Boolean).slice(0, 5);
             }
             for (const model of [...new Set(models.map((item) => item.trim()).filter(Boolean))]) {
               configs.push({ provider, key: key ?? '', model, ...(accountId ? { accountId } : {}) });
