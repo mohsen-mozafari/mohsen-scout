@@ -118,7 +118,6 @@ const backupSchema = z.object({
       confidence: z.enum(['low', 'moderate', 'high']),
       changes: z.array(text.max(300)).max(4),
     })).max(8).optional().default([]),
-    }),
       researchDossier: researchDossierSchema.optional(),
     })).max(40).optional().default([]),
     researchActivity: z.array(z.object({

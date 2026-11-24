@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createResearchMemoryEntry } from '../lib/research-memory';
-import { defaults } from '../lib/types';
+import { defaults, type ResearchDossier } from '../lib/types';
 import { exportBackup, importBackup } from '../lib/backup';
 import { validateLocal } from '../lib/validation';
 
@@ -148,4 +148,68 @@ void test('research memory source records and snapshots remain bounded across re
   }
   assert.ok(current.sources.length <= 120);
   assert.ok((current.history?.length ?? 0) <= 36);
+});
+
+
+void test('deep research dossier and verbatim citations survive local validation and backup round-trip', () => {
+  const dossier: ResearchDossier = {
+    version: 1,
+    updatedAt: 1764000000000,
+    provider: 'gemini',
+    model: 'primary-model',
+    hypotheses: [{
+      id: 'h1',
+      claim: 'A reported effect is supported by two original documents.',
+      rationale: 'Two exact passages were reviewed by a different provider.',
+      status: 'supported',
+      confidence: 'moderate',
+      supportingEvidenceIds: ['web:one', 'web:two'],
+      challengingEvidenceIds: [],
+      missingEvidence: ['A larger longitudinal dataset'],
+      modelProposedStatus: 'supported',
+      supportingQuotes: [{
+        evidenceId: 'web:one',
+        quote: 'The original source measured the effect in its controlled study.',
+        sourceName: 'Research Institute',
+        sourceUrl: 'https://research.example.org/study',
+        publisherFamily: 'example.org',
+        verification: 'verbatim-checked',
+      }],
+      challengingQuotes: [],
+    }],
+    evidenceReviews: [],
+    nextQueries: [],
+    completedQueries: [],
+    contradictions: [],
+    gaps: ['Long-term follow-up evidence is missing.'],
+    conclusion: 'Moderate support, with scope limitations.',
+    confidence: 'moderate',
+    stoppingReason: 'No additional primary documents were found.',
+    reviewStatus: 'independently-reviewed',
+    reviewerProvider: 'groq',
+    reviewerModel: 'reviewer-model',
+    fullTextEvidenceCount: 2,
+    summaryOnlyEvidenceCount: 1,
+    publisherFamilyCount: 2,
+    syndicatedItemCount: 0,
+    verifiedCitationCount: 2,
+  };
+  const memory = createResearchMemoryEntry({
+    topic: 'Research dossier persistence',
+    news: [story('dossier')],
+    analysis: analysis(),
+    language: 'en',
+    now: 1764000000000,
+    researchDossier: dossier,
+  });
+  assert.ok(memory);
+  assert.equal(memory.researchDossier?.reviewStatus, 'independently-reviewed');
+  const data = defaults();
+  data.researchMemory = [memory];
+  const locallyValidated = validateLocal(data);
+  assert.equal(locallyValidated.researchMemory[0]?.researchDossier?.hypotheses[0]?.supportingQuotes?.[0]?.quote,
+    dossier.hypotheses[0]?.supportingQuotes?.[0]?.quote);
+  const restored = importBackup(exportBackup(locallyValidated));
+  assert.equal(restored.researchMemory[0]?.researchDossier?.reviewerProvider, 'groq');
+  assert.equal(restored.researchMemory[0]?.researchDossier?.verifiedCitationCount, 2);
 });

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { fetchWebResearch } from '../lib/web-research';
+import { enrichResearchEvidence, fetchWebResearch } from '../lib/web-research';
 import { generateEditorialIdeas } from '../lib/idea-generation';
 import { structuredSecondOpinionPrompt } from '../lib/api';
 
@@ -104,4 +104,51 @@ void test('external review prompt contains independent evidence and excludes You
   assert.match(prompt, /Mission overview/);
   assert.match(prompt, /https:\/\/www\.nasa\.gov/);
   assert.doesNotMatch(prompt, /youtube\.com|dQw4w9WgXcQ/);
+});
+
+
+void test('Firecrawl search retrieves markdown source text only when the user key is configured', async () => {
+  const originalText = ('The primary research team published its experimental method and measured results in the original report. ').repeat(8);
+  let requestBody: Record<string, unknown> | undefined;
+  const result = await fetchWebResearch('primary research report', {
+    apiKey: 'fc-test-key',
+    limit: 1,
+    fetcher: async (_url, init) => {
+      const parsed = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      requestBody = parsed;
+      return new Response(JSON.stringify({
+        success: true,
+        data: { web: [{ url: 'https://research.example.org/report', title: 'Original report', description: 'Short result description.', markdown: originalText }] },
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    },
+  });
+  const scrapeOptions = requestBody?.scrapeOptions as { formats?: unknown[] } | undefined;
+  assert.deepEqual(scrapeOptions?.formats, [{ type: 'markdown' }]);
+  assert.ok(result.items[0]?.sourceText?.includes('experimental method'));
+  assert.ok((result.items[0]?.sourceText?.length ?? 0) >= 300);
+});
+
+void test('selected publisher evidence can be enriched through a bounded authenticated scrape', async () => {
+  const originalText = ('The publisher document reports its measurement method and describes the evidence limitations in detail. ').repeat(8);
+  let calls = 0;
+  const result = await enrichResearchEvidence([{
+    id: 'publisher:one',
+    title: 'Publisher report',
+    summary: 'Brief feed summary.',
+    url: 'https://publisher.example.org/article',
+    sourceName: 'Publisher',
+    category: 'news',
+  }], 'fc-test-key', 1, async (url, init) => {
+    calls += 1;
+    assert.equal(url, 'https://api.firecrawl.dev/v2/scrape');
+    const request = JSON.parse(String(init?.body)) as { formats?: unknown[] };
+    assert.deepEqual(request.formats, [{ type: 'markdown' }]);
+    return new Response(JSON.stringify({ success: true, data: { markdown: originalText } }), {
+      status: 200, headers: { 'Content-Type': 'application/json' },
+    });
+  });
+  assert.equal(calls, 1);
+  assert.equal(result.enrichedCount, 1);
+  assert.ok(result.items[0]?.sourceText?.includes('measurement method'));
+  assert.equal(result.warnings.length, 0);
 });

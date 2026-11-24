@@ -52,10 +52,6 @@ function cleanList(value: unknown, maxItems: number, maxLength: number): string[
   return result;
 }
 
-function confidence(value: unknown): 'low' | 'moderate' | 'high' {
-  return value === 'high' || value === 'moderate' ? value : 'low';
-}
-
 export function isIndependentEvidenceUrl(value: string): boolean {
   try {
     const url = new URL(value);
@@ -296,7 +292,6 @@ export function applyIndependentResearchReview(
     const supportingEvidenceIds = [...new Set(supportingQuotes.map((item) => item.evidenceId))];
     const challengingEvidenceIds = [...new Set(challengingQuotes.map((item) => item.evidenceId))];
     const supportingGroups = countDistinctEvidenceGroups(supportingEvidenceIds, evidence);
-    const challengingGroups = countDistinctEvidenceGroups(challengingEvidenceIds, evidence);
     const contested = challengingQuotes.length > 0 || (review.verdict === 'mixed' && supportingQuotes.length > 0);
     const supported = !contested && review.verdict === 'support' &&
       supportingQuotes.length >= 2 && supportingGroups >= 2;

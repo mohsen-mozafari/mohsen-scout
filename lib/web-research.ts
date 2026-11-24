@@ -157,7 +157,7 @@ export async function fetchWebResearch(
         sources: ['web', 'news'],
         excludeDomains: ['youtube.com', 'youtu.be', 'youtube-nocookie.com'],
         ...(timeFilter(options.days) ? { tbs: timeFilter(options.days) } : {}),
-        ...(includeContent ? { scrapeOptions: { formats: ['markdown'], onlyMainContent: true } } : {}),
+        ...(includeContent ? { scrapeOptions: { formats: [{ type: 'markdown' }], onlyMainContent: true } } : {}),
       }),
     });
     if (!response.ok) {
@@ -243,7 +243,7 @@ export async function enrichResearchEvidence(
           signal: controller.signal,
           body: JSON.stringify({
             url: candidate.item.url,
-            formats: ['markdown'],
+            formats: [{ type: 'markdown' }],
             onlyMainContent: true,
           }),
         });

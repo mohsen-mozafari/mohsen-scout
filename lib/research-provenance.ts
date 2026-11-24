@@ -82,24 +82,29 @@ export function assessEvidenceProvenance(evidence: readonly WebResearchItem[]): 
     if (first === undefined) firstByFamily.set(family, index);
     else unite(first, index);
   }
-  let syndicatedItemCount = 0;
   for (let left = 0; left < evidence.length; left += 1) {
     for (let right = left + 1; right < evidence.length; right += 1) {
       if (familyByIndex[left] === familyByIndex[right]) continue;
       const similarity = titleSimilarity(evidence[left]!.title, evidence[right]!.title);
-      if (similarity >= 0.88) {
-        unite(left, right);
-        syndicatedItemCount += 1;
-      }
+      if (similarity >= 0.88) unite(left, right);
     }
   }
   const groupByEvidenceId: Record<string, string> = {};
   const groups = new Set<string>();
+  const familiesByGroup = new Map<string, Set<string>>();
+  const itemCountByGroup = new Map<string, number>();
   for (let index = 0; index < evidence.length; index += 1) {
     const root = 'publisher-group:' + find(index);
     groupByEvidenceId[evidence[index]!.id] = root;
     groups.add(root);
+    const families = familiesByGroup.get(root) ?? new Set<string>();
+    families.add(familyByIndex[index]!);
+    familiesByGroup.set(root, families);
+    itemCountByGroup.set(root, (itemCountByGroup.get(root) ?? 0) + 1);
   }
+  const syndicatedItemCount = [...familiesByGroup.entries()]
+    .filter(([, families]) => families.size > 1)
+    .reduce((sum, [group]) => sum + (itemCountByGroup.get(group) ?? 0), 0);
   return {
     publisherFamilyCount: groups.size,
     syndicatedItemCount,
