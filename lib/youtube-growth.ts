@@ -10,42 +10,51 @@ function median(values: readonly number[]): number | null {
   return sorted.length % 2 ? sorted[middle]! : (sorted[middle - 1]! + sorted[middle]!) / 2;
 }
 
-type SnapshotPair = { last?: YouTubeSnapshot; previous?: YouTubeSnapshot };
+type SnapshotHistoryIndex = {
+  priorForCurrent: Map<string, YouTubeSnapshot>;
+  channelRates: Map<string, Map<string, number>>;
+  counts: Map<string, number>;
+};
 
-function buildHistoryIndex(history: readonly YouTubeSnapshot[], capturedAt: number) {
-  const byVideo = new Map<string, SnapshotPair>();
+function buildHistoryIndex(history: readonly YouTubeSnapshot[], capturedAt: number): SnapshotHistoryIndex {
+  const grouped = new Map<string, YouTubeSnapshot[]>();
   const counts = new Map<string, number>();
-  const channelRates = new Map<string, Map<string, number>>();
   for (const item of history) {
     counts.set(item.videoId, (counts.get(item.videoId) ?? 0) + 1);
     if (item.capturedAt >= capturedAt || item.viewCount === null) continue;
-    const pair = byVideo.get(item.videoId) ?? {};
-    const minimumPreviousAt = capturedAt - MIN_INTERVAL_MS;
-    if (!pair.last || item.capturedAt > pair.last.capturedAt) {
-      if (pair.last && pair.last.capturedAt <= minimumPreviousAt &&
-          (!pair.previous || pair.last.capturedAt > pair.previous.capturedAt)) {
-        pair.previous = pair.last;
-      }
-      pair.last = item;
-    } else if (item.capturedAt <= minimumPreviousAt &&
-        (!pair.previous || item.capturedAt > pair.previous.capturedAt)) {
-      pair.previous = item;
-    }
-    byVideo.set(item.videoId, pair);
+    const records = grouped.get(item.videoId) ?? [];
+    records.push(item);
+    grouped.set(item.videoId, records);
   }
-  for (const [videoId, pair] of byVideo) {
-    const last = pair.last;
-    const previous = pair.previous;
-    if (!last || !previous || last.viewCount === null || previous.viewCount === null) continue;
-    const elapsed = last.capturedAt - previous.capturedAt;
-    if (elapsed < MIN_INTERVAL_MS || last.viewCount < previous.viewCount) continue;
-    const rate = (last.viewCount - previous.viewCount) / (elapsed / DAY_MS);
-    const channel = last.channel;
-    const rates = channelRates.get(channel) ?? new Map<string, number>();
+
+  const priorForCurrent = new Map<string, YouTubeSnapshot>();
+  const channelRates = new Map<string, Map<string, number>>();
+  for (const [videoId, records] of grouped) {
+    records.sort((a, b) => b.capturedAt - a.capturedAt);
+    const latest = records[0];
+    if (!latest) continue;
+
+    // Use the newest historical point that is at least 30 minutes older than the new sample.
+    const eligiblePrior = records.find((item) => item.capturedAt <= capturedAt - MIN_INTERVAL_MS);
+    if (eligiblePrior) priorForCurrent.set(videoId, eligiblePrior);
+
+    // Build channel baselines from the latest historical pair with sufficient separation.
+    const olderPeerPoint = records.find((item) =>
+      item.capturedAt <= latest.capturedAt - MIN_INTERVAL_MS &&
+      item.viewCount !== null &&
+      latest.viewCount !== null &&
+      latest.viewCount >= item.viewCount,
+    );
+    if (!olderPeerPoint || latest.viewCount === null || olderPeerPoint.viewCount === null) continue;
+    const elapsed = latest.capturedAt - olderPeerPoint.capturedAt;
+    if (elapsed < MIN_INTERVAL_MS) continue;
+    const rate = (latest.viewCount - olderPeerPoint.viewCount) / (elapsed / DAY_MS);
+    const rates = channelRates.get(latest.channel) ?? new Map<string, number>();
     rates.set(videoId, rate);
-    channelRates.set(channel, rates);
+    channelRates.set(latest.channel, rates);
   }
-  return { byVideo, channelRates, counts };
+
+  return { priorForCurrent, channelRates, counts };
 }
 
 export function captureYouTubeSnapshots(
@@ -53,7 +62,7 @@ export function captureYouTubeSnapshots(
   history: readonly YouTubeSnapshot[],
   capturedAt = Date.now(),
 ): { videos: Video[]; snapshots: YouTubeSnapshot[] } {
-  const { byVideo, channelRates, counts } = buildHistoryIndex(history, capturedAt);
+  const { priorForCurrent, channelRates, counts } = buildHistoryIndex(history, capturedAt);
   const fresh = videos.map((video) => ({
     id: video.id + ':' + capturedAt,
     videoId: video.id,
@@ -65,7 +74,7 @@ export function captureYouTubeSnapshots(
     commentCount: video.commentCount ?? null,
   }));
   const enriched = videos.map((video) => {
-    const prior = byVideo.get(video.id)?.last;
+    const prior = priorForCurrent.get(video.id);
     const elapsed = prior ? capturedAt - prior.capturedAt : 0;
     const currentViews = video.viewCount ?? null;
     const previousViews = prior?.viewCount ?? null;

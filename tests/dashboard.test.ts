@@ -12,7 +12,7 @@ import {
   runSingleFlight,
   selectDashboardVideos,
 } from '../lib/dashboard';
-import { RETENTION_MS, type Idea, type Opinion, type Video } from '../lib/types';
+import { type Idea, type Opinion, type Video } from '../lib/types';
 
 const now = Date.UTC(2026, 10, 17, 12, 0, 0);
 
@@ -102,18 +102,18 @@ void test('dashboard selects source-linked radar ideas without a report ID', () 
   assert.deepEqual(selectDashboardIdeas([manual], { topic: 'Mars' }), []);
 });
 
-void test('internal engine evidence merges retained report and global videos, deduplicates, expires and caps input', () => {
+void test('internal engine evidence merges retained report and global videos, deduplicates and bounds only the analysis sample', () => {
   const olderCopy = video('shared', 'Older title', 10, now - 2_000);
   const newestCopy = video('shared', 'Newest title', 25, now - 1_000);
   const reportOnly = video('report-only', 'Report-only sample', 100, now - 3_000);
-  const expired = video('expired', 'Expired metadata', 999, now - RETENTION_MS - 1);
+  const historical = video('historical', 'Historically stored metadata', 999, now - 120 * 86400000);
   const future = video('future', 'Future fetched record', 999, now + 1);
   const collected = collectEngineVideoEvidence(
-    [{ videos: [olderCopy, reportOnly, expired] }],
-    [newestCopy, expired, future],
+    [{ videos: [olderCopy, reportOnly, historical] }],
+    [newestCopy, historical, future],
     now,
   );
-  assert.deepEqual(collected.map((item) => item.id), ['shared', 'report-only']);
+  assert.deepEqual(collected.map((item) => item.id), ['shared', 'report-only', 'historical']);
   assert.equal(collected[0].title, 'Newest title');
   assert.equal(collected[0].viewCount, 25);
   const many = Array.from({ length: 320 }, (_, index) =>
@@ -134,10 +134,11 @@ void test('dashboard video feed filters strictly to the selected niche and sorts
   assert.deepEqual(result.map((item) => item.id), ['relevant-high', 'relevant-low', 'relevant-no-count']);
 });
 
-void test('dashboard video feed omits expired metadata and returns empty for missing evidence', () => {
+void test('dashboard video feed retains old-fetched metadata but excludes stale publications', () => {
   const fresh = video('fresh', 'JWST observation', 100);
-  const expired = video('expired', 'JWST old observation', 5000, now - RETENTION_MS - 1);
-  assert.deepEqual(selectDashboardVideos([expired, fresh], 'JWST', ['JWST'], now, 5).map((item) => item.id), ['fresh']);
+  const olderStored = video('older-stored', 'JWST observation retained locally', 5000, now - 120 * 86400000);
+  const stalePublished = { ...video('stale-publication', 'JWST archived observation', 9000), publishedAt: '2026-08-01T12:00:00Z' };
+  assert.deepEqual(selectDashboardVideos([stalePublished, olderStored, fresh], 'JWST', ['JWST'], now, 5).map((item) => item.id), ['older-stored', 'fresh']);
   assert.deepEqual(selectDashboardVideos([fresh], 'Mars', ['Mars'], now, 5), []);
   assert.deepEqual(selectDashboardVideos([], 'JWST', ['JWST'], now, 5), []);
 });

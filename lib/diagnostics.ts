@@ -1,4 +1,4 @@
-import { defaults, purgeExpired, RETENTION_MS, type ResearchInput, type Video } from './types';
+import { defaults, purgeExpired, type ResearchInput, type Video } from './types';
 import { exportBackup, importBackup, personalLinks, restorePersonalData } from './backup';
 import { moveNoteBlock } from './utils';
 import { validateLocal } from './validation';
@@ -130,15 +130,16 @@ export async function runDiagnostics(): Promise<TestResult[]> {
   };
   const cases: Array<[string, () => void | Promise<void>]> = [
     [
-      'Retention removes expired report refs, keeps saved links',
+      'Retention keeps historical YouTube data and prunes only dangling references',
       () => {
         const data = defaults();
         data.links = [savedLink];
-        data.videos = [{ ...video, fetchedAt: now - RETENTION_MS }];
-        data.reports = [{ ...report, createdAt: now - RETENTION_MS }];
+        data.videos = [{ ...video, fetchedAt: now - 120 * 86400000 }];
+        data.reports = [{ ...report, createdAt: now - 120 * 86400000 }];
         data.ideas = [{ ...idea, reportId: report.id, videoIds: [video.id, 'unsaved'] }];
         const clean = purgeExpired(data, now);
-        check(clean.ideas[0].reportId === undefined);
+        check(clean.videos.length === 1 && clean.reports.length === 1);
+        check(clean.ideas[0].reportId === report.id);
         check(clean.ideas[0].videoIds.join() === video.id);
         check(clean.ideas[0].concept === idea.concept);
       },
@@ -148,16 +149,20 @@ export async function runDiagnostics(): Promise<TestResult[]> {
       () => {
         const data = defaults();
         data.ideas = [{ ...idea, videoIds: [video.id], reportId: report.id }];
+        // Simulate explicit user deletion from all relevant data domains.
+        data.videos = [];
+        data.reports = [];
         const clean = purgeExpired(data, now);
         check(clean.ideas[0].videoIds.length === 0 && !clean.ideas[0].reportId);
       },
     ],
     [
-      'Nested report videos obey their own expiry',
+      'Nested report videos remain retained with their historical report',
       () => {
         const data = defaults();
-        data.reports = [{ ...report, videos: [{ ...video, fetchedAt: now - RETENTION_MS }] }];
-        check(purgeExpired(data, now).reports[0].videos.length === 0);
+        data.reports = [{ ...report, videos: [{ ...video, fetchedAt: now - 120 * 86400000 }] }];
+        const clean = purgeExpired(data, now);
+        check(clean.reports[0].videos.length === 1 && clean.reports[0].videos[0].id === video.id);
       },
     ],
     [
@@ -282,11 +287,11 @@ export async function runDiagnostics(): Promise<TestResult[]> {
       },
     ],
     [
-      'Expire API metadata at 29 days',
+      'Retain API metadata beyond the former 29-day boundary',
       () => {
         const data = defaults();
-        data.videos = [video, { ...video, fetchedAt: now - RETENTION_MS }];
-        check(purgeExpired(data, now).videos.length === 1);
+        data.videos = [video, { ...video, id: 'old-video', fetchedAt: now - 120 * 86400000 }];
+        check(purgeExpired(data, now).videos.length === 2);
       },
     ],
     [
@@ -629,11 +634,18 @@ export async function runDiagnostics(): Promise<TestResult[]> {
       },
     ],
     [
-      'MOCK raw API metadata stays out of AI prompts and generated idea text',
+      'MOCK YouTube platform signals reach AI prompts while the legacy report helper does not fabricate ideas',
       () => {
-        const prompt = opinionPrompt(input.topic, 'My concept', 'My decision');
-        check(!prompt.includes(video.title));
-        check(!prompt.includes(video.description));
+        const prompt = opinionPrompt(input.topic, 'My concept', 'My decision', 'en', [{
+          id: video.id, title: video.title, description: video.description, channel: video.channel,
+          channelId: 'MOCK_CHANNEL', publishedAt: video.publishedAt, thumbnailUrl: video.thumbnail,
+          viewCount: 1234, likeCount: 56, channelSubscriberCount: null, channelVideoCount: null,
+          url: 'https://www.youtube.com/watch?v=' + video.id,
+          growth: { snapshotCount: 2, deltaViews: 500, viewsPerHour: 100, viewsPerDay: 2400,
+            channelBaselineViewsPerDay: null, channelOutlierRatio: null, measuredAt: now, status: 'measured' },
+        }]);
+        check(prompt.includes(video.title));
+        check(prompt.includes('2400'));
         const ideas = buildIdeas({
           id: 'r',
           input,

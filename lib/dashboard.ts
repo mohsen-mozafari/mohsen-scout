@@ -3,7 +3,7 @@ import { compareEditorialPriority, selectTopCurrentEditorialPriorities } from '.
 import { deduplicateDisplayIdeas } from './idea-generation';
 import { isIdeaDisplayable } from './idea-research';
 import { matchesResearchTerms } from './intelligence';
-import { RETENTION_MS, type Idea, type Opinion, type Report, type Video } from './types';
+import { type Idea, type Opinion, type Report, type Video } from './types';
 
 export type EngineVideoEvidence = Omit<
   Pick<Video, 'id' | 'title' | 'description' | 'channel' | 'publishedAt' | 'viewCount' | 'likeCount' | 'fetchedAt'>,
@@ -11,6 +11,7 @@ export type EngineVideoEvidence = Omit<
 > & {
   viewCount: number | null;
   likeCount: number | null;
+  growth?: Video['growth'];
 };
 
 /**
@@ -28,7 +29,7 @@ export function collectEngineVideoEvidence(
   for (const video of [...videos, ...reports.flatMap((report) => report.videos)]) {
     if (!video.id || !video.title.trim() || !Number.isFinite(video.fetchedAt)) continue;
     const age = now - video.fetchedAt;
-    if (age < 0 || age >= RETENTION_MS) continue;
+    if (age < 0) continue;
     const previous = byId.get(video.id);
     if (!previous || video.fetchedAt > previous.fetchedAt) {
       byId.set(video.id, {
@@ -40,6 +41,7 @@ export function collectEngineVideoEvidence(
         viewCount: video.viewCount ?? null,
         likeCount: video.likeCount ?? null,
         fetchedAt: video.fetchedAt,
+        growth: video.growth,
       });
     }
   }
@@ -113,7 +115,7 @@ export function selectDashboardVideos(
     .filter((video) => {
       if (!video.id || !Number.isFinite(video.fetchedAt)) return false;
       const age = now - video.fetchedAt;
-      if (age < 0 || age >= RETENTION_MS) return false;
+      if (age < 0) return false;
       const published = Date.parse(video.publishedAt);
       const publicationAge = now - published;
       if (!Number.isFinite(published) || publicationAge < 0 || publicationAge > 30 * 24 * 60 * 60 * 1000) return false;

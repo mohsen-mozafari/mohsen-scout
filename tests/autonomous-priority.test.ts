@@ -41,6 +41,7 @@ void test('queue polling preserves in-flight running leases and does not relaunc
   };
   const base = {
     input,
+    sourceId: 'source-default',
     source: 'publisher' as const,
     sourceUrl: 'https://example.org/story',
     publishedAt: '2026-11-25T11:00:00.000Z',

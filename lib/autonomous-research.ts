@@ -9,9 +9,8 @@ import {
   saveAutonomousQueue,
   updateAutonomousJob,
   type AutonomousResearchCandidate,
-  type AutonomousResearchJob,
 } from './autonomous-queue';
-import type { ResearchInput, Report, Video } from './types';
+import type { ResearchInput, Video } from './types';
 
 const FOREGROUND_IDLE_MS = 20_000;
 const DISCOVERY_AGE_MS = 14 * 24 * 60 * 60 * 1000;
@@ -160,7 +159,7 @@ async function discoverFreshTopics(): Promise<void> {
 
 async function settleAutonomousJob(
   job: AutonomousResearchJob,
-  report: Report | undefined,
+  report: Awaited<ReturnType<ReturnType<typeof useScout.getState>['research']>>,
   failure?: unknown,
 ): Promise<void> {
   await withQueueMutation(async () => {

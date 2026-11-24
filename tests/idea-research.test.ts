@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { defaults, purgeExpired, RETENTION_MS, type Report, type ResearchInput } from '../lib/types';
+import { defaults, purgeExpired, type Report, type ResearchInput } from '../lib/types';
 import { buildIdeaAnalysis, createManualIdea } from '../lib/engine';
 import { getIdeaDisplayTitle, isIdeaDisplayable } from '../lib/idea-research';
 import { exportBackup, importBackup } from '../lib/backup';
@@ -80,8 +80,9 @@ void test('only a manually selected YouTube URL becomes a durable personal refer
   assert.equal(linked.links[0].url, 'https://www.youtube.com/watch?v=dQw4w9WgXcQ');
   assert.equal(linked.links[0].manualTitle, '');
   assert.equal(linked.videos.length, 0);
-  const expired = purgeExpired(linked, now + RETENTION_MS + 1);
-  assert.deepEqual(expired.ideas[0].videoIds, ['dQw4w9WgXcQ']);
+  const retained = purgeExpired(linked, now + 120 * 86400000);
+  assert.deepEqual(retained.ideas[0].videoIds, ['dQw4w9WgXcQ']);
+  assert.equal(retained.links.length, 1);
   assert.equal(attachVideoReferenceToIdea(linked, idea.id, 'dQw4w9WgXcQ', now + 2).links.length, 1);
   assert.throws(() => attachVideoReferenceToIdea(data, idea.id, 'invalid-id', now));
 });
@@ -152,7 +153,8 @@ void test('local idea analysis explains evidence, gaps and next actions without 
     { id: 'v2', title: 'Webb telescope studies an exoplanet atmosphere', channel: 'Science Two', publishedAt: '2026-11-14T00:00:00Z' },
     { id: 'v3', title: 'James Webb Space Telescope spectroscopy explained', channel: 'Science Three', publishedAt: '2026-11-13T00:00:00Z' },
   ], 'en');
-  assert.equal(result.length, 4);
+  assert.equal(result.length, 5);
+  assert.ok(result.some((section) => section.id === 'youtube-platform'));
   assert.ok(result.some((section) => section.id === 'evidence-review' && section.items?.length));
   assert.ok(result.some((section) => section.id === 'next-actions' && section.body.includes('primary documents')));
   assert.ok(result.every((section) => section.title.trim() && section.body.trim()));

@@ -138,9 +138,12 @@ void test('editorial priority survives the validated local SQLite data shape', (
   );
 });
 
-void test('YouTube API samples alone cannot create editorial ideas', () => {
+void test('multiple YouTube platform samples can create platform-trend ideas without fake publisher citations', () => {
   const ideas = generateEditorialIdeas({ ...base, news: [], videos, reportId: 'report-1', limit: 4 });
-  assert.deepEqual(ideas, []);
+  assert.ok(ideas.length > 0);
+  assert.ok(ideas.every((idea) => idea.engineScoreBasis === 'platform-aware-v3'));
+  assert.ok(ideas.every((idea) => idea.videoIds.length >= 2));
+  assert.ok(ideas.every((idea) => !(idea.evidenceSources ?? []).some((source) => source.sourceUrl.includes('youtube.com'))));
 });
 
 void test('cross-source category stays unavailable without independent web evidence', () => {
