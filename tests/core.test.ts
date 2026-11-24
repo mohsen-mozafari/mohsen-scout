@@ -1270,7 +1270,7 @@ void test('OpenRouter news translation parses and caches a Persian title and sum
   assert.equal(calls, 1);
 });
 
-void test('Internal research engine uses publisher and Wikimedia evidence while excluding YouTube API data', () => {
+void test('Internal research engine combines publisher, Wikimedia and YouTube platform observations', () => {
   const result = buildInternalResearch({
     topic: 'Exoplanet atmospheres',
     news: [
@@ -1308,10 +1308,10 @@ void test('Internal research engine uses publisher and Wikimedia evidence while 
   assert.equal(result.angles.length, 3);
   assert.ok(result.evidence.some((item) => item.id === 'publisher-news' && item.detail.includes('2 selected feed source(s)')));
   assert.ok(result.evidence.some((item) => item.id === 'wikimedia' && item.detail.includes('not search volume')));
-  assert.ok(result.evidence.some((item) => item.id === 'youtube-sample' && item.detail.includes('intentionally excluded')));
+  assert.ok(result.evidence.some((item) => item.id === 'youtube-sample' && item.detail.includes('1 returned video example')));
   assert.equal(result.intelligence.selfEvaluation.youtubeSampleCount, 1);
-  assert.equal(result.intelligence.selfEvaluation.videoViewCountsAvailable, 0);
-  assert.doesNotMatch(JSON.stringify(result), /Exoplanet atmosphere discovery explained|MOCK science channel/);
+  assert.equal(result.intelligence.selfEvaluation.videoViewCountsAvailable, 1);
+  assert.match(JSON.stringify(result), /Exoplanet atmosphere discovery explained|MOCK science channel/);
   assert.equal(result.intelligence.sourceQuality.feedsRepresented, 2);
   assert.equal(result.intelligence.sourceQuality.independentPublishers, 1);
   assert.equal(result.intelligence.sourceQuality.duplicateStoriesMerged, 1);
@@ -1319,7 +1319,7 @@ void test('Internal research engine uses publisher and Wikimedia evidence while 
   assert(!JSON.stringify(result).toLowerCase().includes('viral score'));
 });
 
-void test('Internal engine ignores YouTube metadata in recent and all-time research metrics', () => {
+void test('Internal engine evaluates YouTube metadata in recent and all-time sample metrics', () => {
   const fixedNow = Date.parse('2026-11-18T12:00:00.000Z');
   const result = buildInternalResearch({
     topic: 'Exoplanet atmospheres',
@@ -1340,15 +1340,15 @@ void test('Internal engine ignores YouTube metadata in recent and all-time resea
   assert.equal(audit.topicMatchedNewsCount, 1);
   assert.equal(audit.unmatchedNewsCount, 1);
   assert.equal(audit.youtubeSampleCount, 4);
-  assert.equal(audit.recentVideoCandidateCount, 0);
-  assert.equal(audit.matchedVideoCount, 0);
-  assert.equal(audit.allTimeMatchedVideoCount, 0);
-  assert.equal(audit.recentMatchedVideoCount, 0);
-  assert.equal(audit.outsideVideoWindowCount, 0);
-  assert.equal(audit.futureDatedVideoCount, 0);
-  assert.equal(audit.excludedVideoCount, 0);
-  assert.equal(audit.videoViewCountsAvailable, 0);
-  assert.ok(result.evidence.some((item) => item.id === 'youtube-sample' && item.detail.includes('intentionally excluded')));
+  assert.equal(audit.recentVideoCandidateCount, 2);
+  assert.equal(audit.matchedVideoCount, 2);
+  assert.equal(audit.allTimeMatchedVideoCount, 3);
+  assert.equal(audit.recentMatchedVideoCount, 2);
+  assert.equal(audit.outsideVideoWindowCount, 2);
+  assert.equal(audit.futureDatedVideoCount, 1);
+  assert.equal(audit.excludedVideoCount, 1);
+  assert.equal(audit.videoViewCountsAvailable, 3);
+  assert.ok(result.evidence.some((item) => item.id === 'youtube-sample' && item.detail.includes('returned video example')));
   const allTime = buildInternalResearch({
     topic: 'Exoplanet atmospheres', now: fixedNow, videoWindowDays: 0,
     videos: [
@@ -1358,11 +1358,11 @@ void test('Internal engine ignores YouTube metadata in recent and all-time resea
     ],
   }).intelligence.selfEvaluation;
   assert.equal(allTime.youtubeSampleCount, 3);
-  assert.equal(allTime.recentVideoCandidateCount, 0);
-  assert.equal(allTime.recentMatchedVideoCount, 0);
-  assert.equal(allTime.outsideVideoWindowCount, 0);
+  assert.equal(allTime.recentVideoCandidateCount, 2);
+  assert.equal(allTime.recentMatchedVideoCount, 2);
+  assert.equal(allTime.outsideVideoWindowCount, 1);
   assert.ok(result.evidence.some((item) => item.id === 'retrieved-news-headlines' && item.detail.includes('Artemis')), 'unmatched publisher records remain visible in the contextual evidence audit');
-  assert.ok(result.evidence.some((item) => item.id === 'youtube-sample' && item.detail.includes('intentionally excluded')));
+  assert.ok(result.evidence.some((item) => item.id === 'youtube-sample' && item.detail.includes('returned video example')));
 });
 
 void test('Topic relevance ranks a direct publisher match above unrelated feed context', () => {
