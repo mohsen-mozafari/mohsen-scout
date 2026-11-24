@@ -90,7 +90,7 @@ export default function Detail() {
               if (preferred) models.unshift(preferred);
               models = models.filter(Boolean).slice(0, 5);
             }
-            for (const model of [...new Set(models.map((item) => item.trim()).filter(Boolean))]) {
+            for (const model of new Set(models.map((item) => item.trim()).filter(Boolean))) {
               configs.push({ provider, key: key ?? '', model, ...(accountId ? { accountId } : {}) });
             }
           } catch {
