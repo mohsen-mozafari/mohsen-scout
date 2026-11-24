@@ -17,6 +17,7 @@ import { readData, writeData } from './storage';
 import { getKey } from './vault';
 import { localDateKey, nextBudget, nextOpenRouterUsage, searchYouTube, type YouTubeQuotaKind, type YouTubeQuotaOrigin } from './api';
 import { buildInternalResearch } from './engine';
+import { planEvidenceFollowUps } from './discovery-planner';
 import { createResearchMemoryEntry } from './research-memory';
 import { fetchWebResearch } from './web-research';
 import { reviewIdeasAutomatically } from './ai-review';
@@ -364,38 +365,61 @@ export const useScout = create<State>((set, get) => ({
           warnings.push('Independent web search is disabled in Settings; selected RSS feeds and Wikimedia remain available.');
           return;
         }
-        const activityId = await beginActivity('Firecrawl Search', topic, topic, researchReportId);
+        const activityId = await beginActivity('Firecrawl Search', topic, topic + ' · bounded evidence-led follow-up discovery', researchReportId);
         set({ progress: 'Searching independent web and news sources…' });
         try {
           const webKey = await getKey('firecrawl').catch(() => undefined);
-          const result = await fetchWebResearch(topic, {
-            apiKey: webKey ?? undefined,
-            limit: 6,
-            days: normalizedInput.days,
-          });
-          const split = splitSourcesByFeedback(result.items);
-          webItems = split.included;
-          warnings.push(...result.warnings);
-          const activityWarnings = [
-            ...result.warnings,
-            ...(split.excluded.length ? [split.excluded.length + ' Firecrawl result(s) were excluded using saved source feedback.'] : []),
-          ];
+          const queries = [topic];
+          const asked = new Set<string>([topic.toLowerCase()]);
+          const collected = new Map<string, (typeof webItems)[number]>();
+          const queryWarnings: string[] = [];
+          // One initial search plus at most two follow-ups, derived only from independent evidence.
+          for (let round = 0; round < 3; round++) {
+            const query = queries[round];
+            if (!query) break;
+            set({ progress: round === 0
+              ? 'Searching independent web and news sources…'
+              : 'Following evidence into a new research direction (' + (round + 1) + '/3)…' });
+            try {
+              const result = await fetchWebResearch(query, {
+                apiKey: webKey ?? undefined,
+                limit: 6,
+                days: normalizedInput.days,
+              });
+              queryWarnings.push(...result.warnings);
+              const split = splitSourcesByFeedback(result.items);
+              for (const item of split.included) if (!collected.has(item.url)) collected.set(item.url, item);
+              if (round === 0 && result.items.length) {
+                const followUps = planEvidenceFollowUps(topic, result.items, [...asked]);
+                for (const followUp of followUps) {
+                  const key = followUp.toLowerCase();
+                  if (!asked.has(key) && queries.length < 3) {
+                    asked.add(key);
+                    queries.push(followUp);
+                  }
+                }
+              }
+              if (!result.items.length && round > 0) break;
+            } catch (error) {
+              const message = error instanceof Error ? error.message : 'Firecrawl request failed.';
+              queryWarnings.push('Search round ' + (round + 1) + ': ' + message);
+              if (round === 0) break;
+            }
+          }
+          webItems = [...collected.values()];
+          warnings.push(...queryWarnings);
           await finishActivity(activityId, {
-            status: result.items.length
-              ? (activityWarnings.length || !webItems.length ? 'partial' : 'success')
-              : 'empty',
-            resultCount: result.items.length,
+            status: webItems.length ? (queryWarnings.length ? 'partial' : 'success') : 'empty',
+            query: queries.join(' ; '),
+            resultCount: webItems.length,
             analyzedCount: webItems.length,
-            results: buildResearchActivityResults(topic, result.items.map((item) => {
-              const exclusion = explainResearchActivitySourceExclusion(item.url, sourceExclusions);
-              return {
-                id: item.id, title: item.title, summary: item.summary, sourceName: item.sourceName,
-                url: item.url, publishedAt: item.publishedAt ?? null, sourceAssessment: 'not-assessed',
-                includedInAnalysis: !exclusion,
-                decisionReason: exclusion ?? 'Returned by Firecrawl and passed to internal analysis; publisher credibility is not inferred from search ranking.',
-              };
-            })),
-            warnings: activityWarnings.slice(0, 12),
+            results: buildResearchActivityResults(topic, webItems.map((item) => ({
+              id: item.id, title: item.title, summary: item.summary, sourceName: item.sourceName,
+              url: item.url, publishedAt: item.publishedAt ?? null, sourceAssessment: 'not-assessed',
+              includedInAnalysis: true,
+              decisionReason: 'Independent web/news evidence found through bounded multi-hop discovery; search rank is not treated as source credibility.',
+            }))),
+            warnings: queryWarnings.slice(0, 12),
           });
         } catch (error) {
           const message = error instanceof Error ? error.message : 'Firecrawl request failed.';
@@ -461,7 +485,9 @@ export const useScout = create<State>((set, get) => ({
       };
 
       recordRuntimeStart('Sources');
-      await Promise.all([youtubeTask(), feedTask(), webTask(), wikiTask()]);
+      // YouTube is the first discovery lane; failures or exhausted quota never gate independent sources.
+      await youtubeTask();
+      await Promise.all([feedTask(), webTask(), wikiTask()]);
       const independentSourcesReady = publisherNews.length > 0 || webItems.length > 0;
       recordRuntimeFinish('Sources', independentSourcesReady ? 'success' : 'partial', independentSourcesReady ? undefined : 'No independent publisher/web evidence was returned.');
       if (!publisherNews.length) warnings.push('No selected publisher-feed items are currently available.');
