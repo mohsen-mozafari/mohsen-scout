@@ -377,9 +377,9 @@ export function buildInternalResearch(input: InternalResearchInput): InternalRes
       'پوشش ناشران و بازدید مقاله‌های ویکی‌مدیا زمینه مستقل هستند؛ نمونه خام YouTube فقط در مسیر دریافت جداگانه می‌ماند و در تحلیل و امتیازها دخالت ندارد.',
     ] : [
       'This engine runs locally on evidence already loaded in the app; it does not fetch new sources.',
-      'YouTube API records are received in the isolated youtubeSample pass-through only and are excluded from entity extraction, confidence and engine conclusions.',
+      'YouTube metadata is analyzed as a platform observation for topic matching and entity extraction; it is not independent publisher evidence.',
       'Editorial angles are hypotheses, not scientific findings or predictions of views, growth or virality.',
-      'Publisher coverage and Wikimedia article pageviews are independent context signals; raw YouTube samples reach only the isolated pass-through and remain excluded from scores.',
+      'Publisher coverage, Wikimedia pageviews and YouTube sample metrics are separate signal families. A single YouTube snapshot cannot establish temporal growth or market-wide demand.',
     ]),
     ...(matchedNews.length < allNews.length
       ? [text('Unmatched publisher records remain in contextual evidence and source audits; they are not treated as direct support for the requested topic.', 'خبرهای بدون تطبیق مستقیم در شواهد زمینه‌ای و ممیزی منابع باقی می‌مانند، اما پشتیبانی مستقیم از موضوع محسوب نمی‌شوند.')]
