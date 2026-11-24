@@ -36,7 +36,7 @@ export type InternalResearchInput = {
   wiki?: Pick<WikiSignal, 'articleTitle' | 'language' | 'monthlyViews'>;
   videos?: readonly (Pick<
     YouTubeSampleVideo,
-    'id' | 'title' | 'channel' | 'publishedAt' | 'viewCount' | 'likeCount'
+    'id' | 'title' | 'channel' | 'publishedAt' | 'viewCount' | 'likeCount' | 'growth'
   > & Partial<Pick<YouTubeSampleVideo, 'description'>>)[];
   feedback?: ResearchFeedbackProfile;
   language?: 'fa' | 'en';
@@ -98,6 +98,10 @@ export type InternalResearchResult = {
       recentVideoCandidateCount: number;
       excludedVideoCount: number;
       videoViewCountsAvailable: number;
+      measuredGrowthVideoCount: number;
+      medianMeasuredViewsPerHour: number | null;
+      medianMeasuredViewsPerDay: number | null;
+      channelOutlierVideoCount: number;
       videoWindowDays: number;
       unmatchedNewsCount: number;
       wikimediaMonthlyObservations: number;
@@ -203,9 +207,19 @@ export function buildInternalResearch(input: InternalResearchInput): InternalRes
   // are weaker context; the recent, directly matched subset remains a separate audit signal.
   const rankedVideos = inputVideos.map((video, index) => ({
     video, index, score: topicRelevanceScore(topic, video.title, video.description ?? ''),
-  })).filter((entry) => entry.score > 0 && Date.parse(entry.video.publishedAt) <= now + 86400000).sort((a, b) => b.score - a.score ||
-    (b.video.viewCount ?? -1) - (a.video.viewCount ?? -1) ||
-    (b.video.likeCount ?? -1) - (a.video.likeCount ?? -1) || a.index - b.index);
+  })).filter((entry) => entry.score > 0 && Date.parse(entry.video.publishedAt) <= now + 86400000).sort((a, b) => {
+    const relevanceOrder = b.score - a.score;
+    if (relevanceOrder !== 0) return relevanceOrder;
+    const aMeasured = a.video.growth?.status === 'measured' && a.video.growth.viewsPerHour !== null;
+    const bMeasured = b.video.growth?.status === 'measured' && b.video.growth.viewsPerHour !== null;
+    if (aMeasured !== bMeasured) return aMeasured ? -1 : 1;
+    if (aMeasured && bMeasured) {
+      const velocityOrder = (b.video.growth?.viewsPerHour ?? 0) - (a.video.growth?.viewsPerHour ?? 0);
+      if (velocityOrder !== 0) return velocityOrder;
+    }
+    return (b.video.viewCount ?? -1) - (a.video.viewCount ?? -1) ||
+      (b.video.likeCount ?? -1) - (a.video.likeCount ?? -1) || a.index - b.index;
+  });
   const videos = rankedVideos.map((entry) => entry.video);
   const recentVideoIds = new Set(recentVideoCandidates.map((video) => video.id));
   const recentMatchedVideoCount = rankedVideos.filter((entry) => recentVideoIds.has(entry.video.id)).length;
@@ -218,6 +232,19 @@ export function buildInternalResearch(input: InternalResearchInput): InternalRes
   const channelCount = new Set(videos.map((video) => video.channel)).size;
   const views = videos.map((video) => video.viewCount).filter((value): value is number => value != null);
   const likes = videos.map((video) => video.likeCount).filter((value): value is number => value != null);
+  const measuredGrowthVideos = videos.filter((video) =>
+    video.growth?.status === 'measured' && video.growth.viewsPerHour !== null && video.growth.viewsPerDay !== null,
+  );
+  const measuredViewsPerHour = measuredGrowthVideos.map((video) => video.growth!.viewsPerHour!).filter(Number.isFinite);
+  const measuredViewsPerDay = measuredGrowthVideos.map((video) => video.growth!.viewsPerDay!).filter(Number.isFinite);
+  const medianMeasuredViewsPerHour = median(measuredViewsPerHour);
+  const medianMeasuredViewsPerDay = median(measuredViewsPerDay);
+  const channelOutlierVideos = videos.filter((video) => {
+    const ratio = video.growth?.channelOutlierRatio;
+    return ratio !== null && ratio !== undefined && Number.isFinite(ratio) && ratio >= 2;
+  });
+  const fastestGrowingVideo = [...measuredGrowthVideos].sort((a, b) =>
+    (b.growth?.viewsPerHour ?? 0) - (a.growth?.viewsPerHour ?? 0))[0];
   const mostViewed = videos.filter((video) => video.viewCount != null)
     .sort((a, b) => (b.viewCount ?? 0) - (a.viewCount ?? 0))[0];
   const mostLiked = videos.filter((video) => video.likeCount != null)
@@ -282,8 +309,29 @@ export function buildInternalResearch(input: InternalResearchInput): InternalRes
         .map((video, index) =>
           (index + 1) + '. ' + video.title + ' · ' + video.channel +
           ' · ' + (video.viewCount == null ? text('views unavailable', 'بازدید ناموجود') : video.viewCount.toLocaleString() + (fa ? ' بازدید' : ' views')) +
-          ' · ' + (video.likeCount == null ? text('likes unavailable', 'پسند ناموجود') : video.likeCount.toLocaleString() + (fa ? ' پسند' : ' likes')),
+          ' · ' + (video.likeCount == null ? text('likes unavailable', 'پسند ناموجود') : video.likeCount.toLocaleString() + (fa ? ' پسند' : ' likes')) +
+          (video.growth?.status === 'measured' && video.growth.viewsPerHour !== null
+            ? ' · ' + video.growth.viewsPerHour.toLocaleString(fa ? 'fa-IR' : 'en-US', { maximumFractionDigits: 1 }) + (fa ? ' بازدید/ساعت' : ' views/hour')
+            : ' · ' + text('growth not yet measured', 'رشد هنوز اندازه‌گیری نشده')),
         ).join('\n').slice(0, 3200),
+    });
+  }
+  if (measuredGrowthVideos.length) {
+    evidence.push({
+      id: 'youtube-growth-momentum',
+      label: text('Snapshot-measured YouTube growth', 'رشد اندازه‌گیری‌شده یوتیوب از روی اسنپ‌شات‌ها'),
+      detail: text(
+        measuredGrowthVideos.length + ' matched video(s) have multiple sufficiently separated snapshots. Median measured velocity is ' +
+          (medianMeasuredViewsPerHour?.toLocaleString() ?? 'unavailable') + ' views/hour and ' +
+          (medianMeasuredViewsPerDay?.toLocaleString() ?? 'unavailable') + ' views/day. ' + channelOutlierVideos.length +
+          ' matched video(s) are at least 2× their same-channel peer baseline. Fastest measured example: ' +
+          (fastestGrowingVideo?.title ?? 'unavailable') + '. These are interval measurements from this bounded sample, not future-view forecasts or a market census.',
+        measuredGrowthVideos.length + ' ویدئوی مرتبط چند اسنپ‌شات با فاصله زمانی کافی دارند. میانه سرعت اندازه‌گیری‌شده ' +
+          (medianMeasuredViewsPerHour?.toLocaleString() ?? 'ناموجود') + ' بازدید در ساعت و ' +
+          (medianMeasuredViewsPerDay?.toLocaleString() ?? 'ناموجود') + ' بازدید در روز است. ' + channelOutlierVideos.length +
+          ' ویدئو دست‌کم ۲ برابر خط پایه هم‌کانالی‌های خود رشد داشته‌اند. سریع‌ترین نمونه اندازه‌گیری‌شده: ' +
+          (fastestGrowingVideo?.title ?? 'ناموجود') + '. این‌ها اندازه‌گیری بازه‌ای در نمونه محدودند، نه پیش‌بینی بازدید آینده یا سرشماری بازار.'
+      ),
     });
   }
   if (videos.length) {
@@ -291,16 +339,16 @@ export function buildInternalResearch(input: InternalResearchInput): InternalRes
       id: 'youtube-sample',
       label: text('YouTube sample', 'نمونه یوتیوب'),
       detail: fa
-        ? videos.length + ' نمونه ویدئو از ' + channelCount + ' کانال متمایز دریافت شد. تعداد بازدید در ' + views.length + ' نمونه در دسترس است (میانه: ' + (median(views)?.toLocaleString() ?? 'ناموجود') + ')؛ تعداد پسند در ' + likes.length + ' نمونه موجود است (میانه: ' + (median(likes)?.toLocaleString() ?? 'ناموجود') + ').' + (mostViewed ? ' پربازدیدترین نمونه: «' + mostViewed.title + '» با ' + mostViewed.viewCount!.toLocaleString() + ' بازدید.' : ' تعداد بازدید دریافت نشد.') + (mostLiked ? ' بیشترین پسند: «' + mostLiked.title + '» با ' + mostLiked.likeCount!.toLocaleString() + ' پسند.' : ' تعداد پسند دریافت نشد.') + ' این‌ها مشاهدات یک نمونه محدودند، نه رتبه‌بندی کل بازار یا معیار رشد.'
-        : videos.length + ' returned video example(s) from ' + channelCount + ' distinct channel(s). Raw view counts are available for ' + views.length + ' sample(s) (median ' + (median(views)?.toLocaleString() ?? 'unavailable') + '); raw like counts are available for ' + likes.length + ' sample(s) (median ' + (median(likes)?.toLocaleString() ?? 'unavailable') + ').' + (mostViewed ? ' Highest-viewed returned example: “' + mostViewed.title + '” (' + mostViewed.viewCount!.toLocaleString() + ' views).' : ' No view count was returned.') + (mostLiked ? ' Highest-like returned example: “' + mostLiked.title + '” (' + mostLiked.likeCount!.toLocaleString() + ' likes).' : ' No like count was returned.') + ' These are observations from this limited sample, not a market-wide ranking or growth measure.',
+        ? videos.length + ' نمونه ویدئو از ' + channelCount + ' کانال متمایز دریافت شد. تعداد بازدید در ' + views.length + ' نمونه در دسترس است (میانه: ' + (median(views)?.toLocaleString() ?? 'ناموجود') + ')؛ تعداد پسند در ' + likes.length + ' نمونه موجود است (میانه: ' + (median(likes)?.toLocaleString() ?? 'ناموجود') + ').' + (mostViewed ? ' پربازدیدترین نمونه: «' + mostViewed.title + '» با ' + mostViewed.viewCount!.toLocaleString() + ' بازدید.' : ' تعداد بازدید دریافت نشد.') + (mostLiked ? ' بیشترین پسند: «' + mostLiked.title + '» با ' + mostLiked.likeCount!.toLocaleString() + ' پسند.' : ' تعداد پسند دریافت نشد.') + ' این‌ها مشاهدات یک نمونه محدودند؛ رشد فقط از اسنپ‌شات‌های متعدد و با فاصله کافی اندازه‌گیری می‌شود.'
+        : videos.length + ' returned video example(s) from ' + channelCount + ' distinct channel(s). Raw view counts are available for ' + views.length + ' sample(s) (median ' + (median(views)?.toLocaleString() ?? 'unavailable') + '); raw like counts are available for ' + likes.length + ' sample(s) (median ' + (median(likes)?.toLocaleString() ?? 'unavailable') + ').' + (mostViewed ? ' Highest-viewed returned example: “' + mostViewed.title + '” (' + mostViewed.viewCount!.toLocaleString() + ' views).' : ' No view count was returned.') + (mostLiked ? ' Highest-like returned example: “' + mostLiked.title + '” (' + mostLiked.likeCount!.toLocaleString() + ' likes).' : ' No like count was returned.') + ' These are observations from a limited sample; growth is measured only from multiple snapshots separated by a sufficient interval.',
     });
   } else {
     evidence.push({
       id: 'youtube-sample',
       label: text('YouTube sample', 'نمونه یوتیوب'),
       detail: youtubeSample.length
-        ? text('A raw YouTube API sample reached the internal engine as transient input through its isolated field and is intentionally excluded from scoring, summarization, source correlation and external model requests under the current project policy.', 'نمونه خام API یوتیوب از مسیر مستقل و بدون تحلیل به موتور رسیده است. طبق سیاست فعلی پروژه، این داده امتیازدهی، خلاصه، با منابع مستقل ترکیب یا به مدل بیرونی ارسال نمی‌شود.')
-        : text('No YouTube API sample was supplied to this engine run. The raw sample remains available in its separate report view.', 'در این اجرای موتور نمونه‌ای از API یوتیوب دریافت نشد. نمونه خام در صفحه گزارش جداگانه در دسترس است.')
+        ? text('The YouTube API sample reached the internal engine and was analyzed for topic relevance, entities, cross-source overlap, public metrics and snapshot-measured growth when available. It is first-class platform evidence, not an independent publisher citation.', 'نمونه API یوتیوب به موتور داخلی رسیده و از نظر ارتباط موضوعی، موجودیت‌ها، هم‌پوشانی با ناشران، آمار عمومی و در صورت وجود رشد اندازه‌گیری‌شده تحلیل شده است. این داده شاهد اصلی پلتفرمی است، نه نقل‌قول ناشر مستقل.')
+        : text('No YouTube API sample was supplied to this engine run. The locally retained sample remains available for the next research cycle.', 'در این اجرای موتور نمونه‌ای از API یوتیوب دریافت نشد. نمونه ذخیره‌شده محلی برای چرخه بعدی پژوهش در دسترس است.')
     });
   }
 
@@ -372,14 +420,14 @@ export function buildInternalResearch(input: InternalResearchInput): InternalRes
   const limitationsList = [
     ...(fa ? [
       'این موتور به‌صورت محلی و بر پایه شواهد بارگذاری‌شده در برنامه اجرا می‌شود و در این مرحله منبع تازه‌ای دریافت نمی‌کند.',
-      'داده‌های API یوتیوب به فیلد مستقل youtubeSample می‌رسند، اما وارد استخراج موجودیت، confidence یا نتیجه‌گیری این موتور نمی‌شوند.',
+      'داده‌های API یوتیوب در استخراج موجودیت، تطبیق موضوع، ارتباط با ناشران و تحلیل رشد چنداسنپ‌شاتی وارد می‌شوند؛ اما به‌عنوان استناد مستقل ناشر یا اثبات ادعای علمی محسوب نمی‌شوند.',
       'زاویه‌های محتوایی فرضیه‌اند، نه یافته علمی و نه پیش‌بینی بازدید، رشد یا وایرال شدن.',
-      'پوشش ناشران و بازدید مقاله‌های ویکی‌مدیا زمینه مستقل هستند؛ نمونه خام YouTube فقط در مسیر دریافت جداگانه می‌ماند و در تحلیل و امتیازها دخالت ندارد.',
+      'پوشش ناشران، بازدید مقاله‌های ویکی‌مدیا و سیگنال‌های پلتفرمی YouTube هرکدام با منشأ خود تحلیل می‌شوند. رشد YouTube فقط از اسنپ‌شات‌های متعدد محاسبه می‌شود و جای سند مستقل ناشر را نمی‌گیرد.',
     ] : [
       'This engine runs locally on evidence already loaded in the app; it does not fetch new sources.',
       'YouTube metadata is analyzed as a platform observation for topic matching and entity extraction; it is not independent publisher evidence.',
       'Editorial angles are hypotheses, not scientific findings or predictions of views, growth or virality.',
-      'Publisher coverage, Wikimedia pageviews and YouTube sample metrics are separate signal families. A single YouTube snapshot cannot establish temporal growth or market-wide demand.',
+      'Publisher coverage, Wikimedia pageviews and YouTube platform signals are distinct evidence families. Snapshot-derived growth is measured when sufficient history exists; one snapshot cannot establish growth, and platform metrics are not a market-wide demand forecast.',
     ]),
     ...(matchedNews.length < allNews.length
       ? [text('Unmatched publisher records remain in contextual evidence and source audits; they are not treated as direct support for the requested topic.', 'خبرهای بدون تطبیق مستقیم در شواهد زمینه‌ای و ممیزی منابع باقی می‌مانند، اما پشتیبانی مستقیم از موضوع محسوب نمی‌شوند.')]
@@ -504,6 +552,10 @@ export function buildInternalResearch(input: InternalResearchInput): InternalRes
     recentVideoCandidateCount: recentVideoCandidates.length,
     excludedVideoCount: Math.max(0, inputVideos.length - videos.length),
     videoViewCountsAvailable: views.length,
+    measuredGrowthVideoCount: measuredGrowthVideos.length,
+    medianMeasuredViewsPerHour,
+    medianMeasuredViewsPerDay,
+    channelOutlierVideoCount: channelOutlierVideos.length,
     videoWindowDays,
     wikimediaMonthlyObservations: trend.observations,
     openResearchQuestionCount: gaps.length + verificationQuestions.length,
@@ -527,6 +579,9 @@ export function buildInternalResearch(input: InternalResearchInput): InternalRes
       title: video.title,
       channel: video.channel,
       publishedAt: video.publishedAt,
+      viewsPerHour: video.growth?.status === 'measured' ? video.growth.viewsPerHour : null,
+      viewsPerDay: video.growth?.status === 'measured' ? video.growth.viewsPerDay : null,
+      channelOutlierRatio: video.growth?.status === 'measured' ? video.growth.channelOutlierRatio : null,
     })),
     wikiObservations: input.wiki?.monthlyViews ?? [],
     trend,
@@ -559,14 +614,14 @@ export function buildInternalResearch(input: InternalResearchInput): InternalRes
   return { topic, entityCandidates, entityRelations, summary, evidence, angles, verificationQuestions, limitations: limitationsList, intelligence };
 }
 export function buildIdeas(_report: Report, _language: 'fa' | 'en' = 'en'): Idea[] {
-  // This legacy helper receives only a Report, which has raw YouTube records but no
-  // independent publisher/web evidence. It must not fabricate source-backed ideas.
+  // This legacy helper receives only a Report and no independent publisher/web dossier.
+  // It must not fabricate factual citations; the platform-aware idea generator uses linked video signals.
   return [];
 }
 export function reasoning(_idea: Idea, _observedVideoCount = 0, language: 'fa' | 'en' = 'en') {
   return language === 'fa'
-    ? 'نمونه و آمار خام YouTube فقط جداگانه نمایش داده می‌شوند و در تولید، تحلیل یا امتیاز این ایده نقشی ندارند. ایده باید با شواهد مستقل ناشران و وب اعتبارسنجی شود.'
-    : 'Raw YouTube samples and metrics are displayed separately and do not influence this idea, its analysis or score. Validate the idea with independent publisher and web evidence.';
+    ? 'سیگنال‌های پلتفرمی YouTube، از جمله رشد اندازه‌گیری‌شده در صورت وجود چند اسنپ‌شات، در تحلیل و اولویت‌بندی ایده نقش دارند. آن‌ها نقل‌قول ناشر مستقل یا اثبات ادعای علمی/خبری نیستند؛ ادعاهای واقعی را با منابع مستقل اعتبارسنجی کن.'
+    : 'YouTube platform signals, including snapshot-measured growth when available, inform idea analysis and prioritization. They are not independent publisher citations or proof of scientific/news claims; validate factual claims against independent sources.';
 }
 
 export type IdeaAnalysisSection = {
@@ -579,17 +634,23 @@ export type IdeaAnalysisSection = {
 /**
  * A local editorial checklist from a saved Idea and already-linked local video
  * references. It performs no network, storage or AI calls and does not infer
- * demand, competition, growth or performance.
+ * future demand, future growth or performance; measured YouTube history remains platform context.
  */
 export function buildIdeaAnalysis(
   idea: Idea,
-  _relatedVideos: readonly Pick<YouTubeSampleVideo, 'id' | 'title' | 'channel' | 'publishedAt'>[],
+  relatedVideos: readonly Pick<YouTubeSampleVideo, 'id' | 'title' | 'channel' | 'publishedAt' | 'viewCount' | 'likeCount' | 'growth'>[],
   language: 'fa' | 'en' = 'en',
 ): IdeaAnalysisSection[] {
   const fa = language === 'fa';
   const concept = idea.concept.trim();
   const sources = (idea.evidenceSources ?? []).slice(0, 8);
   const sourceItems = sources.map((source) => source.sourceName + ' · ' + source.title);
+  const measuredRelatedVideos = relatedVideos.filter((video) => video.growth?.status === 'measured');
+  const platformSignalSummary = relatedVideos.length
+    ? (fa
+      ? relatedVideos.length + ' ویدئوی مرتبط YouTube به ایده پیوند شده؛ ' + measuredRelatedVideos.length + ' مورد رشد اندازه‌گیری‌شده دارند.'
+      : relatedVideos.length + ' related YouTube video(s) are linked; ' + measuredRelatedVideos.length + ' have measured snapshot growth.')
+    : (fa ? 'هیچ ویدئوی YouTube به این ایده پیوند نشده است.' : 'No YouTube videos are linked to this idea.');
   const gaps: string[] = [];
   if (!idea.sourceUrl?.trim() && !sources.length) gaps.push(fa
     ? 'هنوز منبع مستقل ناشر یا وب به این ایده پیوند نشده است؛ پیش از تولید، یک سند اولیه معتبر پیدا کن.'
@@ -605,8 +666,8 @@ export function buildIdeaAnalysis(
         ? sources.length + ' منبع مستقل ناشر، وب یا دانشنامه‌ای به ایده پیوند شده است. این پیوندها مسیر بررسی ادعاها را نشان می‌دهند، اما به‌تنهایی راستی‌آزمایی یا اثبات تقاضای مخاطب نیستند.'
         : sources.length + ' independent publisher, web or encyclopedia source(s) are linked to this idea. They support source tracing but do not by themselves verify every claim or prove audience demand.')
     : (fa
-        ? 'هیچ منبع مستقلی به ایده پیوند نشده است. داده خام YouTube جداگانه نمایش داده می‌شود و در این تحلیل یا امتیاز دخالت ندارد.'
-        : 'No independent source is linked to this idea. Raw YouTube API data is displayed separately and is not used in this analysis or any score.');
+        ? 'هنوز منبع مستقل ناشر یا وب به ایده پیوند نشده است. سیگنال‌های YouTube در تحلیل روند و عملکرد نسبی ویدئوها استفاده می‌شوند، اما جای سند مستقل برای ادعاهای واقعی را نمی‌گیرند.'
+        : 'No independent publisher or web source is linked to this idea yet. YouTube signals inform trend and relative-video analysis, but do not replace independent sources for factual claims.');
   const nextSteps = fa
     ? [
         '۱. پرسش مرکزی و وعده آموزشی ایده را در یک جمله دقیق بنویس.',
@@ -628,6 +689,7 @@ export function buildIdeaAnalysis(
   return [
     { id: 'core-framing', title: fa ? 'هسته ایده و زاویه فعلی' : 'Core idea and current angle', body: framing },
     { id: 'evidence-review', title: fa ? 'منابع مستقل پیوندشده' : 'Linked independent sources', body: evidenceBody, ...(sourceItems.length ? { items: sourceItems } : {}) },
+    { id: 'youtube-platform', title: fa ? 'سیگنال‌های پلتفرمی YouTube' : 'YouTube platform signals', body: platformSignalSummary, ...(measuredRelatedVideos.length ? { items: measuredRelatedVideos.slice(0, 6).map((video) => video.title + ' · ' + (video.growth?.viewsPerHour?.toLocaleString() ?? '—') + ' views/hour' + (video.growth?.channelOutlierRatio != null ? ' · ' + video.growth.channelOutlierRatio.toFixed(2) + '× channel baseline' : '')) } : {}) },
     { id: 'research-gaps', title: fa ? 'چه چیزهایی هنوز ثابت نشده‌اند؟' : 'What remains unproven?', body: gaps.length ? gaps.map((gap) => '• ' + gap).join('\n') : (fa ? 'خلأ آشکار دیگری در داده‌های منبع ثبت‌شده دیده نشد؛ این به معنی راستی‌آزمایی کامل نیست.' : 'No additional gap was identified in the saved source data; this does not mean the idea is fully verified.') },
     { id: 'next-actions', title: fa ? 'اقدام‌های پیشنهادی برای پیشبرد ایده' : 'Practical next steps', body: nextSteps.join('\n') },
   ];

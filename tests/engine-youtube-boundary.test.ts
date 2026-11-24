@@ -11,6 +11,11 @@ void test('internal engine analyzes YouTube metadata as platform evidence withou
     publishedAt: '2026-11-20T12:00:00.000Z',
     viewCount: 123456,
     likeCount: 789,
+    growth: {
+      snapshotCount: 3, deltaViews: 18000, viewsPerHour: 750, viewsPerDay: 18000,
+      channelBaselineViewsPerDay: 2500, channelOutlierRatio: 7.2,
+      measuredAt: Date.parse('2026-11-22T00:00:00.000Z'), status: 'measured',
+    },
   }];
   const result = buildInternalResearch({
     topic: 'Mars Sample Return',
@@ -26,5 +31,10 @@ void test('internal engine analyzes YouTube metadata as platform evidence withou
   assert.equal(result.intelligence.selfEvaluation.youtubeSampleCount, 1);
   assert.equal(result.intelligence.selfEvaluation.matchedVideoCount, 1);
   assert.equal(result.intelligence.selfEvaluation.videoViewCountsAvailable, 1);
+  assert.equal(result.intelligence.selfEvaluation.measuredGrowthVideoCount, 1);
+  assert.equal(result.intelligence.selfEvaluation.medianMeasuredViewsPerHour, 750);
+  assert.equal(result.intelligence.selfEvaluation.channelOutlierVideoCount, 1);
+  assert.match(JSON.stringify(result.evidence), /750/);
+  assert.match(JSON.stringify(result.intelligence.paradigms), /750/);
   assert.equal(result.evidence.some((item) => item.detail.includes('Raw YouTube title')), true);
 });

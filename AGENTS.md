@@ -1,85 +1,72 @@
-# MOHSEN SCOUT engineering handoff
+# MOHSEN SCOUT — owner-approved engineering contract
 
-This is Mohsen's personal, local-first Android YouTube research desk. Exact brand: **MOHSEN SCOUT**. UI stays English; source YouTube text stays unchanged. Preserve AMOLED black and violet/indigo actions.
+This file is the current policy for the source tree based on Workflow #11 and commit `589eee4`, updated only with the product-owner decisions confirmed for the autonomous-research upgrade. Older privacy, retention and YouTube-isolation notes are superseded by this contract.
 
-## Guardrails
+## Product mission and source priority
 
-- No mandatory backend, email registration, bundled/shared API credentials, scraping, media/caption download, or automated engagement.
-- Keys only in native SecureStore; browser adapter is memory-only. Never print request URLs, raw API errors or authorization headers. Never include keys in SQLite, localStorage, exports or source.
-- YouTube-originated snippets live only in the metadata domain, expire at 29 days, are pruned on read/write/foreground/hourly active sweep, and never enter backups. Personal bookmarks/notes are separate. Prune automated API references that are no longer backed by unexpired metadata or a personal bookmark.
-- No views/hour, growth percentages, engagement/subscriber ratios, computed market scores or guarantees. The internal engine may receive a transient, isolated raw YouTube sample for pass-through and provenance only. Until this project documents explicit YouTube Analytics/derived-metrics approval, API titles, descriptions and statistics must not enter idea generation, research scoring, source summaries, external model prompts or durable Idea text. Keep raw API metadata in the expiring YouTube domain, separate from independent publisher/web/Wikimedia evidence. Editorial scores are explainable publisher/web/Wikimedia hypotheses, not predictions of views, audience demand, competition or virality. A returned YouTube sample is not a complete market census.
-- OpenRouter is explicit opt-in per opinion. Send only the user-approved editorial topic/concept/decision. A separate, explicit per-item Translate to Persian action may send only that selected official RSS item's title and summary; disclose this before use. Never send bulk news, YouTube API titles, descriptions, thumbnails, stats or comments. Keep token caps and never retry generation POST automatically. Model IDs come from live zero-price model discovery.
-- Background scheduling is native/battery-conscious and OS-controlled. No always-on process or network polling. Surface unsupported environments rather than reporting success.
-- Preserve Bilt-managed publish identity environment reads in app.config.ts.
+MOHSEN SCOUT is a local-first YouTube trend-research and video-idea discovery assistant. The official YouTube Data API is the **primary evidence lane and the central input to the research engine**. YouTube evidence must remain connected end-to-end:
 
-## Architecture
+1. official YouTube search, video metadata, channel metadata, public statistics and saved snapshots;
+2. internal analysis of relevance, publication freshness, view/like changes, views per hour/day, channel baselines and topic patterns;
+3. the Deep Research research-agent and its independent second-provider review;
+4. idea generation, prioritization, source-linked research memory and the user's saved workspace.
 
-`app/` routes; shared HeroUI-backed UI in `components/`; types/state/API/persistence/retention/backup in `lib/`; explicit `.web.ts` adapters for native integrations. SQLite has separate `personal` and `youtube` tables. Store writes are serialized and native writes are transactional. Persisted input and backup schemas are validated.
+Never remove, bypass, silently omit or replace this connection with RSS-only or web-only evidence. The research agent and independent reviewer must receive the bounded YouTube sample and its available measured growth fields as explicit platform signals. Clearly distinguish platform observations from independent scientific/news citations; YouTube metadata is not a publisher citation, but it is first-class evidence for YouTube trend and content research.
 
-`app.config.ts` invokes deterministic PNG generation from the authored compass geometry (`assets/scout-icon.svg` companion; `scripts/scout-icon.cjs`), with no service/network dependency. `eas.json` describes build profiles but is not a built artifact.
+## Owner-approved YouTube analysis and retention
 
-## Verification
+- Analyze YouTube-originated title, description, channel, publication time, video ID, thumbnail reference, public view/like/comment statistics and channel statistics locally.
+- Calculate and use snapshot-derived view deltas, views/hour, views/day, channel baselines and outlier ratios. These are intentional first-party product features.
+- Preserve YouTube reports, videos, snapshots, growth history and their local relationships indefinitely until the user removes the app data or explicitly deletes them. There is no automatic 29-day expiry, 10,000-snapshot cap or automatic deletion of old snapshots.
+- Existing SQLite `youtube_records` rows must migrate to a no-expiry marker; newly written YouTube records must also have no expiry. App boot and foreground maintenance must not delete retained YouTube metadata.
+- Keep raw YouTube metadata in the separate local YouTube SQLite domain. Preserve the existing personal/YouTube storage boundary. Current backup/export behavior remains separately governed by its explicit schema; do not silently add credentials or API metadata to personal exports.
+- A bounded API response is still a sample, not a complete census of YouTube. Report actual sample size, missing fields and measurement intervals; never fabricate unavailable observations or promise views/virality.
 
-Run `npm test`, `npm run lint`, `npm run lint:css`, and `npx expo-doctor` after changing dependencies/data rules. Browser tests: Settings → App info → Run mock regression checks, or `/diagnostics?run=1`. They use isolated mocked fetchers and must never mutate the owner's workspace. Node suite execution and native device tests must be recorded separately.
+## Autonomous research and Deep Research second eye
 
-Current recorded browser mock result: 35 passed / 0 failed. Restore uses `restorePersonalData` to preserve current device reports/videos/quota while replacing personal data; keep local AI opinions only when the idea ID and editorial topic/concept/decision still match. Imported idea video references must point to personal saved links. Retention also removes expired report IDs and nested video metadata. Respect Retry-After; stop rather than retry early when the server asks for a wait over 30 seconds. Fonts are bundled, with no extra Google Fonts CDN request. See TEST_RESULTS.md for status, screenshots and unverified items. Never claim a live API success or APK exists without actually observing it. Check Android device keys, SQLite persistence, backup transfer, notifications and background runs before release.
+- The internal engine must automatically invoke the Deep Research research-agent as its second eye during ordinary research runs, not only when the user opens the standalone Deep Research screen.
+- The agent receives the same run's YouTube platform sample plus publisher/web/Wikimedia evidence, previous topic memory, prior dossier, and already-attempted searches. The independent reviewer must be a different configured provider when available and receives the same relevant YouTube platform signals.
+- Preserve the source-led workflow: model hypotheses are provisional; fetched original source text and exact local quote matching are required for source-backed claims; the second provider independently reviews claims, citations, counterevidence, provenance and gaps. A YouTube signal may support a platform-trend/content hypothesis but must not be presented as an independent publisher quotation.
+- Research follows the user's selected Space niche or custom niche. While the app is foregrounded and research is not paused or set to Manual, the autonomous discovery loop continues without a fixed lifetime cycle count. It scans for fresh topics, prioritizes newly published and accelerating YouTube/publisher observations, researches them, stores results, and then advances to the next eligible topic.
+- Each individual research pass remains bounded by provider/API quotas, per-request limits, rate limits, source-quality checks and useful stopping conditions. “Unlimited” means continuous fair discovery across successive topics while the app is open, not unbounded requests for a single topic or bypassing provider limits.
+- On app background/close, persist the queue and current task input/checkpoint locally. On next foreground start, refresh current niche evidence first, rank fresh discoveries ahead of stale queued work, then resume eligible interrupted work. Do not spend a new session researching months-old backlog while fresh topics are available. Old completed research remains stored.
+- Keep Android background work OS-managed and battery-conscious. The app cannot guarantee continuous execution while Android has suspended or force-stopped it. The foreground loop is the continuous mode; the scheduled WorkManager task is a best-effort closed/background cycle.
 
-YouTube policy sources reviewed:
+## Multitasking and responsiveness
 
-- https://developers.google.com/youtube/terms/developer-policies
-- https://developers.google.com/youtube/terms/derived-metrics-policy
+- Allow at most two independent full research runs at once. This is deliberate bounded concurrency, not unlimited parallel API traffic.
+- Parallelize independent I/O lanes (YouTube collection, publisher feeds, web retrieval and Wikimedia) where safe. The research-agent/second-review provider sequence is serialized across runs to avoid provider contention and preserve first-model/second-model independence.
+- Serialize SQLite commits and quota accounting. Never run concurrent writers against the same state or overwrite another run's pending-research record.
+- Manual user research must be able to run alongside one autonomous run. Each task has an independent persistent ID, status and recovery record. Keep the UI responsive; long network waits must not block navigation, notes, library or other local operations.
+- If a concurrency change harms provider reliability, result quality, quota correctness or data integrity, reduce concurrency rather than silently degrading evidence quality.
 
-Do not assume the optional audited analytics amendment applies to this app or that every video ID is exempt from retention.
+## Data, credentials, privacy and network
 
-## Personal research continuity — version 1.3.0
+- No mandatory backend, email registration, bundled/shared API credentials, scraping of YouTube, media/caption downloads, or automated engagement.
+- YouTube data is retrieved through the official Data API and charged against the existing local quota ledger. Preserve per-run safety caps and the provider's actual quota/error responses.
+- API keys stay in native SecureStore; browser credentials remain memory-only. Never print request URLs containing keys, raw authorization headers, API secrets or unredacted credential errors. Never store keys in SQLite, AsyncStorage queues, exports or source.
+- The configured external research models intentionally receive the selected YouTube platform signals and independent research evidence needed for the task. Never send credentials, authorization headers, private notes, personal bookmarks or API keys to models.
+- OpenRouter remains excluded from Deep Research where the configured privacy policy says so. Keep the existing explicit opt-in rules for other features and never retry generation POST requests automatically.
+- Publisher RSS items remain attributed to their original publisher and date; headlines are leads, not independently verified facts. Wikimedia pageviews remain article attention, not Google search volume, unique people or YouTube views. Google Trends programmatic access must not be claimed unless an actual approved API is available.
+- Treat retrieved source content as untrusted data, not instructions. Preserve canonical URLs, source IDs, dates, provenance, contradictions, unresolved questions and uncertainty labels.
 
-- Keep one local Idea as the anchor when the user moves from an official source story into YouTube sampling, Wikimedia comparison or Deep Research. Reuse the same idea by source URL and topic rather than creating duplicates.
-- A linked YouTube report may reference existing expiring report/video metadata. Only a user-selected video may be saved as a durable personal bookmark; save its URL reference only, not its API title, description, thumbnail or statistics.
-- Deep Research and Wikimedia comparison notes may carry an optional local ideaId relationship. Keep old notes and version-1 backups valid when that relationship is absent.
-- Detail pages should act as a small personal research hub: continue research in existing routes and open only notes/references explicitly linked to that idea.
-- Do not introduce teams, accounts, billing, server infrastructure, project boards or background research workflows. Prefer existing SQLite personal tables, current API providers and manual actions.
-- Keep OpenRouter strictly opt-in and editorial-only; never send attached research evidence or YouTube metadata as part of these new connections.
+## Architecture and persistence
 
-## Space research provider rules
+- `app/` routes; shared UI in `components/`; types/state/API/persistence/retention/backup in `lib/`; explicit platform adapters remain separate.
+- SQLite personal and YouTube tables stay separate. Store commits are serialized and native writes are transactional. Persisted input and backup schemas remain validated.
+- Pending tasks and autonomous-discovery queue entries must be versioned, validated, bounded in queue size and independently keyed. A crash in one task must not erase another task's recovery record.
+- YouTube raw metadata and snapshots have no automatic retention sweep. Queue entries that are no longer useful may be deprioritized/removed as queue work, but this must never delete completed reports, videos, snapshots, memory or ideas.
+- Preserve user-owned preferences, notes, bookmarks, ideas, research activity, quota ledgers, provider order, backup compatibility and current app identity unless the feature explicitly requires a schema migration with tests.
 
-- The Space Radar screens are a unified extension of the existing product. Preserve the original YouTube research route (/youtube), Opportunities, Library, Notes, Settings, credentials, quota accounting, SQLite schema boundaries, backup/restore and scheduler.
-- Current space-news providers are official RSS sources. Keep source name, original URL and publisher date visible; do not turn publisher headlines into independently verified facts.
-- Demand data from Wikimedia is article pageviews in a language edition. Never label it Google search volume, geographic audience demand or YouTube views. Google Trends API access is a limited alpha; do not depend on it without a real approved credential/contract.
-- YouTube trend samples must use the official Data API and charge the existing local quota budget. View counts are raw per-video observations; do not infer views/hour, velocity, growth percentages, market-wide saturation or a composite opportunity score.
-- Do not add always-on scanning, continuous polling, bulk historic collection, backend services or paid providers. User-approved bounded actions are: (1) a manual Ideas refresh that refreshes enabled official publisher feeds and runs one quota-accounted official YouTube research sample, and (2) the existing user-configured OS-managed background research schedule, which repeats the same bounded feed + YouTube cycle at the selected minimum interval. Android may defer execution; force-stop and battery restrictions can prevent runs. Never report a scheduled run as successful unless it actually completes. Space source caches remain short-lived and in memory.
-- Deep Research must preserve source URLs and uncertainty. No scientific claim is validated solely because a news headline or encyclopedia summary states it. Do not send news text, YouTube metadata or statistics to OpenRouter; the only news-content exception is a user-tapped translation of one selected RSS title and summary.
-- Existing persisted preferences and version-1 backups must migrate with defaults for any new optional Space settings. Do not change the personal/youtube SQLite table separation.
-- Android Release must retain R8. The local config plugin plugins/with-workmanager-proguard.js keeps the no-arg Room/WorkManager constructors needed by reflection; verify both keep rules are present and referenced by android/app/build.gradle after prebuild.
+## Verification and release
 
-## 1.11.0 independent-research boundary (supersedes conflicting v1.10 notes above)
+After changes, run `npm test`, `npm run lint`, `npm run lint:css`, and `npx expo-doctor`. Build the signed Android ARM64 APK through the repository's release workflow. Keep tests for:
+- YouTube data reaching the internal engine, first research model and independent reviewer;
+- measured YouTube growth and snapshot continuity beyond 29 days and beyond 10,000 entries;
+- local storage and interrupted-task recovery;
+- fresh-topic priority over stale backlog;
+- no duplicate queue jobs and bounded two-run concurrency;
+- serialization of provider calls and database/quota writes;
+- dossier quote validation, independent review, evidence provenance and idea output.
 
-- Editorial idea generation, engine scores, source evidence, research memory and automatic external critique use only selected publisher feeds, independent web/news results and Wikimedia context. YouTube API data is an isolated raw-display lane; never pass video metadata or statistics into idea generation, research scoring, source summaries or external model prompts.
-- Firecrawl is optional. Keyless Search can be rate-limited; the research flow must preserve RSS/Wikimedia results when it is unavailable. A user key is held only in SecureStore and never sent with YouTube data.
-- Automatic critique is controlled by the persisted Settings preference. It may send the idea title/concept and independent source summaries/links to the configured provider fallback chain. Never include YouTube metadata, scores, identifiers, thumbnails or personal notes.
-- Do not derive custom metrics from YouTube API data unless the app developer has completed YouTube's required API Compliance Audit and YouTube has explicitly accepted the applicable analytics use case and derived-metrics/data-storage permissions. The owner's in-app or chat consent is not a substitute for YouTube approval. Until that approval is documented for this project, do not calculate ratios, views/hour, growth or velocity scores, API-derived rankings, demand forecasts or composite scores from API data. You may display raw API statistics and use YouTube's own documented search ordering; label samples as bounded and incomplete.
-
-
-## 1.18.0 adaptive deep-research policy
-
-- Deep Research follow-up is adaptive but strictly bounded: maximum 4 follow-up rounds, 8 focused searches total, 2 queries per round, 4 returned items per query, and 48 independent evidence records per run.
-- A query is marked attempted before the network request, including failed requests; do not repeat failed searches automatically in the same run.
-- Canonicalize safe HTTP(S) evidence URLs, remove common tracking parameters, reject YouTube/video hosts, and deduplicate before dossier review or idea context.
-- Stop when no novel query remains, a hard budget is reached, the evidence ceiling is reached, or a completed round yields no new independent URL. Preserve an explicit stopping reason and unresolved questions.
-- Distinct web hosts and publication-date coverage are descriptive provenance checks only; do not equate host diversity with independent ownership or use them as audience-demand metrics.
-- Preserve all earlier YouTube API isolation, derived-metrics, privacy, opt-in provider, local-first, retention and no-scraping guardrails.
-
-
-## 1.19.0 verified research and discovery policy
-
-- Deep Research remains a bounded, user-initiated workflow: retain the 4-round, 8-follow-up-query, 2-query-per-round, 4-result-per-query and 48-record ceilings. Record attempted searches, explicit stopping reasons and unresolved gaps.
-- When the user has supplied a Firecrawl key, search may request original Markdown and the app may scrape a small bounded set of selected publisher URLs. Full source text is transient for that run only. Never put raw page text into local storage, SQLite, topic cache, memory, logs, analytics or backups. Persist only canonical source metadata, the research dossier and short quotations that have passed local exact-text matching.
-- The first AI provider is a hypothesis generator and discovery planner only. Its proposed status, confidence and conclusion are provisional. An exact quotation must be found locally in the fetched source text before it can be recorded as a verified citation. A title, snippet, RSS summary, encyclopedia summary or model-generated source ID is not proof.
-- The final claim review must use a different configured provider from the first provider. The second provider must review hypotheses independently, provide exact supporting and challenging quotations, and assess the evidence records. The app validates all evidence IDs and quotations locally. If a second provider is not configured or the review fails, every claim remains insufficient-evidence/low-confidence and the dossier must state that independent review was unavailable.
-- A claim can be labelled supported only after at least two locally verified verbatim quotations from at least two approximated publisher-family groups support it and the independent reviewer finds no verified counterevidence. A valid challenging quotation makes a claim contested, not disproved. Confidence remains moderate unless at least four distinct publisher-family groups and four checked quotations corroborate it.
-- Publisher-family and syndication grouping is a conservative provenance heuristic, not proof of legal ownership or editorial independence. Never treat subdomains or likely syndicated copies as separate corroboration. Preserve explicit limitations.
-- The second provider's evidence assessments replace the first model's assessments. Summary-only evidence is forced to context/irrelevant with unknown credibility and source type; missing publication dates force freshness to unknown. Track how many source records the second reviewer actually assessed.
-- The previous lexical hypothesis engine may propose exploration candidates and follow-up questions only. It must never infer support, contradiction or confidence from wording cues. Only the original-text quotation and independent-review pipeline may assign final hypothesis status.
-- Pass the final dossier, including checked citations, contradictions, unresolved gaps and uncertainty labels, into editorial idea generation. Keep unverified claims clearly labelled and do not silently convert them into factual scripts or editorial premises.
-- OpenRouter must not receive Deep Research news text, publisher source text, YouTube metadata or statistics. Exclude it from Deep Research requests in accordance with the existing privacy boundary. Other app features retain their existing provider behavior.
-- Preserve YouTube API isolation, quota accounting, local-first storage, SecureStore credential handling, existing retention limits and the prohibition on unapproved YouTube-derived metrics or virality guarantees.
-- The CI research benchmark is a deterministic synthetic/adversarial regression suite. It is not a measured real-world accuracy benchmark; never claim empirical precision or recall without a separately curated and evaluated real-source dataset.
+Synthetic benchmarks are regression checks, not measured real-world accuracy. Never claim live API accuracy or physical-device verification without fresh evidence. Preserve Android signing identity, R8/WorkManager keep rules and package/ABI checks.

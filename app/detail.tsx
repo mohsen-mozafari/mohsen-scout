@@ -30,6 +30,7 @@ import { structuredSecondOpinionPrompt, formatStructuredSecondOpinion, getFreeMo
 import { requestSecondOpinionWithFallback, DEFAULT_SECOND_OPINION_MODELS, type SecondOpinionProviderConfig } from '@/lib/ai-gateway';
 import { uid } from '@/lib/types';
 import { recordRuntimeFinish, recordRuntimeStart } from '@/lib/runtime-metrics';
+import { withResearchProviderQueue } from '@/lib/research-agent';
 import { MediaPreview } from '@/components/MediaPreview';
 import { palette as p } from '@/lib/theme';
 import { getEditorialPriorityBand } from '@/lib/editorial-priority';
@@ -104,8 +105,16 @@ export default function Detail() {
           ideaOpinionTopic,
           idea.concept + decisionContext,
           uiLanguage,
+          idea.evidenceSources ?? [],
+          related.slice(0, 25).map((video) => ({
+            id: video.id, title: video.title, description: video.description, channel: video.channel,
+            channelId: video.channelId ?? '', publishedAt: video.publishedAt, thumbnailUrl: video.thumbnail,
+            viewCount: video.viewCount ?? null, likeCount: video.likeCount ?? null,
+            channelSubscriberCount: null, channelVideoCount: null,
+            url: 'https://www.youtube.com/watch?v=' + video.id, growth: video.growth,
+          })),
         );
-        const result = await requestSecondOpinionWithFallback(configs, prompt);
+        const result = await withResearchProviderQueue(() => requestSecondOpinionWithFallback(configs, prompt));
         const formatted = formatStructuredSecondOpinion(result.opinion, uiLanguage);
         await useScout.getState().commit((d) => ({
           ...d,
@@ -237,14 +246,14 @@ export default function Detail() {
             <SourceText>{idea.concept || 'Add your own concept.'}</SourceText>
             <Heading>Why investigate it?</Heading>
             <Txt>{data.preferences.uiLanguage === 'fa'
-              ? 'امتیاز و اولویت این ایده فقط از خبرهای ناشران، جست‌وجوی وب و زمینه دانشنامه‌ای ساخته شده است. نمونه YouTube در بخش جداگانه دیده می‌شود و در امتیاز یا نقد هوش مصنوعی نقشی ندارد.'
-              : 'This idea’s editorial priority uses publisher news, independent web search and encyclopedia context only. The YouTube sample is displayed separately and does not affect the score or AI critique.'}</Txt>
+              ? 'اولویت تحریری این ایده از ترکیب ارتباط موضوعی، شواهد مستقل، تازگی و در صورت وجود رشد اندازه‌گیری‌شده ویدئوهای YouTube ساخته می‌شود. سیگنال پلتفرمی YouTube برای تشخیص روند و عملکرد نسبی است، نه مدرک مستقل ادعاهای علمی/خبری.'
+              : 'This idea’s editorial priority combines topic relevance, independent evidence, freshness and measured YouTube video momentum when available. YouTube is a platform signal for trend and relative-video performance, not independent proof of scientific/news claims.'}</Txt>
           </Panel>
           <Panel>
             <Heading>{data.preferences.uiLanguage === 'fa' ? 'تحلیل تحریری موتور داخلی' : 'Internal editorial analysis'}</Heading>
             <Txt muted>{data.preferences.uiLanguage === 'fa'
-              ? 'این بخش تحلیل تحریری محلی را از نقد خودکار مدل خارجی جدا می‌کند. داده‌های خام YouTube در تحلیل محلی این ایده ادغام نمی‌شوند.'
-              : 'This section separates the local editorial checklist from the automatic external-model critique. Raw YouTube API data is not merged into this idea analysis.'}</Txt>
+              ? 'این بخش تحلیل محلی ایده را از نقد خودکار مدل خارجی جدا می‌کند. ویدئوهای پیوندشده YouTube و رشد اندازه‌گیری‌شده آن‌ها در تحلیل پلتفرمی محلی نقش دارند؛ ادعاهای واقعی همچنان به منبع مستقل نیاز دارند.'
+              : 'This section separates the local editorial analysis from the automatic external-model critique. Linked YouTube videos and their measured growth inform the local platform analysis; factual claims still require independent sources.'}</Txt>
             {analysisSections.map((section) => (
               <View key={section.id} style={{ gap: 6 }}>
                 <Heading>{section.title}</Heading>

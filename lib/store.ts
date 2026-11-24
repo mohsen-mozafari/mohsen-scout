@@ -16,29 +16,34 @@ import {
 } from './types';
 import { readData, writeData } from './storage';
 import { getKey } from './vault';
-import { localDateKey, nextBudget, nextOpenRouterUsage, searchYouTube, type YouTubeQuotaKind, type YouTubeQuotaOrigin } from './api';
+import { localDateKey, nextBudget, nextOpenRouterUsage, searchYouTube, type YouTubeSampleVideo, type YouTubeQuotaKind, type YouTubeQuotaOrigin } from './api';
 import { buildInternalResearch } from './engine';
 import { reviewResearchHypotheses } from './hypothesis-engine';
-import { runResearchAgent } from './research-agent';
+import { runResearchAgentSerialized, withResearchProviderQueue } from './research-agent';
 import { createResearchMemoryEntry } from './research-memory';
-import { fetchWebResearch } from './web-research';
+import { enrichResearchEvidence, fetchWebResearch } from './web-research';
 import { reviewIdeasAutomatically } from './ai-review';
 import { generateEditorialIdeas, type IdeaGenerationCategory } from './idea-generation';
 import { attachReportToIdea as attachReport, attachVideoReferenceToIdea as attachVideoReference, getOrCreateSourceIdea, type SourceIdeaInput } from './idea-research';
-import { fetchSpaceNews, getCachedSpaceNews, getWikipediaSignal, hydrateSpaceNewsRegistry } from './space';
+import { fetchSpaceNews, getCachedSpaceNews, getWikipediaSignal, hydrateSpaceNewsRegistry, SPACE_NICHES } from './space';
 import { buildResearchInterestProfile, normalizeResearchText, type ResearchFeedbackProfile } from './intelligence';
 import { recordRuntimeFinish, recordRuntimeStart } from './runtime-metrics';
-import { readPendingResearch, savePendingResearch, clearPendingResearch } from './pending-research';
+import { readPendingResearch, getPendingResearch, savePendingResearch, updatePendingResearch, clearPendingResearch } from './pending-research';
 import { captureYouTubeSnapshots } from './youtube-growth';
+import { availableResearchRunSlots } from './research-concurrency';
 import { appendResearchActivity, buildResearchActivityFeedbackProfile, buildResearchActivityResults, buildResearchActivitySourceExclusions, explainResearchActivitySourceExclusion, updateResearchActivityEvent, updateResearchActivityFeedback } from './research-activity';
 type State = {
   data: LocalData;
   ready: boolean;
   busy: boolean;
+  activeResearchRuns: number;
+  acquireResearchSlot: () => boolean;
+  releaseResearchSlot: () => void;
   progress: string;
   error: string;
   boot: () => Promise<void>;
-  resumePendingResearch: () => Promise<void>;
+  resumePendingResearch: (options?: { maxAgeMs?: number; excludeIds?: readonly string[] }) => Promise<void>;
+  saveYouTubeSample: (videos: readonly Video[]) => Promise<Video[]>;
   commit: (change: (data: LocalData) => LocalData) => Promise<void>;
   setResearchActivityFeedback: (eventId: string, resultId: string, feedback: ResearchActivityFeedback) => Promise<void>;
   recordResearchActivity: (event: ResearchActivityEvent) => Promise<void>;
@@ -47,6 +52,7 @@ type State = {
     origin?: YouTubeQuotaOrigin,
     forceRefresh?: boolean,
     ideaOptions?: { category?: IdeaGenerationCategory; limit?: number },
+    taskId?: string,
   ) => Promise<Report | undefined>;
   analyze: (id: string) => Promise<void>;
   saveVideo: (video: Video, topic: string) => Promise<void>;
@@ -82,14 +88,31 @@ function buildLocalResearchFeedback(data: LocalData): ResearchFeedbackProfile {
 }
 let lastRetentionSweepAt = 0;
 let resumePendingResearchInProgress = false;
+let snapshotWriteQueue = Promise.resolve();
 
 let queue = Promise.resolve();
 export const useScout = create<State>((set, get) => ({
   data: defaults(),
   ready: false,
   busy: false,
+  activeResearchRuns: 0,
   progress: '',
   error: '',
+  acquireResearchSlot: () => {
+    const current = get();
+    if (!current.ready || availableResearchRunSlots(current.activeResearchRuns) <= 0) return false;
+    set({
+      activeResearchRuns: current.activeResearchRuns + 1,
+      busy: true,
+      error: '',
+      progress: current.activeResearchRuns === 0 ? 'Starting independent source collection…' : current.progress,
+    });
+    return true;
+  },
+  releaseResearchSlot: () => set((state) => {
+    const activeResearchRuns = Math.max(0, state.activeResearchRuns - 1);
+    return { activeResearchRuns, busy: activeResearchRuns > 0, progress: activeResearchRuns ? state.progress : '' };
+  }),
   clearError: () => set({ error: '' }),
   setResearchActivityFeedback: async (eventId, resultId, feedback) => {
     await get().commit((data) => ({
@@ -119,22 +142,26 @@ export const useScout = create<State>((set, get) => ({
       lastRetentionSweepAt = retentionError ? 0 : now;
       hydrateSpaceNewsRegistry(data.feedRegistry);
       set({ data, ready: true, error: retentionError });
-      if (!retentionError) void get().resumePendingResearch();
     } catch {
       set({ error: 'Could not open local data. Retry before making changes.', ready: false });
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     }
   },
-  resumePendingResearch: async () => {
-    if (resumePendingResearchInProgress || !get().ready || get().busy) return;
+  resumePendingResearch: async (options) => {
+    if (resumePendingResearchInProgress || !get().ready || availableResearchRunSlots(get().activeResearchRuns) <= 0) return;
     resumePendingResearchInProgress = true;
     try {
       const pending = await readPendingResearch();
-      if (!pending || !get().ready || get().busy) return;
-      set({ progress: 'Resuming an interrupted research run from this device…' });
-      await get().research(pending.input, 'automatic', true);
+      if (!pending.length || !get().ready) return;
+      const excluded = new Set(options?.excludeIds ?? []);
+      const candidates = pending.filter((item) => !excluded.has(item.id) &&
+        (options?.maxAgeMs === undefined || Date.now() - item.savedAt <= options.maxAgeMs))
+        .slice(0, availableResearchRunSlots(get().activeResearchRuns));
+      if (!candidates.length) return;
+      set({ progress: 'Resuming interrupted research tasks from this device…' });
+      await Promise.all(candidates.map((item) => get().research(item.input, 'automatic', true, undefined, item.id)));
     } catch {
-      set({ error: 'An interrupted research run is saved locally but could not resume. It will remain available for the next app launch.' });
+      set({ error: 'One or more interrupted research tasks could not resume. Their local checkpoints were retained.' });
     } finally {
       resumePendingResearchInProgress = false;
     }
@@ -172,13 +199,35 @@ export const useScout = create<State>((set, get) => ({
       budget: nextBudget(data.budget, data.preferences.budget, units, new Date(), kind, origin),
     }));
   },
-  research: async (input, origin = 'manual', forceRefresh = false, ideaOptions) => {
-    if (get().busy) return undefined;
+  saveYouTubeSample: async (videos) => {
+    let enriched: Video[] = [];
+    const action = snapshotWriteQueue.then(async () => {
+      const current = get().data;
+      const newestSnapshotAt = current.youtubeSnapshots.reduce((latest, item) => Math.max(latest, item.capturedAt), 0);
+      const capturedAt = Math.max(Date.now(), newestSnapshotAt + 1);
+      const batch = captureYouTubeSnapshots(videos, current.youtubeSnapshots, capturedAt);
+      enriched = batch.videos;
+      await get().commit((data) => ({
+        ...data,
+        videos: [...new Map([...data.videos, ...enriched].map((video) => [video.id, video])).values()],
+        youtubeSnapshots: [...batch.snapshots, ...data.youtubeSnapshots],
+      }));
+    });
+    snapshotWriteQueue = action.then(() => undefined, () => undefined);
+    await action;
+    return enriched;
+  },
+  research: async (input, origin = 'manual', forceRefresh = false, ideaOptions, taskId) => {
+    if (!get().acquireResearchSlot()) return undefined;
+    const runId = taskId ?? uid();
     const initialData = get().data;
     const initialPreferences = initialData.preferences;
     const sourceExclusions = buildResearchActivitySourceExclusions(initialData.researchActivity);
-    const researchNiche = initialPreferences.customSpaceNiche.trim() ||
-      (initialPreferences.selectedSpaceNiche !== 'all' ? initialPreferences.selectedSpaceNiche : input.topic.trim());
+    const researchNiche = initialPreferences.selectedSpaceNiche === 'custom'
+      ? (initialPreferences.customSpaceNiche.trim() || input.topic.trim())
+      : initialPreferences.selectedSpaceNiche !== 'all'
+        ? (SPACE_NICHES.find((niche) => niche.id === initialPreferences.selectedSpaceNiche)?.topic ?? initialPreferences.selectedSpaceNiche)
+        : input.topic.trim();
     let engineStarted = false;
     let engineRecorded = false;
     let engineActivityId: string | undefined;
@@ -228,7 +277,6 @@ export const useScout = create<State>((set, get) => ({
         warnings.push('A research activity result could not be saved to local history.');
       }
     };
-    set({ busy: true, error: '', progress: 'Starting independent source collection…' });
     try {
       if (!input.topic.trim() || !input.languages.length)
         throw new Error('Enter a topic and choose at least one language.');
@@ -240,20 +288,26 @@ export const useScout = create<State>((set, get) => ({
           Date.now() - report.createdAt < 15 * 60000,
       );
       if (cached) {
-        await clearPendingResearch();
+        await clearPendingResearch(runId);
         set({ progress: 'Using a recent local research report.' });
         if (!cached.analyzed) await get().analyze(cached.id);
         return get().data.reports.find((item) => item.id === cached.id) ?? cached;
       }
 
-      await savePendingResearch(normalizedInput);
-      const researchReportId = uid();
+      const savedCheckpoint = await getPendingResearch(runId);
+      const researchReportId = savedCheckpoint?.reportId ?? uid();
+      await savePendingResearch(normalizedInput, runId, researchReportId);
       let youtubeResult: Awaited<ReturnType<typeof searchYouTube>> | undefined;
+      const checkpointReport = savedCheckpoint?.reportId
+        ? get().data.reports.find((report) => report.id === savedCheckpoint.reportId)
+        : undefined;
+      let researchVideos: Video[] = checkpointReport?.videos ?? [];
+      let youtubeTaskPromise: Promise<void> | undefined;
       let publisherNews = getCachedSpaceNews(get().data.feedRegistry, initialPreferences.spaceNewsSources);
       let feedRegistry = get().data.feedRegistry;
-      let webItems: Awaited<ReturnType<typeof fetchWebResearch>>['items'] = [];
-      let webSearchQueries: string[] = [];
-      let webResearchDossier: ResearchDossier | undefined;
+      let webItems: Awaited<ReturnType<typeof fetchWebResearch>>['items'] = (savedCheckpoint?.evidence ?? []).map((item) => ({ ...item }));
+      let webSearchQueries: string[] = [...(savedCheckpoint?.queryHistory ?? [])];
+      let webResearchDossier: ResearchDossier | undefined = savedCheckpoint?.researchDossier;
       let wiki: Awaited<ReturnType<typeof getWikipediaSignal>> | undefined;
 
       const splitSourcesByFeedback = <T extends { url: string }>(items: readonly T[]) => {
@@ -268,6 +322,10 @@ export const useScout = create<State>((set, get) => ({
       };
 
       const youtubeTask = async () => {
+        if (checkpointReport?.videos.length) {
+          warnings.push('Resumed from the saved YouTube sample; no new quota was used for this stage.');
+          return;
+        }
         const key = await getKey('youtube').catch(() => undefined);
         if (!key) {
           warnings.push('YouTube sample skipped: add a YouTube Data API key in Settings. Independent web/publisher research can still continue.');
@@ -294,6 +352,22 @@ export const useScout = create<State>((set, get) => ({
             },
             (progress) => set({ progress }),
           );
+          try {
+            researchVideos = await get().saveYouTubeSample(youtubeResult.videos);
+            const partialReport: Report = {
+              id: researchReportId, input: normalizedInput, videos: researchVideos,
+              queries: [...(youtubeResult.queries ?? [])], warnings: [...(youtubeResult.warnings ?? [])],
+              createdAt: Date.now(), analyzed: false,
+            };
+            await get().commit((data) => ({
+              ...data, reports: [partialReport, ...data.reports.filter((report) => report.id !== researchReportId)],
+            }));
+            await updatePendingResearch(runId, { stage: 'youtube-saved' });
+          } catch (error) {
+            warnings.push('YouTube sample was received but its local snapshot could not be persisted: ' +
+              (error instanceof Error ? error.message : 'local storage unavailable.'));
+            researchVideos = youtubeResult.videos;
+          }
           recordRuntimeFinish('YouTube', youtubeResult.videos.length ? 'success' : 'partial');
           warnings.push(...(youtubeResult.warnings ?? []));
           await finishActivity(activityId, {
@@ -394,12 +468,25 @@ export const useScout = create<State>((set, get) => ({
         set({ progress: 'Searching independent web and news sources…' });
         try {
           const webKey = await getKey('firecrawl').catch(() => undefined);
-          const queries = [topic];
-          const asked = new Set<string>();
-          const collected = new Map<string, (typeof webItems)[number]>();
+          const savedQueries = savedCheckpoint?.queryHistory ?? [];
+          const queryHistory = [...savedQueries];
+          const asked = new Set<string>(savedQueries.map((query) => normalizeResearchText(query)));
+          const collected = new Map<string, (typeof webItems)[number]>((savedCheckpoint?.evidence ?? []).map((item) => [item.url, { ...item }]));
           const queryWarnings: string[] = [];
-          let latestAiDossier: ResearchDossier | undefined;
-          let latestFallbackReview: ReturnType<typeof reviewResearchHypotheses> | undefined;
+          let latestAiDossier: ResearchDossier | undefined = savedCheckpoint?.researchDossier;
+          let latestFallbackReview: ReturnType<typeof reviewResearchHypotheses> | undefined = collected.size
+            ? reviewResearchHypotheses(topic, [...collected.values()].map((item) => ({
+                id: item.id, title: item.title, summary: item.summary, url: item.url,
+                sourceName: item.sourceName, ...(item.publishedAt ? { publishedAt: item.publishedAt } : {}),
+              })), [...asked], 3)
+            : undefined;
+          const savedDirections = latestAiDossier
+            ? latestAiDossier.nextQueries.map((item) => item.query)
+            : (latestFallbackReview?.nextDirections ?? []).map((item) => item.query);
+          const queries = collected.size
+            ? savedDirections.filter((query) => !asked.has(normalizeResearchText(query))).slice(0, 4)
+            : [topic];
+          let hydrationRemaining = 6;
           let modelAgentEnabled = true;
 
           // One seed search plus up to three evidence-driven rounds. The configured
@@ -409,7 +496,10 @@ export const useScout = create<State>((set, get) => ({
           for (let round = 0; round < 4; round++) {
             const query = queries[round];
             if (!query) break;
-            asked.add(normalizeResearchText(query));
+            const normalizedQuery = normalizeResearchText(query);
+            if (asked.has(normalizedQuery)) continue;
+            asked.add(normalizedQuery);
+            queryHistory.push(query);
             set({ progress: round === 0
               ? 'Searching independent web and news sources…'
               : 'Testing hypotheses and searching for counterevidence (' + (round + 1) + '/4)…' });
@@ -424,12 +514,32 @@ export const useScout = create<State>((set, get) => ({
               for (const item of split.included) if (!collected.has(item.url)) collected.set(item.url, item);
 
               if (modelAgentEnabled && collected.size) {
+                if (youtubeTaskPromise) await youtubeTaskPromise;
+                const youtubeSignals: YouTubeSampleVideo[] = researchVideos.map((video) => ({
+                  id: video.id, title: video.title, description: video.description,
+                  channel: video.channel, channelId: video.channelId ?? '',
+                  publishedAt: video.publishedAt, thumbnailUrl: video.thumbnail,
+                  viewCount: video.viewCount ?? null, likeCount: video.likeCount ?? null,
+                  channelSubscriberCount: null, channelVideoCount: null,
+                  url: 'https://www.youtube.com/watch?v=' + video.id, growth: video.growth,
+                }));
+                if (webKey && collected.size && hydrationRemaining > 0) {
+                  const requestedHydration = hydrationRemaining;
+                  hydrationRemaining = 0;
+                  const hydration = await enrichResearchEvidence([...collected.values()], webKey, requestedHydration);
+                  collected.clear();
+                  for (const item of hydration.items) collected.set(item.url, item);
+                  queryWarnings.push(...hydration.warnings);
+                  if (hydration.enrichedCount) queryWarnings.push(hydration.enrichedCount + ' original publisher pages fetched for local quote verification.');
+                }
                 const currentResearchMemory = get().data.researchMemory.find(
                   (entry) => normalizeResearchText(entry.topic) === normalizeResearchText(topic),
                 );
-                const agent = await runResearchAgent({
+                const agent = await runResearchAgentSerialized({
                   topic,
+                  researchNiche,
                   evidence: [...collected.values()],
+                  youtubeSignals,
                   preferences: initialPreferences,
                   previous: latestAiDossier ?? currentResearchMemory?.researchDossier,
                   alreadyAsked: [...asked],
@@ -475,6 +585,15 @@ export const useScout = create<State>((set, get) => ({
                 );
               }
 
+              await updatePendingResearch(runId, {
+                stage: 'sources-reviewed',
+                ...(latestAiDossier ? { researchDossier: latestAiDossier } : {}),
+                evidence: [...collected.values()].slice(0, 48).map((item) => ({
+                  id: item.id, title: item.title, summary: item.summary, url: item.url,
+                  sourceName: item.sourceName, publishedAt: item.publishedAt ?? null, category: item.category,
+                })),
+                queryHistory: queryHistory.slice(-40),
+              });
               if (round < 3 && result.items.length) {
                 const directions = latestAiDossier
                   ? latestAiDossier.nextQueries.map((item) => ({ query: item.query, reason: item.reason }))
@@ -498,10 +617,21 @@ export const useScout = create<State>((set, get) => ({
             }
           }
 
-          webSearchQueries = [...queries];
+          webSearchQueries = [...queryHistory];
           webResearchDossier = latestAiDossier;
           webItems = [...collected.values()];
           warnings.push(...queryWarnings);
+          if (webItems.length && webSearchQueries.length) {
+            await updatePendingResearch(runId, {
+              stage: 'sources-reviewed',
+              ...(webResearchDossier ? { researchDossier: webResearchDossier } : {}),
+              evidence: webItems.slice(0, 48).map((item) => ({
+                id: item.id, title: item.title, summary: item.summary, url: item.url,
+                sourceName: item.sourceName, publishedAt: item.publishedAt ?? null, category: item.category,
+              })),
+              queryHistory: webSearchQueries.slice(-40),
+            });
+          }
           const hypothesisSummary = latestAiDossier
             ? ' Model-led review by ' + latestAiDossier.provider + '/' + latestAiDossier.model +
               ': ' + latestAiDossier.hypotheses.length + ' hypothesis/hypotheses; ' +
@@ -624,9 +754,9 @@ export const useScout = create<State>((set, get) => ({
       };
 
       recordRuntimeStart('Sources');
-      // YouTube is the first discovery lane; failures or exhausted quota never gate independent sources.
-      await youtubeTask();
-      await Promise.all([feedTask(), webTask(), wikiTask()]);
+      // Independent network lanes overlap; the Deep Research agent awaits this run's YouTube sample before prompting.
+      youtubeTaskPromise = youtubeTask();
+      await Promise.all([youtubeTaskPromise, feedTask(), webTask(), wikiTask()]);
       const independentSourcesReady = publisherNews.length > 0 || webItems.length > 0;
       recordRuntimeFinish('Sources', independentSourcesReady ? 'success' : 'partial', independentSourcesReady ? undefined : 'No independent publisher/web evidence was returned.');
       if (!publisherNews.length) warnings.push('No selected publisher-feed items are currently available.');
@@ -635,8 +765,7 @@ export const useScout = create<State>((set, get) => ({
       if (!wiki) warnings.push('No Wikimedia pageview/article signal was available in this run.');
 
       const currentData = get().data;
-      const youtubeSnapshotBatch = captureYouTubeSnapshots(youtubeResult?.videos ?? [], currentData.youtubeSnapshots, Date.now());
-      const researchVideos = youtubeSnapshotBatch.videos;
+      // YouTube videos and snapshots were persisted atomically by the serialized snapshot writer.
       const priorMemory = currentData.researchMemory.find(
         (entry) => normalizeResearchText(entry.topic) === normalizeResearchText(topic),
       );
@@ -667,8 +796,7 @@ export const useScout = create<State>((set, get) => ({
         topic,
         news: engineNews,
         wiki,
-        // Map the stored video record into the engine's transient raw-only input shape.
-        // Do not add this payload to the analysis result, persistence or external prompts.
+        // Feed the same persisted YouTube sample and measured growth used by the prompts into local analysis.
         videos: researchVideos.map((video) => ({
           id: video.id,
           title: video.title,
@@ -683,6 +811,35 @@ export const useScout = create<State>((set, get) => ({
         priorMemory,
         language: currentData.preferences.uiLanguage ?? 'fa',
       });
+
+      if (webResearchDossier || engineNews.length || researchVideos.length) {
+        set({ progress: 'Deep Research is independently cross-checking the completed internal analysis…' });
+        try {
+          const finalSignals: YouTubeSampleVideo[] = researchVideos.slice(0, 25).map((video) => ({
+            id: video.id, title: video.title, description: video.description, channel: video.channel,
+            channelId: video.channelId ?? '', publishedAt: video.publishedAt, thumbnailUrl: video.thumbnail,
+            viewCount: video.viewCount ?? null, likeCount: video.likeCount ?? null,
+            channelSubscriberCount: null, channelVideoCount: null,
+            url: 'https://www.youtube.com/watch?v=' + video.id, growth: video.growth,
+          }));
+          const finalEye = await runResearchAgentSerialized({
+            topic, researchNiche, evidence: webItems, youtubeSignals: finalSignals,
+            preferences: initialPreferences, previous: webResearchDossier ?? priorMemory?.researchDossier,
+            alreadyAsked: webSearchQueries,
+            internalEngineFindings: {
+              summary: internalAnalysis.summary,
+              keyFindings: internalAnalysis.evidence.map((item) => item.detail),
+              gaps: internalAnalysis.intelligence.gaps,
+              verificationQuestions: internalAnalysis.verificationQuestions,
+              potentialContradictions: internalAnalysis.intelligence.potentialContradictions,
+            },
+          });
+          warnings.push(...finalEye.warnings);
+          if (finalEye.dossier) webResearchDossier = finalEye.dossier;
+        } catch {
+          warnings.push('The final Deep Research second-eye review was unavailable; local findings and YouTube evidence remain retained.');
+        }
+      }
 
       const report: Report = {
         input: normalizedInput,
@@ -706,6 +863,20 @@ export const useScout = create<State>((set, get) => ({
       }));
       const context = [
         ...webContexts,
+        ...researchVideos.slice(0, 25).map((video) => ({
+          title: video.title,
+          summary: [
+            'YouTube platform observation from channel ' + video.channel,
+            'Views: ' + (video.viewCount ?? 'unavailable') + '; likes: ' + (video.likeCount ?? 'unavailable'),
+            'Measured growth: ' + (video.growth?.viewsPerHour == null ? 'insufficient snapshot history' : video.growth.viewsPerHour.toFixed(2) + ' views/hour') +
+              '; ' + (video.growth?.viewsPerDay == null ? 'views/day unavailable' : video.growth.viewsPerDay.toFixed(2) + ' views/day'),
+          ].join('. '),
+          sourceName: 'YouTube platform signal', sourceUrl: 'https://www.youtube.com/watch?v=' + video.id,
+          publishedAt: video.publishedAt, platform: 'youtube' as const, videoId: video.id,
+          thumbnailUrl: video.thumbnail, channel: video.channel, viewCount: video.viewCount ?? null,
+          likeCount: video.likeCount ?? null, viewsPerHour: video.growth?.viewsPerHour ?? null,
+          viewsPerDay: video.growth?.viewsPerDay ?? null, channelOutlierRatio: video.growth?.channelOutlierRatio ?? null,
+        })),
         ...(wiki ? [{
           title: wiki.articleTitle,
           summary: wiki.summary,
@@ -714,8 +885,8 @@ export const useScout = create<State>((set, get) => ({
         }] : []),
       ];
 
-      // Editorial ideas and their scores use only independent publisher/web/Wikimedia
-      // evidence. YouTube API records stay in the separate raw sample/report domain.
+      // Idea generation combines YouTube platform signals with independent publisher/web/Wikimedia evidence.
+      // Platform observations influence topic/momentum analysis but never become publisher citations.
       const generatedIdeas = generateEditorialIdeas({
         topic,
         news: publisherNews,
@@ -734,7 +905,7 @@ export const useScout = create<State>((set, get) => ({
       await finishActivity(engineActivityId, {
         status: generatedIdeas.length ? 'success' : 'empty',
         resultCount: generatedIdeas.length,
-        analyzedCount: engineNews.length + (wiki ? 1 : 0),
+        analyzedCount: engineNews.length + (wiki ? 1 : 0) + researchVideos.length,
         results: buildResearchActivityResults(topic, generatedIdeas.map((idea) => ({
           id: idea.id,
           title: idea.topic,
@@ -762,15 +933,14 @@ export const useScout = create<State>((set, get) => ({
       });
 
       if (!generatedIdeas.length) {
-        report.warnings.push('No sufficiently distinct idea was supported by the independent publisher/web evidence in this run. The raw YouTube sample remains separate.');
+        report.warnings.push('No sufficiently distinct idea was supported by available publisher/web/Wikimedia/YouTube platform evidence in this run. Existing research and snapshots remain retained.');
       }
       await get().commit((data) => ({
         ...data,
         feedRegistry,
-        reports: [report, ...data.reports],
+        reports: [report, ...data.reports.filter((item) => item.id !== report.id)],
         ideas: [...generatedIdeas, ...data.ideas],
         videos: [...new Map([...data.videos, ...researchVideos].map((video) => [video.id, video])).values()],
-        youtubeSnapshots: [...youtubeSnapshotBatch.snapshots, ...data.youtubeSnapshots].slice(0, 10000),
         researchMemory: memoryEntry
           ? [
               memoryEntry,
@@ -779,6 +949,7 @@ export const useScout = create<State>((set, get) => ({
           : data.researchMemory,
         preferences: { ...data.preferences, lastInput: normalizedInput },
       }));
+      await updatePendingResearch(runId, { stage: 'ideas-saved' });
       recordRuntimeFinish('Engine', generatedIdeas.length ? 'success' : 'partial');
       engineRecorded = true;
 
@@ -790,8 +961,18 @@ export const useScout = create<State>((set, get) => ({
           'Independent second-opinion review after local analysis: ' + generatedIdeas.slice(0, 8).map((idea) => idea.topic).join(' ; '),
           researchReportId,
         );
-        const review = await reviewIdeasAutomatically(generatedIdeas, get().data.preferences, {
+        const review = await withResearchProviderQueue(() => reviewIdeasAutomatically(generatedIdeas, get().data.preferences, {
           language: get().data.preferences.uiLanguage ?? 'fa',
+          youtubeSignalsByIdeaId: Object.fromEntries(generatedIdeas.map((idea) => [
+            idea.id,
+            get().data.videos.filter((video) => idea.videoIds.includes(video.id)).slice(0, 25).map((video) => ({
+              id: video.id, title: video.title, description: video.description, channel: video.channel,
+              channelId: video.channelId ?? '', publishedAt: video.publishedAt, thumbnailUrl: video.thumbnail,
+              viewCount: video.viewCount ?? null, likeCount: video.likeCount ?? null,
+              channelSubscriberCount: null, channelVideoCount: null,
+              url: 'https://www.youtube.com/watch?v=' + video.id, growth: video.growth,
+            })),
+          ])),
           beforeProviderRequest: async (config) => {
             if (config.provider !== 'openrouter') return;
             const preferences = get().data.preferences;
@@ -806,7 +987,7 @@ export const useScout = create<State>((set, get) => ({
               preferences: { ...data.preferences, ...usage },
             }));
           },
-        });
+        }));
         if (review.opinions.length || review.warnings.length) {
           await get().commit((data) => ({
             ...data,
@@ -865,7 +1046,7 @@ export const useScout = create<State>((set, get) => ({
         });
       }
 
-      await clearPendingResearch();
+      await clearPendingResearch(runId);
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       return get().data.reports.find((item) => item.id === report.id) ?? report;
     } catch (error) {
@@ -876,7 +1057,7 @@ export const useScout = create<State>((set, get) => ({
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       return undefined;
     } finally {
-      set({ busy: false, progress: '' });
+      get().releaseResearchSlot();
     }
   },
   analyze: async (id) => {

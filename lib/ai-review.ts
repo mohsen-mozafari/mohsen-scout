@@ -1,4 +1,4 @@
-import { formatStructuredSecondOpinion, getFreeModels, selectFreeModel, structuredSecondOpinionPrompt } from './api';
+import { formatStructuredSecondOpinion, getFreeModels, selectFreeModel, structuredSecondOpinionPrompt, type YouTubeSampleVideo } from './api';
 import { requestSecondOpinionWithFallback, SecondOpinionProviderError, type ProviderAttempt, type SecondOpinionProviderConfig } from './ai-gateway';
 import { runSequentiallyWithIsolatedFailures } from './sequential-review';
 import { getKey } from './vault';
@@ -9,7 +9,7 @@ export type AuditedProviderAttempt = ProviderAttempt & { ideaTopic: string };
 export async function reviewIdeasAutomatically(
   ideas: readonly Idea[],
   preferences: Preferences,
-  options: { language?: 'fa' | 'en'; maxIdeas?: number; beforeProviderRequest?: (config: SecondOpinionProviderConfig) => Promise<void> } = {},
+  options: { language?: 'fa' | 'en'; maxIdeas?: number; youtubeSignalsByIdeaId?: Readonly<Record<string, readonly YouTubeSampleVideo[]>>; beforeProviderRequest?: (config: SecondOpinionProviderConfig) => Promise<void> } = {},
 ): Promise<{ opinions: Opinion[]; warnings: string[]; providerAttempts: AuditedProviderAttempt[] }> {
   const language = options.language ?? preferences.uiLanguage ?? 'fa';
   const warnings: string[] = [];
@@ -39,7 +39,7 @@ export async function reviewIdeasAutomatically(
     selectedIdeas,
     selectedIdeas.length,
     async (idea) => {
-      const prompt = structuredSecondOpinionPrompt(idea.topic, idea.concept, language, idea.evidenceSources ?? []);
+      const prompt = structuredSecondOpinionPrompt(idea.topic, idea.concept, language, idea.evidenceSources ?? [], options.youtubeSignalsByIdeaId?.[idea.id] ?? []);
       const result = await requestSecondOpinionWithFallback(configs, prompt, fetch, options.beforeProviderRequest);
       providerAttempts.push(...result.attempts.map((attempt) => ({ ...attempt, ideaTopic: idea.topic })));
       return {

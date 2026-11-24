@@ -15,7 +15,7 @@ function isJsonObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-void test('idea generation ignores legacy YouTube samples and scores independent publisher evidence only', () => {
+void test('idea generation uses multiple YouTube platform signals while keeping publisher citations independent', () => {
   const ideas = generateEditorialIdeas({
     topic: 'Mars Sample Return',
     region: 'United States',
@@ -39,18 +39,40 @@ void test('idea generation ignores legacy YouTube samples and scores independent
         publishedAt,
       },
     ],
-    videos: [{
-      id: 'dQw4w9WgXcQ',
-      title: 'MOCK YouTube: Mars Sample Return breakthrough and views',
-      description: 'This mock video metadata must not enter idea scoring.',
-      channel: 'MOCK channel',
-      viewCount: 9999999,
-      likeCount: 123456,
-    }],
+    videos: [
+      {
+        id: 'dQw4w9WgXcQ',
+        title: 'MOCK YouTube: Mars Sample Return breakthrough and rover sample handling',
+        description: 'A platform signal about the sample collection and return process.',
+        channel: 'MOCK channel A',
+        publishedAt,
+        viewCount: 9999999,
+        likeCount: 123456,
+        growth: {
+          snapshotCount: 3, deltaViews: 18000, viewsPerHour: 750, viewsPerDay: 18000,
+          channelBaselineViewsPerDay: 2500, channelOutlierRatio: 7.2,
+          measuredAt: Date.parse(publishedAt), status: 'measured',
+        },
+      },
+      {
+        id: 'abcdefghijk',
+        title: 'MOCK YouTube: Mars sample retrieval architecture and mission timeline',
+        description: 'Another platform observation about the mission stages and samples.',
+        channel: 'MOCK channel B',
+        publishedAt,
+        viewCount: 420000,
+        likeCount: 21000,
+        growth: {
+          snapshotCount: 2, deltaViews: 6000, viewsPerHour: 250, viewsPerDay: 6000,
+          channelBaselineViewsPerDay: 2000, channelOutlierRatio: 3,
+          measuredAt: Date.parse(publishedAt), status: 'measured',
+        },
+      },
+    ],
   });
   assert.ok(ideas.length > 0);
-  assert.ok(ideas.every((idea) => idea.videoIds.length === 0));
-  assert.ok(ideas.every((idea) => idea.engineScoreBasis === 'publisher-web-only-v2'));
+  assert.ok(ideas.every((idea) => idea.videoIds.length >= 2));
+  assert.ok(ideas.every((idea) => idea.engineScoreBasis === 'platform-aware-v3'));
   assert.ok(ideas.every((idea) => (idea.evidenceSources ?? []).every((source) => source.sourceType === 'publisher')));
   assert.ok(ideas.every((idea) => !/MOCK YouTube|9999999|123456/.test(idea.concept + idea.note)));
 });
@@ -96,19 +118,41 @@ void test('Firecrawl keyless search uses independent web/news results and exclud
   assert.ok(result.items.every((item) => !/youtube\.com|youtu\.be/i.test(item.url)));
 });
 
-void test('external review prompt contains independent evidence and excludes YouTube URLs', () => {
+void test('external review prompt receives YouTube platform metrics separately from independent source citations', () => {
   const prompt = structuredSecondOpinionPrompt(
     'Mars Sample Return',
     'Explain the mission and its unresolved technical questions.',
     'en',
     [
       { sourceType: 'publisher', sourceName: 'NASA', title: 'Mission overview', summary: 'The mission has several technical stages.', sourceUrl: 'https://www.nasa.gov/example/mission' },
-      { sourceType: 'web', sourceName: 'YouTube', title: 'YouTube video', summary: 'Should be filtered.', sourceUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ' },
+      { sourceType: 'web', sourceName: 'YouTube', title: 'YouTube video', summary: 'Should not become publisher evidence.', sourceUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ' },
     ],
+    [{
+      id: 'video-yt-momentum',
+      title: 'MOCK YouTube platform momentum: Mars sample return',
+      description: 'Measured video trend signal.',
+      channel: 'MOCK channel',
+      channelId: 'UCmock',
+      publishedAt,
+      thumbnailUrl: 'https://example.org/thumb.jpg',
+      viewCount: 120000,
+      likeCount: 6000,
+      channelSubscriberCount: null,
+      channelVideoCount: null,
+      url: 'https://www.youtube.com/watch?v=video-yt-momentum',
+      growth: {
+        snapshotCount: 3, deltaViews: 18000, viewsPerHour: 750, viewsPerDay: 18000,
+        channelBaselineViewsPerDay: 2500, channelOutlierRatio: 7.2,
+        measuredAt: Date.parse(publishedAt), status: 'measured',
+      },
+    }],
   );
   assert.match(prompt, /Mission overview/);
   assert.match(prompt, /https:\/\/www\.nasa\.gov/);
-  assert.doesNotMatch(prompt, /youtube\.com|dQw4w9WgXcQ/);
+  assert.match(prompt, /MOCK YouTube platform momentum/);
+  assert.match(prompt, /750/);
+  assert.match(prompt, /channelOutlierRatio/);
+  assert.doesNotMatch(prompt, /youtube\.com\/watch/);
 });
 
 

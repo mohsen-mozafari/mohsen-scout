@@ -302,18 +302,18 @@ export default function Opportunities() {
         const warnings = [...new Set([...refreshedNews.warnings, ...refreshedReport.warnings])];
         setGenerationMessage(current.preferences.uiLanguage === 'fa'
           ? (added.length
-            ? added.length + ' ایدهٔ تازه از شواهد مستقل وب و ناشران ساخته شد؛ نمونهٔ خام YouTube جداگانه به‌روز شد و ' + refreshedReport.videos.length + ' رکورد ویدئو دریافت شد.'
+            ? added.length + ' ایدهٔ تازه از ترکیب سیگنال‌های روند YouTube و شواهد مستقل وب/ناشران ساخته شد؛ ' + refreshedReport.videos.length + ' ویدئو نیز ذخیره و تحلیل شد.'
             : 'نمونهٔ YouTube به‌روز شد، اما ایدهٔ متمایز دیگری با شواهد کافی پیدا نشد؛ پیشنهاد تکراری ساخته نشد.') +
             (warnings.length ? ' بعضی منابع با نسخهٔ ذخیره‌شده جایگزین شدند.' : '')
           : (added.length
-            ? added.length + ' new ideas were generated from independent web and publisher evidence; the raw YouTube sample was refreshed separately and ' + refreshedReport.videos.length + ' video records were received.'
+            ? added.length + ' new ideas were generated from YouTube trend signals plus independent web/publisher evidence; ' + refreshedReport.videos.length + ' video records were stored and analyzed.'
             : 'The YouTube sample was refreshed, but no distinct idea met the evidence threshold. Existing ideas were not recycled.') +
             (warnings.length ? ' Some publishers used their last successful cached copy.' : ''));
         return;
       }
     }
 
-    // If the fresh YouTube request cannot complete, fall back to metadata still within its 29-day retention.
+    // If the fresh YouTube request cannot complete, fall back to the complete locally retained YouTube history.
     const fallbackData = useScout.getState().data;
     const report = fallbackData.reports.find((item) =>
       normalizeSearchText(item.input.topic) === normalizeSearchText(topic),
@@ -343,6 +343,7 @@ export default function Opportunities() {
       const generated = generateEditorialIdeas({
         topic,
         news: allNews,
+        videos: fallbackData.videos,
         priorMemory,
         context: dossier?.wiki && !wikiExcluded ? [{
           title: dossier.wiki.articleTitle,
@@ -373,8 +374,8 @@ export default function Opportunities() {
       recordRuntimeFinish('Engine', 'success');
       engineRecorded = true;
       setGenerationMessage(current.preferences.uiLanguage === 'fa'
-        ? generated.length + ' ایدهٔ تازه از شواهد ذخیره‌شده ساخته شد؛ ' + (refreshAttempted ? 'به‌روزرسانی تازهٔ YouTube کامل نشد و از نمونهٔ ذخیره‌شده استفاده شد.' : 'درخواستی برای YouTube ارسال نشد.')
-        : generated.length + ' new ideas were generated from retained local evidence. ' + (refreshAttempted ? 'The fresh YouTube request did not complete; the retained sample was used.' : 'No fresh YouTube request was made.'));
+        ? generated.length + ' ایدهٔ تازه از سیگنال‌های ذخیره‌شده YouTube و شواهد مستقل ساخته شد؛ ' + (refreshAttempted ? 'به‌روزرسانی تازهٔ YouTube کامل نشد و از نمونهٔ ذخیره‌شده استفاده شد.' : 'از دادهٔ محلی YouTube استفاده شد.')
+        : generated.length + ' new ideas were generated from retained YouTube platform signals and independent evidence. ' + (refreshAttempted ? 'The fresh YouTube request did not complete; the retained sample was used.' : 'Retained local YouTube data was used.'));
     } catch (error) {
       if (!engineRecorded) recordRuntimeFinish('Engine', 'error', error instanceof Error ? error.message : String(error));
       throw error;
@@ -417,7 +418,7 @@ export default function Opportunities() {
             <ScreenIntro
               eyebrow="IDEA WORKSPACE"
               title="Turn research into next steps"
-              subtitle="Refresh the official YouTube sample separately; generate editorial angles from selected publisher feeds, independent web research and Wikimedia evidence."
+              subtitle="Use official YouTube trends as the primary discovery signal, then strengthen ideas with publisher feeds, independent web research and Wikimedia context."
               icon={Lightbulb}
             />
             <View style={{ flexDirection: 'row', gap: 8 }}>

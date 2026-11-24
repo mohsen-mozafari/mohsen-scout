@@ -39,6 +39,7 @@ export default function Discover() {
   const preferences = useScout((s) => s.data.preferences);
   const ready = useScout((s) => s.ready);
   const busy = useScout((s) => s.busy);
+  const activeResearchRuns = useScout((s) => s.activeResearchRuns);
   const progress = useScout((s) => s.progress);
   const reports = useScout((s) => s.data.reports);
   const ideas = useScout((s) => s.data.ideas);
@@ -192,10 +193,10 @@ export default function Discover() {
         </Fold>
         <Action
           icon={Search}
-          disabled={busy || !ready || !topic.trim() || !selectedLanguages.length}
+          disabled={!ready || activeResearchRuns >= 2 || !topic.trim() || !selectedLanguages.length}
           onPress={() => void run()}
         >
-          {busy ? 'Researching…' : '2 · Search YouTube sample'}
+          {activeResearchRuns >= 2 ? 'Maximum two research tasks are active' : busy ? 'Start another research task' : '2 · Search YouTube sample'}
         </Action>
       </Panel>
       {Boolean(topic.trim()) && !report && (
@@ -259,7 +260,7 @@ export default function Discover() {
           {linkedIdea ? (
             <Panel>
               <Heading>Connect this research</Heading>
-              <Txt muted>Current idea: {linkedIdea.topic}. Connecting stores this report and its temporary video references locally. YouTube metadata remains subject to the existing retention policy.</Txt>
+              <Txt muted>Current idea: {linkedIdea.topic}. Connecting stores this report and its persistent YouTube video references locally.</Txt>
               <Action
                 secondary
                 busy={op.busy}
@@ -277,7 +278,7 @@ export default function Discover() {
             <Txt muted>{limitations}</Txt>
             <Txt muted>
               Collected {new Date(report.createdAt).toLocaleString('en-US')}. Cached for 15 minutes.
-              Metadata expires after 29 days.
+              YouTube reports, metadata and growth snapshots are retained locally without automatic expiry.
             </Txt>
             <Txt muted>Queries: {report.queries.join(' · ')}</Txt>
           </Fold>
@@ -324,13 +325,13 @@ export default function Discover() {
               busy={op.busy}
               onPress={() => void op.run(() => useScout.getState().analyze(report.id))}
             >
-              Analyze cached independent evidence
+              Analyze cached YouTube and independent evidence
             </Action>
           )}
           {report.analyzed && (
             <View style={{ gap: 14 }}>
               <Heading>Internal Engine · Evidence-linked ideas</Heading>
-              <Txt muted>The local engine creates ideas only when cached independent publisher evidence and saved research memory meet its evidence threshold. This analysis action does not turn YouTube search buckets, video titles or statistics into ideas. The sample stays separate; use “Connect this research” to attach the report and its temporary video references to a chosen idea.</Txt>
+              <Txt muted>The local engine analyzes YouTube platform signals—including measured growth when multiple snapshots exist—together with independent publisher/web evidence and saved research memory. Related video patterns can drive trend-based ideas; factual claims still require independent source support. YouTube remains a first-class input, not a publisher citation.</Txt>
               {reportIdeas.length ? reportIdeas.map((idea) => (
                 <Button
                   variant="secondary"
@@ -347,8 +348,8 @@ export default function Discover() {
               )) : (
                 <Txt muted>
                   {preferences.uiLanguage === 'fa'
-                    ? 'برای این گزارش ایدهٔ تازه‌ای با شواهد مستقل کافی ثبت نشده است. نمونهٔ YouTube همچنان در بخش ویدئوهای مرتبط قابل مشاهده است؛ برای تولید ایده، تحقیق مستقل ناشران و وب را از داشبورد تازه‌سازی کن.'
-                    : 'No new idea met the independent-evidence threshold for this report. The YouTube sample remains available below; refresh independent publisher and web research from the dashboard to generate evidence-backed ideas.'}
+                    ? 'برای این گزارش هنوز ایدهٔ تازه‌ای با سیگنال پلتفرمی و شواهد کافی پیدا نشده است. YouTube همچنان ورودی اصلی تحلیل است؛ برای تکمیل زاویه‌های محتوایی، تحقیق ناشران و وب نیز به‌روزرسانی می‌شود.'
+                    : 'No new idea met the platform-signal and evidence threshold for this report. YouTube remains a primary trend input; refresh publisher and web research as well to strengthen independent factual support.'}
                 </Txt>
               )}
             </View>

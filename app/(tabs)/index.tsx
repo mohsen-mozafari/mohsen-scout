@@ -22,6 +22,7 @@ import { getKey } from '@/lib/vault';
 import { requestSecondOpinionWithFallback, type SecondOpinionProviderConfig } from '@/lib/ai-gateway';
 import { ResearchOverviewChart } from '@/components/ResearchOverviewChart';
 import { recordRuntimeFinish, recordRuntimeStart, runtimeErrorHint, useRuntimeMetrics } from '@/lib/runtime-metrics';
+import { withResearchProviderQueue } from '@/lib/research-agent';
 
 
 function AnalysisSignals({ result }: { result: InternalResearchResult }) {
@@ -117,6 +118,7 @@ function EngineAIReview({ topic, idea }: { topic: string; idea?: Idea }) {
     openRouterRequestsToday: state.data.preferences.openRouterRequestsToday,
   })));
   const opinions = useScout((state) => state.data.opinions);
+  const storedVideos = useScout((state) => state.data.videos);
   const fa = preferences.uiLanguage === 'fa';
   const centralQuestion = idea?.concept.match(/(?:Central question:|پرسش محوری:)\s*([^\n]+)/i)?.[1] ?? '';
   const candidateConcept = idea
@@ -126,8 +128,21 @@ function EngineAIReview({ topic, idea }: { topic: string; idea?: Idea }) {
         centralQuestion ? 'Central question: ' + centralQuestion : '',
       ].filter(Boolean).join('\n')
     : 'Editorial angle to independently assess for the user-provided topic: ' + topic;
+  const linkedVideoIds = new Set(idea?.videoIds ?? []);
+  const youtubeSignals = storedVideos
+    .filter((video) => idea?.videoIds.length
+      ? linkedVideoIds.has(video.id)
+      : scoreResearchText(topic, video.title, video.description) > 0)
+    .slice(0, 25)
+    .map((video) => ({
+      id: video.id, title: video.title, description: video.description, channel: video.channel,
+      channelId: video.channelId ?? '', publishedAt: video.publishedAt, thumbnailUrl: video.thumbnail,
+      viewCount: video.viewCount ?? null, likeCount: video.likeCount ?? null,
+      channelSubscriberCount: null, channelVideoCount: null,
+      url: 'https://www.youtube.com/watch?v=' + video.id, growth: video.growth,
+    }));
   const prompt = candidateConcept.trim()
-    ? structuredSecondOpinionPrompt(topic, candidateConcept, fa ? 'fa' : 'en')
+    ? structuredSecondOpinionPrompt(topic, candidateConcept, fa ? 'fa' : 'en', idea?.evidenceSources ?? [], youtubeSignals)
     : '';
   const savedOrder = preferences.providerOrder?.length ? preferences.providerOrder : DEFAULT_SECOND_OPINION_ORDER;
   const order = [preferences.preferredProvider, ...savedOrder.filter((provider) => provider !== preferences.preferredProvider)];
@@ -216,7 +231,7 @@ function EngineAIReview({ topic, idea }: { topic: string; idea?: Idea }) {
           : 'No configured provider is available. Save and test at least one provider key in Settings.');
       }
 
-      const resultFromProvider = await requestSecondOpinionWithFallback(
+      const resultFromProvider = await withResearchProviderQueue(() => requestSecondOpinionWithFallback(
         configs,
         prompt,
         fetch,
@@ -255,7 +270,7 @@ function EngineAIReview({ topic, idea }: { topic: string; idea?: Idea }) {
             },
           }));
         },
-      );
+      ));
       const providerLabel = resultFromProvider.provider === 'cloudflare'
         ? 'Cloudflare Workers AI'
         : resultFromProvider.provider[0].toUpperCase() + resultFromProvider.provider.slice(1);
@@ -297,8 +312,8 @@ function EngineAIReview({ topic, idea }: { topic: string; idea?: Idea }) {
       <BadgeText>{review ? 'SECOND OPINION · SAVED' : 'SECOND OPINION · MANUAL'}</BadgeText>
       <Heading>{fa ? 'بازبینی مستقل چندارائه‌دهنده‌ای' : 'Independent multi-provider review'}</Heading>
       <Txt muted>{fa
-        ? 'فقط موضوع و عنوان/مفهوم پیشنهادی ارسال می‌شود. خبرها، داده YouTube، آمار، امتیاز و تصمیم موتور داخلی ارسال نمی‌شوند. ارسال به سرویس‌ها فقط پس از لمس دکمه انجام می‌شود و ممکن است تا رسیدن اولین پاسخ معتبر، به ارائه‌دهنده بعدی در ترتیب تنظیمات منتقل شود.'
-        : 'Only the topic and candidate title/concept are sent. News, YouTube data, statistics, local scores and the engine decision are excluded. Nothing is sent until you press the button; the approved prompt may pass to the next configured provider until one returns a valid response.'}</Txt>
+        ? 'موضوع، عنوان/مفهوم، منابع پیوندشده و نمونهٔ ویدئوهای مرتبط YouTube همراه آمار عمومی و رشد اندازه‌گیری‌شده برای نظر دوم ارسال می‌شوند. سیگنال‌های YouTube برای تحلیل روند پلتفرم‌اند، نه نقل‌قول ناشر مستقل یا اثبات ادعای علمی/خبری. این درخواست فقط پس از لمس دکمه ارسال می‌شود.'
+        : 'The topic, concept, linked independent sources and related YouTube videos with public metrics and measured growth are sent for the second opinion. YouTube signals are platform-trend evidence, not independent publisher citations or proof of scientific/news claims. Nothing is sent until you press the button.'}</Txt>
       {savedReview ? <Txt muted>{'Saved review · ' + new Date(savedReview.createdAt).toLocaleString()}</Txt> : null}
       <Txt muted>{reviewBusy
         ? (fa ? 'در حال دریافت و اعتبارسنجی نظر دوم…' : 'Requesting and validating the second opinion…')

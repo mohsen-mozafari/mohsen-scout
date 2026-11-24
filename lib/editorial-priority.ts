@@ -1,11 +1,13 @@
 export const EDITORIAL_PRIORITY_CONFIG = {
-  // These weights preserve the current engine formula exactly; they do not add signals.
+  // Platform-aware formula: measured YouTube velocity and channel outliers add a bounded 20% signal.
   weights: {
-    relevance: 0.30,
-    evidenceBreadth: 0.30,
-    freshness: 0.20,
-    differentiation: 0.20,
+    relevance: 0.25,
+    evidenceBreadth: 0.25,
+    freshness: 0.15,
+    differentiation: 0.15,
+    platformMomentum: 0.20,
   },
+  baseWeights: { relevance: 0.30, evidenceBreadth: 0.30, freshness: 0.20, differentiation: 0.20 },
   thresholds: {
     strong: 85,
     moderate: 65,

@@ -1,8 +1,8 @@
 import * as SQLite from 'expo-sqlite';
-import { defaults, purgeExpired, RETENTION_MS, type LocalData } from './types';
+import { defaults, purgeExpired, type LocalData } from './types';
 import { validateLocal, validateLocalEntry, validateLocalRecord } from './validation';
 import { changedLocalDataEntries } from './storage-diff';
-import { diffRecordCollection, isRecordDomain, recordIdFor, recordTable, recordUpdatedAt, recordExpiresAt, RECORD_DOMAINS, emptyRecordCounts, type RecordDomain, type StorageHealth } from './storage-records';
+import { diffRecordCollection, isRecordDomain, recordIdFor, recordTable, recordUpdatedAt, recordExpiresAt, RECORD_DOMAINS, emptyRecordCounts, type RecordDomain, type StorageHealth, NO_EXPIRY } from './storage-records';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -34,7 +34,7 @@ async function migrateLegacyDomains(connection: SQLite.SQLiteDatabase): Promise<
           const updatedAt = recordUpdatedAt(row.key, item);
           const payload = JSON.stringify(item);
           if (table === 'youtube') {
-            const expiresAt = recordExpiresAt(row.key, item) ?? (updatedAt + RETENTION_MS);
+            const expiresAt = recordExpiresAt(row.key, item) ?? NO_EXPIRY;
             await tx.runAsync('INSERT OR REPLACE INTO youtube_records (domain,id,updated_at,expires_at,payload) VALUES (?,?,?,?,?)', row.key, id, updatedAt, expiresAt, payload);
           } else {
             await tx.runAsync('INSERT OR REPLACE INTO personal_records (domain,id,updated_at,payload) VALUES (?,?,?,?)', row.key, id, updatedAt, payload);
@@ -60,6 +60,7 @@ async function db() {
           'CREATE INDEX IF NOT EXISTS youtube_records_updated ON youtube_records(domain,updated_at DESC);' +
           'CREATE INDEX IF NOT EXISTS youtube_records_expiry ON youtube_records(expires_at);',
         );
+        await value.runAsync("UPDATE youtube_records SET expires_at=? WHERE domain IN ('reports','videos','youtubeSnapshots')", NO_EXPIRY);
         await migrateLegacyDomains(value);
         return value;
       })
@@ -156,7 +157,7 @@ export async function writeData(
         const updatedAt = recordUpdatedAt(domain, value);
         const payload = JSON.stringify(value);
         if (table === 'youtube_records') {
-          const expiresAt = recordExpiresAt(domain, value) ?? (updatedAt + RETENTION_MS);
+          const expiresAt = recordExpiresAt(domain, value) ?? NO_EXPIRY;
           await tx.runAsync('INSERT OR REPLACE INTO youtube_records (domain,id,updated_at,expires_at,payload) VALUES (?,?,?,?,?)', domain, id, updatedAt, expiresAt, payload);
         } else {
           await tx.runAsync('INSERT OR REPLACE INTO personal_records (domain,id,updated_at,payload) VALUES (?,?,?,?)', domain, id, updatedAt, payload);

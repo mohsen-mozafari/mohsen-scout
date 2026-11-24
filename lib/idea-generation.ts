@@ -1,5 +1,5 @@
 import { buildResearchInterestProfile, canonicalizeResearchUrl, createEditorialOpportunityScorer, matchesAnyResearchTerms, matchesStrongResearchTopic, normalizeResearchText, scoreResearchText, tokenizeResearchText, type ResearchFeedbackProfile } from './intelligence';
-import type { ResearchMemoryEntry } from './types';
+import type { ResearchMemoryEntry, YouTubeGrowth } from './types';
 import type { SpaceNewsItem } from './space';
 import { uid, type Idea, type Region } from './types';
 
@@ -23,6 +23,8 @@ export type IdeaGenerationVideo = {
   publishedAt?: string;
   viewCount?: number | null;
   likeCount?: number | null;
+  growth?: YouTubeGrowth;
+  thumbnailUrl?: string;
 };
 
 export type IdeaGenerationContext = {
@@ -31,15 +33,24 @@ export type IdeaGenerationContext = {
   sourceName?: string;
   sourceUrl?: string;
   publishedAt?: string | null;
+  platform?: 'youtube';
+  videoId?: string;
+  thumbnailUrl?: string;
+  channel?: string;
+  viewCount?: number | null;
+  likeCount?: number | null;
+  viewsPerHour?: number | null;
+  viewsPerDay?: number | null;
+  channelOutlierRatio?: number | null;
 };
 
 export type GenerateEditorialIdeasInput = {
   topic: string;
   news?: readonly SpaceNewsItem[];
-  /** Transient official YouTube metadata used only for local scoring; never copied into durable Idea text. */
+  /** Official YouTube platform observations analyzed alongside independent research evidence. */
   videos?: readonly IdeaGenerationVideo[];
   context?: readonly IdeaGenerationContext[];
-  /** Bounded publisher-only history; raw YouTube metadata is intentionally excluded. */
+  /** Bounded publisher-claim history; raw YouTube data and snapshots are retained separately in the permanent local YouTube store. */
   priorMemory?: ResearchMemoryEntry;
   feedback?: ResearchFeedbackProfile;
   existingIdeas?: readonly Idea[];
@@ -59,6 +70,8 @@ type Document = {
   title: string;
   text: string;
   kind: 'news' | 'context' | 'history' | 'youtube';
+  videoId?: string;
+  thumbnailUrl?: string;
   publishedAt?: string | null;
   sourceId?: string;
   sourceName?: string;
@@ -424,10 +437,10 @@ export function generateEditorialIdeas(input: GenerateEditorialIdeasInput): Idea
   if (!topic) return [];
 
   const news = [...(input.news ?? [])];
-  // Ignore legacy YouTube inputs. Raw API data is a separate display-only lane.
-  const videos: IdeaGenerationVideo[] = [];
+  const videos: IdeaGenerationVideo[] = [...(input.videos ?? [])];
   const context = [...(input.context ?? [])];
-  const independentContext = context.filter((item) => item.sourceName !== 'User-provided topic');
+  const youtubeContext = context.filter((item) => item.platform === 'youtube');
+  const independentContext = context.filter((item) => item.platform !== 'youtube' && item.sourceName !== 'User-provided topic');
   const currentUrls = new Set(news.map((item) => canonicalizeResearchUrl(item.url)).filter(Boolean));
   const priorMemory = input.priorMemory;
   const historicalSources = (priorMemory?.sources ?? []).filter((item) => {
@@ -500,12 +513,33 @@ export function generateEditorialIdeas(input: GenerateEditorialIdeasInput): Idea
     ...videos.map((video) => ({
       id: 'youtube:' + video.id,
       title: video.title,
-      text: video.title + ' ' + (video.description ?? ''),
+      text: [video.title, video.description ?? '',
+        video.growth?.viewsPerHour == null ? '' : 'views per hour ' + video.growth.viewsPerHour,
+        video.growth?.viewsPerDay == null ? '' : 'views per day ' + video.growth.viewsPerDay,
+        video.growth?.channelOutlierRatio == null ? '' : 'channel outlier ratio ' + video.growth.channelOutlierRatio,
+      ].join(' '),
       kind: 'youtube' as const,
       publishedAt: video.publishedAt ?? null,
       sourceId: video.channel || 'youtube',
       sourceName: 'YouTube sample',
       videoId: video.id,
+      thumbnailUrl: video.thumbnailUrl,
+    })),
+    ...youtubeContext.map((item, index) => ({
+      id: 'youtube-context:' + (item.videoId || index),
+      title: item.title,
+      text: [item.title, item.summary ?? '', item.channel ?? '',
+        item.viewsPerHour == null ? '' : 'views per hour ' + item.viewsPerHour,
+        item.viewsPerDay == null ? '' : 'views per day ' + item.viewsPerDay,
+        item.channelOutlierRatio == null ? '' : 'channel outlier ratio ' + item.channelOutlierRatio,
+      ].join(' '),
+      kind: 'youtube' as const,
+      publishedAt: item.publishedAt ?? null,
+      sourceId: item.channel || item.videoId || 'youtube',
+      sourceName: 'YouTube platform signal',
+      videoId: item.videoId,
+      thumbnailUrl: item.thumbnailUrl,
+      sourceUrl: item.sourceUrl,
     })),
     ...historyDocuments,
   ];
@@ -518,6 +552,8 @@ export function generateEditorialIdeas(input: GenerateEditorialIdeasInput): Idea
   // A single isolated record is not enough to justify an automated editorial idea.
   if (topicRelevantDocuments.length < 2) return [];
   const topicRelevantNews = news.filter((item) => scoreResearchText(topic, item.title, item.summary) > 0);
+  const topicRelevantVideos = videos.filter((item) => scoreResearchText(topic, item.title, item.description ?? '') > 0);
+  const relevantYouTubeContext = youtubeContext.filter((item) => scoreResearchText(topic, item.title, item.summary ?? '') > 0);
   const topicRelevantHistory = historyDocuments.filter((item) => scoreResearchText(topic, item.title, item.text) > 0);
   const relevantIndependentContext = independentContext.filter((item) =>
     scoreResearchText(topic, item.title, item.summary ?? '') > 0,
@@ -555,13 +591,21 @@ export function generateEditorialIdeas(input: GenerateEditorialIdeasInput): Idea
           sourceName: 'Saved research memory',
         })),
     ],
-    videos: videos.map((item) => ({
-      title: item.title,
-      description: item.description,
-      channel: item.channel,
-      publishedAt: item.publishedAt,
-      viewCount: item.viewCount ?? null,
-    })),
+    videos: [
+      ...videos.map((item) => ({
+        title: item.title, description: item.description, channel: item.channel,
+        publishedAt: item.publishedAt, viewCount: item.viewCount ?? null,
+        viewsPerHour: item.growth?.viewsPerHour ?? null,
+        viewsPerDay: item.growth?.viewsPerDay ?? null,
+        channelOutlierRatio: item.growth?.channelOutlierRatio ?? null,
+      })),
+      ...youtubeContext.map((item) => ({
+        title: item.title, description: item.summary, channel: item.channel,
+        publishedAt: item.publishedAt ?? undefined, viewCount: item.viewCount ?? null,
+        viewsPerHour: item.viewsPerHour ?? null, viewsPerDay: item.viewsPerDay ?? null,
+        channelOutlierRatio: item.channelOutlierRatio ?? null,
+      })),
+    ],
     now: input.now,
   });
   for (const document of topicRelevantDocuments) {
@@ -727,13 +771,21 @@ export function generateEditorialIdeas(input: GenerateEditorialIdeasInput): Idea
   const output: Idea[] = [];
   const now = input.now ?? Date.now();
   const limit = Math.max(1, Math.min(25, input.limit ?? 25));
+  const youtubeVideoIds = [...new Set([
+    ...topicRelevantVideos.map((item) => item.id),
+    ...relevantYouTubeContext.flatMap((item) => item.videoId ? [item.videoId] : []),
+  ])];
+  const firstYoutubeContext = relevantYouTubeContext.find((item) => item.videoId || item.thumbnailUrl);
+  const firstYoutubeVideo = topicRelevantVideos.find((item) => item.id);
   const sourceUrl = topicRelevantNews.find((item) => item.url.startsWith('https://'))?.url ??
     topicRelevantHistory.find((item) => item.sourceUrl?.startsWith('https://'))?.sourceUrl ??
-    relevantIndependentContext.find((item) => item.sourceUrl?.startsWith('https://'))?.sourceUrl;
+    relevantIndependentContext.find((item) => item.sourceUrl?.startsWith('https://'))?.sourceUrl ??
+    firstYoutubeContext?.sourceUrl ??
+    (firstYoutubeVideo ? 'https://www.youtube.com/watch?v=' + firstYoutubeVideo.id : undefined);
   const sourceName = news.find((item) => item.url === sourceUrl)?.sourceName ??
     historicalSources.find((item) => item.sourceUrl === sourceUrl)?.sourceName ??
     relevantIndependentContext.find((item) => item.sourceUrl === sourceUrl)?.sourceName ??
-    undefined;
+    (sourceUrl?.includes('youtube.com/watch') ? 'YouTube platform observation' : undefined);
   const language = input.language ?? 'en';
 
   for (const candidate of candidates) {
@@ -757,6 +809,9 @@ export function generateEditorialIdeas(input: GenerateEditorialIdeasInput): Idea
       historicalSources.length ? (language === 'fa'
         ? historicalSources.length + ' منبع خبری در حافظه تاریخی'
         : historicalSources.length + ' historical publisher record(s) from saved research memory') : '',
+      (topicRelevantVideos.length + relevantYouTubeContext.length) ? (language === 'fa'
+        ? (topicRelevantVideos.length + relevantYouTubeContext.length) + ' سیگنال ویدئویی مرتبط YouTube با آمار و رشد اندازه‌گیری‌شده'
+        : (topicRelevantVideos.length + relevantYouTubeContext.length) + ' relevant YouTube platform signal(s), including available measured growth') : '',
       (priorMemory?.keyFindings.length ?? 0) + (priorMemory?.unresolvedQuestions.length ?? 0) + (priorMemory?.contradictions.length ?? 0) > 0
         ? (language === 'fa'
           ? 'یافته‌ها، پرسش‌های بی‌پاسخ و اختلاف‌های قبلی هم بررسی شدند'
@@ -787,8 +842,8 @@ export function generateEditorialIdeas(input: GenerateEditorialIdeasInput): Idea
         '\n\nConfidence: ' + confidence + '; this reflects the amount and mix of available material, not a guarantee that any claim is true.';
 
     const note = language === 'fa'
-      ? 'این ایده فقط از شواهد مستقل ناشران، وب و زمینه دانشنامه‌ای ساخته شده است. نمونه خام YouTube جداگانه نمایش داده می‌شود و در تولید ایده یا امتیاز تحریری نقشی ندارد.'
-      : 'Generated from independent publisher, web and encyclopedia evidence only. Raw YouTube API samples remain separate and do not influence idea generation or editorial scoring.';
+      ? 'این ایده از ترکیب سیگنال‌های واقعی YouTube و شواهد مستقل ناشران/وب/دانشنامه ساخته شده است. داده YouTube برای کشف روند و زاویه محتوا استفاده می‌شود، اما به‌عنوان استناد مستقل ناشر یا اثبات ادعای علمی/خبری محسوب نمی‌شود.'
+      : 'Generated from YouTube platform observations plus independent publisher, web and encyclopedia evidence. YouTube informs platform trends and content angles, but is never presented as an independent publisher citation or scientific/news proof.';
     const sourceCandidates = [
       ...topicRelevantNews.map((item) => ({
         sourceType: 'publisher' as const,
@@ -825,7 +880,7 @@ export function generateEditorialIdeas(input: GenerateEditorialIdeasInput): Idea
       note,
       status: 'New Discoveries',
       decision: '',
-      videoIds: [],
+      videoIds: youtubeVideoIds,
       createdAt: now + output.length,
       archived: false,
       assessment: confidence === 'low' ? 'Uncertain' : 'Worth Exploring',
@@ -833,13 +888,16 @@ export function generateEditorialIdeas(input: GenerateEditorialIdeasInput): Idea
       languages: [...input.languages],
       ...(sourceUrl ? { sourceUrl } : {}),
       ...(sourceName ? { sourceName } : {}),
+      ...(firstYoutubeContext?.thumbnailUrl || firstYoutubeVideo?.thumbnailUrl
+        ? { imageUrl: firstYoutubeContext?.thumbnailUrl ?? firstYoutubeVideo?.thumbnailUrl }
+        : {}),
       ...(input.reportId ? { reportId: input.reportId } : {}),
       engineGenerated: true,
       ideaCategory: candidate.category,
       generationKey: evidenceKey,
       engineScore: candidate.opportunityScore,
       engineScoreReason: candidate.opportunityReason,
-      engineScoreBasis: 'publisher-web-only-v2',
+      engineScoreBasis: youtubeVideoIds.length ? 'platform-aware-v3' : 'publisher-web-only-v2',
       ...(evidenceSources.length ? { evidenceSources } : {}),
     });
   }

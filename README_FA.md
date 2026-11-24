@@ -23,13 +23,13 @@
 
 شمارنده محلی هر جستجو را ۱۰۰ واحد و تست اتصال را ۱ واحد تخمین می‌زند؛ تلاش‌های مجدد نیز شمرده می‌شوند. Google سهمیه واقعی پروژه را کنترل می‌کند؛ مصرف سایر برنامه‌ها در شمارنده این برنامه دیده نمی‌شود. بازنشانی روز با منطقه زمانی Pacific انجام می‌شود. در quotaExceeded درخواست‌های بعدی همان روز متوقف می‌شوند. خطاهای کلید، دسترسی، اینترنت، زمان‌انتظار و پاسخ نامعتبر پیام قابل فهم دارند.
 
-هیچ views/hour، درصد رشد، نسبت تعامل، نسبت مشترکین، نمره ترکیبی یا تضمین وایرال محاسبه نمی‌شود. دسته Emerging Topics صرفاً نمونه‌های اخیراً منتشرشده است؛ Popular Topics از ترتیب خود YouTube استفاده می‌کند. رتبه‌بندی خودکار محتاطانه فقط Worth Exploring یا Uncertain پیشنهاد می‌دهد. سایر برچسب‌ها تصمیم شخصی شما هستند. هیچ درصد پتانسیل ساختگی نمایش داده نمی‌شود.
+موتور، تغییر بازدید هر ویدئو را میان snapshotهای واقعی محاسبه می‌کند و در صورت کفایت فاصله زمانی، views/hour و views/day و مقایسه با خط پایه کانال را نشان می‌دهد. این‌ها اندازه‌گیری همان ویدئوها هستند، نه پیش‌بینی قطعی بازدید آینده یا سرشماری کل بازار. داده‌های ناموجود حدس زده نمی‌شوند و هیچ تضمین وایرال‌شدن یا درصد موفقیت ساختگی ارائه نمی‌شود.
 
 ## هوش مصنوعی اختیاری
 
 در [OpenRouter](https://openrouter.ai/settings/keys) کلید بسازید و در Settings → OpenRouter ذخیره و تست کنید. Refresh free models فهرست فعلی مدل‌های رایگان را می‌گیرد؛ مدل دلخواه را انتخاب و Save model را بزنید. قیمت صفر به معنی دسترسی نامحدود نیست.
 
-در صفحه ایده، Request AI Second Opinion و سپس تأیید ارسال لازم است. فقط موضوع تحریریه‌ای، مفهوم و تصمیم شخصی در پیش‌نمایش ارسال دیده می‌شود. داده‌های API شامل عنوان/توضیحات/آمار، یادداشت‌ها و لینک‌های ویدیو به OpenRouter ارسال نمی‌شوند. خودتان هم آمار یا داده API را داخل این فیلدها نچسبانید. پاسخ AI یک نظر ذهنی است و می‌تواند مخالف باشد. نبود مدل، محدودیت نرخ و کلید نامعتبر مدیریت می‌شوند. درخواست تولید POST خودکار تکرار نمی‌شود.
+Deep Research چشم دوم موتور داخلی است و در اجرای عادی پژوهش نیز به‌صورت خودکار فراخوانی می‌شود. نمونهٔ محدود YouTube شامل عنوان، توضیح، کانال، زمان انتشار، آمار عمومی و شاخص‌های رشد اندازه‌گیری‌شده همراه شواهد وب/ناشران به پژوهشگر و بازبین مستقل ارسال می‌شود. این اطلاعات، سیگنال پلتفرمی برای کشف موضوع و زاویهٔ محتوا هستند و جای نقل‌قول مستقل از ناشر را نمی‌گیرند. کلیدها، هدرهای احراز هویت و یادداشت‌های خصوصی هرگز ارسال نمی‌شوند. OpenRouter همچنان طبق سیاست جداگانه از Deep Research مستثناست. پاسخ مدل نظر پژوهشی است و باید با شواهد و عدم‌قطعیت سنجیده شود.
 
 ## فضای محلی
 
@@ -37,7 +37,7 @@
 - My Library: ذخیره لینک، برچسب شخصی، موضوع، پوشه، تگ و یادداشت؛ جستجو و مرتب‌سازی و خروجی لینک‌ها. جست‌وجوی محلی در Library، Notes و Opportunities همه واژه‌های عبارت را مستقل از ترتیب بررسی می‌کند و حروف رایج فارسی/عربی، اعراب، نیم‌فاصله و اعداد فارسی/عربی را نرمال می‌کند؛ این قابلیت تصحیح املای تقریبی نیست. دانلود ویدیو، صدا یا زیرنویس وجود ندارد.
 - Notes: صفحه، پوشه، تگ، عنوان، پاراگراف، بولت، چک‌لیست و ارجاع به لینک/ویدیو/ایده. ترتیب بلوک‌ها را با Move block up/down تغییر دهید. ابتدا صفحه را نام‌گذاری و Save page را بزنید؛ لینک به صفحه حذف‌شده صفحه تازه نمی‌سازد.
 
-اطلاعات YouTube در جداول جدا هستند و پس از ۲۹ روز منقضی می‌شوند. پاک‌سازی هنگام راه‌اندازی، فعال‌شدن برنامه، ذخیره و بررسی ساعتی در حال اجرا انجام می‌شود؛ وقتی Android برنامه را متوقف کرده است، زمان حذف فیزیکی فایل تضمین نمی‌شود، ولی داده منقضی‌شده هنگام استفاده حذف و نمایش داده نمی‌شود. لینک‌ها و متن‌هایی که شخصاً نگه داشته‌اید باقی می‌مانند. از استثنای کلی نگهداری دائمی تمام شناسه‌های API استفاده نمی‌شود؛ ارجاع‌های خودکار بدون متادیتا یا بوک‌مارک شخصی پاک می‌شوند.
+اطلاعات YouTube، گزارش‌ها، رشد اندازه‌گیری‌شده و تمام snapshotها در جدول محلی جداگانه نگه‌داری می‌شوند و انقضای خودکار یا سقف ۱۰هزار رکورد ندارند. فقط با حذف آگاهانهٔ داده‌های برنامه از دستگاه پاک می‌شوند. این نگه‌داری محلی با خروجی Backup شخصی فرق دارد؛ طرح فعلی Backup همچنان متادیتای خام API را صادر نمی‌کند.
 
 ## پشتیبان و انتقال به گوشی دیگر
 
@@ -51,11 +51,11 @@
 
 ## زمان‌بندی
 
-حالت پیش‌فرض Manual است. پس از یک پژوهش دستی می‌توان Every 12 hours، Daily یا Weekly انتخاب کرد. Save schedule را بزنید. موضوع آخر و بودجه همان روز استفاده می‌شود. Pause/Resume و اجازه اعلان وجود دارد. Android زمان واقعی را تعیین می‌کند؛ force-stop، محدودیت باتری و نبود شبکه می‌توانند اجرا را عقب بیندازند. این قابلیت در مرورگر وجود ندارد و باید در build نصب‌شده Android آزمایش شود. پردازش همیشه‌روشن یا polling شبکه‌ای نداریم.
+تا وقتی برنامه در پیش‌زمینه باز است و Pause فعال نشده، موتور مستقل از گزینهٔ زمان‌بندی Manual به‌صورت پیوسته نیچ انتخابی را کشف و پژوهش می‌کند؛ Manual فقط اجرای زمان‌بندی‌شدهٔ پس‌زمینه را غیرفعال می‌کند. هر چرخه پس از ذخیرهٔ نتیجه سراغ موضوع بعدی می‌رود و تعداد چرخه‌های نشست محدود نیست. کارهای نیمه‌تمام و checkpoint محلی حفظ می‌شوند. پس از بازشدن دوباره، ابتدا خبرها و سیگنال‌های تازه بررسی می‌شوند؛ سپس موضوعات تازه پژوهش می‌شوند و فقط کارهای نیمه‌تمامِ اخیر در نبود موضوع تازه از سر گرفته می‌شوند. صف‌های قدیمی هرگز بر ترندهای روز اولویت نمی‌گیرند و checkpoint آن‌ها بی‌صدا حذف نمی‌شود. در پس‌زمینه یا پس از بسته‌شدن، اجرای OS تابع WorkManager، باتری و محدودیت‌های Android است. سقف سهمیه و محدودیت هر درخواست همچنان رعایت می‌شود.
 
 ## خروجی نصب
 
-ساخت Android از طریق GitHub Actions در شاخه `ci/apk-build` انجام می‌شود. workflow برای Release APK با معماری ARM64 و همان کلید امضای ثابت پیکربندی شده است. پس از build موفق، فایل در Artifact با نام `mohsen-scout-release-apk` قرار می‌گیرد. وضعیت آخرین اجرا، نتیجه تست‌ها و محدودیت‌های تست دستگاه در `TEST_RESULTS.md` ثبت می‌شوند.
+ساخت Android از طریق GitHub Actions در شاخه `release/v1.20.1-xai-grok` انجام می‌شود. workflow برای Release APK با معماری ARM64 و همان کلید امضای ثابت پیکربندی شده است. پس از build موفق، فایل در Artifact با نام `mohsen-scout-release-apk` قرار می‌گیرد. وضعیت آخرین اجرا، نتیجه تست‌ها و محدودیت‌های تست دستگاه در `TEST_RESULTS.md` ثبت می‌شوند.
 
 برای توسعه محلی:
 
@@ -75,10 +75,10 @@ The Discover tab is now Space Radar. The original general YouTube research workf
 
 - **Space Radar:** choose a space/astronomy niche, select official feed providers and a Wikipedia language project, and refresh source signals manually.
 - **Cosmic News:** reads the selected NASA, NASA JPL and ESA RSS feeds; each item retains its publisher URL and publication timestamp where supplied.
-- **Trend Intelligence:** uses the personal YouTube Data API key. One sample uses `search.list` ordered by YouTube view count (100 quota units) and `videos.list` for raw view counts (1 unit), and `channels.list` for public channel size (1 unit). A popularity sample is not a full market census; no views/hour, fake velocity or composite competition score is shown.
+- **Trend Intelligence:** uses the personal YouTube Data API key. Official YouTube ordering and raw metadata are passed into the internal engine and the Deep Research/independent-review models. Persisted snapshots enable measured per-video views/hour and views/day; all YouTube metadata and snapshots remain local without automatic expiry. The sample is bounded and is not a full market census.
 - **Search Demand:** compares up to three Wikipedia article pageview histories from the selected language edition. Pageviews are a public-interest proxy, not Google search volume, unique people, country-level audience data or YouTube views. Google Trends programmatic access is currently a limited alpha; the app opens the Trends website for manual country/term comparison rather than pretending a public API is available.
-- **Deep Research:** after the user chooses a topic, combines selected official news, optional Wikimedia context and optional YouTube sample into a source-linked outline, title ideas and verification checklist. The resulting brief can be saved into the existing Notes workspace. No source metadata or YouTube statistics are sent to OpenRouter.
-- Network data is requested only on user action and cached in memory for ten minutes. There is no background polling or persistent large research database. Source providers are isolated behind small adapters so a replacement can map into the same result shape.
+- **Deep Research:** the second eye of the internal engine. It is invoked automatically for normal research and cross-checks completed local findings with the same YouTube sample, platform-growth history and independent web/publisher evidence. It can also be opened manually for a full brief. The first configured model proposes hypotheses and next searches; a different configured provider independently reviews the result. Exact-source quote verification remains required for publisher claims.
+- The foreground autonomous loop continuously discovers recent items for the selected niche whenever the app is active and not paused, even when background scheduling is set to Manual. It stores queue/checkpoints and resumes recent interrupted tasks only after a fresh-evidence pass. The Android scheduler remains OS-controlled and best-effort when the app is backgrounded or closed.
 
 The new Space settings are local preferences. Existing version-1 backups remain importable; missing Space settings are filled with conservative defaults during validation/migration.
 

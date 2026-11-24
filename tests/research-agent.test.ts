@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import { defaults } from '../lib/types';
 import {
   buildResearchAgentPrompt,
+  buildIndependentReviewPrompt,
   parseResearchAgentJson,
   parseResearchDossier,
   type ResearchAgentInput,
@@ -30,29 +31,48 @@ const evidence: WebResearchItem[] = [
   },
 ];
 
-void test('research prompt contains only independent web evidence and previous research, never YouTube API metadata', () => {
+void test('research prompt receives primary YouTube platform signals, growth and selected niche without treating them as publisher citations', () => {
   const input: ResearchAgentInput = {
     topic: 'battery recycling',
-    evidence: [
-      ...evidence,
-      {
-        id: 'yt:private-video',
-        title: 'Raw YouTube title must not leave the device',
-        summary: 'viewCount 987654 and likeCount 12345',
-        url: 'https://www.youtube.com/watch?v=abcdefghijk',
-        sourceName: 'YouTube',
-        category: 'web',
+    researchNiche: 'space science and exploration',
+    evidence,
+    youtubeSignals: [{
+      id: 'video-1',
+      title: 'MOCK YouTube trend: battery recycling breakthrough',
+      description: 'A sampled video with measured view velocity.',
+      channel: 'MOCK science channel',
+      channelId: 'UCmock',
+      publishedAt: '2026-11-20T12:00:00.000Z',
+      thumbnailUrl: 'https://example.org/thumb.jpg',
+      viewCount: 120000,
+      likeCount: 6000,
+      channelSubscriberCount: 50000,
+      channelVideoCount: 1200,
+      url: 'https://www.youtube.com/watch?v=abcdefghijk',
+      growth: {
+        snapshotCount: 3, deltaViews: 18000, viewsPerHour: 750, viewsPerDay: 18000,
+        channelBaselineViewsPerDay: 2500, channelOutlierRatio: 7.2,
+        measuredAt: 1795195200000, status: 'measured',
       },
-    ],
+    }],
+    internalEngineFindings: {
+      summary: 'Local engine found a new platform trend.',
+      keyFindings: ['Three related videos accelerated.'],
+      gaps: ['Independent primary data is missing.'],
+      verificationQuestions: ['Is the reported mechanism real?'],
+      potentialContradictions: ['One publisher disputes the reported scale.'],
+    },
     preferences: defaults().preferences,
   };
   const prompt = buildResearchAgentPrompt(input);
   assert.ok(prompt.includes('Independent battery recycling study'));
-  assert.ok(!prompt.includes('Raw YouTube title must not leave the device'));
-  assert.ok(!prompt.includes('987654'));
-  assert.ok(prompt.includes('counterevidence'));
+  assert.ok(prompt.includes('MOCK YouTube trend: battery recycling breakthrough'));
+  assert.ok(prompt.includes('750'));
+  assert.ok(prompt.includes('7.2'));
+  assert.ok(prompt.includes('space science and exploration'));
+  assert.ok(prompt.includes('Local engine found a new platform trend.'));
+  assert.ok(prompt.includes('not independent publisher citations'));
 });
-
 void test('research response parser accepts fenced JSON but rejects non-object payloads', () => {
   assert.deepEqual(parseResearchAgentJson('\x60\x60\x60json\n{"hypotheses":[]}\n\x60\x60\x60'), { hypotheses: [] });
   assert.throws(() => parseResearchAgentJson('[]'));
@@ -118,4 +138,57 @@ void test('research dossier filters fabricated and YouTube evidence IDs and dupl
   assert.equal(dossier.nextQueries.length, 1);
   assert.equal(dossier.nextQueries[0]?.query, 'battery recycling primary production dataset');
   assert.deepEqual(dossier.contradictions[0]?.evidenceIds, ['web:one', 'web:two']);
+});
+
+void test('independent reviewer receives YouTube momentum signals but keeps them outside publisher citations', () => {
+  const dossier = parseResearchDossier({
+    hypotheses: [{
+      id: 'h-platform',
+      claim: 'A new video format is accelerating in the selected niche.',
+      rationale: 'A platform hypothesis requiring independent factual context.',
+      status: 'insufficient-evidence',
+      confidence: 'low',
+      supportingEvidenceIds: [],
+      challengingEvidenceIds: [],
+      missingEvidence: ['Independent original sources'],
+    }],
+    evidenceReviews: [], nextQueries: [], contradictions: [], gaps: ['Independent sources missing'],
+    conclusion: 'Provisional platform observation only.', confidence: 'low', stoppingReason: 'Need independent sources.',
+  }, evidence, undefined, [], 'gemini', 'first-model', 1795195200000);
+  const youtube = [{
+    id: 'video-yt-momentum',
+    title: 'MOCK YouTube platform momentum: battery recycling',
+    description: 'A measured trend observation.',
+    channel: 'MOCK channel',
+    channelId: 'UCmock',
+    publishedAt: '2026-11-20T12:00:00.000Z',
+    thumbnailUrl: 'https://example.org/thumb.jpg',
+    viewCount: 120000,
+    likeCount: 6000,
+    channelSubscriberCount: null,
+    channelVideoCount: null,
+    url: 'https://www.youtube.com/watch?v=video-yt-momentum',
+    growth: {
+      snapshotCount: 4, deltaViews: 18000, viewsPerHour: 750, viewsPerDay: 18000,
+      channelBaselineViewsPerDay: 2500, channelOutlierRatio: 7.2,
+      measuredAt: 1795195200000, status: 'measured' as const,
+    },
+  }];
+  const prompt = buildIndependentReviewPrompt('battery recycling', dossier, evidence, 'en', youtube, {
+    researchNiche: 'space science and exploration',
+    internalEngineFindings: {
+      summary: 'Internal engine detected increasing platform momentum.',
+      keyFindings: ['Four sampled videos show recent acceleration.'],
+      gaps: ['Independent source verification remains incomplete.'],
+      verificationQuestions: ['Does the underlying scientific claim hold?'],
+      potentialContradictions: [],
+    },
+  });
+  assert.ok(prompt.includes('MOCK YouTube platform momentum'));
+  assert.ok(prompt.includes('750'));
+  assert.ok(prompt.includes('7.2'));
+  assert.ok(prompt.includes('space science and exploration'));
+  assert.ok(prompt.includes('Internal engine detected increasing platform momentum.'));
+  assert.ok(prompt.includes('cannot be quoted as fetched independent sourceText'));
+  assert.ok(prompt.includes('Independent battery recycling study'));
 });
