@@ -34,7 +34,7 @@ void test('canonical research URLs remove tracking identity and reject video or 
 void test('evidence merge deduplicates canonical URLs and enforces a hard evidence ceiling', () => {
   const result = mergeIndependentResearchEvidence(
     [evidenceItem('https://example.org/a?utm_source=one')],
-    [item('https://example.org/a#fragment'), item('https://other.org/b'), item('https://youtube.com/watch?v=abc')],
+    [evidenceItem('https://example.org/a#fragment'), evidenceItem('https://other.org/b'), evidenceItem('https://youtube.com/watch?v=abc')],
     2,
   );
   assert.equal(result.items.length, 2);
@@ -46,9 +46,9 @@ void test('evidence merge deduplicates canonical URLs and enforces a hard eviden
 
 void test('evidence coverage reports dates and distinct hosts without claiming audience demand', () => {
   const coverage = assessResearchEvidenceCoverage([
-    item('https://a.example.org/one', 'One', '2026-11-20T00:00:00.000Z'),
-    item('https://b.example.net/two'),
-    item('https://a.example.org/three', 'Three', '2024-01-01T00:00:00.000Z'),
+    evidenceItem('https://a.example.org/one', 'One', '2026-11-20T00:00:00.000Z'),
+    evidenceItem('https://b.example.net/two'),
+    evidenceItem('https://a.example.org/three', 'Three', '2024-01-01T00:00:00.000Z'),
   ], Date.parse('2026-11-24T00:00:00.000Z'));
   assert.equal(coverage.uniqueUrlCount, 3);
   assert.equal(coverage.uniqueHostCount, 2);
