@@ -4,6 +4,10 @@ Base: Build 26 commit `df2917dca62ef0882fdca0621a42e83b9f84dca2`.
 This release candidate is isolated on `feature/v1.16.0-research-discovery-from-build-26`; it does not modify `main`.
 
 ## Implemented
+- Added a model-backed research agent using the Gemini, Groq, Cloudflare or OpenRouter provider already configured in Settings. Each web/news round can ask the model to form falsifiable hypotheses, classify supplied evidence as support/challenge/context, assess visible source type and freshness, identify contradictions and gaps, and propose the next targeted searches.
+- Added strict local validation for the model response: only evidence IDs actually present in the independent web result set are retained; duplicate searches, unknown IDs and YouTube-hosted records are filtered. Malformed model output falls back to the explicit local heuristic path and is reported as such.
+- Persisted a bounded research dossier in device-local research memory: hypotheses, evidence roles, source assessments, completed and pending research queries, contradictions, gaps, conclusion, confidence and stopping reason. Later research passes can use this prior dossier.
+- Research-agent calls reuse the configured provider fallback chain and local OpenRouter usage accounting. The agent receives web/publisher evidence only, not raw YouTube API metadata.
 - Replaced one-shot keyword-frequency follow-up planning with an iterative hypothesis-review loop. After each web/news round, the engine rebuilds candidate hypotheses from accumulated evidence and selects a new branch for independent confirmation, counterevidence, or mechanism checks.
 - Added an auditable hypothesis review record to source activity: provisional status, confidence, linked evidence IDs, support/challenge signal counts, and host-family diversity. Explicitly labels these as lexical signals and domain proxies, not semantic proof or verified ownership independence.
 - Added tests for contested hypotheses, exclusion of YouTube/invalid URLs from independent evidence, counterevidence planning, and repeat-query suppression.
