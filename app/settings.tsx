@@ -38,9 +38,18 @@ function providerName(provider: SecondOpinionProvider): string {
 }
 function normalizePreferences(value?: Partial<Preferences>): Preferences {
   const fallback = defaults().preferences;
+  const legacy = value as (Partial<Preferences> & { secondOpinionProvider?: string; secondOpinionOrder?: string[]; secondOpinionModels?: Record<string, string> }) | undefined;
+  const legacyModels = legacy?.secondOpinionModels ?? {};
+  const migratedOrder = Array.isArray(legacy?.secondOpinionOrder)
+    ? legacy.secondOpinionOrder.map((provider) => provider === 'groq' ? 'xai' : provider).filter((provider): provider is SecondOpinionProvider => ['gemini', 'xai', 'cloudflare', 'openrouter'].includes(provider))
+    : fallback.secondOpinionOrder;
+  const migratedModel = legacyModels.xai || (legacyModels.groq && legacyModels.groq !== 'openai/gpt-oss-120b' ? legacyModels.groq : 'grok-4-1-fast');
   return {
     ...fallback,
     ...value,
+    secondOpinionProvider: legacy?.secondOpinionProvider === 'groq' ? 'xai' : (value?.secondOpinionProvider ?? fallback.secondOpinionProvider),
+    secondOpinionOrder: migratedOrder.length ? migratedOrder : fallback.secondOpinionOrder,
+    secondOpinionModels: { ...fallback.secondOpinionModels, ...legacyModels, xai: migratedModel },
     languages: Array.isArray(value?.languages) ? [...value.languages] : fallback.languages,
     spaceNewsSources: Array.isArray(value?.spaceNewsSources) ? [...value.spaceNewsSources] : fallback.spaceNewsSources,
   };
@@ -169,7 +178,7 @@ export default function Settings() {
     youtube: null,
     openrouter: null,
     gemini: null,
-    groq: null,
+    xai: null,
     cloudflare: null,
     'cloudflare-account-id': null,
     firecrawl: null,
@@ -196,7 +205,7 @@ export default function Settings() {
   }, [data.preferences]);
   useEffect(() => {
     let active = true;
-    const kinds: Credential[] = ['youtube', 'openrouter', 'gemini', 'groq', 'cloudflare', 'cloudflare-account-id', 'firecrawl'];
+    const kinds: Credential[] = ['youtube', 'openrouter', 'gemini', 'xai', 'cloudflare', 'cloudflare-account-id', 'firecrawl'];
     void Promise.all(kinds.map(async (kind) => [kind, Boolean(await getKey(kind))] as const))
       .then((entries) => {
         if (!active) return;
@@ -204,7 +213,7 @@ export default function Settings() {
       })
       .catch(() => {
         if (active) setCredentialStatus({
-          youtube: null, openrouter: null, gemini: null, groq: null, cloudflare: null, 'cloudflare-account-id': null, firecrawl: null,
+          youtube: null, openrouter: null, gemini: null, xai: null, cloudflare: null, 'cloudflare-account-id': null, firecrawl: null,
         });
       });
     return () => { active = false; };
@@ -416,16 +425,16 @@ export default function Settings() {
         </Txt>
         <Txt muted>
           {prefs.uiLanguage === 'fa'
-            ? 'نکته حریم خصوصی: طبق شرایط فعلی Google، محتوای ارسالی در سطح رایگان Gemini می‌تواند برای بهبود محصولات Google استفاده شود؛ در سطح پولی این استفاده اعلام نشده است. محدودیت، قیمت و دسترسی همه سرویس‌ها و مدل‌ها تغییرپذیر است؛ قبل از استفاده شرایط حساب خودت را بررسی کن. Groq و Cloudflare نیز ممکن است هزینه یا سهمیه مصرف داشته باشند.'
-            : 'Privacy and billing note: Google currently states that Gemini Free Tier content may be used to improve its products; the Paid Tier is listed as not used for product improvement. Provider pricing, quotas and model availability can change. Check your account terms before use. Groq and Cloudflare models may also incur charges or quota limits.'}
+            ? 'نکته حریم خصوصی: طبق شرایط فعلی Google، محتوای ارسالی در سطح رایگان Gemini می‌تواند برای بهبود محصولات Google استفاده شود؛ در سطح پولی این استفاده اعلام نشده است. محدودیت، قیمت و دسترسی همه سرویس‌ها و مدل‌ها تغییرپذیر است؛ قبل از استفاده شرایط حساب خودت را بررسی کن. Grok (xAI) و Cloudflare نیز ممکن است هزینه یا سهمیه مصرف داشته باشند.'
+            : 'Privacy and billing note: Google currently states that Gemini Free Tier content may be used to improve its products; the Paid Tier is listed as not used for product improvement. Provider pricing, quotas and model availability can change. Check your account terms before use. Grok (xAI) and Cloudflare models may also incur charges or quota limits.'}
         </Txt>
         <Choices
           label="Preferred provider"
-          options={['Gemini', 'Groq', 'Cloudflare Workers AI', 'OpenRouter']}
+          options={['Gemini', 'Grok (xAI)', 'Cloudflare Workers AI', 'OpenRouter']}
           selected={[prefs.secondOpinionProvider === 'cloudflare' ? 'Cloudflare Workers AI' : (prefs.secondOpinionProvider ?? 'gemini').replace(/^./, (value) => value.toUpperCase())]}
           onChange={(values) => {
             const selected: Record<string, SecondOpinionProvider> = {
-              Gemini: 'gemini', Groq: 'groq', 'Cloudflare Workers AI': 'cloudflare', OpenRouter: 'openrouter',
+              Gemini: 'gemini', Grok (xAI): 'xai', 'Cloudflare Workers AI': 'cloudflare', OpenRouter: 'openrouter',
             };
             const provider = selected[values[0]] ?? 'gemini';
             const currentOrder = prefs.secondOpinionOrder ?? DEFAULT_SECOND_OPINION_ORDER;
@@ -475,9 +484,9 @@ export default function Settings() {
           placeholder="gemini-3.8-flash"
         />
         <Field
-          label={'Groq model'}
-          value={prefs.secondOpinionModels?.groq ?? 'openai/gpt-oss-120b'}
-          onChange={(value) => setPrefs({ ...prefs, secondOpinionModels: { ...prefs.secondOpinionModels, groq: value } })}
+          label={'Grok (xAI) model'}
+          value={prefs.secondOpinionModels?.xai ?? 'grok-4-1-fast'}
+          onChange={(value) => setPrefs({ ...prefs, secondOpinionModels: { ...prefs.secondOpinionModels, xai: value } })}
           placeholder="openai/gpt-oss-120b"
         />
         <Field
@@ -511,9 +520,9 @@ export default function Settings() {
           <CredentialSection kind="gemini" label="Gemini API key" onStatusChange={handleCredentialStatus} />
           <Action secondary onPress={() => void Linking.openURL('https://aistudio.google.com/apikey')}>Open Google AI Studio</Action>
         </Fold>
-        <Fold title="Groq API key" summary={credentialStatus.groq ? 'Key saved securely' : 'Key not set'}>
-          <CredentialSection kind="groq" label="Groq API key" onStatusChange={handleCredentialStatus} />
-          <Action secondary onPress={() => void Linking.openURL('https://console.groq.com/keys')}>Open Groq Console</Action>
+        <Fold title="Grok (xAI) API key" summary={credentialStatus.xai ? 'Key saved securely' : 'Key not set'}>
+          <CredentialSection kind="xai" label="Grok (xAI) API key" onStatusChange={handleCredentialStatus} />
+          <Action secondary onPress={() => void Linking.openURL('https://console.x.ai/')}>Open Grok (xAI) Console</Action>
         </Fold>
         <Fold title="Cloudflare Workers AI" summary={credentialStatus.cloudflare && credentialStatus['cloudflare-account-id'] ? 'Token and Account ID saved' : 'Token or Account ID missing'}>
           <CredentialSection kind="cloudflare-account-id" label="Cloudflare Account ID" onStatusChange={handleCredentialStatus} />
