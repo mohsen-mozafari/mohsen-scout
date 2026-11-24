@@ -26,7 +26,7 @@ import { type Idea, statuses, languages, DEFAULT_SECOND_OPINION_ORDER } from '@/
 import { buildIdeaAnalysis, limitations } from '@/lib/engine';
 import { getIdeaDisplayTitle } from '@/lib/idea-research';
 import { getKey } from '@/lib/vault';
-import { structuredSecondOpinionPrompt, formatStructuredSecondOpinion } from '@/lib/api';
+import { structuredSecondOpinionPrompt, formatStructuredSecondOpinion, getFreeModels, selectFreeModel } from '@/lib/api';
 import { requestSecondOpinionWithFallback, DEFAULT_SECOND_OPINION_MODELS, type SecondOpinionProviderConfig } from '@/lib/ai-gateway';
 import { uid } from '@/lib/types';
 import { recordRuntimeFinish, recordRuntimeStart } from '@/lib/runtime-metrics';
@@ -76,7 +76,6 @@ export default function Detail() {
           : DEFAULT_SECOND_OPINION_ORDER;
         const configuredModels = data.preferences.secondOpinionModels ?? DEFAULT_SECOND_OPINION_MODELS;
         const configs: SecondOpinionProviderConfig[] = [];
-        const setupWarnings: string[] = [];
         for (const provider of new Set(order)) {
           try {
             const key = await getKey(provider);
@@ -89,13 +88,11 @@ export default function Detail() {
                 const liveFreeModels = await getFreeModels();
                 model = selectFreeModel(liveFreeModels, model);
               } catch (error) {
-                setupWarnings.push('OpenRouter model discovery failed: ' + (error instanceof Error ? error.message : 'model list unavailable'));
                 model = '';
               }
             }
             configs.push({ provider, key: key ?? '', model, ...(accountId ? { accountId } : {}) });
           } catch (error) {
-            setupWarnings.push(provider + ' setup failed: ' + (error instanceof Error ? error.message : 'credential unavailable'));
           }
         }
         const decisionContext = idea.decision.trim()
@@ -117,7 +114,6 @@ export default function Detail() {
         }));
         recordRuntimeFinish('AI', 'success');
         setConsent(false);
-        if (setupWarnings.length) console.warn('Second-opinion setup warnings:', setupWarnings.join(' | '));
       } catch (error) {
         recordRuntimeFinish('AI', 'error', error instanceof Error ? error.message : String(error));
         throw error;
