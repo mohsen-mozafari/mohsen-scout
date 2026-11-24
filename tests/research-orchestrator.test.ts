@@ -16,7 +16,7 @@ import type { WebResearchItem } from '../lib/web-research';
 const query = (value: string, priority: number, purpose: ResearchDossierQuery['purpose'] = 'independent-confirmation'): ResearchDossierQuery => ({
   query: value, priority, purpose, hypothesisId: 'h1', reason: 'Test query',
 });
-const item = (url: string, title = 'Research source', publishedAt?: string): WebResearchItem => ({
+const evidenceItem = (url: string, title = 'Research source', publishedAt?: string): WebResearchItem => ({
   id: url, title, summary: 'A bounded independent source summary.', url, sourceName: 'Publisher',
   ...(publishedAt ? { publishedAt } : {}), category: 'web',
 });
@@ -33,7 +33,7 @@ void test('canonical research URLs remove tracking identity and reject video or 
 
 void test('evidence merge deduplicates canonical URLs and enforces a hard evidence ceiling', () => {
   const result = mergeIndependentResearchEvidence(
-    [item('https://example.org/a?utm_source=one')],
+    [evidenceItem('https://example.org/a?utm_source=one')],
     [item('https://example.org/a#fragment'), item('https://other.org/b'), item('https://youtube.com/watch?v=abc')],
     2,
   );

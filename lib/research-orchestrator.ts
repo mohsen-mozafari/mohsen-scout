@@ -47,9 +47,11 @@ export function canonicalizeIndependentResearchUrl(value: string): string | unde
     if ((url.protocol !== 'https:' && url.protocol !== 'http:') || url.username || url.password) return undefined;
     if (isBlockedVideoHost(url.hostname.toLowerCase())) return undefined;
     url.hash = '';
-    for (const key of [...url.searchParams.keys()]) {
-      if (/^(utm_.+|fbclid|gclid|mc_cid|mc_eid)$/i.test(key)) url.searchParams.delete(key);
-    }
+    const trackingKeys: string[] = [];
+    url.searchParams.forEach((_value, key) => {
+      if (/^(utm_.+|fbclid|gclid|mc_cid|mc_eid)$/i.test(key)) trackingKeys.push(key);
+    });
+    for (const key of trackingKeys) url.searchParams.delete(key);
     url.searchParams.sort();
     if (url.pathname.length > 1) url.pathname = url.pathname.replace(/\/+$/, '');
     return url.toString();
