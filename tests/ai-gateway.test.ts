@@ -224,3 +224,24 @@ void test('all-provider failure preserves a redacted audit trail for the Researc
   );
   assert.equal(calls, 2);
 });
+
+
+void test('a rate-limited OpenRouter free model falls through to another model from the same provider', async () => {
+  const attemptedModels: string[] = [];
+  const result = await requestSecondOpinionWithFallback([
+    { provider: 'openrouter', key: 'router-key', model: 'free/model-a:free' },
+    { provider: 'openrouter', key: 'router-key', model: 'free/model-b:free' },
+    { provider: 'groq', key: 'groq-key', model: 'openai/gpt-oss-120b' },
+  ], 'approved prompt', async (_input, init) => {
+    const body = JSON.parse(requestBody(init));
+    attemptedModels.push(body.model);
+    if (body.model === 'free/model-a:free') {
+      return jsonResponse({ error: { message: 'rate limited' } }, 429, { 'Retry-After': '120' });
+    }
+    return jsonResponse({ choices: [{ message: { content: validOpinion } }] });
+  });
+  assert.equal(result.provider, 'openrouter');
+  assert.equal(result.model, 'free/model-b:free');
+  assert.deepEqual(attemptedModels, ['free/model-a:free', 'free/model-b:free']);
+  assert.deepEqual(result.attempts.map((attempt) => attempt.status), ['rate-limited', 'success']);
+});
