@@ -61,7 +61,7 @@ void test('Gemini adapter uses the API-key header and sends only the approved ed
   assert.doesNotMatch(JSON.stringify(body), /nasa\.gov|youtube\.com|private video description|local score 94/i);
 });
 
-void test('Groq adapter uses its OpenAI-compatible chat-completions contract', async () => {
+void test('Grok (xAI) adapter uses its OpenAI-compatible chat-completions contract', async () => {
   let capturedUrl = '';
   let capturedInit: RequestInit | undefined;
   const fetcher: typeof fetch = async (input, init) => {
@@ -70,13 +70,13 @@ void test('Groq adapter uses its OpenAI-compatible chat-completions contract', a
     return jsonResponse({ choices: [{ message: { content: validOpinion } }] });
   };
   const result = await requestSecondOpinionWithFallback([
-    { provider: 'groq', key: 'groq-secret', model: 'openai/gpt-oss-120b' },
+    { provider: 'xai', key: 'xai-secret', model: 'grok-4-1-fast' },
   ], 'topic and candidate only', fetcher);
-  assert.equal(result.provider, 'groq');
-  assert.equal(capturedUrl, 'https://api.groq.com/openai/v1/chat/completions');
-  assert.equal(requestHeader(capturedInit, 'Authorization'), 'Bearer groq-secret');
+  assert.equal(result.provider, 'xai');
+  assert.equal(capturedUrl, 'https://api.x.ai/v1/chat/completions');
+  assert.equal(requestHeader(capturedInit, 'Authorization'), 'Bearer xai-secret');
   const body = JSON.parse(requestBody(capturedInit));
-  assert.equal(body.model, 'openai/gpt-oss-120b');
+  assert.equal(body.model, 'grok-4-1-fast');
   assert.deepEqual(body.messages, [{ role: 'user', content: 'topic and candidate only' }]);
 });
 
@@ -116,7 +116,7 @@ void test('provider fallback advances after a rate limit and sends at most one g
   const calls: string[] = [];
   const configs: SecondOpinionProviderConfig[] = [
     { provider: 'gemini', key: 'gemini-key', model: 'gemini-3.8-flash' },
-    { provider: 'groq', key: 'groq-key', model: 'openai/gpt-oss-120b' },
+    { provider: 'xai', key: 'xai-key', model: 'grok-4-1-fast' },
     { provider: 'cloudflare', key: 'cf-key', accountId: '023e105f4ecef8ad9ca31a8372d0c353', model: '@cf/meta/llama-3.3-70b-instruct-fp8-fast' },
   ];
   const fetcher: typeof fetch = async (input) => {
@@ -128,14 +128,14 @@ void test('provider fallback advances after a rate limit and sends at most one g
         headers: { 'Retry-After': '120', 'Content-Type': 'application/json' },
       });
     }
-    if (url.includes('api.groq.com')) return jsonResponse({ choices: [{ message: { content: validOpinion } }] });
+    if (url.includes('api.xai.com')) return jsonResponse({ choices: [{ message: { content: validOpinion } }] });
     return jsonResponse({ success: true, result: { response: validOpinion } });
   };
   const result = await requestSecondOpinionWithFallback(configs, 'approved prompt', fetcher);
-  assert.equal(result.provider, 'groq');
+  assert.equal(result.provider, 'xai');
   assert.equal(calls.length, 2);
   assert.equal(calls.filter((url) => url.includes('generativelanguage')).length, 1);
-  assert.equal(calls.filter((url) => url.includes('api.groq.com')).length, 1);
+  assert.equal(calls.filter((url) => url.includes('api.xai.com')).length, 1);
   assert.deepEqual(result.attempts.map((attempt) => attempt.status), ['rate-limited', 'success']);
 });
 
@@ -143,14 +143,14 @@ void test('an invalid structured answer is rejected and falls back to the next p
   const calls: string[] = [];
   const result = await requestSecondOpinionWithFallback([
     { provider: 'gemini', key: 'g-key', model: 'gemini-3.8-flash' },
-    { provider: 'groq', key: 'r-key', model: 'openai/gpt-oss-120b' },
+    { provider: 'xai', key: 'r-key', model: 'grok-4-1-fast' },
   ], 'approved prompt', async (input) => {
     const url = requestUrl(input);
     calls.push(url);
     if (url.includes('generativelanguage')) return jsonResponse({ candidates: [{ content: { parts: [{ text: '{"decision":"invented"}' }] } }] });
     return jsonResponse({ choices: [{ message: { content: validOpinion } }] });
   });
-  assert.equal(result.provider, 'groq');
+  assert.equal(result.provider, 'xai');
   assert.deepEqual(result.attempts.map((attempt) => attempt.status), ['invalid-response', 'success']);
   assert.equal(calls.length, 2);
 });
@@ -159,18 +159,18 @@ void test('missing credentials are skipped and duplicate providers never receive
   let calls = 0;
   const result = await requestSecondOpinionWithFallback([
     { provider: 'gemini', key: '', model: 'gemini-3.8-flash' },
-    { provider: 'groq', key: 'g-key', model: 'openai/gpt-oss-120b' },
-    { provider: 'groq', key: 'another-key', model: 'openai/gpt-oss-120b' },
+    { provider: 'xai', key: 'g-key', model: 'grok-4-1-fast' },
+    { provider: 'xai', key: 'another-key', model: 'grok-4-1-fast' },
   ], 'prompt', async () => {
     calls += 1;
     return jsonResponse({ choices: [{ message: { content: validOpinion } }] });
   });
-  assert.equal(result.provider, 'groq');
+  assert.equal(result.provider, 'xai');
   assert.equal(calls, 1);
   assert.deepEqual(result.attempts.map((attempt) => attempt.status), ['disabled', 'success']);
 });
 
-void test('model discovery reads active Gemini, Groq and Cloudflare model catalog entries', async () => {
+void test('model discovery reads active Gemini, Grok (xAI) and Cloudflare model catalog entries', async () => {
   const gemini = await discoverSecondOpinionModels('gemini', { key: 'g-key' }, async (_input, init) => {
     assert.equal(requestHeader(init, 'x-goog-api-key'), 'g-key');
     return jsonResponse({ models: [
@@ -180,11 +180,11 @@ void test('model discovery reads active Gemini, Groq and Cloudflare model catalo
   });
   assert.deepEqual(gemini, [{ id: 'gemini-3.8-flash', name: 'Gemini 3.8 Flash' }]);
 
-  const groq = await discoverSecondOpinionModels('groq', { key: 'r-key' }, async (_input, init) => {
+  const xai = await discoverSecondOpinionModels('xai', { key: 'r-key' }, async (_input, init) => {
     assert.equal(requestHeader(init, 'Authorization'), 'Bearer r-key');
-    return jsonResponse({ data: [{ id: 'openai/gpt-oss-120b', owned_by: 'OpenAI' }] });
+    return jsonResponse({ data: [{ id: 'grok-4-1-fast', owned_by: 'OpenAI' }] });
   });
-  assert.equal(groq[0].id, 'openai/gpt-oss-120b');
+  assert.equal(xai[0].id, 'grok-4-1-fast');
 
   const cloudflare = await discoverSecondOpinionModels('cloudflare', {
     key: 'cf-key', accountId: '023e105f4ecef8ad9ca31a8372d0c353',
@@ -201,7 +201,7 @@ void test('all-provider failure preserves a redacted audit trail for the Researc
   await assert.rejects(
     () => requestSecondOpinionWithFallback([
       { provider: 'gemini', key: 'never-log-this-key', model: 'gemini-3.8-flash' },
-      { provider: 'groq', key: 'also-secret', model: 'openai/gpt-oss-120b' },
+      { provider: 'xai', key: 'also-secret', model: 'grok-4-1-fast' },
     ], 'approved editorial prompt', async (input) => {
       calls += 1;
       const url = requestUrl(input);
@@ -217,7 +217,7 @@ void test('all-provider failure preserves a redacted audit trail for the Researc
         status: attempt.status,
       })), [
         { provider: 'gemini', status: 'invalid-key' },
-        { provider: 'groq', status: 'unavailable' },
+        { provider: 'xai', status: 'unavailable' },
       ]);
       assert.doesNotMatch(JSON.stringify(error.attempts), /never-log-this-key|also-secret/);
       return true;
@@ -232,7 +232,7 @@ void test('a rate-limited OpenRouter free model falls through to another model f
   const result = await requestSecondOpinionWithFallback([
     { provider: 'openrouter', key: 'router-key', model: 'free/model-a:free' },
     { provider: 'openrouter', key: 'router-key', model: 'free/model-b:free' },
-    { provider: 'groq', key: 'groq-key', model: 'openai/gpt-oss-120b' },
+    { provider: 'xai', key: 'xai-key', model: 'grok-4-1-fast' },
   ], 'approved prompt', async (_input, init) => {
     const body = JSON.parse(requestBody(init));
     attemptedModels.push(body.model);
@@ -253,7 +253,7 @@ void test('research agent falls through multiple OpenRouter models before switch
   const result = await requestResearchAgentWithFallback([
     { provider: 'openrouter', key: 'router-key', model: 'free/research-a:free' },
     { provider: 'openrouter', key: 'router-key', model: 'free/research-b:free' },
-    { provider: 'groq', key: 'groq-key', model: 'openai/gpt-oss-120b' },
+    { provider: 'xai', key: 'xai-key', model: 'grok-4-1-fast' },
   ], 'approved research prompt', async (_input, init) => {
     const request = JSON.parse(requestBody(init));
     attemptedModels.push(request.model);
