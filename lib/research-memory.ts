@@ -1,4 +1,4 @@
-import type { ResearchMemoryEntry, ResearchMemorySnapshot } from './types';
+import type { ResearchDossier, ResearchMemoryEntry, ResearchMemorySnapshot } from './types';
 import { canonicalizeResearchUrl, normalizeResearchText } from './intelligence';
 
 const MAX_RESEARCH_MEMORY_SOURCES = 120;
@@ -51,6 +51,7 @@ export function createResearchMemoryEntry(input: {
   previous?: ResearchMemoryEntry;
   now?: number;
   language?: 'fa' | 'en';
+  researchDossier?: ResearchDossier;
 }): ResearchMemoryEntry | undefined {
   const topic = input.topic.trim().replace(/\s+/g, ' ').slice(0, 180);
   if (!topic) return undefined;
@@ -151,5 +152,10 @@ export function createResearchMemoryEntry(input: {
     ? oldHistory
     : [snapshot, ...oldHistory]
   ).slice(0, MAX_RESEARCH_MEMORY_HISTORY);
-  return { topic, updatedAt: now, sources, keyFindings, unresolvedQuestions, contradictions, confidence, history };
+  return {
+    topic, updatedAt: now, sources, keyFindings, unresolvedQuestions, contradictions, confidence, history,
+    ...(input.researchDossier ?? input.previous?.researchDossier
+      ? { researchDossier: input.researchDossier ?? input.previous?.researchDossier }
+      : {}),
+  };
 }
