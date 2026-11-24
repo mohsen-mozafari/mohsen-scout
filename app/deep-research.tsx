@@ -224,7 +224,7 @@ export default function DeepResearch() {
     const alreadyAsked: string[] = [];
     let researchDossier: ResearchDossier | undefined;
     try {
-      recordRuntimeStart('AI Provider Review');
+      recordRuntimeStart('AI');
       let outcome = await runResearchAgent({
         topic: query,
         evidence: researchEvidence,
@@ -256,12 +256,12 @@ export default function DeepResearch() {
           }
         }));
         const knownUrls = new Set(researchEvidence.map((item) => {
-          try { return new URL(item.url).href.replace(/#.*$/, '').replace(/\\/$/, '').toLowerCase(); }
+          try { return new URL(item.url).href.replace(/#.*$/, '').replace(/\/$/, '').toLowerCase(); }
           catch { return item.url.toLowerCase(); }
         }));
         for (const item of retrieved.flat()) {
           let key = item.url.toLowerCase();
-          try { key = new URL(item.url).href.replace(/#.*$/, '').replace(/\\/$/, '').toLowerCase(); } catch { /* keep original */ }
+          try { key = new URL(item.url).href.replace(/#.*$/, '').replace(/\/$/, '').toLowerCase(); } catch { /* keep original */ }
           if (!knownUrls.has(key)) {
             knownUrls.add(key);
             researchEvidence.push(item);
@@ -279,9 +279,9 @@ export default function DeepResearch() {
         if (!nextOutcome.dossier) break;
         researchDossier = nextOutcome.dossier;
       }
-      recordRuntimeFinish('AI Provider Review', researchDossier ? 'success' : 'partial');
+      recordRuntimeFinish('AI', researchDossier ? 'success' : 'partial');
     } catch (error) {
-      recordRuntimeFinish('AI Provider Review', 'error', error instanceof Error ? error.message : String(error));
+      recordRuntimeFinish('AI', 'error', error instanceof Error ? error.message : String(error));
       warnings.push('Model-backed deep research could not complete; the local source analysis remains available.');
     }
     rememberTopicDossier(query, {
@@ -525,7 +525,7 @@ export default function DeepResearch() {
               ))}
             </Fold>
           </Panel>
-</Fold>          {brief.wiki && (
+</Fold>
           {brief.researchDossier ? (
             <Fold
               title={preferences.uiLanguage === 'fa' ? 'پرونده تحقیق عمیق و اکتشاف چندمرحله‌ای' : 'Deep research dossier · iterative discovery'}
@@ -560,6 +560,7 @@ export default function DeepResearch() {
               </Panel>
             </Fold>
           ) : null}
+          {brief.wiki && (
           <Fold title="5 · Wikimedia context" summary={brief.wiki.articleTitle}>            <Panel>
               <Heading>Public-interest context · Wikimedia</Heading>
               <SourceText>{brief.wiki.articleTitle}</SourceText>
