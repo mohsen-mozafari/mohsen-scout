@@ -35,13 +35,18 @@ export async function runResearchAgent(input: ResearchAgentInput): Promise<Resea
       const accountId = provider === 'cloudflare'
         ? await getKey('cloudflare-account-id') ?? undefined
         : undefined;
-      let model = input.preferences.secondOpinionModels?.[provider] ?? '';
-      if (provider === 'openrouter') model = selectFreeModel(await getFreeModels(), model);
-      if (!model.trim()) {
-        warnings.push(provider + ' research analysis skipped: no supported model is selected.');
+      let models = [input.preferences.secondOpinionModels?.[provider] ?? ''];
+      if (provider === 'openrouter') {
+        const available = await getFreeModels();
+        const preferred = selectFreeModel(available, models[0]);
+        models = [preferred, ...available.map((item) => item.id).filter((id) => id !== preferred)].filter(Boolean).slice(0, 5);
+      }
+      models = [...new Set(models.map((model) => model.trim()).filter(Boolean))];
+      if (!models.length) {
+        warnings.push(provider + ' research analysis skipped: no supported model is selected or available.');
         continue;
       }
-      configs.push({ provider, key, model, ...(accountId ? { accountId } : {}) });
+      configs.push(...models.map((model) => ({ provider, key, model, ...(accountId ? { accountId } : {}) })));
     } catch (error) {
       warnings.push(provider + ' research setup unavailable: ' + (error instanceof Error ? error.message : 'configuration failed.'));
     }
