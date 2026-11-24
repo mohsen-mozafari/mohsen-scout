@@ -17,7 +17,7 @@ import { readData, writeData } from './storage';
 import { getKey } from './vault';
 import { localDateKey, nextBudget, nextOpenRouterUsage, searchYouTube, type YouTubeQuotaKind, type YouTubeQuotaOrigin } from './api';
 import { buildInternalResearch } from './engine';
-import { planEvidenceFollowUps } from './discovery-planner';
+import { reviewResearchHypotheses } from './hypothesis-engine';
 import { createResearchMemoryEntry } from './research-memory';
 import { fetchWebResearch } from './web-research';
 import { reviewIdeasAutomatically } from './ai-review';
@@ -249,6 +249,8 @@ export const useScout = create<State>((set, get) => ({
       let publisherNews = getCachedSpaceNews(get().data.feedRegistry, initialPreferences.spaceNewsSources);
       let feedRegistry = get().data.feedRegistry;
       let webItems: Awaited<ReturnType<typeof fetchWebResearch>>['items'] = [];
+      let webSearchQueries: string[] = [];
+      let webHypothesisReview: ReturnType<typeof reviewResearchHypotheses> | undefined;
       let wiki: Awaited<ReturnType<typeof getWikipediaSignal>> | undefined;
 
       const splitSourcesByFeedback = <T extends { url: string }>(items: readonly T[]) => {
@@ -385,21 +387,26 @@ export const useScout = create<State>((set, get) => ({
           warnings.push('Independent web search is disabled in Settings; selected RSS feeds and Wikimedia remain available.');
           return;
         }
-        const activityId = await beginActivity('Firecrawl Search', topic, topic + ' · bounded evidence-led follow-up discovery', researchReportId);
+        const activityId = await beginActivity('Firecrawl Search', topic, topic + ' · iterative hypothesis testing and evidence-led discovery', researchReportId);
         set({ progress: 'Searching independent web and news sources…' });
         try {
           const webKey = await getKey('firecrawl').catch(() => undefined);
           const queries = [topic];
-          const asked = new Set<string>([topic.toLowerCase()]);
+          const asked = new Set<string>();
           const collected = new Map<string, (typeof webItems)[number]>();
           const queryWarnings: string[] = [];
-          // One initial search plus at most two follow-ups, derived only from independent evidence.
-          for (let round = 0; round < 3; round++) {
+          let latestReview: ReturnType<typeof reviewResearchHypotheses> | undefined;
+
+          // One seed search plus up to three adaptive research rounds. Every round
+          // re-evaluates the accumulated evidence and may branch into confirmation,
+          // counterevidence or mechanism checks; no direction is fixed in advance.
+          for (let round = 0; round < 4; round++) {
             const query = queries[round];
             if (!query) break;
+            asked.add(normalizeResearchText(query));
             set({ progress: round === 0
               ? 'Searching independent web and news sources…'
-              : 'Following evidence into a new research direction (' + (round + 1) + '/3)…' });
+              : 'Testing a new hypothesis and searching for counterevidence (' + (round + 1) + '/4)…' });
             try {
               const result = await fetchWebResearch(query, {
                 apiKey: webKey ?? undefined,
@@ -409,36 +416,78 @@ export const useScout = create<State>((set, get) => ({
               queryWarnings.push(...result.warnings);
               const split = splitSourcesByFeedback(result.items);
               for (const item of split.included) if (!collected.has(item.url)) collected.set(item.url, item);
-              if (round === 0 && result.items.length) {
-                const followUps = planEvidenceFollowUps(topic, result.items, [...asked]);
-                for (const followUp of followUps) {
-                  const key = followUp.toLowerCase();
-                  if (!asked.has(key) && queries.length < 3) {
-                    asked.add(key);
-                    queries.push(followUp);
-                  }
+
+              latestReview = reviewResearchHypotheses(
+                topic,
+                [...collected.values()].map((item) => ({
+                  id: item.id,
+                  title: item.title,
+                  summary: item.summary,
+                  url: item.url,
+                  sourceName: item.sourceName,
+                  ...(item.publishedAt ? { publishedAt: item.publishedAt } : {}),
+                })),
+                [...asked],
+                3,
+              );
+
+              // Generate the next branch from all evidence collected so far,
+              // including a deliberate search for evidence against current hypotheses.
+              if (round < 3 && result.items.length) {
+                for (const direction of latestReview.nextDirections) {
+                  const key = normalizeResearchText(direction.query);
+                  if (!key || asked.has(key) || queries.some((item) => normalizeResearchText(item) === key)) continue;
+                  if (queries.length >= 4) break;
+                  queries.push(direction.query);
                 }
               }
               if (!result.items.length && round > 0) break;
             } catch (error) {
               const message = error instanceof Error ? error.message : 'Firecrawl request failed.';
-              queryWarnings.push('Search round ' + (round + 1) + ': ' + message);
+              queryWarnings.push('Research round ' + (round + 1) + ': ' + message);
               if (round === 0) break;
             }
           }
+
+          webSearchQueries = [...queries];
+          webHypothesisReview = latestReview;
           webItems = [...collected.values()];
           warnings.push(...queryWarnings);
+          const hypothesisSummary = latestReview
+            ? ' Hypothesis review: ' + latestReview.hypotheses.length + ' candidate(s), ' +
+              latestReview.hypotheses.filter((item) => item.status === 'contested').length +
+              ' contested; ' + latestReview.independentHostCount + ' host families observed. Host diversity is only a proxy, not proof of independent ownership.'
+            : ' No usable evidence was available for hypothesis review.';
           await finishActivity(activityId, {
             status: webItems.length ? (queryWarnings.length ? 'partial' : 'success') : 'empty',
-            query: queries.join(' ; '),
+            query: queries.join(' ; ') + ' · ' + hypothesisSummary,
             resultCount: webItems.length,
             analyzedCount: webItems.length,
-            results: buildResearchActivityResults(topic, webItems.map((item) => ({
-              id: item.id, title: item.title, summary: item.summary, sourceName: item.sourceName,
-              url: item.url, publishedAt: item.publishedAt ?? null, sourceAssessment: 'not-assessed',
-              includedInAnalysis: true,
-              decisionReason: 'Independent web/news evidence found through bounded multi-hop discovery; search rank is not treated as source credibility.',
-            }))),
+            results: buildResearchActivityResults(topic, webItems.map((item) => {
+              const related = latestReview?.hypotheses.filter((hypothesis) =>
+                hypothesis.supportingEvidenceIds.includes(item.id) ||
+                hypothesis.challengingEvidenceIds.includes(item.id) ||
+                hypothesis.contextEvidenceIds.includes(item.id),
+              ) ?? [];
+              const audit = related.slice(0, 3).map((hypothesis) =>
+                hypothesis.status + ': ' + hypothesis.focus +
+                ' (support ' + hypothesis.supportingEvidenceIds.length +
+                ', challenge ' + hypothesis.challengingEvidenceIds.length + ')',
+              ).join(' | ');
+              return {
+                id: item.id,
+                title: item.title,
+                summary: item.summary,
+                sourceName: item.sourceName,
+                url: item.url,
+                publishedAt: item.publishedAt ?? null,
+                sourceAssessment: 'not-assessed' as const,
+                includedInAnalysis: true,
+                decisionReason: audit
+                  ? 'Evidence role in provisional hypothesis review: ' + audit + '. These are lexical review signals, not proof.'
+                  : 'Independent web/news result retained as context; no validated hypothesis link was established.',
+              };
+            })),
             warnings: queryWarnings.slice(0, 12),
           });
         } catch (error) {
@@ -566,7 +615,7 @@ export const useScout = create<State>((set, get) => ({
         videos: youtubeResult?.videos ?? [],
         queries: [
           ...(youtubeResult?.queries ?? []),
-          ...(webItems.length ? ['Firecrawl web/news search: ' + topic] : []),
+          ...webSearchQueries.map((query) => 'Web research: ' + query),
         ],
         warnings: [...new Set(warnings)],
         id: researchReportId,
