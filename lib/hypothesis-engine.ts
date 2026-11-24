@@ -171,7 +171,6 @@ export function reviewResearchHypotheses(
       else contextEvidenceIds.push(item.id);
     }
     const supportingHosts = unique(supportingEvidenceIds.map((id) => hostById.get(id) ?? '').filter(Boolean));
-    const challengingHosts = unique(challengingEvidenceIds.map((id) => hostById.get(id) ?? '').filter(Boolean));
     const contested = challengingEvidenceIds.length > 0 &&
       (supportingEvidenceIds.length > 0 || challengingEvidenceIds.length >= 2);
     const supported = supportingHosts.length >= 2 && challengingEvidenceIds.length === 0;

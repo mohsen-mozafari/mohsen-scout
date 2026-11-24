@@ -5,7 +5,7 @@ import {
   type SecondOpinionProviderConfig,
 } from './ai-gateway';
 import { getKey } from './vault';
-import type { Preferences, ResearchDossier, SecondOpinionProvider } from './types';
+import type { ResearchDossier, SecondOpinionProvider } from './types';
 import {
   buildResearchAgentPrompt,
   parseResearchAgentJson,
@@ -28,7 +28,7 @@ export async function runResearchAgent(input: ResearchAgentInput): Promise<Resea
     ? input.preferences.secondOpinionOrder
     : (['gemini', 'groq', 'cloudflare', 'openrouter'] as SecondOpinionProvider[]);
   const configs: SecondOpinionProviderConfig[] = [];
-  for (const provider of [...new Set(order)]) {
+  for (const provider of new Set(order)) {
     try {
       const key = await getKey(provider);
       if (!key) continue;

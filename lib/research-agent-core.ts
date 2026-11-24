@@ -20,14 +20,6 @@ export type ResearchAgentInput = {
   now?: number;
 };
 
-export type ResearchAgentOutcome = {
-  dossier?: ResearchDossier;
-  provider?: SecondOpinionProvider;
-  model?: string;
-  attempts: ProviderAttempt[];
-  warnings: string[];
-};
-
 function record(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? value as Record<string, unknown>
