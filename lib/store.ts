@@ -624,9 +624,8 @@ export const useScout = create<State>((set, get) => ({
         let aiActivityId: string | undefined;
         recordRuntimeStart('AI');
         try {
-        recordRuntimeStart('AI');
         set({ progress: 'Reviewing generated ideas with the configured AI-provider fallback chain…' });
-        const aiActivityId = await beginActivity(
+        aiActivityId = await beginActivity(
           'AI Provider Review', topic,
           'Independent second-opinion review after local analysis: ' + generatedIdeas.slice(0, 8).map((idea) => idea.topic).join(' ; '),
           researchReportId,
