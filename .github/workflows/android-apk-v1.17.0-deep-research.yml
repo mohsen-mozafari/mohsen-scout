@@ -22,7 +22,7 @@ on:
       - 'AGENTS.md'
       - 'CHANGELOG_1.17.0.md'
 
-# Default to read-only. Only the release-publishing job receives write access.
+# Isolated deep-research candidate build. Default to read-only; only publishing receives write access.
 permissions:
   contents: read
 
