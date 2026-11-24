@@ -174,7 +174,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          CURRENT_SHA="$(gh api "repos/${GITHUB_REPOSITORY}/branches/release/v1.20.0-researcher" --jq '.commit.sha')"
+          CURRENT_SHA="$(gh api "repos/${GITHUB_REPOSITORY}/branches/release/v1.20.0-discovery-engine" --jq '.commit.sha')"
           if [[ "$CURRENT_SHA" != "$GITHUB_SHA" ]]; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
             echo "::notice::Skipping stale release commit $GITHUB_SHA; branch head is $CURRENT_SHA."
