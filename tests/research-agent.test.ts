@@ -6,7 +6,7 @@ import {
   parseResearchAgentJson,
   parseResearchDossier,
   type ResearchAgentInput,
-} from '../lib/research-agent';
+} from '../lib/research-agent-core';
 import type { WebResearchItem } from '../lib/web-research';
 
 const evidence: WebResearchItem[] = [
