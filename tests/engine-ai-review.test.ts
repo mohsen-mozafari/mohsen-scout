@@ -53,7 +53,7 @@ void test('internal engine evaluates more than twelve matching news records with
 });
 
 
-void test('internal engine retains unmatched publisher evidence and excludes YouTube metadata', () => {
+void test('internal engine retains unmatched publisher evidence and analyzes YouTube platform metadata', () => {
   const now = Date.parse('2026-11-18T12:00:00Z');
   const result = buildInternalResearch({
     topic: 'Mars exploration',
@@ -71,10 +71,10 @@ void test('internal engine retains unmatched publisher evidence and excludes You
   assert.equal(result.intelligence.selfEvaluation.topicMatchedNewsCount, 1);
   assert.equal(result.intelligence.sourceQuality.uniqueStories, 2);
   assert.equal(result.intelligence.selfEvaluation.youtubeSampleCount, 2);
-  assert.equal(result.intelligence.selfEvaluation.allTimeMatchedVideoCount, 0);
-  assert.equal(result.intelligence.selfEvaluation.recentMatchedVideoCount, 0);
-  assert.equal(result.intelligence.selfEvaluation.outsideVideoWindowCount, 0);
-  assert.doesNotMatch(JSON.stringify(result), /Mars rover sample analysis|Mars exploration documentary|100000|900000/);
+  assert.equal(result.intelligence.selfEvaluation.allTimeMatchedVideoCount, 2);
+  assert.equal(result.intelligence.selfEvaluation.recentMatchedVideoCount, 1);
+  assert.equal(result.intelligence.selfEvaluation.outsideVideoWindowCount, 1);
+  assert.match(JSON.stringify(result), /Mars rover sample analysis|Mars exploration documentary|100000|900000/);
   assert.ok(result.entityCandidates.length >= 1);
 });
 
