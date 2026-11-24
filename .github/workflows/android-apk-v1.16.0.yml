@@ -20,14 +20,17 @@ on:
       - 'public/icons/**'
       - 'README_FA.md'
       - 'AGENTS.md'
+      - 'CHANGELOG_1.16.0.md'
 
 # Default to read-only. Only the release-publishing job receives write access.
 permissions:
   contents: read
 
 concurrency:
-  group: mohsenscout-v1.16.0-${{ github.ref }}
-  cancel-in-progress: true
+  # Do not let a stuck older build block the newest candidate. The release job
+  # separately verifies that its commit is still the branch head before publishing.
+  group: mohsenscout-v1.16.0-${{ github.sha }}
+  cancel-in-progress: false
 
 jobs:
   build-android:
