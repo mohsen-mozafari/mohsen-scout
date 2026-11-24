@@ -45,15 +45,16 @@ export function captureYouTubeSnapshots(
     likeCount: video.likeCount ?? null,
     commentCount: video.commentCount ?? null,
   }));
-  const combined = [...history, ...fresh].slice(-10000);
   const enriched = videos.map((video) => {
     const prior = history
       .filter((item) => item.videoId === video.id && item.viewCount !== null && item.capturedAt < capturedAt)
       .sort((a, b) => b.capturedAt - a.capturedAt)[0];
     const elapsed = prior ? capturedAt - prior.capturedAt : 0;
-    const validDelta = prior && prior.viewCount !== null && video.viewCount !== null &&
-      elapsed >= MIN_INTERVAL_MS && video.viewCount >= prior.viewCount;
-    const deltaViews = validDelta ? video.viewCount! - prior!.viewCount! : null;
+    const currentViews = video.viewCount ?? null;
+    const previousViews = prior?.viewCount ?? null;
+    const validDelta = prior !== undefined && previousViews !== null && currentViews !== null &&
+      elapsed >= MIN_INTERVAL_MS && currentViews >= previousViews;
+    const deltaViews = validDelta ? currentViews - previousViews : null;
     const viewsPerDay = deltaViews === null ? null : deltaViews / (elapsed / DAY_MS);
     const channelRates = latestRateByVideo(history, video.channel, video.id);
     const baseline = channelRates.length >= 3 ? median(channelRates) : null;
