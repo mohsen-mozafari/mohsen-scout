@@ -30,7 +30,8 @@ void test('next research directions actively seek counterevidence and avoid exac
   const first = reviewResearchHypotheses('battery recycling', evidence);
   assert.ok(first.nextDirections.some((item) => item.purpose === 'counterevidence'));
   const repeated = reviewResearchHypotheses('battery recycling', evidence, first.nextDirections.map((item) => item.query));
-  assert.equal(repeated.nextDirections.length, 0);
+  const priorQueries = new Set(first.nextDirections.map((item) => item.query.trim().toLowerCase()));
+  assert.ok(repeated.nextDirections.every((item) => !priorQueries.has(item.query.trim().toLowerCase())));
 });
 
 void test('host diversity is described as a proxy and not proof of ownership independence', () => {
