@@ -26,6 +26,7 @@ import { attachReportToIdea as attachReport, attachVideoReferenceToIdea as attac
 import { fetchSpaceNews, getCachedSpaceNews, getWikipediaSignal, hydrateSpaceNewsRegistry } from './space';
 import { buildResearchInterestProfile, normalizeResearchText, type ResearchFeedbackProfile } from './intelligence';
 import { recordRuntimeFinish, recordRuntimeStart } from './runtime-metrics';
+import { readPendingResearch, savePendingResearch, clearPendingResearch } from './pending-research';
 import { appendResearchActivity, buildResearchActivityFeedbackProfile, buildResearchActivityResults, buildResearchActivitySourceExclusions, explainResearchActivitySourceExclusion, updateResearchActivityEvent, updateResearchActivityFeedback } from './research-activity';
 type State = {
   data: LocalData;
@@ -34,6 +35,7 @@ type State = {
   progress: string;
   error: string;
   boot: () => Promise<void>;
+  resumePendingResearch: () => Promise<void>;
   commit: (change: (data: LocalData) => LocalData) => Promise<void>;
   setResearchActivityFeedback: (eventId: string, resultId: string, feedback: ResearchActivityFeedback) => Promise<void>;
   recordResearchActivity: (event: ResearchActivityEvent) => Promise<void>;
@@ -76,6 +78,7 @@ function buildLocalResearchFeedback(data: LocalData): ResearchFeedbackProfile {
   };
 }
 let lastRetentionSweepAt = 0;
+let resumePendingResearchInProgress = false;
 
 let queue = Promise.resolve();
 export const useScout = create<State>((set, get) => ({
@@ -113,9 +116,24 @@ export const useScout = create<State>((set, get) => ({
       lastRetentionSweepAt = retentionError ? 0 : now;
       hydrateSpaceNewsRegistry(data.feedRegistry);
       set({ data, ready: true, error: retentionError });
+      if (!retentionError) void get().resumePendingResearch();
     } catch {
       set({ error: 'Could not open local data. Retry before making changes.', ready: false });
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    }
+  },
+  resumePendingResearch: async () => {
+    if (resumePendingResearchInProgress || !get().ready || get().busy) return;
+    resumePendingResearchInProgress = true;
+    try {
+      const pending = await readPendingResearch();
+      if (!pending || !get().ready || get().busy) return;
+      set({ progress: 'Resuming an interrupted research run from this device…' });
+      await get().research(pending.input, 'automatic', true);
+    } catch {
+      set({ error: 'An interrupted research run is saved locally but could not resume. It will remain available for the next app launch.' });
+    } finally {
+      resumePendingResearchInProgress = false;
     }
   },
   commit: async (change) => {
@@ -219,11 +237,13 @@ export const useScout = create<State>((set, get) => ({
           Date.now() - report.createdAt < 15 * 60000,
       );
       if (cached) {
+        await clearPendingResearch();
         set({ progress: 'Using a recent local research report.' });
         if (!cached.analyzed) await get().analyze(cached.id);
         return get().data.reports.find((item) => item.id === cached.id) ?? cached;
       }
 
+      await savePendingResearch(normalizedInput);
       const researchReportId = uid();
       let youtubeResult: Awaited<ReturnType<typeof searchYouTube>> | undefined;
       let publisherNews = getCachedSpaceNews(get().data.feedRegistry, initialPreferences.spaceNewsSources);
@@ -720,6 +740,7 @@ export const useScout = create<State>((set, get) => ({
         });
       }
 
+      await clearPendingResearch();
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       return get().data.reports.find((item) => item.id === report.id) ?? report;
     } catch (error) {
