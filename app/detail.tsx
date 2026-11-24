@@ -82,17 +82,19 @@ export default function Detail() {
             const accountId = provider === 'cloudflare'
               ? await getKey('cloudflare-account-id') ?? undefined
               : undefined;
-            let model = configuredModels[provider] ?? DEFAULT_SECOND_OPINION_MODELS[provider];
+            let models = [configuredModels[provider] ?? DEFAULT_SECOND_OPINION_MODELS[provider]];
             if (provider === 'openrouter') {
-              try {
-                const liveFreeModels = await getFreeModels();
-                model = selectFreeModel(liveFreeModels, model);
-              } catch (error) {
-                model = '';
-              }
+              const liveFreeModels = await getFreeModels();
+              const preferred = selectFreeModel(liveFreeModels, models[0]);
+              models = [preferred, ...liveFreeModels.map((item) => item.id).filter((id) => id !== preferred)]
+                .filter(Boolean)
+                .slice(0, 5);
             }
-            configs.push({ provider, key: key ?? '', model, ...(accountId ? { accountId } : {}) });
-          } catch (error) {
+            for (const model of [...new Set(models.map((item) => item.trim()).filter(Boolean))]) {
+              configs.push({ provider, key: key ?? '', model, ...(accountId ? { accountId } : {}) });
+            }
+          } catch {
+            continue;
           }
         }
         const decisionContext = idea.decision.trim()
