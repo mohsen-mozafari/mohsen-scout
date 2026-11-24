@@ -16,7 +16,7 @@ import type {
 } from './types';
 import type { WebResearchItem } from './web-research';
 
-type ResearchAgentInput = {
+export type ResearchAgentInput = {
   topic: string;
   evidence: readonly WebResearchItem[];
   preferences: Preferences;
