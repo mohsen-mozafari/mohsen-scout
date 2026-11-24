@@ -250,7 +250,6 @@ export const useScout = create<State>((set, get) => ({
       let feedRegistry = get().data.feedRegistry;
       let webItems: Awaited<ReturnType<typeof fetchWebResearch>>['items'] = [];
       let webSearchQueries: string[] = [];
-      let webHypothesisReview: ReturnType<typeof reviewResearchHypotheses> | undefined;
       let wiki: Awaited<ReturnType<typeof getWikipediaSignal>> | undefined;
 
       const splitSourcesByFeedback = <T extends { url: string }>(items: readonly T[]) => {
@@ -450,7 +449,6 @@ export const useScout = create<State>((set, get) => ({
           }
 
           webSearchQueries = [...queries];
-          webHypothesisReview = latestReview;
           webItems = [...collected.values()];
           warnings.push(...queryWarnings);
           const hypothesisSummary = latestReview
