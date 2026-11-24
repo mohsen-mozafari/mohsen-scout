@@ -646,13 +646,13 @@ export default function DeepResearch() {
                     <Text style={styles.badge}>{item.status} · {item.confidence}</Text>
                     {item.supportingEvidenceIds.length ? <Txt muted>{'Supports: ' + item.supportingEvidenceIds.join(', ')}</Txt> : null}
                     {item.challengingEvidenceIds.length ? <Txt muted>{'Challenges: ' + item.challengingEvidenceIds.join(', ')}</Txt> : null}
-                    {(item.supportingQuotes ?? []).map((citation, index) => (
+                    {(item.supportingQuotes ?? []).map((citation) => (
                       <View key={item.id + '-support-' + citation.evidenceId + '-' + citation.quote.slice(0, 32)} style={{ gap: 2 }}>
                         <Txt muted>{'Verbatim checked · ' + citation.sourceName}</Txt>
                         <SourceText>{'“' + citation.quote + '”'}</SourceText>
                       </View>
                     ))}
-                    {(item.challengingQuotes ?? []).map((citation, index) => (
+                    {(item.challengingQuotes ?? []).map((citation) => (
                       <View key={item.id + '-challenge-' + citation.evidenceId + '-' + citation.quote.slice(0, 32)} style={{ gap: 2 }}>
                         <Txt muted>{'Verbatim checked counterevidence · ' + citation.sourceName}</Txt>
                         <SourceText>{'“' + citation.quote + '”'}</SourceText>
