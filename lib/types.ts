@@ -400,7 +400,7 @@ export function defaults(): LocalData {
       automaticExternalReview: true,
       secondOpinionProvider: 'gemini',
       secondOpinionOrder: [...DEFAULT_SECOND_OPINION_ORDER],
-      secondOpinionModels: { gemini: 'gemini-3.8-flash', xai: 'grok-4-1-fast', cloudflare: '@cf/meta/llama-3.3-70b-instruct-fp8-fast', openrouter: '' },
+      secondOpinionModels: { gemini: 'gemini-3.8-flash', xai: 'grok-4.7', cloudflare: '@cf/meta/llama-3.3-70b-instruct-fp8-fast', openrouter: '' },
       schedule: 'Daily',
       paused: false,
       spaceNewsSources: [...DEFAULT_SPACE_NEWS_SOURCE_IDS],
