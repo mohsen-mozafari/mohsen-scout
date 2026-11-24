@@ -28,7 +28,7 @@ void test('first record write replaces only its own domain and supports empty co
   assert.equal(delta.replaceAll, true);
   assert.deepEqual(delta.upserts, []);
   assert.deepEqual(delta.deleteIds, []);
-  assert.deepEqual(RECORD_DOMAINS, ['ideas', 'links', 'notes', 'opinions', 'researchMemory', 'researchActivity', 'reports', 'videos']);
+  assert.deepEqual(RECORD_DOMAINS, ['ideas', 'links', 'notes', 'opinions', 'researchMemory', 'researchActivity', 'reports', 'videos', 'youtubeSnapshots']);
 });
 
 void test('research memory uses a stable normalized topic identity', () => {
@@ -41,6 +41,7 @@ void test('research memory uses a stable normalized topic identity', () => {
 void test('only YouTube API metadata records receive the 29-day expiry timestamp', () => {
   const fetchedAt = 1000;
   assert.equal(recordExpiresAt('videos', { fetchedAt }), fetchedAt + RETENTION_MS);
+  assert.equal(recordExpiresAt('youtubeSnapshots', { capturedAt: fetchedAt }), fetchedAt + RETENTION_MS);
   assert.equal(recordExpiresAt('reports', { createdAt: fetchedAt }), fetchedAt + RETENTION_MS);
   assert.equal(recordExpiresAt('ideas', { createdAt: fetchedAt }), null);
 });
