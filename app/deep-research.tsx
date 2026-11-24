@@ -6,7 +6,7 @@ import { Page, Panel, Heading, Txt, Field, Action, Fold, styles, ErrorBox, useOp
 import { palette as p } from '@/lib/theme';
 import { useScout } from '@/lib/store';
 import { translateText } from '@/lib/i18n';
-import { uid, RETENTION_MS, type Idea } from '@/lib/types';
+import { uid, RETENTION_MS, type Idea, type ResearchDossier } from '@/lib/types';
 import { getKey } from '@/lib/vault';
 import { fetchWebResearch, type WebResearchItem } from '@/lib/web-research';
 import { buildInternalResearch, rankNewsForTopic, type InternalResearchResult } from '@/lib/engine';
@@ -17,6 +17,7 @@ import { getTopicDossier, rememberTopicDossier } from '@/lib/topic-dossier';
 import { generateEditorialIdeas } from '@/lib/idea-generation';
 import { buildPublisherIntelligence, type PublisherIntelligence } from '@/lib/news-intelligence';
 import { createResearchMemoryEntry } from '@/lib/research-memory';
+import { runResearchAgent } from '@/lib/research-agent';
 import { recordRuntimeFinish, recordRuntimeStart } from '@/lib/runtime-metrics';
 import { searchYouTubeSample, type YouTubeSampleVideo } from '@/lib/api';
 import {
@@ -37,6 +38,7 @@ type Brief = {
   verificationQuestions: string[];
   scriptDraft: string[];
   internalAnalysis: InternalResearchResult;
+  researchDossier?: ResearchDossier;
   publisherIntelligence?: PublisherIntelligence;
   generatedIdeas: Idea[];
 };
@@ -204,6 +206,84 @@ export default function DeepResearch() {
       priorMemory,
       language: preferences.uiLanguage ?? 'fa',
     });
+    // Run a bounded, source-led research loop. The model proposes falsifiable
+    // questions; Firecrawl retrieves new evidence; the model then re-evaluates it.
+    // YouTube API metadata is deliberately excluded from this external review.
+    const researchEvidence: WebResearchItem[] = [
+      ...selectedNews.map((item) => ({
+        id: 'publisher:' + item.id,
+        title: item.title,
+        summary: item.summary,
+        url: item.url,
+        sourceName: item.sourceName,
+        ...(item.publishedAt ? { publishedAt: item.publishedAt } : {}),
+        category: 'news' as const,
+      })),
+      ...webResults,
+    ];
+    const alreadyAsked: string[] = [];
+    let researchDossier: ResearchDossier | undefined;
+    try {
+      recordRuntimeStart('AI Provider Review');
+      let outcome = await runResearchAgent({
+        topic: query,
+        evidence: researchEvidence,
+        preferences,
+        previous: priorMemory?.researchDossier,
+        alreadyAsked,
+      });
+      warnings.push(...outcome.warnings);
+      if (outcome.dossier) researchDossier = outcome.dossier;
+      // Two bounded discovery rounds; at most two focused searches per round.
+      for (let round = 0; round < 2 && researchDossier?.nextQueries.length; round++) {
+        const batch = researchDossier.nextQueries.slice(0, 2)
+          .filter((item) => !alreadyAsked.some((asked) => normalizeResearchText(asked) === normalizeResearchText(item.query)));
+        if (!batch.length) break;
+        const firecrawlKey = await getKey('firecrawl').catch(() => undefined);
+        const retrieved = await Promise.all(batch.map(async (item) => {
+          alreadyAsked.push(item.query);
+          try {
+            const result = await fetchWebResearch(item.query, {
+              apiKey: firecrawlKey ?? undefined,
+              limit: 3,
+              days: preferences.defaultResearchDays,
+            });
+            warnings.push(...result.warnings);
+            return result.items;
+          } catch (error) {
+            warnings.push('Follow-up research search failed: ' + (error instanceof Error ? error.message : 'Search unavailable.'));
+            return [];
+          }
+        }));
+        const knownUrls = new Set(researchEvidence.map((item) => {
+          try { return new URL(item.url).href.replace(/#.*$/, '').replace(/\\/$/, '').toLowerCase(); }
+          catch { return item.url.toLowerCase(); }
+        }));
+        for (const item of retrieved.flat()) {
+          let key = item.url.toLowerCase();
+          try { key = new URL(item.url).href.replace(/#.*$/, '').replace(/\\/$/, '').toLowerCase(); } catch { /* keep original */ }
+          if (!knownUrls.has(key)) {
+            knownUrls.add(key);
+            researchEvidence.push(item);
+            webResults.push(item);
+          }
+        }
+        const nextOutcome = await runResearchAgent({
+          topic: query,
+          evidence: researchEvidence,
+          preferences,
+          previous: researchDossier,
+          alreadyAsked,
+        });
+        warnings.push(...nextOutcome.warnings);
+        if (!nextOutcome.dossier) break;
+        researchDossier = nextOutcome.dossier;
+      }
+      recordRuntimeFinish('AI Provider Review', researchDossier ? 'success' : 'partial');
+    } catch (error) {
+      recordRuntimeFinish('AI Provider Review', 'error', error instanceof Error ? error.message : String(error));
+      warnings.push('Model-backed deep research could not complete; the local source analysis remains available.');
+    }
     rememberTopicDossier(query, {
       news: selectedNews.length ? selectedNews : cachedDossier?.news ?? [],
       wiki, videos, videoCriteria, internalAnalysis,
@@ -231,6 +311,7 @@ export default function DeepResearch() {
       previous: priorMemory,
       now: Date.now(),
       language: preferences.uiLanguage ?? 'fa',
+      researchDossier,
     });
     if (memoryEntry && priorMemory) {
       const latestSnapshot = memoryEntry.history?.[0];
@@ -270,6 +351,7 @@ export default function DeepResearch() {
       videos,
       warnings,
       internalAnalysis,
+      researchDossier,
       publisherIntelligence,
       generatedIdeas,
       ...outline,
