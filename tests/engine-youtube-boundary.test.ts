@@ -21,7 +21,7 @@ void test('internal engine analyzes YouTube metadata as platform evidence withou
   assert.equal(result.intelligence.selfEvaluation.youtubeRawSampleReceived, true);
   const serializedAnalysis = JSON.stringify(result);
   assert.match(serializedAnalysis, /Raw YouTube title/);
-  assert.match(serializedAnalysis, /123456/);
+  assert.match(serializedAnalysis, /123,456/);
   assert.match(serializedAnalysis, /789/);
   assert.equal(result.intelligence.selfEvaluation.youtubeSampleCount, 1);
   assert.equal(result.intelligence.selfEvaluation.matchedVideoCount, 1);
