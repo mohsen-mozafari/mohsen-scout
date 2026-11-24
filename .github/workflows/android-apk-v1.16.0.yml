@@ -19,6 +19,7 @@ on:
       - 'assets/**'
       - 'public/icons/**'
       - 'README_FA.md'
+      - 'CHANGELOG_1.16.0.md'
       - 'AGENTS.md'
 
 # Default to read-only. Only the release-publishing job receives write access.
