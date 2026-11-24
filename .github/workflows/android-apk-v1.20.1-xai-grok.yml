@@ -3,9 +3,9 @@ name: Build MOHSEN SCOUT APK v1.20.1 · Adaptive Deep Research
 on:
   workflow_dispatch:
   push:
-    branches: [release/v1.20.1-discovery-engine]
+    branches: [release/v1.20.1-xai-grok]
     paths:
-      - '.github/workflows/android-apk-v1.20.1-discovery-engine.yml'
+      - '.github/workflows/android-apk-v1.20.1-xai-grok.yml'
       - 'app.config.ts'
       - 'package.json'
       - 'package-lock.json'
@@ -20,7 +20,7 @@ on:
       - 'public/icons/**'
       - 'README_FA.md'
       - 'AGENTS.md'
-      - 'CHANGELOG_1.20.1.md'
+      - 'CHANGELOG_1.20.0.md'
 
 # Isolated deep-research candidate build. Default to read-only; only publishing receives write access.
 permissions:
@@ -159,7 +159,7 @@ jobs:
           retention-days: 1
 
   publish-release:
-    if: github.ref == 'refs/heads/release/v1.20.1-discovery-engine'
+    if: github.ref == 'refs/heads/release/v1.20.1-xai-grok'
     name: Publish verified APK release
     needs: build-android
     runs-on: ubuntu-latest
@@ -174,7 +174,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          CURRENT_SHA="$(gh api "repos/${GITHUB_REPOSITORY}/branches/release/v1.20.1-discovery-engine" --jq '.commit.sha')"
+          CURRENT_SHA="$(gh api "repos/${GITHUB_REPOSITORY}/branches/release/v1.20.1-xai-grok" --jq '.commit.sha')"
           if [[ "$CURRENT_SHA" != "$GITHUB_SHA" ]]; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
             echo "::notice::Skipping stale release commit $GITHUB_SHA; branch head is $CURRENT_SHA."
