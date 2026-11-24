@@ -27,11 +27,15 @@ export function planEvidenceFollowUps(
   if (!cleanTopic || !evidence.length) return [];
   const asked = new Set(alreadyAsked.map((q) => q.toLowerCase().trim()));
   const topicTerms = new Set(terms(cleanTopic));
+  // A previous follow-up already explored its terms; do not generate a near-duplicate variant.
+  const previouslyExploredTerms = new Set(
+    alreadyAsked.flatMap((query) => terms(query)).filter((word) => !topicTerms.has(word)),
+  );
   const ranked = evidence
     .filter((item) => /^https?:\/\//i.test(item.url) && item.title.trim())
     .map((item) => {
       const words = [...new Set(terms(item.title + ' ' + item.summary))]
-        .filter((word) => !topicTerms.has(word));
+        .filter((word) => !topicTerms.has(word) && !previouslyExploredTerms.has(word));
       return { words, title: item.title };
     })
     .filter((item) => item.words.length > 0)
