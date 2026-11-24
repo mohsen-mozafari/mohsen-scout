@@ -3,7 +3,7 @@ import type { SecondOpinionProvider } from './types';
 
 export type ProviderCredentials = {
   gemini?: string;
-  groq?: string;
+  xai?: string;
   cloudflare?: string;
   cloudflareAccountId?: string;
   openrouter?: string;
@@ -11,7 +11,7 @@ export type ProviderCredentials = {
 
 export type ProviderModels = {
   gemini: string;
-  groq: string;
+  xai: string;
   cloudflare: string;
   openrouter: string;
 };
@@ -41,7 +41,7 @@ export type Fetcher = typeof fetch;
 
 export const DEFAULT_SECOND_OPINION_MODELS: ProviderModels = {
   gemini: 'gemini-3.8-flash',
-  groq: 'openai/gpt-oss-120b',
+  xai: 'grok-4-1-fast',
   cloudflare: '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
   openrouter: '',
 };
@@ -175,9 +175,9 @@ async function postOpinion(
       provider,
     );
     content = readGeminiText(raw);
-  } else if (provider === 'groq' || provider === 'openrouter') {
-    const url = provider === 'groq'
-      ? 'https://api.groq.com/openai/v1/chat/completions'
+  } else if (provider === 'xai' || provider === 'openrouter') {
+    const url = provider === 'xai'
+      ? 'https://api.x.ai/v1/chat/completions'
       : 'https://openrouter.ai/api/v1/chat/completions';
     raw = await requestOnce(url, {
       method: 'POST',
@@ -295,9 +295,9 @@ async function postResearchPrompt(
       40000,
     );
     content = readGeminiText(raw);
-  } else if (provider === 'groq' || provider === 'openrouter') {
-    const url = provider === 'groq'
-      ? 'https://api.groq.com/openai/v1/chat/completions'
+  } else if (provider === 'xai' || provider === 'openrouter') {
+    const url = provider === 'xai'
+      ? 'https://api.x.ai/v1/chat/completions'
       : 'https://openrouter.ai/api/v1/chat/completions';
     raw = await requestOnce(url, {
       method: 'POST',
@@ -375,7 +375,7 @@ export async function requestResearchAgentWithFallback(
   throw new SecondOpinionProviderError(
     activeAttempts.length
       ? 'All configured research providers failed or returned unusable responses. ' + detail
-      : 'No research AI provider key is saved. Add a personal Gemini, Groq, Cloudflare or OpenRouter key in Settings.',
+      : 'No research AI provider key is saved. Add a personal Gemini, Grok (xAI), Cloudflare or OpenRouter key in Settings.',
     activeAttempts[activeAttempts.length - 1]?.status ?? 'disabled',
     undefined,
     attempts,
@@ -402,8 +402,8 @@ export async function discoverSecondOpinionModels(
       .filter((model) => model.name && model.supportedGenerationMethods?.includes('generateContent'))
       .map((model) => ({ id: model.name!.replace(/^models\//, ''), name: model.displayName || model.name! }));
   }
-  if (provider === 'groq') {
-    raw = await requestOnce('https://api.groq.com/openai/v1/models', {
+  if (provider === 'xai') {
+    raw = await requestOnce('https://api.x.ai/v1/models', {
       method: 'GET',
       headers: { Authorization: 'Bearer ' + credentials.key },
     }, fetcher, provider);
