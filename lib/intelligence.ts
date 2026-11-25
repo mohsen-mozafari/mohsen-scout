@@ -752,14 +752,14 @@ export function createEditorialOpportunityScorer(
       momentum: source.momentum,
     });
 
-    const topicMatched = scoreResearchText(input.topic, source.text) > 0;
-    if (topicMatched) {
-      topicRelevantDocuments.add(index);
-      for (const token of tokens) {
+    if (scoreResearchText(input.topic, source.text) > 0) topicRelevantDocuments.add(index);
+    // Index every record, then select evidence by the individual editorial anchor.
+    // This keeps anchor-specific context (e.g. Wikimedia article data) while
+    // preventing unrelated parent-topic videos from bleeding into another angle.
+    for (const token of tokens) {
       const posting = tokenIndex.get(token);
-        if (posting) posting.push(index);
-        else tokenIndex.set(token, [index]);
-      }
+      if (posting) posting.push(index);
+      else tokenIndex.set(token, [index]);
     }
   }
 

@@ -20,7 +20,7 @@ function source(id: string, url: string, sourceText?: string): WebResearchItem {
     summary: 'A brief result summary from a research publication.',
     sourceName: id,
     category: 'web',
-    ...(sourceText ? { sourceText } : {}),
+    ...(sourceText ? { sourceText: sourceText.length >= 300 ? sourceText : sourceText + ' ' + ('The original report also records its method, measurement scope and limitations. ').repeat(4) } : {}),
   };
 }
 
@@ -62,6 +62,16 @@ function reviewed(
       challengingCitations: challenging,
       reason: 'Synthetic gold-standard reviewer fixture.',
     }],
+    evidenceReviews: records.map((record, index) => ({
+      evidenceId: record.id,
+      role: challenging.some((citation) => citation.evidenceId === record.id)
+        ? 'challenges'
+        : supporting.some((citation) => citation.evidenceId === record.id) ? 'supports' : 'context',
+      credibility: 'high',
+      sourceType: index === 0 ? 'primary' : 'secondary',
+      freshness: 'recent',
+      reason: 'Synthetic gold-standard source assessment.',
+    })),
   }, records, 'xai', 'independent-review-model', 1764000000000, 'en');
 }
 
