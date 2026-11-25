@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { View, Text, Pressable } from 'react-native';
 import { BookMarked, NotebookPen } from 'lucide-react-native';
-import { Page, styles, ScreenIntro } from '@/components/ScoutUI';
+import { ScreenIntro } from '@/components/ScoutUI';
 import { palette as p } from '@/lib/theme';
 import { useScout } from '@/lib/store';
 import Library from './library';
@@ -22,7 +22,7 @@ export default function Workspace() {
           subtitle={fa ? 'همه منابع ذخیره‌شده، صفحات پژوهش، یادداشت‌ها و تصمیم‌ها در یک فضای یکپارچه؛ بدون جابه‌جایی یا حذف اطلاعات.' : 'Saved references, research pages, notes and decisions in one workspace. Your existing content and actions remain available.'}
           icon={BookMarked}
         />
-        <View style={{ flexDirection: fa ? 'row-reverse' : 'row', gap: 8, backgroundColor: p.panel, borderWidth: 1, borderColor: p.border, padding: 5, borderRadius: 16 }}>
+        <View style={{ flexDirection: fa ? 'row-reverse' : 'row', gap: 8, backgroundColor: p.surface, borderWidth: 1, borderColor: p.border, padding: 5, borderRadius: 16 }}>
           <Pressable onPress={() => setSection('library')} style={{ flex: 1, minHeight: 44, borderRadius: 12, backgroundColor: section === 'library' ? p.accentSoft : 'transparent', alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 7 }}>
             <BookMarked size={17} color={section === 'library' ? p.accentStrong : p.muted} />
             <Text style={{ color: section === 'library' ? p.text : p.muted, fontWeight: '700' }}>{fa ? 'کتابخانه' : 'Library'}</Text>
