@@ -90,6 +90,8 @@ type Candidate = {
   opportunityScore: number;
   opportunityConfidence: 'low' | 'moderate' | 'high';
   opportunityReason: string;
+  /** Existing active card that this candidate refreshes in place. */
+  existingIdeaId?: string;
 };
 
 function semanticTokens(value: string): Set<string> {
@@ -711,7 +713,20 @@ export function generateEditorialIdeas(input: GenerateEditorialIdeasInput): Idea
   const usedTitles = new Set(existing.map((idea) => normalizeResearchText(idea.topic)));
   const sameEvidenceIdeas = existing.filter((idea) => idea.engineGenerated && idea.generationKey === evidenceKey);
   const existingEngineCount = sameEvidenceIdeas.length;
+  const refreshableExistingByAnchor = new Map<string, Idea>();
+  if (input.refreshExisting) {
+    for (const idea of existing) {
+      if (!idea.engineGenerated || idea.archived ||
+        idea.status === 'Rejected Ideas' || idea.status === 'Completed Research') continue;
+      const anchor = normalizeResearchText(extractGeneratedAnchor(idea.concept));
+      if (anchor && !refreshableExistingByAnchor.has(anchor)) refreshableExistingByAnchor.set(anchor, idea);
+    }
+  }
   const usedAnchors = new Set(sameEvidenceIdeas
+    .filter((idea) => {
+      const anchor = normalizeResearchText(extractGeneratedAnchor(idea.concept));
+      return !input.refreshExisting || !refreshableExistingByAnchor.has(anchor);
+    })
     .map((idea) => normalizeResearchText(extractGeneratedAnchor(idea.concept)))
     .filter(Boolean));
   const candidates: Candidate[] = [];
@@ -720,10 +735,16 @@ export function generateEditorialIdeas(input: GenerateEditorialIdeasInput): Idea
     : eligible.slice(existingEngineCount % Math.max(1, eligible.length)).concat(eligible.slice(0, existingEngineCount % Math.max(1, eligible.length)));
   const categoryAnchors = usableAnchors;
   for (let index = 0; index < categoryAnchors.length; index++) {
-    const category = categoryOrder[index % Math.max(1, categoryOrder.length)];
     const anchor = categoryAnchors[index];
+    const anchorKey = normalizeResearchText(anchor ?? '');
+    const existingForAnchor = anchorKey ? refreshableExistingByAnchor.get(anchorKey) : undefined;
+    const previousCategory = existingForAnchor?.ideaCategory as IdeaGenerationCategory | undefined;
+    const category = previousCategory && eligible.includes(previousCategory)
+      ? previousCategory
+      : categoryOrder[index % Math.max(1, categoryOrder.length)];
     if (!category || !eligible.includes(category) || !anchor) continue;
     const candidate = buildCandidate(category, topic, anchor, input.language === 'fa', mode);
+    if (existingForAnchor) candidate.existingIdeaId = existingForAnchor.id;
     if (category === 'Cross-source') {
       const hasPublisherSupport = topicRelevantNews.some((item) =>
         scoreResearchText(candidate.anchor, item.title, item.summary) > 0,
@@ -745,9 +766,12 @@ export function generateEditorialIdeas(input: GenerateEditorialIdeasInput): Idea
         ? (input.language === 'fa' ? '؛ به موضوعی شبیه است که قبلاً نپسندیده‌ای' : '; overlaps a topic you previously rejected')
         : '');
     const anchorKey = normalizeResearchText(candidate.anchor);
-    if (!anchorKey || usedAnchors.has(anchorKey) ||
-      usedTitles.has(normalizeResearchText(candidate.title)) ||
-      existing.some((idea) => ideaHasSameMeaning(candidate, idea, topic) && !(input.refreshExisting && idea.engineGenerated && !idea.archived && idea.status !== 'Rejected Ideas' && idea.status !== 'Completed Research')) ||
+    if (!anchorKey ||
+      (!candidate.existingIdeaId && usedAnchors.has(anchorKey)) ||
+      (!candidate.existingIdeaId && usedTitles.has(normalizeResearchText(candidate.title))) ||
+      existing.some((idea) => idea.id !== candidate.existingIdeaId &&
+        ideaHasSameMeaning(candidate, idea, topic) &&
+        !(input.refreshExisting && idea.engineGenerated && !idea.archived && idea.status !== 'Rejected Ideas' && idea.status !== 'Completed Research')) ||
       candidates.some((prior) => ideaHasSameMeaning(candidate, {
         engineGenerated: true,
         ideaCategory: prior.category,
@@ -758,7 +782,11 @@ export function generateEditorialIdeas(input: GenerateEditorialIdeasInput): Idea
     usedAnchors.add(anchorKey);
   }
 
-  candidates.sort((a, b) => b.opportunityScore - a.opportunityScore || a.title.localeCompare(b.title));
+  candidates.sort((a, b) =>
+    Number(Boolean(b.existingIdeaId)) - Number(Boolean(a.existingIdeaId)) ||
+    b.opportunityScore - a.opportunityScore ||
+    a.title.localeCompare(b.title),
+  );
   const publisherGroups = new Set(topicRelevantNews
     .map((item) => normalizeResearchText(item.sourceId || item.sourceName))
     .filter(Boolean)).size;
@@ -791,7 +819,13 @@ export function generateEditorialIdeas(input: GenerateEditorialIdeasInput): Idea
   for (const candidate of candidates) {
     if (output.length >= limit) break;
     const normalizedTitle = normalizeResearchText(candidate.title);
-    const matchingExisting = input.refreshExisting ? existing.find((idea) => idea.engineGenerated && !idea.archived && idea.status !== 'Rejected Ideas' && idea.status !== 'Completed Research' && ideaHasSameMeaning(candidate, idea, topic)) : undefined;
+    const matchingExisting = input.refreshExisting
+      ? (candidate.existingIdeaId
+          ? existing.find((idea) => idea.id === candidate.existingIdeaId)
+          : existing.find((idea) => idea.engineGenerated && !idea.archived &&
+              idea.status !== 'Rejected Ideas' && idea.status !== 'Completed Research' &&
+              ideaHasSameMeaning(candidate, idea, topic)))
+      : undefined;
     if ((usedTitles.has(normalizedTitle) && !matchingExisting) ||
       (existing.some((idea) => ideaHasSameMeaning(candidate, idea, topic) && !(input.refreshExisting && idea.engineGenerated && !idea.archived && idea.status !== 'Rejected Ideas' && idea.status !== 'Completed Research')) && !matchingExisting) ||
       output.some((idea) => ideaHasSameMeaning(candidate, idea, topic))) continue;
