@@ -5,7 +5,7 @@ import { Search } from 'lucide-react-native';
 import { router } from 'expo-router';
 import {
   Page, Panel, Heading, Txt, Action, Fold, Field, styles, ErrorBox,
-  SourceText, BadgeText, MetricCard,
+  BadgeText, MetricCard,
 } from '@/components/ScoutUI';
 import { useScout } from '@/lib/store';
 import { palette as p } from '@/lib/theme';
