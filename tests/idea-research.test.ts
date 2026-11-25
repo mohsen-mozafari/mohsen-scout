@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { defaults, purgeExpired, RETENTION_MS, type Report, type ResearchInput } from '../lib/types';
+import { defaults, purgeExpired, type Report, type ResearchInput } from '../lib/types';
 import { buildIdeaAnalysis, createManualIdea } from '../lib/engine';
 import { getIdeaDisplayTitle, isIdeaDisplayable } from '../lib/idea-research';
 import { exportBackup, importBackup } from '../lib/backup';
@@ -71,7 +71,7 @@ void test('a saved YouTube report connects to one idea without duplicate video r
   assert.throws(() => attachReportToIdea(data, idea.id, 'missing-report'));
 });
 
-void test('only a manually selected YouTube URL becomes a durable personal reference', () => {
+void test('a manually selected YouTube URL remains a durable personal reference beyond 29 days', () => {
   const data = defaults();
   const idea = createManualIdea('James Webb', 'Explain one verified observation.', '', 'Germany', ['en']);
   data.ideas = [idea];
@@ -80,7 +80,7 @@ void test('only a manually selected YouTube URL becomes a durable personal refer
   assert.equal(linked.links[0].url, 'https://www.youtube.com/watch?v=dQw4w9WgXcQ');
   assert.equal(linked.links[0].manualTitle, '');
   assert.equal(linked.videos.length, 0);
-  const expired = purgeExpired(linked, now + RETENTION_MS + 1);
+  const expired = purgeExpired(linked, now + 120 * 86400000);
   assert.deepEqual(expired.ideas[0].videoIds, ['dQw4w9WgXcQ']);
   assert.equal(attachVideoReferenceToIdea(linked, idea.id, 'dQw4w9WgXcQ', now + 2).links.length, 1);
   assert.throws(() => attachVideoReferenceToIdea(data, idea.id, 'invalid-id', now));

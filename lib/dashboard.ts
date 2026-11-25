@@ -3,7 +3,7 @@ import { compareEditorialPriority, selectTopCurrentEditorialPriorities } from '.
 import { deduplicateDisplayIdeas } from './idea-generation';
 import { isIdeaDisplayable } from './idea-research';
 import { matchesResearchTerms } from './intelligence';
-import { RETENTION_MS, type Idea, type Opinion, type Report, type Video } from './types';
+import { type Idea, type Opinion, type Report, type Video } from './types';
 
 export type EngineVideoEvidence = Omit<
   Pick<Video, 'id' | 'title' | 'description' | 'channel' | 'publishedAt' | 'viewCount' | 'likeCount' | 'fetchedAt'>,
@@ -14,7 +14,7 @@ export type EngineVideoEvidence = Omit<
 };
 
 /**
- * Merge every retained video already collected by the app. The global metadata index
+ * Merge all locally retained videos already collected by the app. The global metadata index
  * and report snapshots can overlap; one newest copy per video is kept. The cap bounds
  * local analysis cost without discarding the saved source records.
  */
@@ -27,8 +27,7 @@ export function collectEngineVideoEvidence(
   const byId = new Map<string, EngineVideoEvidence>();
   for (const video of [...videos, ...reports.flatMap((report) => report.videos)]) {
     if (!video.id || !video.title.trim() || !Number.isFinite(video.fetchedAt)) continue;
-    const age = now - video.fetchedAt;
-    if (age < 0 || age >= RETENTION_MS) continue;
+    if (video.fetchedAt > now) continue;
     const previous = byId.get(video.id);
     if (!previous || video.fetchedAt > previous.fetchedAt) {
       byId.set(video.id, {
@@ -112,8 +111,7 @@ export function selectDashboardVideos(
   return videos
     .filter((video) => {
       if (!video.id || !Number.isFinite(video.fetchedAt)) return false;
-      const age = now - video.fetchedAt;
-      if (age < 0 || age >= RETENTION_MS) return false;
+      if (video.fetchedAt > now) return false;
       const published = Date.parse(video.publishedAt);
       const publicationAge = now - published;
       if (!Number.isFinite(published) || publicationAge < 0 || publicationAge > 30 * 24 * 60 * 60 * 1000) return false;

@@ -8,7 +8,6 @@ import {
   saveAutonomousQueue,
   updateAutonomousJob,
   type AutonomousResearchCandidate,
-  type AutonomousResearchJob,
 } from './autonomous-queue';
 import type { ResearchInput, Video } from './types';
 

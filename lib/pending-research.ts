@@ -3,7 +3,7 @@ import type { ResearchDossier, ResearchInput } from './types';
 
 export type PendingResearchEvidence = {
   id: string; title: string; summary: string; url: string; sourceName: string;
-  publishedAt?: string | null; category: 'web' | 'news';
+  publishedAt?: string; category: 'web' | 'news';
 };
 import { uid } from './types';
 
@@ -60,7 +60,7 @@ async function readRaw(): Promise<PendingResearch[]> {
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
       const record = parsed as Record<string, unknown>;
       const item = {
-        id: 'legacy-' + String(record.savedAt ?? uid()),
+        id: 'legacy-' + (typeof record.savedAt === 'number' && Number.isFinite(record.savedAt) ? String(record.savedAt) : uid()),
         input: record.input,
         savedAt: record.savedAt,
         stage: 'queued' as const,
