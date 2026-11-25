@@ -33,3 +33,5 @@ Build gate: the v1.24.0 full-audit workflow validates the source, signed ARM64 A
 Static analysis follow-up: release candidate syntax, URL validation, and page composition fixes are included in the current source commit.
 
 Final link audit: the video thumbnail action on the idea detail screen also uses the shared validated external-link handler.
+
+Shared-component link audit: Library, Note Editor and VideoRow now use the validated external-link handler; duplicate save controls on idea detail were consolidated and covered by regression tests.
