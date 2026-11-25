@@ -3,6 +3,7 @@ import { getKey } from './vault';
 import { useScout } from './store';
 import { availableResearchRunSlots } from './research-concurrency';
 import {
+  AUTONOMOUS_QUEUE_MAX_AGE_MS,
   enqueueAutonomousCandidates,
   loadAutonomousQueue,
   nextAutonomousJob,

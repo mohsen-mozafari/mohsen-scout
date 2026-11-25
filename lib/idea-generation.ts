@@ -76,7 +76,6 @@ type Document = {
   sourceId?: string;
   sourceName?: string;
   sourceUrl?: string;
-  videoId?: string;
 };
 
 type Candidate = {

@@ -149,9 +149,9 @@ void test('local idea analysis explains evidence, gaps and next actions without 
     }],
   };
   const result = buildIdeaAnalysis(idea, [
-    { id: 'v1', title: 'James Webb detects molecules in exoplanet atmosphere', channel: 'Science One', publishedAt: '2026-11-15T00:00:00Z' },
-    { id: 'v2', title: 'Webb telescope studies an exoplanet atmosphere', channel: 'Science Two', publishedAt: '2026-11-14T00:00:00Z' },
-    { id: 'v3', title: 'James Webb Space Telescope spectroscopy explained', channel: 'Science Three', publishedAt: '2026-11-13T00:00:00Z' },
+    { id: 'v1', title: 'James Webb detects molecules in exoplanet atmosphere', channel: 'Science One', viewCount: null, likeCount: null, publishedAt: '2026-11-15T00:00:00Z' },
+    { id: 'v2', title: 'Webb telescope studies an exoplanet atmosphere', channel: 'Science Two', viewCount: null, likeCount: null, publishedAt: '2026-11-14T00:00:00Z' },
+    { id: 'v3', title: 'James Webb Space Telescope spectroscopy explained', channel: 'Science Three', viewCount: null, likeCount: null, publishedAt: '2026-11-13T00:00:00Z' },
   ], 'en');
   assert.equal(result.length, 5);
   assert.ok(result.some((section) => section.id === 'youtube-platform'));

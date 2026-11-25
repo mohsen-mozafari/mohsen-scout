@@ -1610,6 +1610,7 @@ void test('Editorial scoring uses measured YouTube velocity without counting vid
     now: Date.UTC(2026, 10, 20),
   };
   const withoutVideoSamples = scoreEditorialOpportunity({ ...base, videos: [] });
+  assert.ok(Number.isFinite(withoutVideoSamples.score));
   const withVideoSamples = scoreEditorialOpportunity({
     ...base,
     videos: [

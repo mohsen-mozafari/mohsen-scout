@@ -305,7 +305,17 @@ export const useScout = create<State>((set, get) => ({
       let youtubeTaskPromise: Promise<void> | undefined;
       let publisherNews = getCachedSpaceNews(get().data.feedRegistry, initialPreferences.spaceNewsSources);
       let feedRegistry = get().data.feedRegistry;
-      let webItems: Awaited<ReturnType<typeof fetchWebResearch>>['items'] = (savedCheckpoint?.evidence ?? []).map((item) => ({ ...item }));
+      let webItems: Awaited<ReturnType<typeof fetchWebResearch>>['items'] = (savedCheckpoint?.evidence ?? []).map((item) => ({
+        id: item.id,
+        title: item.title,
+        summary: item.summary,
+        url: item.url,
+        sourceName: item.sourceName,
+        ...(typeof item.publishedAt === 'string' && item.publishedAt.trim()
+          ? { publishedAt: item.publishedAt }
+          : {}),
+        category: item.category === 'news' ? 'news' : 'web',
+      }));
       let webSearchQueries: string[] = [...(savedCheckpoint?.queryHistory ?? [])];
       let webResearchDossier: ResearchDossier | undefined = savedCheckpoint?.researchDossier;
       let wiki: Awaited<ReturnType<typeof getWikipediaSignal>> | undefined;
@@ -471,7 +481,8 @@ export const useScout = create<State>((set, get) => ({
           const savedQueries = savedCheckpoint?.queryHistory ?? [];
           const queryHistory = [...savedQueries];
           const asked = new Set<string>(savedQueries.map((query) => normalizeResearchText(query)));
-          const collected = new Map<string, (typeof webItems)[number]>((savedCheckpoint?.evidence ?? []).map((item) => [item.url, { ...item }]));
+          const collected = new Map<string, (typeof webItems)[number]>();
+          for (const item of webItems) collected.set(item.url, item);
           const queryWarnings: string[] = [];
           let latestAiDossier: ResearchDossier | undefined = savedCheckpoint?.researchDossier;
           let latestFallbackReview: ReturnType<typeof reviewResearchHypotheses> | undefined = collected.size

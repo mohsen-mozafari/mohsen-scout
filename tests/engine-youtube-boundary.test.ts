@@ -14,7 +14,7 @@ void test('internal engine analyzes YouTube metadata as platform evidence withou
     growth: {
       snapshotCount: 3, deltaViews: 18000, viewsPerHour: 750, viewsPerDay: 18000,
       channelBaselineViewsPerDay: 2500, channelOutlierRatio: 7.2,
-      measuredAt: Date.parse('2026-11-22T00:00:00.000Z'), status: 'measured',
+      measuredAt: Date.parse('2026-11-22T00:00:00.000Z'), status: 'measured' as const,
     },
   }];
   const result = buildInternalResearch({
