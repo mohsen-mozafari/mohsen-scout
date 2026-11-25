@@ -4,6 +4,26 @@ import { SPACE_NICHES } from './space';
 export const AUTONOMOUS_DISCOVERY_WINDOW_DAYS = 7;
 export const AUTONOMOUS_YOUTUBE_DISCOVERY_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
+/** Rotating broad topic seeds complement the user's selected niche without claiming a global YouTube census. */
+export const AUTONOMOUS_DISCOVERY_SEED_TOPICS = [
+  'new AI tools and practical technology',
+  'science discoveries and experiments',
+  'engineering inventions and design',
+  'history discoveries and documentary stories',
+  'nature and wildlife discoveries',
+  'space exploration and astronomy',
+  'educational explainers and unusual facts',
+  'creative software and digital production',
+] as const;
+
+export function autonomousDiscoveryTopics(preferences: Preferences, now = Date.now()): string[] {
+  const niche = selectedAutonomousNicheTopic(preferences).trim();
+  const rotation = Math.floor(Math.max(0, now) / AUTONOMOUS_YOUTUBE_DISCOVERY_INTERVAL_MS);
+  const first = AUTONOMOUS_DISCOVERY_SEED_TOPICS[rotation % AUTONOMOUS_DISCOVERY_SEED_TOPICS.length];
+  const second = AUTONOMOUS_DISCOVERY_SEED_TOPICS[(rotation + 3) % AUTONOMOUS_DISCOVERY_SEED_TOPICS.length];
+  return [...new Set([niche, first, second].map((value) => value.trim()).filter(Boolean))].slice(0, 3);
+}
+
 /** Resolve a useful autonomous topic even before the user has run a manual search. */
 export function selectedAutonomousNicheTopic(
   preferences: Pick<Preferences, 'selectedSpaceNiche' | 'customSpaceNiche' | 'lastInput'>,

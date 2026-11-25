@@ -163,6 +163,8 @@ const schema = z.object({
       engineScoredAt: time.optional(),
       engineScoreReason: text.max(600).optional(),
       engineScoreBasis: z.enum(['publisher-web-only-v2', 'platform-aware-v3']).optional(),
+      researchStatus: z.enum(['supported', 'contested', 'unverified', 'not-reviewed']).optional(),
+      researchConfidence: z.enum(['low', 'moderate', 'high']).optional(),
       evidenceSources: z.array(z.object({
         sourceType: z.enum(['publisher', 'web', 'encyclopedia']),
         sourceName: text.max(160),

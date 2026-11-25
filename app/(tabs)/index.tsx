@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, Pressable } from 'react-native';
-import { Search } from 'lucide-react-native';
 
 import { router } from 'expo-router';
 import {
-  Page, Panel, Heading, Txt, Action, Fold, Field, styles, ErrorBox,
+  Page, Panel, Heading, Txt, Action, Fold, styles, ErrorBox,
   BadgeText, MetricCard,
 } from '@/components/ScoutUI';
 import { useScout } from '@/lib/store';
@@ -295,8 +294,6 @@ function DiscoveryDashboardReady() {
   const cachedTopicAnalysis = topicDossier?.internalAnalysis;
 
   const latestReport = reports[0];
-  const [quickTopicDraft, setQuickTopicDraft] = useState<string | undefined>(undefined);
-  const quickTopic = quickTopicDraft ?? preferences.lastInput?.topic ?? latestReport?.input.topic ?? '';
   const latestReportId = latestReport?.id ?? '';
   const engineVideoEvidence = useMemo(
     () => collectEngineVideoEvidence(reports, storedVideos),
@@ -378,42 +375,11 @@ function DiscoveryDashboardReady() {
         />
         {warnings.map((warning) => <Txt muted key={warning}>{warning}</Txt>)}
 
-        <Panel variant="hero">
-          <View style={{ gap: 11 }}>
-            <BadgeText>{fa ? 'شروع تحقیق' : 'START A RESEARCH RUN'}</BadgeText>
-            <Heading>{fa ? 'موضوع ویدئوی بعدی‌ات را پیدا کن' : 'Find your next video topic'}</Heading>
-            <Txt muted>{fa
-              ? 'جست‌وجوی رسمی YouTube فقط پس از اقدام تو انجام می‌شود. نمونه و آمار خام در لایه جدا می‌مانند؛ ایده‌ها و امتیاز تحریری فقط بر پایه منابع مستقل ناشران، وب و ویکی‌مدیا ساخته می‌شوند.'
-              : 'Official YouTube search runs only after you start it. Raw samples and stats stay in a separate lane; editorial ideas and scores use independent publisher, web and Wikimedia evidence only.'}</Txt>
-            <Field
-              label={fa ? 'موضوع یا کلیدواژه' : 'Topic or keyword'}
-              value={quickTopic}
-              onChange={(value) => setQuickTopicDraft(value)}
-              placeholder={fa ? 'مثلاً هوش مصنوعی در تدوین ویدئو' : 'e.g. AI video editing workflows'}
-            />
-            <Action icon={Search} disabled={!quickTopic.trim()}
-              onPress={() => router.push({ pathname: '/youtube', params: { topic: quickTopic.trim() } })}>
-              {fa ? 'شروع تحقیق YouTube' : 'Start YouTube research'}
-            </Action>
-            {latestReport ? (
-              <View style={{ gap: 7 }}>
-                <Txt muted>
-                  {(fa ? 'آخرین نمونه: ' : 'Latest sample: ') + latestReport.input.topic + ' · ' +
-                    latestReport.videos.length + (fa ? ' ویدئو · ' : ' videos · ') +
-                    new Date(latestReport.createdAt).toLocaleString(fa ? 'fa-IR' : 'en-US')}
-                </Txt>
-                <Action secondary onPress={() => router.push({ pathname: '/youtube', params: { topic: latestReport.input.topic, report: latestReport.id } })}>
-                  {fa ? 'مشاهده آخرین تحقیق' : 'Review latest research'}
-                </Action>
-              </View>
-            ) : (
-              <Txt muted>{fa
-                ? 'هنوز تحقیقی اجرا نشده؛ با بازکردن داشبورد هیچ درخواست YouTube یا مصرف سهمیه‌ای انجام نمی‌شود.'
-                : 'No research run yet. Opening the dashboard does not call YouTube or consume API quota.'}</Txt>
-            )}
-          </View>
+        <Panel>
+          <Heading>{fa ? 'فضای پژوهش یکپارچه' : 'Unified research workspace'}</Heading>
+          <Txt muted>{fa ? 'برای کشف موضوع، تحقیق عمیق و ساخت ایده‌های مستند به تب اکتشاف برو.' : 'Use Discover for topic discovery, deep research and evidence-linked idea generation.'}</Txt>
+          <Action onPress={() => router.push('/discover')}>{fa ? 'رفتن به اکتشاف و تحقیق' : 'Open Discover & Research'}</Action>
         </Panel>
-
 
 
         <Pressable onPress={() => setHealthExpanded((current) => !current)} accessibilityRole="button" accessibilityState={{ expanded: healthExpanded }}>

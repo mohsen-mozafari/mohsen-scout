@@ -84,6 +84,11 @@ const IdeaListItem = memo(function IdeaListItem({
             ? (fa ? 'تولید موتور · ' : 'ENGINE GENERATED · ') + ideaCategoryLabel(item.ideaCategory, fa)
             : (fa ? 'ایده شخصی' : 'PERSONAL IDEA')) + ' · ' + item.status}</BadgeText>
           <SourceHeading>{getIdeaDisplayTitle(item, language)}</SourceHeading>
+          {item.engineGenerated ? (
+            <Text style={{ color: item.researchStatus === 'supported' ? p.success : item.researchStatus === 'contested' ? p.warning : p.muted, fontSize: 10, fontWeight: '700' }}>
+              {(fa ? 'وضعیت پژوهش: ' : 'RESEARCH STATUS: ') + (item.researchStatus === 'supported' ? (fa ? 'پشتیبانی‌شده' : 'SUPPORTED') : item.researchStatus === 'contested' ? (fa ? 'متناقض' : 'CONTESTED') : item.researchStatus === 'unverified' ? (fa ? 'تأییدنشده' : 'UNVERIFIED') : (fa ? 'بازبینی‌نشده' : 'NOT REVIEWED')) + ' · ' + (item.researchConfidence ?? 'low')}
+            </Text>
+          ) : null}
           {band ? (
             <>
               <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>

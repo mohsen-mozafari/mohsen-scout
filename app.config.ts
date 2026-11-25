@@ -15,7 +15,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     name: 'MOHSEN SCOUT',
     slug: 'mohsen-scout',
     icon: './assets/scout-icon.png',
-    version: '1.21.0',
+    version: '1.22.0',
     orientation: 'portrait',
     userInterfaceStyle: 'dark',
     scheme: 'mohsen-scout',
@@ -32,7 +32,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       bundleIdentifier: 'me.bilt.mohsenscout',
     },
     android: {
-      versionCode: 42,
+      versionCode: 43,
       allowBackup: false,
       adaptiveIcon: { foregroundImage: './assets/scout-icon.png', backgroundColor: '#000000' },
       package: 'me.bilt.mohsenscout',

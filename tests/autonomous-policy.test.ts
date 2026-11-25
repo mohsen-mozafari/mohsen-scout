@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   autonomousPublisherPriority,
   autonomousYouTubePriority,
+  autonomousDiscoveryTopics,
   buildAutonomousResearchInput,
   isAutonomousYouTubeDiscoveryDue,
 } from '../lib/autonomous-policy';
@@ -60,4 +61,15 @@ void test('measured YouTube velocity and channel outliers raise discovery priori
     },
   });
   assert.ok(measured > baseline);
+});
+
+
+void test('autonomous YouTube discovery rotates two broader topic seeds alongside the selected niche', () => {
+  const preferences = defaults().preferences;
+  const topicsA = autonomousDiscoveryTopics(preferences, Date.parse('2026-11-25T00:00:00Z'));
+  const topicsB = autonomousDiscoveryTopics(preferences, Date.parse('2026-11-25T18:00:00Z'));
+  assert.equal(topicsA.length, 3);
+  assert.equal(topicsB.length, 3);
+  assert.equal(topicsA[0], topicsB[0]);
+  assert.notDeepEqual(topicsA.slice(1), topicsB.slice(1));
 });

@@ -124,6 +124,9 @@ export type Idea = {
   engineScoreReason?: string;
   engineScoreBasis?: 'publisher-web-only-v2' | 'platform-aware-v3';
   evidenceSources?: IdeaEvidenceSource[];
+  /** Scientific verification is separate from editorial opportunity priority. */
+  researchStatus?: 'supported' | 'contested' | 'unverified' | 'not-reviewed';
+  researchConfidence?: 'low' | 'moderate' | 'high';
 };
 export type Report = {
   id: string;

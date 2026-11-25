@@ -19,7 +19,8 @@ import {
 const quoteA = 'The independent laboratory measured a twenty percent reduction in energy consumption across three production runs.';
 const quoteB = 'The second research team measured a twenty percent reduction in energy consumption across its own production trials.';
 function item(id: string, url: string, text: string, title = 'Independent battery process evaluation'): WebResearchItem {
-  return { id, url, title, summary: 'Brief search result summary only.', sourceName: id, category: 'web', sourceText: text };
+  const originalText = text.length >= 300 ? text : text + ' ' + ('The complete original source also explains the research method, measurement scope and limitations. ').repeat(4);
+  return { id, url, title, summary: 'Brief search result summary only.', sourceName: id, category: 'web', sourceText: originalText };
 }
 const evidence = [
   item('e1', 'https://research.university.edu/report', quoteA),
@@ -93,6 +94,10 @@ void test('independent cross-provider reviewer plus exact quotes from two publis
       challengingCitations: [],
       reason: 'Both original reports independently describe the same measured outcome.',
     }],
+    evidenceReviews: [
+      { evidenceId: 'e1', role: 'supports', credibility: 'high', sourceType: 'primary', freshness: 'recent', reason: 'Original laboratory report.' },
+      { evidenceId: 'e2', role: 'supports', credibility: 'medium', sourceType: 'secondary', freshness: 'recent', reason: 'Independent technical analysis.' },
+    ],
   }, evidence, 'xai', 'reviewer-model', 1764000000000);
   assert.equal(reviewed.reviewStatus, 'independently-reviewed');
   assert.equal(reviewed.reviewerProvider, 'xai');
@@ -146,6 +151,11 @@ void test('validated counterevidence makes a claim contested instead of hiding d
       supportingCitations: [{ evidenceId: 'e1', quote: quoteA }, { evidenceId: 'e2', quote: quoteB }],
       challengingCitations: [{ evidenceId: 'e3', quote: 'The follow up audit found the claimed energy reduction was not statistically significant in the full production sample.' }],
     }],
+    evidenceReviews: [
+      { evidenceId: 'e1', role: 'supports', credibility: 'high', sourceType: 'primary', freshness: 'recent', reason: 'Original report.' },
+      { evidenceId: 'e2', role: 'supports', credibility: 'medium', sourceType: 'secondary', freshness: 'recent', reason: 'Independent review.' },
+      { evidenceId: 'e3', role: 'challenges', credibility: 'high', sourceType: 'secondary', freshness: 'recent', reason: 'Follow-up audit.' },
+    ],
   }, records, 'xai', 'reviewer-model');
   assert.equal(reviewed.hypotheses[0]?.status, 'contested');
   assert.equal(reviewed.hypotheses[0]?.challengingQuotes?.length, 1);
@@ -222,4 +232,42 @@ void test('independent source reviews ignore summary-only credibility claims and
   assert.notEqual(reviewed.conclusion, reviewed.provisionalConclusion);
   assert.ok(reviewed.conclusion.includes('فرضیه') || reviewed.conclusion.includes('hypothesis'));
   assert.ok(reviewed.provisionalConclusion);
+});
+
+
+void test('two secondary sources cannot certify a scientific claim without a primary source', () => {
+  const dossier = pendingDossier();
+  const reviewed = applyIndependentResearchReview(dossier, {
+    reviews: [{
+      hypothesisId: 'h1',
+      verdict: 'support',
+      supportingCitations: [{ evidenceId: 'e1', quote: quoteA }, { evidenceId: 'e2', quote: quoteB }],
+      challengingCitations: [],
+    }],
+    evidenceReviews: [
+      { evidenceId: 'e1', role: 'supports', credibility: 'high', sourceType: 'secondary', freshness: 'recent', reason: 'Secondary analysis.' },
+      { evidenceId: 'e2', role: 'supports', credibility: 'high', sourceType: 'secondary', freshness: 'recent', reason: 'Independent secondary analysis.' },
+    ],
+  }, evidence, 'xai', 'reviewer-model');
+  assert.equal(reviewed.hypotheses[0]?.status, 'insufficient-evidence');
+  assert.equal(reviewed.hypotheses[0]?.confidence, 'low');
+  assert.ok(reviewed.hypotheses[0]?.missingEvidence.some((gap) => gap.includes('primary source')));
+});
+
+void test('source-role mismatches invalidate quotations even when the text itself matches', () => {
+  const dossier = pendingDossier();
+  const reviewed = applyIndependentResearchReview(dossier, {
+    reviews: [{
+      hypothesisId: 'h1',
+      verdict: 'support',
+      supportingCitations: [{ evidenceId: 'e1', quote: quoteA }, { evidenceId: 'e2', quote: quoteB }],
+      challengingCitations: [],
+    }],
+    evidenceReviews: [
+      { evidenceId: 'e1', role: 'context', credibility: 'high', sourceType: 'primary', freshness: 'recent', reason: 'Context only.' },
+      { evidenceId: 'e2', role: 'supports', credibility: 'high', sourceType: 'secondary', freshness: 'recent', reason: 'Support.' },
+    ],
+  }, evidence, 'xai', 'reviewer-model');
+  assert.equal(reviewed.hypotheses[0]?.status, 'insufficient-evidence');
+  assert.equal(reviewed.verifiedCitationCount, 1);
 });

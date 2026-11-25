@@ -5,7 +5,7 @@ import { createManualIdea } from '../lib/engine';
 import type { SpaceNewsItem } from '../lib/space';
 import { defaults } from '../lib/types';
 import { validateLocal } from '../lib/validation';
-import { tokenizeResearchText } from '../lib/intelligence';
+import { createEditorialOpportunityScorer, tokenizeResearchText } from '../lib/intelligence';
 
 const news: SpaceNewsItem[] = [
   {
@@ -627,4 +627,67 @@ void test('refresh updates an active generated idea in place while preserving us
   assert.equal(same.status, 'Saved Opportunities');
   assert.equal(same.createdAt, 1234);
   assert.ok((same.engineScoredAt ?? 0) > 0);
+});
+
+
+void test('research dossier status and source quotations flow into generated video ideas', () => {
+  const researchDossier = {
+    version: 1 as const, updatedAt: base.now, provider: 'gemini' as const, model: 'test-model',
+    hypotheses: [{
+      id: 'h-supported',
+      claim: 'JWST methane spectroscopy measurements and instrument limits',
+      rationale: 'The reviewed evidence describes methane spectroscopy and uncertainty in JWST atmospheric interpretation.',
+      status: 'supported' as const, confidence: 'moderate' as const,
+      supportingEvidenceIds: ['e1', 'e2'], challengingEvidenceIds: [], missingEvidence: [],
+      supportingQuotes: [{
+        evidenceId: 'e1',
+        quote: 'The original instrument team describes methane spectral interpretation limits in the observation.',
+        sourceName: 'NASA',
+        sourceUrl: 'https://science.nasa.gov/example/jwst-methane',
+        publisherFamily: 'nasa.gov',
+        verification: 'verbatim-checked' as const,
+      }],
+      challengingQuotes: [],
+    }],
+    evidenceReviews: [], nextQueries: [], completedQueries: [], contradictions: [], gaps: [],
+    conclusion: 'A bounded supported hypothesis.', confidence: 'moderate' as const,
+    stoppingReason: 'Reviewed.', reviewStatus: 'independently-reviewed' as const,
+  };
+  const ideas = generateEditorialIdeas({ ...base, news, videos: [], researchDossier, limit: 5 });
+  assert.ok(ideas.length > 0);
+  const matched = ideas.find((idea) => idea.researchStatus === 'supported');
+  assert.ok(matched);
+  assert.ok(matched?.evidenceSources?.some((source) => source.sourceUrl === 'https://science.nasa.gov/example/jwst-methane'));
+  assert.ok(matched?.concept.includes('supported'));
+});
+
+void test('subtopic opportunity scoring does not borrow momentum from a different topic angle', () => {
+  const score = createEditorialOpportunityScorer({
+    topic: 'Mars exploration',
+    news: [
+      { title: 'Mars water ice observations', summary: 'Evidence about water ice beneath the surface.', sourceName: 'NASA', sourceUrl: 'https://www.nasa.gov/mars-water', publishedAt: '2026-11-20T00:00:00Z' },
+      { title: 'Mars mission budget and launch schedule', summary: 'Cost planning and mission schedule details.', sourceName: 'ESA', sourceUrl: 'https://www.esa.int/mars-budget', publishedAt: '2026-11-20T00:00:00Z' },
+    ],
+    videos: [
+      { title: 'Mars water ice explained', channel: 'Science A', publishedAt: '2026-11-20T00:00:00Z', viewsPerHour: 1500, channelOutlierRatio: 8 },
+      { title: 'Mars launch budget explained', channel: 'Science B', publishedAt: '2026-11-20T00:00:00Z', viewsPerHour: 10, channelOutlierRatio: 0.5 },
+    ],
+    now: Date.parse('2026-11-25T12:00:00Z'),
+  });
+  const water = score('water ice').components.platformMomentum;
+  const budget = score('mission budget').components.platformMomentum;
+  assert.ok(water > budget);
+});
+
+void test('local idea validation preserves research verification fields', () => {
+  const generated = generateEditorialIdeas({ ...base, news, videos: [], limit: 1 });
+  assert.ok(generated.length > 0);
+  const enriched = generated.map((idea) => ({
+    ...idea, researchStatus: 'supported' as const, researchConfidence: 'moderate' as const,
+  }));
+  const data = defaults();
+  data.ideas = enriched;
+  const restored = validateLocal(data);
+  assert.deepEqual(restored.ideas.map((idea) => idea.researchStatus), ['supported']);
+  assert.deepEqual(restored.ideas.map((idea) => idea.researchConfidence), ['moderate']);
 });

@@ -752,14 +752,14 @@ export function createEditorialOpportunityScorer(
       momentum: source.momentum,
     });
 
-    if (scoreResearchText(input.topic, source.text) > 0) {
+    const topicMatched = scoreResearchText(input.topic, source.text) > 0;
+    if (topicMatched) {
       topicRelevantDocuments.add(index);
-    }
-
-    for (const token of tokens) {
+      for (const token of tokens) {
       const posting = tokenIndex.get(token);
-      if (posting) posting.push(index);
-      else tokenIndex.set(token, [index]);
+        if (posting) posting.push(index);
+        else tokenIndex.set(token, [index]);
+      }
     }
   }
 
@@ -770,8 +770,11 @@ export function createEditorialOpportunityScorer(
       for (const index of tokenIndex.get(token) ?? []) anchorDocuments.add(index);
     }
 
-    const relevantIndexes = new Set(anchorDocuments);
-    for (const index of topicRelevantDocuments) relevantIndexes.add(index);
+    // A subtopic score uses documents that match this anchor. Parent-topic context
+    // is only a fallback when no directly matching records exist.
+    const relevantIndexes = anchorDocuments.size
+      ? new Set(anchorDocuments)
+      : new Set(topicRelevantDocuments);
 
     const relevant: IndexedEditorialDocument[] = [];
     for (const index of relevantIndexes) relevant.push(documents[index]);

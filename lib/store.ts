@@ -32,6 +32,7 @@ import { readPendingResearch, getPendingResearch, savePendingResearch, updatePen
 import { captureYouTubeSnapshots } from './youtube-growth';
 import { availableResearchRunSlots, MAX_CONCURRENT_RESEARCH_RUNS } from './research-concurrency';
 import { appendResearchActivity, buildResearchActivityFeedbackProfile, buildResearchActivityResults, buildResearchActivitySourceExclusions, explainResearchActivitySourceExclusion, updateResearchActivityEvent, updateResearchActivityFeedback } from './research-activity';
+import { MAX_DEEP_RESEARCH_EVIDENCE, MAX_DEEP_RESEARCH_QUERIES, MAX_DEEP_RESEARCH_RESULTS_PER_QUERY, MAX_DEEP_RESEARCH_ROUNDS, planResearchRound } from './research-orchestrator';
 type State = {
   data: LocalData;
   ready: boolean;
@@ -472,7 +473,9 @@ export const useScout = create<State>((set, get) => ({
           // language model proposes falsifiable hypotheses, classifies evidence, seeks
           // counterevidence and chooses the next search. A transparent local planner is
           // used only when no configured model is available.
-          for (let round = 0; round < 4; round++) {
+          for (let round = 0; round <= MAX_DEEP_RESEARCH_ROUNDS; round++) {
+            if (collected.size >= MAX_DEEP_RESEARCH_EVIDENCE) break;
+            const evidenceBeforeRound = collected.size;
             const query = queries[round];
             if (!query) break;
             const normalizedQuery = normalizeResearchText(query);
@@ -480,16 +483,18 @@ export const useScout = create<State>((set, get) => ({
             asked.add(normalizedQuery);
             set({ progress: round === 0
               ? 'Searching independent web and news sources…'
-              : 'Testing hypotheses and searching for counterevidence (' + (round + 1) + '/4)…' });
+              : 'Testing hypotheses and searching for counterevidence (' + (round + 1) + '/' + (MAX_DEEP_RESEARCH_ROUNDS + 1) + ')…' });
             try {
               const result = await fetchWebResearch(query, {
                 apiKey: webKey ?? undefined,
-                limit: 6,
+                limit: MAX_DEEP_RESEARCH_RESULTS_PER_QUERY,
                 days: normalizedInput.days,
               });
               queryWarnings.push(...result.warnings);
               const split = splitSourcesByFeedback(result.items);
-              for (const item of split.included) if (!collected.has(item.url)) collected.set(item.url, item);
+              for (const item of split.included) {
+                if (!collected.has(item.url) && collected.size < MAX_DEEP_RESEARCH_EVIDENCE) collected.set(item.url, item);
+              }
 
               if (modelAgentEnabled && collected.size) {
                 if (youtubeTaskPromise) await youtubeTaskPromise;
@@ -571,19 +576,32 @@ export const useScout = create<State>((set, get) => ({
                 })),
                 queryHistory: [...asked].slice(-40),
               });
-              if (round < 3 && result.items.length) {
-                const directions = latestAiDossier
-                  ? latestAiDossier.nextQueries.map((item) => ({ query: item.query, reason: item.reason }))
-                  : (latestFallbackReview?.nextDirections ?? []).map((item) => ({ query: item.query, reason: item.reason }));
-                for (const direction of directions) {
-                  const key = normalizeResearchText(direction.query);
+              const newEvidenceCount = collected.size - evidenceBeforeRound;
+              if (round < MAX_DEEP_RESEARCH_ROUNDS && newEvidenceCount > 0 && collected.size < MAX_DEEP_RESEARCH_EVIDENCE) {
+                const nextDirections = latestAiDossier?.nextQueries ?? (latestFallbackReview?.nextDirections ?? []).map((item) => ({
+                  query: item.query,
+                  purpose: 'independent-confirmation' as const,
+                  hypothesisId: '',
+                  priority: 3,
+                  reason: item.reason,
+                }));
+                const plan = planResearchRound({
+                  round: round + 1,
+                  queriesAttempted: asked.size,
+                  evidenceCount: collected.size,
+                  previousRoundNewEvidenceCount: newEvidenceCount,
+                  nextQueries: nextDirections,
+                  alreadyAsked: [...asked],
+                });
+                for (const planned of plan.queries) {
+                  const key = normalizeResearchText(planned.query);
                   if (!key || asked.has(key) || queries.some((item) => normalizeResearchText(item) === key)) continue;
-                  if (queries.length >= 4) break;
-                  queries.push(direction.query);
+                  if (queries.length >= MAX_DEEP_RESEARCH_QUERIES) break;
+                  queries.push(planned.query);
                 }
               }
-              if (!result.items.length && round > 0) break;
-              if (round < 3 && queries.length === round + 1) {
+              if (newEvidenceCount === 0 && round > 0) break;
+              if (round < MAX_DEEP_RESEARCH_ROUNDS && queries.length === round + 1) {
                 // The agent found no defensible new direction; do not manufacture more queries.
                 break;
               }
@@ -882,6 +900,7 @@ export const useScout = create<State>((set, get) => ({
         ...(ideaOptions?.category ? { category: ideaOptions.category } : {}),
         limit: ideaOptions?.limit ?? 10,
         refreshExisting: true,
+        researchDossier: webResearchDossier ?? priorMemory?.researchDossier,
       });
 
       await finishActivity(engineActivityId, {

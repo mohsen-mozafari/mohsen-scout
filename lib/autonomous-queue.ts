@@ -5,7 +5,7 @@ import { normalizeResearchText } from './intelligence';
 
 const KEY = 'mohsen-scout.autonomous-research-queue.v1';
 export const AUTONOMOUS_QUEUE_LIMIT = 250;
-export const AUTONOMOUS_QUEUE_MAX_AGE_MS = 14 * 24 * 60 * 60 * 1000;
+export const AUTONOMOUS_QUEUE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
 export const AUTONOMOUS_SEEN_LIMIT = 5000;
 
 export type AutonomousResearchSource = 'publisher' | 'youtube' | 'niche-seed' | 'recovery';
@@ -26,6 +26,8 @@ export type AutonomousResearchJob = {
   completedAt?: number;
   retryAt?: number;
   lastError?: string;
+  /** Persisted marker for work interrupted by process death or app suspension. */
+  recoveredFromInterruption?: boolean;
 };
 export type AutonomousResearchQueue = {
   version: 1;
@@ -63,7 +65,8 @@ function validJob(value: unknown): value is AutonomousResearchJob {
     typeof item.sourceId === 'string' && typeof item.discoveredAt === 'number' &&
     Number.isFinite(item.discoveredAt) && typeof item.priority === 'number' &&
     Number.isFinite(item.priority) && typeof item.attempts === 'number' &&
-    ['queued', 'running', 'completed', 'failed'].includes(String(item.status));
+    ['queued', 'running', 'completed', 'failed'].includes(String(item.status)) &&
+    (item.recoveredFromInterruption === undefined || typeof item.recoveredFromInterruption === 'boolean');
 }
 
 function sourceKey(candidate: Pick<AutonomousResearchCandidate, 'source' | 'sourceId' | 'topic'>): string {
@@ -79,8 +82,12 @@ export function normalizeAutonomousQueue(
   const item = value as Record<string, unknown>;
   const rawJobs = Array.isArray(item.jobs) ? item.jobs.filter(validJob) : [];
   const jobs = rawJobs
-    .map((job) => job.status === 'running' ? { ...job, status: 'queued' as const } : job)
-    .filter((job) => job.status === 'completed' || now - job.discoveredAt <= AUTONOMOUS_QUEUE_MAX_AGE_MS);
+    .map((job) => job.status === 'running'
+      ? { ...job, status: 'queued' as const, recoveredFromInterruption: true, priority: Math.max(180, job.priority) }
+      : job.status === 'failed'
+        ? { ...job, recoveredFromInterruption: true, priority: Math.max(160, job.priority) }
+        : job)
+    .filter((job) => job.status === 'completed' || job.recoveredFromInterruption === true || now - job.discoveredAt <= AUTONOMOUS_QUEUE_MAX_AGE_MS);
   const seenKeys = Array.isArray(item.seenKeys)
     ? item.seenKeys.flatMap((entry) => {
       if (!entry || typeof entry !== 'object') return [];
@@ -153,10 +160,12 @@ export function enqueueAutonomousCandidates(
   return {
     ...queue,
     jobs: jobs
-      .filter((job) => job.status === 'completed' || now - job.discoveredAt <= AUTONOMOUS_QUEUE_MAX_AGE_MS)
+      .filter((job) => job.status === 'completed' || job.recoveredFromInterruption === true || now - job.discoveredAt <= AUTONOMOUS_QUEUE_MAX_AGE_MS)
       .sort((a, b) => {
         if (a.status === 'completed' && b.status !== 'completed') return 1;
         if (b.status === 'completed' && a.status !== 'completed') return -1;
+        const recovered = Number(Boolean(b.recoveredFromInterruption)) - Number(Boolean(a.recoveredFromInterruption));
+        if (recovered) return recovered;
         const aDate = a.publishedAt ? Date.parse(a.publishedAt) || 0 : 0;
         const bDate = b.publishedAt ? Date.parse(b.publishedAt) || 0 : 0;
         return b.priority - a.priority || bDate - aDate || b.discoveredAt - a.discoveredAt;
@@ -183,9 +192,11 @@ export function nextAutonomousJob(
   now = Date.now(),
 ): AutonomousResearchJob | undefined {
   return queue.jobs
-    .filter((job) => job.status === 'queued' && (!job.retryAt || job.retryAt <= now))
-    .filter((job) => now - job.discoveredAt <= AUTONOMOUS_QUEUE_MAX_AGE_MS)
+    .filter((job) => (job.status === 'queued' || job.status === 'failed') && (!job.retryAt || job.retryAt <= now))
+    .filter((job) => job.recoveredFromInterruption === true || now - job.discoveredAt <= AUTONOMOUS_QUEUE_MAX_AGE_MS)
     .sort((a, b) => {
+      const recovered = Number(Boolean(b.recoveredFromInterruption)) - Number(Boolean(a.recoveredFromInterruption));
+      if (recovered) return recovered;
       const aDate = a.publishedAt ? Date.parse(a.publishedAt) || 0 : 0;
       const bDate = b.publishedAt ? Date.parse(b.publishedAt) || 0 : 0;
       return b.priority - a.priority || bDate - aDate || b.discoveredAt - a.discoveredAt;

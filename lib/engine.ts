@@ -594,8 +594,8 @@ export function buildIdeas(_report: Report, _language: 'fa' | 'en' = 'en'): Idea
 }
 export function reasoning(_idea: Idea, _observedVideoCount = 0, language: 'fa' | 'en' = 'en') {
   return language === 'fa'
-    ? 'نمونه و آمار خام YouTube فقط جداگانه نمایش داده می‌شوند و در تولید، تحلیل یا امتیاز این ایده نقشی ندارند. ایده باید با شواهد مستقل ناشران و وب اعتبارسنجی شود.'
-    : 'Raw YouTube samples and metrics are displayed separately and do not influence this idea, its analysis or score. Validate the idea with independent publisher and web evidence.';
+    ? 'سیگنال‌های YouTube برای کشف زاویه و فرصت پلتفرمی به‌کار می‌روند، اما جای سند مستقل یا تأیید علمی را نمی‌گیرند. وضعیت پژوهش و اولویت تحریری جداگانه بررسی می‌شوند.'
+    : 'YouTube signals help discover platform opportunities, but they are not independent documentary evidence or scientific validation. Research status and editorial priority remain separate.';
 }
 
 export type IdeaAnalysisSection = {
@@ -620,7 +620,14 @@ export function buildIdeaAnalysis(
   const sources = (idea.evidenceSources ?? []).slice(0, 8);
   const sourceItems = sources.map((source) => source.sourceName + ' · ' + source.title);
   const gaps: string[] = [];
-  if (!idea.sourceUrl?.trim() && !sources.length) gaps.push(fa
+  if (idea.researchStatus === 'contested') gaps.push(fa
+    ? 'پرونده تحقیق برای این ایده شواهد مخالف یا متناقض ثبت کرده است؛ پیش از تولید، اختلاف‌ها را صریح و با منابع نشان بده.'
+    : 'The research dossier records counterevidence or conflicting evidence for this idea; disclose and examine the disagreement before production.');
+  if (idea.researchStatus === 'unverified' || idea.researchStatus === 'not-reviewed') gaps.push(fa
+    ? 'این ایده هنوز از نظر علمی تأیید نشده است؛ امتیاز فرصت تحریری را با اعتبار علمی اشتباه نگیر.'
+    : 'This idea has not been scientifically validated yet; do not confuse editorial opportunity priority with evidence confidence.');
+  // A YouTube URL is a platform observation, not an independent publisher/web source.
+  if (!sources.length) gaps.push(fa
     ? 'هنوز منبع مستقل ناشر یا وب به این ایده پیوند نشده است؛ پیش از تولید، یک سند اولیه معتبر پیدا کن.'
     : 'No independent publisher or web source is attached to this idea yet; find a credible primary document before production.');
   if (!concept) gaps.push(fa

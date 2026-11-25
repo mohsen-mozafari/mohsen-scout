@@ -7,6 +7,7 @@ import { selectIdeaGenerationVideos } from './idea-generation';
 import {
   autonomousPublisherPriority,
   autonomousYouTubePriority,
+  autonomousDiscoveryTopics,
   buildAutonomousResearchInput,
   isAutonomousYouTubeDiscoveryDue,
   selectedAutonomousNicheTopic,
@@ -24,7 +25,7 @@ import {
 import type { Video } from './types';
 
 const FOREGROUND_IDLE_MS = 20_000;
-const DISCOVERY_AGE_MS = 14 * 24 * 60 * 60 * 1000;
+const DISCOVERY_AGE_MS = 3 * 24 * 60 * 60 * 1000;
 const AUTONOMOUS_QUEUE_MAX_AGE_MS = DISCOVERY_AGE_MS;
 const NICHE_YOUTUBE_DISCOVERY_INTERVAL_MS = AUTONOMOUS_YOUTUBE_DISCOVERY_INTERVAL_MS;
 let active = false;
@@ -115,71 +116,96 @@ async function discoverYouTubeTopics(): Promise<void> {
   let queue = await loadAutonomousQueue();
   if (!isAutonomousYouTubeDiscoveryDue(queue.lastYouTubeDiscoveryAt, now)) return;
 
-  // Persist the attempt before networking so a failed key/quota/network does not
-  // create a tight retry loop. The next scheduled six-hour window can recover.
+  // Persist before networking. A failed run is moved to a short, bounded retry
+  // window below; successful discovery keeps the six-hour cadence.
   queue = { ...queue, lastYouTubeDiscoveryAt: now };
   await saveAutonomousQueue(queue);
 
   const input = baseInput(preferences);
   const startedAt = Date.now();
-  let videos: Video[] = [];
+  const videosById = new Map<string, Video>();
   let candidateCount = 0;
-  let warning = '';
+  const warnings: string[] = [];
+  let missingKey = false;
   try {
     const key = await getKey('youtube').catch(() => undefined);
     if (!key) {
-      warning = 'Autonomous YouTube discovery was skipped because no YouTube Data API key is saved. Publisher discovery and queued research remain available.';
+      missingKey = true;
+      warnings.push('Autonomous YouTube discovery needs a saved YouTube Data API key. The durable research queue is preserved and discovery will retry after the key is configured.');
     } else {
-      const sample = await searchYouTubeSample(input.topic, {
-        key,
-        origin: 'automatic',
-        charge: (units, kind = 'other') => useScout.getState().charge(units, kind, 'automatic'),
-        onQuota: (kind) => useScout.getState().commit((data) => ({
-          ...data,
-          budget: {
-            ...data.budget,
-            ...(kind === 'search' ? { searchExhausted: true } : { otherExhausted: true }),
-          },
-        })),
-      }, 24, {
-        days: 7,
-        order: 'relevance',
-        region: input.region,
-        language: input.languages[0] ?? 'en',
-      });
-      warning = sample.warning;
-      if (sample.videos.length) {
-        const fetchedAt = Date.now();
-        videos = await useScout.getState().saveYouTubeSample(sample.videos.map((video) => ({
-          id: video.id,
-          title: video.title,
-          description: video.description,
-          channel: video.channel,
-          thumbnail: video.thumbnailUrl,
-          publishedAt: video.publishedAt,
-          fetchedAt,
-          query: input.topic,
-          viewCount: video.viewCount,
-          likeCount: video.likeCount,
-          commentCount: null,
-          channelId: video.channelId,
-        })));
-        const candidates = buildYouTubeCandidates(videos, preferences, Date.now(), input.topic);
-        candidateCount = candidates.length;
-        queue = await loadAutonomousQueue();
-        queue = enqueueAutonomousCandidates(queue, candidates, Date.now());
-        await saveAutonomousQueue({ ...queue, lastYouTubeDiscoveryAt: now });
+      // Three search intents are rotated every six hours: the selected niche plus
+      // two broad categories. Each intent samples YouTube's official views,
+      // newest-first and relevance lanes; it is not a complete trending census.
+      for (const discoveryTopic of autonomousDiscoveryTopics(preferences, now)) {
+        try {
+          const sample = await searchYouTubeSample(discoveryTopic, {
+            key,
+            origin: 'automatic',
+            charge: (units, kind = 'other') => useScout.getState().charge(units, kind, 'automatic'),
+            onQuota: (kind) => useScout.getState().commit((data) => ({
+              ...data,
+              budget: {
+                ...data.budget,
+                ...(kind === 'search' ? { searchExhausted: true } : { otherExhausted: true }),
+              },
+            })),
+          }, 12, {
+            days: 7,
+            order: 'discovery',
+            region: input.region,
+            language: input.languages[0] ?? 'en',
+          });
+          if (sample.warning) warnings.push(discoveryTopic + ': ' + sample.warning);
+          if (!sample.videos.length) continue;
+          const fetchedAt = Date.now();
+          const persisted = await useScout.getState().saveYouTubeSample(sample.videos.map((video) => ({
+            id: video.id,
+            title: video.title,
+            description: video.description,
+            channel: video.channel,
+            thumbnail: video.thumbnailUrl,
+            publishedAt: video.publishedAt,
+            fetchedAt,
+            query: discoveryTopic,
+            viewCount: video.viewCount,
+            likeCount: video.likeCount,
+            commentCount: null,
+            channelId: video.channelId,
+          })));
+          for (const video of persisted) videosById.set(video.id, video);
+          const candidates = buildYouTubeCandidates(persisted, preferences, Date.now(), discoveryTopic);
+          candidateCount += candidates.length;
+          queue = await loadAutonomousQueue();
+          queue = enqueueAutonomousCandidates(queue, candidates, Date.now());
+          await saveAutonomousQueue(queue);
+        } catch (error) {
+          warnings.push(discoveryTopic + ': ' + (error instanceof Error ? error.message : 'YouTube discovery failed.'));
+          if (error instanceof Error && /quota|allowance|budget/i.test(error.message)) break;
+        }
       }
     }
   } catch (error) {
-    warning = error instanceof Error ? error.message : 'Autonomous YouTube discovery failed.';
+    warnings.push(error instanceof Error ? error.message : 'Autonomous YouTube discovery failed.');
   }
 
+  const videos = [...videosById.values()];
+  const warning = warnings.join(' · ');
   const completedAt = Date.now();
+  if (!videos.length && warning) {
+    const retryDelay = missingKey ? 60 * 60 * 1000 : /quota|allowance|budget/i.test(warning)
+      ? AUTONOMOUS_YOUTUBE_DISCOVERY_INTERVAL_MS
+      : 15 * 60 * 1000;
+    queue = await loadAutonomousQueue();
+    await saveAutonomousQueue({
+      ...queue,
+      // Preserve six-hour successful cadence while retrying recoverable failures sooner.
+      lastYouTubeDiscoveryAt: now - AUTONOMOUS_YOUTUBE_DISCOVERY_INTERVAL_MS + retryDelay,
+    });
+  }
   await useScout.getState().recordResearchActivity({
     id: uid(),
     engine: 'YouTube Data API',
-    query: 'Autonomous YouTube-first niche discovery · ' + input.topic + ' · last 7 days · relevance sample',
+    query: 'Autonomous multi-topic YouTube discovery · ' + autonomousDiscoveryTopics(preferences, now).join(' / ') + ' · last 7 days · discovery mix',
     topic: input.topic,
     niche: preferences.selectedSpaceNiche === 'custom'
       ? preferences.customSpaceNiche.trim() || input.topic
@@ -190,8 +216,6 @@ async function discoverYouTubeTopics(): Promise<void> {
     status: videos.length ? (warning ? 'partial' : 'success') : warning ? 'skipped' : 'empty',
     resultCount: videos.length,
     analyzedCount: candidateCount,
-    // Raw video metadata remains in the dedicated local video/report store;
-    // activity history retains only the bounded operation count.
     results: [],
     warnings: warning ? [warning.slice(0, 700)] : [],
   }).catch(() => undefined);
@@ -259,10 +283,12 @@ async function processNextJob(): Promise<boolean> {
     );
     queue = enqueueAutonomousCandidates(queue, candidates);
   } else {
-    const retryable = job.attempts < 2;
+    const failedAttempts = job.attempts + 1;
+    const retryDelay = Math.min(6 * 60 * 60 * 1000, 15 * 60 * 1000 * 2 ** Math.min(5, failedAttempts - 1));
     queue = updateAutonomousJob(queue, job.id, {
-      status: retryable ? 'queued' : 'failed',
-      retryAt: retryable ? Date.now() + 15 * 60 * 1000 : undefined,
+      // Failed items remain retryable indefinitely with capped exponential backoff.
+      status: failedAttempts >= 8 ? 'failed' : 'queued',
+      retryAt: Date.now() + retryDelay,
       lastError: useScout.getState().error.slice(0, 300) || 'Research did not produce a completed report.',
     });
   }

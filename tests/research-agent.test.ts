@@ -138,3 +138,27 @@ void test('research dossier filters fabricated and YouTube evidence IDs and dupl
   assert.equal(dossier.nextQueries[0]?.query, 'battery recycling primary production dataset');
   assert.deepEqual(dossier.contradictions[0]?.evidenceIds, ['web:one', 'web:two']);
 });
+
+
+void test('research prompt sends multiple original-text excerpts per source for deeper review', () => {
+  const first = 'The original instrument team reports the methane line measurement and describes the calibration procedure in this section.';
+  const middle = 'The analysis method compares multiple spectral windows and identifies the limits of the measurement.';
+  const final = 'The authors explicitly state the uncertainty range and the alternative interpretation that remains unresolved.';
+  const sourceText = [first, middle, final, ('Additional method and limitation context. ').repeat(12)].join('\n\n');
+  const prompt = buildResearchAgentPrompt({
+    topic: 'JWST methane spectroscopy',
+    evidence: [{
+      id: 'web:multi',
+      title: 'Original instrument report',
+      summary: 'Short summary.',
+      url: 'https://science.example.org/methane',
+      sourceName: 'Research Institute',
+      category: 'web',
+      sourceText,
+    }],
+    preferences: defaults().preferences,
+  });
+  assert.ok(prompt.includes('sourceTextExcerpts'));
+  assert.ok(prompt.includes('original instrument team reports'));
+  assert.ok(prompt.includes('alternative interpretation'));
+});
