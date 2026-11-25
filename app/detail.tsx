@@ -212,7 +212,7 @@ export default function Detail() {
       ) : null}
       {video && (
         <>
-          <MediaPreview uri={video.thumbnail} aspectRatio={16 / 9} onPress={() => void Linking.openURL('https://www.youtube.com/watch?v=' + video.id).catch(() => {})} alt={video.title} />
+          <MediaPreview uri={video.thumbnail} aspectRatio={16 / 9} onPress={() => void openExternalUrl('https://www.youtube.com/watch?v=' + video.id, uiLanguage)} alt={video.title} />
           <SourceText>
             {video.channel} · {new Date(video.publishedAt).toLocaleDateString('en-US')}
           </SourceText>

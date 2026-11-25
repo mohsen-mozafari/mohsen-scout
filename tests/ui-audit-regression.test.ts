@@ -7,7 +7,7 @@ const source = (path: string) => readFileSync(resolve(process.cwd(), path), 'utf
 
 test('external navigation validates web URLs and reports failure visibly', () => {
   const helper = source('lib/external-links.ts');
-  assert.match(helper, /https\?:/);
+  assert.ok(helper.includes("value.startsWith('https://')") && helper.includes("value.startsWith('http://')"));
   assert.match(helper, /Alert\.alert/);
   assert.match(helper, /Could not open link/);
 });
