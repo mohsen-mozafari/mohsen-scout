@@ -466,11 +466,8 @@ export default function Opportunities() {
                     ) : <Text style={{ color: p.muted, fontSize: 10 }}>{fa ? 'بدون امتیاز' : 'NOT SCORED'}</Text>}
                   </View>
                   <SourceHeading>{getIdeaDisplayTitle(featuredIdea, preferences.uiLanguage ?? 'fa')}</SourceHeading>
-                  {featuredIdea.engineScoreReason ? <Txt muted>{featuredIdea.engineScoreReason}</Txt> : null}
-                  {featuredIdea.concept ? <SourceText muted>{featuredIdea.concept}</SourceText> : null}
-                  {featuredIdea.note ? <Txt muted>{featuredIdea.note}</Txt> : null}
-                  {featuredIdea.decision ? <Txt muted>{(fa ? 'تصمیم ثبت‌شده: ' : 'Saved decision: ') + featuredIdea.decision}</Txt> : null}
-                  {featuredIdea.sourceName ? <Txt muted>{(fa ? 'منبع: ' : 'Source: ') + featuredIdea.sourceName}</Txt> : null}
+                  {featuredIdea.engineScoreReason ? <Text numberOfLines={2} style={styles.muted}>{featuredIdea.engineScoreReason}</Text> : null}
+                  <Txt muted>{fa ? 'امتیاز اولویت فقط از شواهد ناشران و وب مستقل می‌آید؛ محبوبیت YouTube، حجم جست‌وجو یا رشد آینده را پیش‌بینی نمی‌کند.' : 'Priority reflects publisher and independent web evidence only; it is not YouTube popularity, search volume or a growth forecast.'}</Txt>
                   <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7 }}>
                     <View style={{ flexGrow: 1, flexBasis: 140 }}>
                       <Action onPress={() => {
@@ -489,11 +486,11 @@ export default function Opportunities() {
               </Fold>
             ) : null}
             {topOpportunities.length > 1 ? (
-              <Fold title={fa ? 'چهار اولویت بعدی' : 'Next active priorities'} summary={String(topOpportunities.length - 1)}>
+              <Fold title={fa ? 'چهار اولویت بعدی' : 'Next active priorities'} summary={String(Math.min(4, topOpportunities.length - 1))}>
                 <View style={{ gap: 8 }}>
-                    {topOpportunities.slice(1).map((idea, index) => {
-                      const band = getEditorialPriorityBand(idea.engineScore ?? 0);
-                      const tint = band === 'strong' ? p.success : band === 'moderate' ? p.cyan : p.danger;
+                    {topOpportunities.slice(1, 5).map((idea, index) => {
+                      const band = typeof idea.engineScore === 'number' && Number.isFinite(idea.engineScore) ? getEditorialPriorityBand(idea.engineScore) : undefined;
+                      const tint = band === 'strong' ? p.success : band === 'moderate' ? p.cyan : band === 'weak' ? p.danger : p.muted;
                       return (
                         <Pressable key={idea.id} onPress={() => {
                           setSelectedIdeaId(idea.id);
@@ -501,11 +498,11 @@ export default function Opportunities() {
                         }} accessibilityRole="button"
                           style={{ borderRadius: 12, borderWidth: 1, borderColor: p.border, backgroundColor: p.surface, padding: 11, gap: 5 }}>
                           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                            <Text style={{ color: tint, fontSize: 10, fontWeight: '800' }}>{(fa ? 'پیشنهاد برتر ' : 'TOP PICK #') + (index + 2) + ' · ' + (band === 'strong' ? (fa ? 'قوی' : 'Strong') : band === 'moderate' ? (fa ? 'متوسط' : 'Medium') : (fa ? 'ضعیف' : 'Weak'))}</Text>
-                            <Text style={{ color: tint, fontSize: 14, fontWeight: '800' }}>{idea.engineScore}/100</Text>
+                            <Text style={{ color: tint, fontSize: 10, fontWeight: '800' }}>{(fa ? 'پیشنهاد برتر ' : 'TOP PICK #') + (index + 2) + ' · ' + (band === 'strong' ? (fa ? 'قوی' : 'Strong') : band === 'moderate' ? (fa ? 'متوسط' : 'Medium') : band === 'weak' ? (fa ? 'ضعیف' : 'Weak') : (fa ? 'بدون امتیاز' : 'Not scored'))}</Text>
+                            <Text style={{ color: tint, fontSize: 14, fontWeight: '800' }}>{typeof idea.engineScore === 'number' && Number.isFinite(idea.engineScore) ? numberLabel(idea.engineScore, fa) + '/100' : (fa ? 'بدون امتیاز' : 'Not scored')}</Text>
                           </View>
                           <Text style={{ color: p.text, fontSize: 13, fontWeight: '700' }}>{getIdeaDisplayTitle(idea, preferences.uiLanguage ?? 'fa')}</Text>
-                          <Text numberOfLines={1} style={{ color: p.muted, fontSize: 10 }}>{idea.engineScoreReason?.split(';').slice(0, 2).join(' • ')}</Text>
+                          <Text numberOfLines={1} style={{ color: p.muted, fontSize: 10 }}>{fa ? 'برای جزئیات شواهد، پرونده را باز کن.' : 'Open the idea for its evidence details.'}</Text>
                         </Pressable>
                       );
                     })}

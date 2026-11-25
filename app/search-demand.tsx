@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Linking, View, Text } from 'react-native';
+import { View, Text } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { Button } from 'heroui-native';
 import { Page, Panel, Heading, Txt, Field, Choices, Action, styles, ErrorBox, useOperation } from '@/components/ScoutUI';
@@ -9,6 +9,7 @@ import { SEARCH_DEMAND_PROVIDERS, type WikiLanguage, type WikiSignal } from '@/l
 import { uid, type Note } from '@/lib/types';
 import { getTopicDossier, rememberTopicDossier } from '@/lib/topic-dossier';
 import { recordRuntimeFinish, recordRuntimeStart } from '@/lib/runtime-metrics';
+import { openExternalUrl } from '@/lib/external-links';
 
 export default function SearchDemand() {
   const params = useLocalSearchParams<{ topic?: string; idea?: string }>();
@@ -17,16 +18,16 @@ export default function SearchDemand() {
   const language: WikiLanguage = preferences.spaceInterestLanguage ?? 'en';
   const [country, setCountry] = useState('Worldwide');
   const [period, setPeriod] = useState('Past 12 months');
-  const [topics, setTopics] = useState<string[]>([typeof params.topic === 'string' ? params.topic : 'exoplanet', '', '']);
+  const [topics, setTopics] = useState<{ id: string; value: string }[]>([{ id: uid(), value: typeof params.topic === 'string' && params.topic.trim() ? params.topic : 'exoplanet' }]);
   const [results, setResults] = useState<WikiSignal[]>([]);
   const [failures, setFailures] = useState<string[]>([]);
   const op = useOperation();
-  const setTopic = (index: number, value: string) => {
-    setTopics((current) => current.map((item, position) => position === index ? value : item));
+  const setTopic = (id: string, value: string) => {
+    setTopics((current) => current.map((item) => item.id === id ? { ...item, value } : item));
     setResults([]);
     setFailures([]);
   };
-  const active = topics.map((topic) => topic.trim()).filter(Boolean).slice(0, 3);
+  const active = topics.map((topic) => topic.value.trim()).filter(Boolean);
   const compare = () => void op.run(async () => {
     if (!active.length) throw new Error('Enter at least one topic.');
     const provider = SEARCH_DEMAND_PROVIDERS[0];
@@ -96,14 +97,19 @@ export default function SearchDemand() {
   trendsParams.set('date', periods[period] ?? 'today 12-m');
   const trendsUrl = 'https://trends.google.com/trends/explore?' + trendsParams.toString();
   return (
-    <Page title="Public-interest Signals" eyebrow="WIKIMEDIA PAGEVIEWS" showBack subtitle="Compare article attention in a Wikipedia language edition. These observations are not search volume, unique people or YouTube views.">
-      <Txt muted>Compare public interest signals for up to three space topics. Search demand, YouTube views and news coverage remain separate measurements.</Txt>
+    <Page title="Public-interest Signals" eyebrow="PUBLIC ATTENTION · SEARCH SIGNALS" showBack subtitle="Compare article attention in a Wikipedia language edition. These observations are not search volume, unique people or YouTube views.">
+      <Txt muted>Compare multiple topics without mixing Wikimedia article attention, Google Trends interest, YouTube views or publisher coverage. These are separate measurements.</Txt>
       {linkedIdea ? <Txt muted>Connected idea: {linkedIdea.topic}. Save the comparison below to keep its source links and monthly pageview observations with this idea.</Txt> : null}
       <Panel>
         <Heading>Topics to compare</Heading>
-        <Field label="Topic 1" value={topics[0]} onChange={(value) => setTopic(0, value)} placeholder="e.g. exoplanets" />
-        <Field label="Topic 2" value={topics[1]} onChange={(value) => setTopic(1, value)} placeholder="Optional comparison topic" />
-        <Field label="Topic 3" value={topics[2]} onChange={(value) => setTopic(2, value)} placeholder="Optional comparison topic" />
+        {topics.map((topic, index) => (
+          <View key={topic.id} style={{ gap: 6 }}>
+            <Field label={preferences.uiLanguage === 'fa' ? 'موضوع ' + (index + 1) : 'Topic ' + (index + 1)} value={topic.value} onChange={(next) => setTopic(topic.id, next)} placeholder={index === 0 ? 'e.g. exoplanets' : 'Optional comparison topic'} />
+            {topics.length > 1 ? <Action secondary disabled={op.busy} onPress={() => { setTopics((current) => current.filter((item) => item.id !== topic.id)); setResults([]); setFailures([]); }}>{preferences.uiLanguage === 'fa' ? 'حذف موضوع ' + (index + 1) : 'Remove topic ' + (index + 1)}</Action> : null}
+          </View>
+        ))}
+        <Action secondary disabled={topics.length >= 8 || op.busy} onPress={() => setTopics((current) => [...current, { id: uid(), value: '' }])}>{preferences.uiLanguage === 'fa' ? 'افزودن موضوع مقایسه' : 'Add comparison topic'} ({topics.length}/8)</Action>
+        <Txt muted>{preferences.uiLanguage === 'fa' ? active.length + ' موضوع برای مقایسه انتخاب شده؛ حداکثر ۸ موضوع در هر اجرا.' : active.length + ' topic(s) will be compared. Maximum 8 per run to keep requests bounded.'}</Txt>
         <Txt muted>{language.toUpperCase()} Wikipedia project · change this default in Settings.</Txt>
         <Heading>Google Trends comparison settings</Heading>
         <Choices label="Country / region" options={['Worldwide', 'United States', 'United Kingdom', 'Germany', 'Iran', 'Canada', 'Australia', 'Japan', 'India', 'France', 'Brazil']} selected={[country]} onChange={(values) => setCountry(values[0])} />
@@ -114,7 +120,7 @@ export default function SearchDemand() {
         <Heading>Provider: {SEARCH_DEMAND_PROVIDERS[0].label}</Heading>
         <Txt muted>Wikimedia Pageviews is a free public API and does not use your YouTube API key. Its figures count views of an encyclopedia article in the selected language project over the last six months. They are an attention proxy—not Google search volume, not unique people, not YouTube views, and not country-level audience data. Country and time range selected above apply only to the external Google Trends comparison page.</Txt>
         <Txt muted>Google Trends has a separate API, but official programmatic access is currently a limited alpha. Until public access is available, the app opens the Trends website for manual comparison rather than pretending to call an unavailable API.</Txt>
-        <Action secondary onPress={() => void Linking.openURL(trendsUrl).catch(() => {})}>Open Google Trends for entered topics</Action>
+        <Action secondary onPress={() => void openExternalUrl(trendsUrl, preferences.uiLanguage ?? 'fa')}>Open Google Trends for entered topics</Action>
       </Panel>
       {failures.length > 0 && (
         <Panel>
@@ -140,10 +146,10 @@ export default function SearchDemand() {
               </View>
             </View>
           ))}
-          <Button variant="tertiary" className="h-auto justify-start px-0" onPress={() => void Linking.openURL(result.articleUrl).catch(() => {})}>
+          <Button variant="tertiary" className="h-auto justify-start px-0" onPress={() => void openExternalUrl(result.articleUrl, preferences.uiLanguage ?? 'fa')}>
             <Button.Label>Open Wikipedia article ↗</Button.Label>
           </Button>
-          <Button variant="tertiary" className="h-auto justify-start px-0" onPress={() => void Linking.openURL(result.apiUrl).catch(() => {})}>
+          <Button variant="tertiary" className="h-auto justify-start px-0" onPress={() => void openExternalUrl(result.apiUrl, preferences.uiLanguage ?? 'fa')}>
             <Button.Label>Open raw pageview data ↗</Button.Label>
           </Button>
         </Panel>

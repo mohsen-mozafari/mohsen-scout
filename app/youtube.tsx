@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { Text, View, Linking } from 'react-native';
+import { Text, View } from 'react-native';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { Button, Skeleton } from 'heroui-native';
 import { ArrowRight, SlidersHorizontal, Sparkles, KeyRound, Search } from 'lucide-react-native';
@@ -26,6 +26,7 @@ import { relatedQueries } from '@/lib/api';
 import { limitations } from '@/lib/engine';
 import { sortResearchVideos, type ResearchVideoSort } from '@/lib/intelligence';
 import { getKey } from '@/lib/vault';
+import { openExternalUrl } from '@/lib/external-links';
 import { SETTINGS_ROUTE } from '@/lib/routes';
 const RESEARCH_SORT_OPTIONS: ResearchVideoSort[] = [
   'Newest', 'Oldest', 'Most Views', 'Least Views',
@@ -190,6 +191,9 @@ export default function Discover() {
             onChange={(v) => { setMaximum(v[0]); setReportId(''); }}
           />
         </Fold>
+        <Action secondary disabled={!topic.trim()} onPress={() => router.push({ pathname: '/trend-intelligence', params: { topic: topic.trim(), ...(linkedIdea ? { idea: linkedIdea.id } : {}) } })}>
+          {preferences.uiLanguage === 'fa' ? 'حالت پیشرفته: ترکیب چندمسیره Discovery Mix' : 'Advanced mode: multi-lane Discovery Mix'}
+        </Action>
         <Action
           icon={Search}
           disabled={!ready || !topic.trim() || !selectedLanguages.length}
@@ -285,7 +289,7 @@ export default function Discover() {
             <Txt muted>Recent examples, not proof of an emerging trend.</Txt>
             {[...report.videos].sort((a, b) => Date.parse(b.publishedAt) - Date.parse(a.publishedAt)).slice(0, 2).map((v) => (
               <View style={{ gap: 6 }} key={v.id}>
-                <MediaPreview uri={v.thumbnail} aspectRatio={16 / 9} onPress={() => void Linking.openURL('https://www.youtube.com/watch?v=' + v.id).catch(() => {})} alt={v.title} />
+                <MediaPreview uri={v.thumbnail} aspectRatio={16 / 9} onPress={() => void openExternalUrl('https://www.youtube.com/watch?v=' + v.id, preferences.uiLanguage ?? 'fa')} alt={v.title} />
                 <Txt>{v.title}</Txt>
                 <Txt muted>
                   Observed publication: {new Date(v.publishedAt).toLocaleDateString('en-US')}

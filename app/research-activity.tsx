@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { FlatList, Linking, Pressable, Text, View } from 'react-native';
+import { FlatList, Pressable, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { Activity, ExternalLink } from 'lucide-react-native';
 import {
@@ -17,6 +17,7 @@ import {
 import { useScout } from '@/lib/store';
 import { palette as p } from '@/lib/theme';
 import { isAllowedBrowserNavigation } from '@/lib/browser';
+import { openExternalUrl } from '@/lib/external-links';
 import type { ResearchActivityEvent, ResearchActivityFeedback } from '@/lib/types';
 
 const ENGINES = [
@@ -191,7 +192,7 @@ function ActivityCard({
               </Txt>
               {result.url && isAllowedBrowserNavigation(result.url) ? (
                 <Action secondary icon={ExternalLink} onPress={() => {
-                  void Linking.openURL(result.url!).catch(() => undefined);
+                  void openExternalUrl(result.url!, fa ? 'fa' : 'en');
                 }}>{fa ? 'بازکردن منبع' : 'Open source'}</Action>
               ) : null}
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
@@ -232,6 +233,7 @@ function ActivityCard({
 
 export default function ResearchActivityScreen() {
   const events = useScout((state) => state.data.researchActivity);
+  const ready = useScout((state) => state.ready);
   const setFeedback = useScout((state) => state.setResearchActivityFeedback);
   const language = useScout((state) => state.data.preferences.uiLanguage ?? 'fa');
   const fa = language === 'fa';
@@ -313,6 +315,7 @@ export default function ResearchActivityScreen() {
       ) : null}
     </View>
   );
+  if (!ready) return <Page showBack title={fa ? 'فعالیت پژوهش' : 'Research activity'}><Txt muted>{fa ? 'در حال بارگذاری سابقه پژوهش…' : 'Loading research activity…'}</Txt></Page>;
   return (
     <Page scroll={false} showBack>
       <FlatList

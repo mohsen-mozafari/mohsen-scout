@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Linking, View, Text } from 'react-native';
+import { View, Text } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { Button } from 'heroui-native';
 import { Page, Panel, Heading, Txt, Field, Action, Fold, styles, ErrorBox, useOperation, SourceText } from '@/components/ScoutUI';
@@ -21,6 +21,7 @@ import { createResearchMemoryEntry } from '@/lib/research-memory';
 import { runResearchAgentSerialized } from '@/lib/research-agent';
 import { assessResearchEvidenceCoverage, MAX_DEEP_RESEARCH_RESULTS_PER_QUERY, MAX_DEEP_RESEARCH_ROUNDS, mergeIndependentResearchEvidence, planResearchRound } from '@/lib/research-orchestrator';
 import { recordRuntimeFinish, recordRuntimeStart } from '@/lib/runtime-metrics';
+import { openExternalUrl } from '@/lib/external-links';
 import { searchYouTubeSample, type YouTubeSampleVideo } from '@/lib/api';
 import {
   SPACE_NICHES, fetchSpaceNews, newsForNiche, getWikipediaSignal, buildResearchOutline,
@@ -609,7 +610,7 @@ export default function DeepResearch() {
                     <Txt muted>{cluster.articleCount} stories · {cluster.publishers.length} publisher groups · {cluster.momentum}</Txt>
                     <Txt muted>{cluster.currentWindowCount} stories in the latest 7 days · {cluster.previousWindowCount} in the preceding 7 days</Txt>
                     {cluster.evidence.slice(0, 2).map((reference) => (
-                      <Button key={reference.url} variant="tertiary" className="h-auto justify-start px-0" onPress={() => void Linking.openURL(reference.url).catch(() => {})}>
+                      <Button key={reference.url} variant="tertiary" className="h-auto justify-start px-0" onPress={() => void openExternalUrl(reference.url, preferences.uiLanguage ?? 'fa')}>
                         <Button.Label>{reference.sourceName + ': ' + reference.title + ' ↗'}</Button.Label>
                       </Button>
                     ))}
@@ -623,7 +624,7 @@ export default function DeepResearch() {
                 <Text style={styles.badge}>{item.label}</Text>
                 <Txt muted>{item.detail}</Txt>
                 {item.sourceUrl ? (
-                  <Button variant="tertiary" className="h-auto justify-start px-0" onPress={() => void Linking.openURL(item.sourceUrl!).catch(() => {})}>
+                  <Button variant="tertiary" className="h-auto justify-start px-0" onPress={() => void openExternalUrl(item.sourceUrl!, preferences.uiLanguage ?? 'fa')}>
                     <Button.Label>Open evidence source ↗</Button.Label>
                   </Button>
                 ) : null}
@@ -738,7 +739,7 @@ export default function DeepResearch() {
               <Heading>Public-interest context · Wikimedia</Heading>
               <SourceText>{brief.wiki.articleTitle}</SourceText>
               <SourceText muted>{brief.wiki.summary || 'No encyclopedia summary was returned.'}</SourceText>
-              <Button variant="tertiary" className="h-auto justify-start px-0" onPress={() => void Linking.openURL(brief.wiki!.articleUrl).catch(() => {})}>
+              <Button variant="tertiary" className="h-auto justify-start px-0" onPress={() => void openExternalUrl(brief.wiki!.articleUrl, preferences.uiLanguage ?? 'fa')}>
                 <Button.Label>Check the article and its references ↗</Button.Label>
               </Button>
             </Panel>
@@ -753,7 +754,7 @@ export default function DeepResearch() {
                 <Text style={styles.badge}>{item.sourceName} · {item.publishedAt ? new Date(item.publishedAt).toLocaleDateString() : 'Date not supplied'}</Text>
                 <SourceText>{item.title}</SourceText>
                 {Boolean(item.summary) && <SourceText>{item.summary}</SourceText>}
-                <Button variant="tertiary" className="h-auto justify-start px-0" onPress={() => void Linking.openURL(item.url).catch(() => {})}>
+                <Button variant="tertiary" className="h-auto justify-start px-0" onPress={() => void openExternalUrl(item.url, preferences.uiLanguage ?? 'fa')}>
                   <Button.Label>Open publisher source ↗</Button.Label>
                 </Button>
               </View>
@@ -767,7 +768,7 @@ export default function DeepResearch() {
                   <Text style={styles.badge}>{item.sourceName} · {item.category}</Text>
                   <SourceText>{item.title}</SourceText>
                   <Txt muted>{item.summary}</Txt>
-                  <Button variant="tertiary" className="h-auto justify-start px-0" onPress={() => void Linking.openURL(item.url).catch(() => {})}>
+                  <Button variant="tertiary" className="h-auto justify-start px-0" onPress={() => void openExternalUrl(item.url, preferences.uiLanguage ?? 'fa')}>
                     <Button.Label>Open web source ↗</Button.Label>
                   </Button>
                 </View>
@@ -777,7 +778,7 @@ export default function DeepResearch() {
             <Heading>YouTube evidence</Heading>
             {brief.videos.length > 0 ? brief.videos.map((video) => (
               <View key={video.id} style={{ gap: 4 }}>
-                <MediaPreview uri={video.thumbnailUrl} aspectRatio={16 / 9} onPress={() => void Linking.openURL(video.url).catch(() => {})} alt={video.title} />
+                <MediaPreview uri={video.thumbnailUrl} aspectRatio={16 / 9} onPress={() => void openExternalUrl(video.url, preferences.uiLanguage ?? 'fa')} alt={video.title} />
                 <SourceText>{video.title}</SourceText>
                 <Text style={styles.badge}>{video.channel} · {video.viewCount === null ? 'Views unavailable' : video.viewCount.toLocaleString() + ' views'} · {video.likeCount === null ? 'Likes unavailable' : video.likeCount.toLocaleString() + ' likes'}</Text>
                 <Txt muted>{video.channelSubscriberCount === null ? 'Subscribers unavailable' : video.channelSubscriberCount.toLocaleString() + ' subscribers'} · {video.channelVideoCount === null ? 'Channel video total unavailable' : video.channelVideoCount.toLocaleString() + ' uploads'}</Txt>

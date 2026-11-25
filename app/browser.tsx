@@ -1,9 +1,11 @@
-import { useState } from 'react';
-import { Linking, Platform, View } from 'react-native';
+import { useRef, useState } from 'react';
+import { Platform, View } from 'react-native';
+import type { WebView as WebViewInstance } from 'react-native-webview';
 import { Page, Panel, Heading, Txt, Field, Action } from '@/components/ScoutUI';
 import { WebView } from '@/components/ui/primitives/WebView';
 import { getBrowserFailureMessage, isAllowedBrowserNavigation, normalizeBrowserAddress } from '@/lib/browser';
-import { RefreshCw } from 'lucide-react-native';
+import { ArrowLeft, ArrowRight, RefreshCw } from 'lucide-react-native';
+import { openExternalUrl } from '@/lib/external-links';
 
 export default function InternalBrowser() {
   const [address, setAddress] = useState('');
@@ -11,6 +13,9 @@ export default function InternalBrowser() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [webViewKey, setWebViewKey] = useState(0);
+  const webViewRef = useRef<WebViewInstance>(null);
+  const [canGoBack, setCanGoBack] = useState(false);
+  const [canGoForward, setCanGoForward] = useState(false);
 
   const navigate = () => {
     const next = normalizeBrowserAddress(address);
@@ -20,6 +25,8 @@ export default function InternalBrowser() {
     }
     setError('');
     setCurrentUrl(next);
+    setCanGoBack(false);
+    setCanGoForward(false);
     setWebViewKey((key) => key + 1);
     setAddress(next);
   };
@@ -30,7 +37,14 @@ export default function InternalBrowser() {
         <Heading>Open a website or search the web</Heading>
         <Field label="Website address or search phrase" value={address} onChange={setAddress} placeholder="example.org or a research question" />
         <Action disabled={!address.trim()} onPress={navigate}>Open page</Action>
-        {currentUrl ? <Action secondary onPress={() => void Linking.openURL(currentUrl).catch(() => setError('Could not open the external browser.'))}>Open in external browser</Action> : null}
+        {currentUrl ? (
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7 }}>
+            <Action secondary disabled={!canGoBack} icon={ArrowLeft} onPress={() => webViewRef.current?.goBack()}>Back</Action>
+            <Action secondary disabled={!canGoForward} icon={ArrowRight} onPress={() => webViewRef.current?.goForward()}>Forward</Action>
+            <Action secondary icon={RefreshCw} onPress={() => { setError(''); setLoading(true); webViewRef.current?.reload(); }}>Refresh</Action>
+          </View>
+        ) : null}
+        {currentUrl ? <Action secondary onPress={() => void openExternalUrl(currentUrl)}>{'Open in external browser'}</Action> : null}
         {error ? <Txt>{error}</Txt> : null}
         {error && currentUrl && Platform.OS !== 'web' ? (
           <Action secondary icon={RefreshCw} onPress={() => {
@@ -45,11 +59,12 @@ export default function InternalBrowser() {
         Platform.OS === 'web' ? (
           <Panel>
             <Txt muted>The embedded browser is available in the Android app. Open this page in your system browser instead.</Txt>
-            <Action onPress={() => void Linking.openURL(currentUrl).catch(() => setError('Could not open the page.'))}>Continue in browser</Action>
+            <Action onPress={() => void openExternalUrl(currentUrl)}>Continue in browser</Action>
           </Panel>
         ) : (
           <View style={{ height: 560, overflow: 'hidden', borderRadius: 14 }}>
             <WebView
+              ref={webViewRef}
               key={webViewKey}
               source={{ uri: currentUrl }}
               originWhitelist={['https://*', 'http://*']}
@@ -89,7 +104,12 @@ export default function InternalBrowser() {
                 setError('The embedded browser process stopped. Retry the page.');
               }}
               onNavigationStateChange={(state) => {
-                if (isAllowedBrowserNavigation(state.url)) setAddress(state.url);
+                if (isAllowedBrowserNavigation(state.url)) {
+                  setAddress(state.url);
+                  setCurrentUrl(state.url);
+                }
+                setCanGoBack(state.canGoBack);
+                setCanGoForward(state.canGoForward);
               }}
               onShouldStartLoadWithRequest={(request) => isAllowedBrowserNavigation(request.url)}
               style={{ flex: 1, backgroundColor: '#050505' }}

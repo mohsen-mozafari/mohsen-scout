@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { Linking, View, Text } from 'react-native';
+import { View, Text } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { Page, Panel, Heading, Txt, Field, Action, Choices, styles, ErrorBox, useOperation } from '@/components/ScoutUI';
 import { useScout } from '@/lib/store';
@@ -9,6 +9,7 @@ import { getKey } from '@/lib/vault';
 import { MediaPreview } from '@/components/MediaPreview';
 import { rememberTopicDossier } from '@/lib/topic-dossier';
 import { recordRuntimeFinish, recordRuntimeStart } from '@/lib/runtime-metrics';
+import { openExternalUrl } from '@/lib/external-links';
 import type { Video } from '@/lib/types';
 
 const formatCount = (value: number | null, label: string) => value === null ? label + ' unavailable' : value.toLocaleString() + ' ' + label;
@@ -121,8 +122,8 @@ export default function TrendIntelligence() {
   const channels = new Set(videos.map((video) => video.channelId)).size;
 
   return (
-    <Page title="YouTube Trend Sample" eyebrow="BOUNDED API SAMPLE" showBack subtitle="Discover videos through official YouTube search lanes, then continue into independent web research and the in-app browser.">
-      <Txt muted>Measure YouTube separately from search interest and publisher news. This view uses the official YouTube Data API, not scraping.</Txt>
+    <Page title="Advanced YouTube Discovery Mix" eyebrow="MULTI-LANE API SAMPLE" showBack subtitle="Explore a paginated sample built from several official YouTube search lanes. This is not continuous trend monitoring or a measured growth forecast.">
+      <Txt muted>Use this advanced mode when one standard YouTube query is not enough. It combines distinct official result lanes, deduplicates them and paginates the bounded sample; it does not claim to measure the whole platform.</Txt>
       {linkedIdea ? <Txt muted>Research context: {linkedIdea.topic}. Only video links you explicitly save below become durable personal references.</Txt> : null}
       <Panel>
         <Field label="Space topic" value={topic} onChange={(value) => { setTopic(value); resetSample(); }} placeholder="e.g. exoplanet atmosphere discoveries" />
@@ -158,7 +159,7 @@ export default function TrendIntelligence() {
       )}
       {sortedVideos.map((video) => (
         <Panel key={video.id}>
-          <MediaPreview uri={video.thumbnailUrl} aspectRatio={16 / 9} onPress={() => void Linking.openURL(video.url).catch(() => {})} alt={video.title} />
+          <MediaPreview uri={video.thumbnailUrl} aspectRatio={16 / 9} onPress={() => void openExternalUrl(video.url, preferences.uiLanguage ?? 'fa')} alt={video.title} />
           <View style={{ gap: 5 }}>
             <Heading>{video.title}</Heading>
             <Text style={styles.badge}>{video.channel}</Text>
@@ -167,7 +168,7 @@ export default function TrendIntelligence() {
             <Txt muted>{video.channelSubscriberCount === null ? 'Subscribers hidden/unavailable' : video.channelSubscriberCount.toLocaleString() + ' subscribers'} · {video.channelVideoCount === null ? 'Channel video total unavailable' : video.channelVideoCount.toLocaleString() + ' channel videos'}</Txt>
             <Txt muted>Published {new Date(video.publishedAt).toLocaleDateString()}</Txt>
           </View>
-          <Action secondary onPress={() => void Linking.openURL(video.url).catch(() => {})}>Open video on YouTube</Action>
+          <Action secondary onPress={() => void openExternalUrl(video.url, preferences.uiLanguage ?? 'fa')}>Open video on YouTube</Action>
             {linkedIdea ? (
               <Action
                 secondary

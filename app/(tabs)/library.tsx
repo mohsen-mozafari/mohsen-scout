@@ -28,6 +28,7 @@ import { shareText } from '@/lib/transfer';
 import { MediaPreview } from '@/components/MediaPreview';
 export default function Library() {
   const data = useScout((s) => s.data);
+  const ready = useScout((s) => s.ready);
   const language = useScout((s) => s.data.preferences.uiLanguage ?? 'fa');
   const [search, setSearch] = useState('');
   const [folder, setFolder] = useState('All');
@@ -90,6 +91,7 @@ export default function Library() {
       setUrl('');
       setTitle('');
     }, 'Link saved.');
+  if (!ready) return <Page title="Library" showBack><Txt muted>Loading your saved links…</Txt></Page>;
   return (
     <Page scroll={false}>
       <FlatList

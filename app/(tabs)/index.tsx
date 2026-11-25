@@ -364,6 +364,17 @@ function DiscoveryDashboardReady() {
         : 'Enter a focused topic and inspect real YouTube results, evidence quality and sample limits.'}
     >
       <View style={{ gap: 15 }}>
+        <Panel>
+          <Heading>{fa ? 'خلاصه وضعیت پژوهش' : 'Research at a glance'}</Heading>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+            <MetricCard label={fa ? 'گزارش ذخیره‌شده اخیر' : 'LATEST SAVED REPORT'} value={latestReport ? 1 : 0} />
+            <MetricCard label={fa ? 'ایده‌های فعال' : 'ACTIVE IDEAS'} value={ideaLinkage.active} />
+            <MetricCard label={fa ? 'ویدئوهای معتبر' : 'RETAINED VIDEOS'} value={engineVideoEvidence.length} />
+            <MetricCard label={fa ? 'خوراک‌های خبری' : 'NEWS FEEDS'} value={feedHealth.registered} />
+          </View>
+          <Txt muted>{fa ? 'این نما فقط داده‌های ذخیره‌شده و وضعیت ثبت‌شده روی همین دستگاه را خلاصه می‌کند. جزئیات تحلیل و سلامت اجرا در بخش‌های پایین‌تر قرار دارد.' : 'This overview summarizes data saved and measured on this device. Detailed analysis and operational health are available below.'}</Txt>
+        </Panel>
+        <Fold title={fa ? 'تحلیل تفصیلی و نظر دوم' : 'Detailed analysis and second opinion'} summary={fa ? 'نمودار، تحلیل داخلی و نقد مستقل مدل' : 'Chart, internal analysis and independent model review'}>
         <ResearchOverviewChart
           analysis={chartAnalysis}
           ideas={ideas}
@@ -373,6 +384,7 @@ function DiscoveryDashboardReady() {
             ? <EngineAIReview topic={bestIdea?.topic ?? chartTopic} idea={bestIdea} />
             : undefined}
         />
+        </Fold>
         {warnings.map((warning) => <Txt muted key={warning}>{warning}</Txt>)}
 
         <Panel>

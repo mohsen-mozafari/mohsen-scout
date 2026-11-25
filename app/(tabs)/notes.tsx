@@ -11,6 +11,8 @@ import { palette as p } from '@/lib/theme';
 import { translateText } from '@/lib/i18n';
 export default function Notes() {
   const notes = useScout((s) => s.data.notes);
+  const ideas = useScout((s) => s.data.ideas);
+  const ready = useScout((s) => s.ready);
   const language = useScout((s) => s.data.preferences.uiLanguage ?? 'fa');
   const [search, setSearch] = useState('');
   const [folder, setFolder] = useState('All');
@@ -26,6 +28,7 @@ export default function Notes() {
         ),
     )
     .sort((a, b) => b.updatedAt - a.updatedAt);
+  if (!ready) return <Page title="Notes" showBack><Txt muted>Loading your saved pages…</Txt></Page>;
   return (
     <Page scroll={false}>
       <FlatList
@@ -77,9 +80,15 @@ export default function Notes() {
                   {translateText(item.folder || 'Unfiled', language)} ·{' '}
                   {new Date(item.updatedAt).toLocaleDateString(language === 'fa' ? 'fa-IR' : 'en-US')}
                 </Txt>
+                {item.tags.length ? <Txt muted>{(language === 'fa' ? 'برچسب‌ها: ' : 'Tags: ') + item.tags.join(' · ')}</Txt> : null}
               </View>
               <ArrowUpRight size={18} color={p.purple} />
             </Button>
+            {item.ideaId && ideas.some((idea) => idea.id === item.ideaId) ? (
+              <Action secondary onPress={() => router.push({ pathname: '/detail', params: { idea: item.ideaId! } })}>
+                {language === 'fa' ? 'بازکردن ایدهٔ متصل' : 'Open linked idea'}
+              </Action>
+            ) : null}
           </Animated.View>
         )}
         ListEmptyComponent={

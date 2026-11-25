@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Newspaper } from 'lucide-react-native';
-import { Linking, View, Text, FlatList } from 'react-native';
+import { View, Text, FlatList } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { Button } from 'heroui-native';
 import { Page, Panel, Heading, Txt, Action, Choices, Fold, styles, ErrorBox, useOperation, ScreenIntro, BadgeText, SourceHeading } from '@/components/ScoutUI';
@@ -23,6 +23,7 @@ import { setSelectedIdeaId } from '@/lib/idea-selection';
 import { palette as p } from '@/lib/theme';
 import { MediaPreview } from '@/components/MediaPreview';
 import { recordRuntimeFinish, recordRuntimeStart } from '@/lib/runtime-metrics';
+import { openExternalUrl } from '@/lib/external-links';
 
 export default function CosmicNews() {
   const params = useLocalSearchParams<{ niche?: string }>();
@@ -298,10 +299,10 @@ export default function CosmicNews() {
             />
             <Panel variant="soft">
               <View style={styles.rowBetween}>
-                <Heading>Space Radar</Heading>
+                <Heading>{fa ? 'نمای کلی خبرها و توجه عمومی' : 'Publisher news and public-attention overview'}</Heading>
                 <BadgeText>{scanning ? 'REFRESHING' : lastScannedAt ? 'UPDATED' : 'NOT REFRESHED'}</BadgeText>
               </View>
-              <Txt muted>Official publisher feeds and Wikimedia monthly article pageviews. Pageviews are an attention proxy, not YouTube search volume, trend velocity or a view forecast.</Txt>
+              <Txt muted>{fa ? 'این صفحه خبرهای ناشران رسمی را از بازدید ماهانه مقاله ویکی‌مدیا جدا نگه می‌دارد. هیچ‌کدام به‌تنهایی حجم جست‌وجو یا روند YouTube نیستند.' : 'This page keeps official publisher news separate from Wikimedia monthly article pageviews. Neither alone represents search volume or a YouTube trend.'}</Txt>
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
                 {[
                   { label: fa ? 'گزارش منطبق' : 'MATCHED', value: radarNews.length },
@@ -345,7 +346,7 @@ export default function CosmicNews() {
                       <Txt muted>{(fa ? 'شتاب: ' : 'Momentum: ') + cluster.momentum + ' · ' + cluster.currentWindowCount + (fa ? ' گزارش در ۷ روز اخیر در برابر ' : ' reports in the latest 7 days versus ') + cluster.previousWindowCount + (fa ? ' گزارش در ۷ روز قبل' : ' in the preceding 7 days')}</Txt>
                       <Txt muted>{cluster.reason}</Txt>
                       {cluster.evidence.slice(0, 2).map((reference) => (
-                        <Button key={reference.url} variant="tertiary" className="h-auto justify-start px-0" onPress={() => void Linking.openURL(reference.url).catch(() => {})}>
+                        <Button key={reference.url} variant="tertiary" className="h-auto justify-start px-0" onPress={() => void openExternalUrl(reference.url, preferences.uiLanguage)}>
                           <Button.Label>{reference.sourceName + ': ' + reference.title + ' ↗'}</Button.Label>
                         </Button>
                       ))}
@@ -394,7 +395,7 @@ export default function CosmicNews() {
                 <Action secondary onPress={() => router.push({ pathname: '/youtube', params: { topic: niche?.topic ?? (nicheId === 'custom' ? preferences.customSpaceNiche : 'Space science discoveries') } })}>Search this topic on YouTube</Action>
                 <Action secondary onPress={() => router.push({ pathname: '/deep-research', params: { topic: niche?.topic ?? (nicheId === 'custom' ? preferences.customSpaceNiche : 'Space science discoveries'), niche: nicheId } })}>Start Deep Research</Action>
                 {SPACE_NEWS_SOURCES.filter((source) => preferences.spaceNewsSources.includes(source.id)).map((source) => (
-                  <Button key={source.id} variant="tertiary" className="h-auto justify-start px-0" onPress={() => void Linking.openURL(source.url).catch(() => {})}>
+                  <Button key={source.id} variant="tertiary" className="h-auto justify-start px-0" onPress={() => void openExternalUrl(source.url, preferences.uiLanguage)}>
                     <Button.Label>{'Open official ' + source.label + ' feed ↗'}</Button.Label>
                   </Button>
                 ))}
@@ -410,7 +411,7 @@ export default function CosmicNews() {
               <Heading>{item.title}</Heading>
               {item.summary ? <Txt muted>{item.summary}</Txt> : null}
             </View>
-            <Button variant="tertiary" className="h-auto justify-start px-0" onPress={() => void Linking.openURL(item.url).catch(() => {})}>
+            <Button variant="tertiary" className="h-auto justify-start px-0" onPress={() => void openExternalUrl(item.url, preferences.uiLanguage)}>
               <Button.Label>Open original source ↗</Button.Label>
             </Button>
             <Action secondary onPress={() => saveItem(item)} busy={op.busy}>Save source to Notes</Action>

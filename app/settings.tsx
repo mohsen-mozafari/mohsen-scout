@@ -1,6 +1,6 @@
 import * as Haptics from 'expo-haptics';
 import { useCallback, useEffect, useState } from 'react';
-import { Text, View, Linking } from 'react-native';
+import { Text, View } from 'react-native';
 import { Button, Skeleton } from 'heroui-native';
 import { KeyRound, Download, Upload, Bell, Trash2, Bug } from 'lucide-react-native';
 import {
@@ -30,6 +30,7 @@ import { commitWithSchedule } from '@/lib/schedule';
 import { router, type ErrorBoundaryProps } from 'expo-router';
 import { palette as p } from '@/lib/theme';
 import { translateText } from '@/lib/i18n';
+import { openExternalUrl } from '@/lib/external-links';
 import { SPACE_NICHES, SPACE_NEWS_SOURCES, type WikiLanguage } from '@/lib/space';
 function providerName(provider: SecondOpinionProvider): string {
   return provider === 'cloudflare' ? 'Cloudflare Workers AI' : provider === 'xai' ? 'Grok (xAI)' : provider[0].toUpperCase() + provider.slice(1);
@@ -276,6 +277,7 @@ export default function Settings() {
   return (
     <Page showBack title="Settings" eyebrow="DEVICE & PROVIDERS" subtitle="Control your local profile, provider access, quotas, privacy and backups.">
       {!ready && <Skeleton className="h-32 rounded-2xl" />}
+      <Fold title={fa ? 'نمایه، زبان و تنظیمات کشف' : 'Profile, language and discovery'} summary={fa ? 'نمایه، منطقه، زبان و حوزه‌های پژوهش' : 'Profile, region, language and discovery scope'}>
       <Fold title="Profile & defaults" summary={prefs.region + ' · ' + (prefs.languages?.length ?? 0) + ' language(s)'}>
         <Field
           label="Name (optional)"
@@ -377,6 +379,8 @@ export default function Settings() {
         />
         <Action busy={op.busy} disabled={!ready} onPress={save}>Save discovery preferences</Action>
       </Fold>
+      </Fold>
+      <Fold title="Connections & AI providers" summary={fa ? 'کلیدها، جست‌وجوی وب و ارائه‌دهندگان هوش مصنوعی' : 'API credentials, web search and AI providers'}>
       <Fold title="YouTube API" summary={credentialStatus.youtube === null ? 'Key status not confirmed' : credentialStatus.youtube ? 'Key saved securely' : 'Key not set'}>
         <CredentialSection kind="youtube" label="YouTube Data API v3" onStatusChange={handleCredentialStatus} />
         <Txt muted>
@@ -387,11 +391,11 @@ export default function Settings() {
         <Txt muted>{fa
           ? 'در حالت فعلی، نمونه‌های خام YouTube جدا نمایش داده می‌شوند و امتیاز/نسبت/پیش‌بینی مشتق‌شده از آن‌ها ساخته نمی‌شود. برای معیارهای مشتق‌شده مانند امتیاز کانال، نسبت تعامل یا رتبه‌بندی رشد، ابتدا باید اصلاحیه رسمی Derived Metrics Policy را برای پروژه API خود بپذیری: Section 5 · Use Cases, API Integration, and Feature Implementation · Analytics & Reporting. این برنامه پذیرش را از طرف تو انجام نمی‌دهد.'
           : 'In the current mode, raw YouTube samples are displayed separately and no custom score, ratio or forecast is derived from them. To use derived metrics such as channel scores, engagement ratios or growth leaderboards, first accept YouTube’s Derived Metrics Policy amendment for your API project: Section 5 · Use Cases, API Integration, and Feature Implementation · Analytics & Reporting. The app cannot accept this amendment on your behalf.'}</Txt>
-        <Action secondary onPress={() => void Linking.openURL('https://developers.google.com/youtube/terms/derived-metrics-policy')}>Read YouTube derived-metrics policy</Action>
+        <Action secondary onPress={() => void openExternalUrl('https://developers.google.com/youtube/terms/derived-metrics-policy')}>Read YouTube derived-metrics policy</Action>
         <Action
           secondary
           onPress={() =>
-            void Linking.openURL(
+            void openExternalUrl(
               'https://console.cloud.google.com/apis/library/youtube.googleapis.com',
             )
           }
@@ -516,11 +520,11 @@ export default function Settings() {
         <Action disabled={!ready} busy={op.busy} onPress={save}>Save second-opinion settings</Action>
         <Fold title="Gemini API key" summary={credentialStatus.gemini ? 'Key saved securely' : 'Key not set'}>
           <CredentialSection kind="gemini" label="Gemini API key" onStatusChange={handleCredentialStatus} />
-          <Action secondary onPress={() => void Linking.openURL('https://aistudio.google.com/apikey')}>Open Google AI Studio</Action>
+          <Action secondary onPress={() => void openExternalUrl('https://aistudio.google.com/apikey')}>Open Google AI Studio</Action>
         </Fold>
         <Fold title="Grok (xAI) API key" summary={credentialStatus.xai ? 'Key saved securely' : 'Key not set'}>
           <CredentialSection kind="xai" label="Grok (xAI) API key" onStatusChange={handleCredentialStatus} />
-          <Action secondary onPress={() => void Linking.openURL('https://console.x.ai/')}>Open Grok (xAI) Console</Action>
+          <Action secondary onPress={() => void openExternalUrl('https://console.x.ai/')}>Open Grok (xAI) Console</Action>
         </Fold>
         <Fold title="Cloudflare Workers AI" summary={credentialStatus.cloudflare && credentialStatus['cloudflare-account-id'] ? 'Token and Account ID saved' : 'Token or Account ID missing'}>
           <CredentialSection kind="cloudflare-account-id" label="Cloudflare Account ID" onStatusChange={handleCredentialStatus} />
@@ -528,7 +532,7 @@ export default function Settings() {
           <Txt muted>{fa
             ? 'راه ساده: در داشبورد Workers AI گزینهٔ Use REST API و سپس Create a Workers AI API Token را بزن؛ همان‌جا Account ID را هم بردار. اگر توکن را دستی می‌سازی، مجوزهای AI Gateway - Read، AI Gateway - Edit و Workers AI - Read را بده. مدل پیش‌فرض رایگان: @cf/zai-org/glm-4.7-flash. پلن رایگان روزانه ۱۰٬۰۰۰ Neurons دارد و سهمیه در ساعت ۰۰:۰۰ UTC صفر می‌شود؛ با تمام‌شدن سهمیه، درخواست‌ها متوقف می‌شوند.'
             : 'Easy setup: In the Workers AI dashboard choose Use REST API, then Create a Workers AI API Token; copy the Account ID shown there too. For a manually created token, grant AI Gateway - Read, AI Gateway - Edit, and Workers AI - Read. Default free model: @cf/zai-org/glm-4.7-flash. The Free plan includes 10,000 Neurons per day, resetting at 00:00 UTC; requests stop when the daily allocation is exhausted.'}</Txt>
-          <Action secondary onPress={() => void Linking.openURL('https://dash.cloudflare.com/?to=/:account/ai/workers-ai')}>Open Workers AI dashboard</Action>
+          <Action secondary onPress={() => void openExternalUrl('https://dash.cloudflare.com/?to=/:account/ai/workers-ai')}>Open Workers AI dashboard</Action>
         </Fold>
         <Fold title="OpenRouter" summary={credentialStatus.openrouter ? 'Key saved securely' : 'Key not set'}>
           <CredentialSection kind="openrouter" label="OpenRouter API key" onStatusChange={handleCredentialStatus} />
@@ -537,9 +541,11 @@ export default function Settings() {
             /{prefs.openRouterDailyLimit ?? 50} · Remaining: {prefs.openRouterDailyRemaining ?? 'not refreshed'}
           </Txt>
           <Action secondary busy={op.busy} onPress={refreshOpenRouterQuota}>Refresh OpenRouter quota</Action>
-          <Action secondary onPress={() => void Linking.openURL('https://openrouter.ai/settings/keys')}>Open OpenRouter</Action>
+          <Action secondary onPress={() => void openExternalUrl('https://openrouter.ai/settings/keys')}>Open OpenRouter</Action>
         </Fold>
       </Fold>
+      </Fold>
+      <Fold title="Automation & quota management" summary={fa ? 'سقف مصرف و زمان‌بندی اجرای خودکار' : 'Usage limits and scheduled research'}>
       <Fold title="API budget & quota" summary={(data.budget.units ?? 0) + ' units · ' + (data.budget.requests ?? 0) + ' requests today'}>
         <Txt>Estimated units today: {data.budget.date === quotaDay() ? data.budget.units : 0}</Txt>
         <Txt>Requests today: {data.budget.date === quotaDay() ? data.budget.requests : 0}</Txt>
@@ -566,7 +572,7 @@ export default function Settings() {
         <Action
           secondary
           onPress={() =>
-            void Linking.openURL(
+            void openExternalUrl(
               'https://console.cloud.google.com/apis/api/youtube.googleapis.com/quotas',
             )
           }
@@ -603,6 +609,8 @@ export default function Settings() {
           Allow notifications
         </Action>
       </Fold>
+      </Fold>
+      <Fold title="Backup, privacy and diagnostics" summary={fa ? 'پشتیبان‌گیری، داده‌های محلی، حریم خصوصی و سلامت برنامه' : 'Backups, local data, privacy and app diagnostics'}>
       <Fold title="Backup & phone transfer" summary={(data.notes?.length ?? 0) + ' notes · ' + (data.links?.length ?? 0) + ' links · ' + (data.ideas?.length ?? 0) + ' ideas'}>
         <Txt muted>
           Exports your notes, links, folders, tags, ideas and preferences. API metadata, AI replies
@@ -738,20 +746,20 @@ export default function Settings() {
         </Action>
         <Action
           secondary
-          onPress={() => void Linking.openURL('https://policies.google.com/privacy')}
+          onPress={() => void openExternalUrl('https://policies.google.com/privacy')}
         >
           Google Privacy Policy
         </Action>
-        <Action secondary onPress={() => void Linking.openURL('https://www.youtube.com/t/terms')}>
+        <Action secondary onPress={() => void openExternalUrl('https://www.youtube.com/t/terms')}>
           YouTube Terms of Service
         </Action>
-        <Action secondary onPress={() => void Linking.openURL('https://openrouter.ai/privacy')}>
+        <Action secondary onPress={() => void openExternalUrl('https://openrouter.ai/privacy')}>
           OpenRouter privacy
         </Action>
       </Fold>
-      <Fold title="App info & mock diagnostics" summary="Version 1.23.0 · local-first · isolated test runner">
+      <Fold title="App info & mock diagnostics" summary="Version 1.24.0 · local-first · isolated test runner">
         <Heading>MOHSEN SCOUT</Heading>
-        <Txt>Version 1.23.0</Txt>
+        <Txt>Version 1.24.0</Txt>
         <Txt muted>Run synthetic regression checks with mocked responses. They do not call YouTube or OpenRouter, use saved API keys, or change your research workspace.</Txt>
         <Action secondary icon={Bug} onPress={() => router.push({
           pathname: '/diagnostics',
@@ -760,8 +768,9 @@ export default function Settings() {
           Run mock regression checks
         </Action>
       </Fold>
+      </Fold>
       {Boolean(op.error) && <ErrorBox message={op.error} onDismiss={op.clear} />}
-      {Boolean(op.message) && <Txt muted>{op.message}</Txt>}
+      {Boolean(op.message} && <Txt muted>{op.message}</Txt>}
     </Page>
   );
 }

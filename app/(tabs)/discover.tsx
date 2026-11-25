@@ -11,6 +11,10 @@ export default function Discover() {
   const lastInput = useScout((state) => state.data.preferences.lastInput);
   const reports = useScout((state) => state.data.reports);
   const ideas = useScout((state) => state.data.ideas);
+  const notes = useScout((state) => state.data.notes);
+  const latestDossier = notes
+    .filter((note) => note.tags.includes('deep-research') || note.title.startsWith('پژوهش فضایی: ') || note.title.startsWith('Space research: ') || note.folder === 'Deep Research' || note.folder === 'تحقیق عمیق')
+    .sort((a, b) => b.updatedAt - a.updatedAt)[0];
   const [topic, setTopic] = useState(lastInput?.topic ?? reports[0]?.input.topic ?? '');
   const fa = language === 'fa';
   const latestReport = reports[0];
@@ -59,8 +63,10 @@ export default function Discover() {
               <Action secondary onPress={() => router.push({ pathname: '/youtube', params: { topic: latestReport.input.topic, report: latestReport.id } })}>
                 {fa ? 'بازکردن همان گزارش یوتیوب' : 'Open latest YouTube report'}
               </Action>
-              <Action secondary onPress={() => router.push({ pathname: '/deep-research', params: { topic: latestReport.input.topic } })}>
-                {fa ? 'اجرای تحقیق عمیق دوباره برای همین موضوع' : 'Run Deep Research for this topic'}
+              <Action secondary onPress={() => latestDossier
+                ? router.push({ pathname: '/note', params: { id: latestDossier.id } })
+                : router.push({ pathname: '/deep-research', params: { topic: latestReport.input.topic } })}>
+                {latestDossier ? (fa ? 'بازکردن پرونده ذخیره‌شده تحقیق عمیق' : 'Reopen saved Deep Research brief') : (fa ? 'اجرای تحقیق عمیق دوباره برای همین موضوع' : 'Run Deep Research for this topic')}
               </Action>
             </View>
           ) : (
@@ -79,8 +85,10 @@ export default function Discover() {
               <Txt muted>{fa ? 'فرضیه‌ها، نقل‌قول‌ها، شواهد موافق و مخالف و خلأهای باقی‌مانده در نتیجهٔ تحقیق بالا نمایش داده می‌شوند.' : 'Hypotheses, quotations, supporting and challenging evidence, and unresolved gaps appear in the research brief above.'}</Txt>
             </View>
           </View>
-          <Action secondary icon={BookOpen} onPress={() => router.push({ pathname: '/deep-research', params: { topic: topic.trim() || latestReport?.input.topic || '' } })}>
-            {fa ? 'بازکردن پرونده تحقیق عمیق' : 'Open Deep Research dossier'}
+          <Action secondary icon={BookOpen} onPress={() => latestDossier
+            ? router.push({ pathname: '/note', params: { id: latestDossier.id } })
+            : router.push({ pathname: '/deep-research', params: { topic: topic.trim() || latestReport?.input.topic || '' } })}>
+            {latestDossier ? (fa ? 'بازکردن آخرین پرونده ذخیره‌شده' : 'Open latest saved dossier') : (fa ? 'شروع پرونده تحقیق عمیق' : 'Start a Deep Research dossier')}
           </Action>
           <View style={{ height: 1, backgroundColor: p.border, marginVertical: 4 }} />
           <View style={{ flexDirection: fa ? 'row-reverse' : 'row', alignItems: 'center', gap: 9 }}>
@@ -101,10 +109,10 @@ export default function Discover() {
             <TrendingUp color={p.accentStrong} size={20} />
             <View style={{ flex: 1, gap: 2 }}>
               <Heading>{fa ? 'هوشمندی روندها' : 'Trend intelligence'}</Heading>
-              <Txt muted>{fa ? 'بررسی تغییرات زمانی و موضوعات در حال رشد' : 'Inspect time-based patterns and emerging topics'}</Txt>
+              <Txt muted>{fa ? 'بررسی تغییرات زمانی و موضوعات در حال رشد' : 'Explore multiple official YouTube search lanes with pagination; this is not continuous trend monitoring.'}</Txt>
             </View>
           </View>
-          <Action secondary onPress={() => router.push('/trend-intelligence')}>{fa ? 'تحلیل روندها' : 'Analyze trends'}</Action>
+          <Action secondary onPress={() => router.push('/trend-intelligence')}>{fa ? 'اجرای ترکیب اکتشافی' : 'Run Discovery Mix'}</Action>
           <View style={{ height: 1, backgroundColor: p.border }} />
           <View style={{ flexDirection: fa ? 'row-reverse' : 'row', alignItems: 'center', gap: 9 }}>
             <Activity color={p.accentStrong} size={20} />
