@@ -1644,7 +1644,9 @@ void test('YouTube growth uses the nearest snapshot at least 30 minutes old desp
   const first = captureYouTubeSnapshots([videoAtStart], [], firstAt);
   const second = captureYouTubeSnapshots([{ ...videoAtStart, viewCount: 1100 }], first.snapshots, firstAt + tenMinutes);
   const third = captureYouTubeSnapshots([{ ...videoAtStart, viewCount: 1300 }], [...second.snapshots, ...first.snapshots], firstAt + 30 * 60000);
-  assert.equal(third.videos[0]?.growth?.status, 'insufficient-history');
+  // The 30-minute minimum interval is inclusive: exactly 30 minutes is measurable.
+  assert.equal(third.videos[0]?.growth?.status, 'measured');
+  assert.equal(third.videos[0]?.growth?.deltaViews, 300);
   const fourth = captureYouTubeSnapshots(
     [{ ...videoAtStart, viewCount: 1600 }],
     [...third.snapshots, ...second.snapshots, ...first.snapshots],

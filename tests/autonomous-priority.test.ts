@@ -40,6 +40,7 @@ void test('queue polling preserves in-flight running leases and does not relaunc
     maxResults: 25,
   };
   const base = {
+    topic: input.topic,
     input,
     sourceId: 'source-default',
     source: 'publisher' as const,
