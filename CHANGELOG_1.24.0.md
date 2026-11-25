@@ -35,3 +35,5 @@ Static analysis follow-up: release candidate syntax, URL validation, and page co
 Final link audit: the video thumbnail action on the idea detail screen also uses the shared validated external-link handler.
 
 Shared-component link audit: Library, Note Editor and VideoRow now use the validated external-link handler; duplicate save controls on idea detail were consolidated and covered by regression tests.
+
+Note Editor links now use the validated shared external-link handler; final saved-link regression coverage is included.
