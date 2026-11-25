@@ -23,7 +23,11 @@ export type ResearchParadigmAnalysis = {
 export type MultiParadigmInput = {
   topic: string;
   news: readonly { title: string; summary: string; sourceName: string; sourceId?: string; publishedAt: string | null }[];
-  videos: readonly { id: string; title: string; channel: string; publishedAt: string }[];
+  videos: readonly {
+    id: string; title: string; channel: string; publishedAt: string;
+    viewsPerHour?: number | null;
+    channelOutlierRatio?: number | null;
+  }[];
   wikiObservations: readonly { month: string; views: number }[];
   trend: { direction: 'rising' | 'falling' | 'stable' | 'insufficient-data'; observations: number; changePercent: number | null; anomaly: 'spike' | 'drop' | null };
   independentPublisherFamilies: number;
@@ -120,13 +124,29 @@ export function buildMultiParadigmAnalysis(input: MultiParadigmInput): ResearchP
       ? (fa ? 'عبارت‌های مشترک در خبرها و ویدئوها: ' : 'Terms shared by publisher records and sampled videos: ') + sharedTerms.join(fa ? '، ' : ', ')
       : (fa ? 'عبارت مشترک روشنی میان خبرها و ویدئوهای این نمونه پیدا نشد.' : 'No clear lexical overlap was found between the two collections.'),
   ];
-  const temporalEnough = datedNews.length >= 4 || input.wikiObservations.length >= 4;
+  const measuredVideoSignals = input.videos.filter((video) =>
+    typeof video.viewsPerHour === 'number' && Number.isFinite(video.viewsPerHour),
+  );
+  const fastestVideoSignal = [...measuredVideoSignals].sort((a, b) =>
+    (b.viewsPerHour ?? -1) - (a.viewsPerHour ?? -1),
+  )[0];
+  const temporalEnough = datedNews.length >= 4 || input.wikiObservations.length >= 4 || measuredVideoSignals.length > 0;
   const temporalFindings = [
     fa ? recentNews + '  گزارش در ۳۰ روز اخیر و ' + previousNews + '  گزارش در ۳۰ روز قبل از آن منتشر شده است.'
       : recentNews + ' publisher reports fall in the latest 30 days and ' + previousNews + ' in the preceding 30 days.',
     fa ? 'داده ماهانه ویکی‌پدیا ' + input.wikiObservations.length + ' ماه داده دارد؛ جهت تغییر آن «' + input.trend.direction + '» است.'
       : 'The Wikimedia series has ' + input.wikiObservations.length + ' observations; its direction is "' + input.trend.direction + '".',
   ];
+  if (fastestVideoSignal) {
+    const baseline = fastestVideoSignal.channelOutlierRatio;
+    temporalFindings.push(fa
+      ? 'از نمونه ویدئوها، ' + measuredVideoSignals.length + ' مورد رشد را با snapshot تکراری نشان می‌دهند؛ سریع‌ترین نمونه «' + fastestVideoSignal.title + '» حدود ' + fastestVideoSignal.viewsPerHour!.toLocaleString('fa-IR') + ' بازدید در ساعت دارد' + (typeof baseline === 'number' && Number.isFinite(baseline) ? ' و ' + baseline.toFixed(2) + ' برابر خط پایه کانال است.' : '.')
+      : measuredVideoSignals.length + ' sampled video(s) have repeat-snapshot velocity; the fastest is "' + fastestVideoSignal.title + '" at ' + fastestVideoSignal.viewsPerHour!.toLocaleString('en-US') + ' views/hour' + (typeof baseline === 'number' && Number.isFinite(baseline) ? ' and ' + baseline.toFixed(2) + '× its channel baseline.' : '.'));
+  } else {
+    temporalFindings.push(fa
+      ? 'هنوز رشد اندازه‌گیری‌شده YouTube در این نمونه وجود ندارد؛ بازدید کل یک snapshot جایگزین رشد نیست.'
+      : 'No measured YouTube growth is available in this sample; lifetime views from one snapshot are not a growth rate.');
+  }
   if (input.trend.anomaly) temporalFindings.push(fa
     ? 'یک ناهنجاری احتمالی ' + (input.trend.anomaly === 'spike' ? 'افزایش' : 'افت') + ' در سری ماهانه علامت‌گذاری شده است.'
     : 'A potential ' + input.trend.anomaly + ' anomaly is flagged in the monthly series.');
@@ -214,8 +234,11 @@ export function buildMultiParadigmAnalysis(input: MultiParadigmInput): ResearchP
       fa ? 'بررسی می‌کند خبرها و ویدئوهای نمونه واقعاً درباره کدام بخش از موضوع‌اند.' : 'Compares topic vocabulary, publisher reports and sampled video titles.',
       semanticFindings, [fa ? 'مشترک بودن چند واژه به معنی یکی بودن محتوا یا تأیید متقابل خبرها نیست.' : 'Lexical overlap does not prove deep understanding or factual agreement.'], fa),
     makeLens('temporal', fa ? '۳. تغییرات در طول زمان' : '3. Temporal dynamics', temporalEnough ? 'mixed' : 'limited',
-      fa ? 'تازه بودن خبرها را از تغییر بازدید مقاله‌های ویکی‌پدیا جداگانه بررسی می‌کند.' : 'Separates publication recency from the Wikimedia time-series direction.',
-      temporalFindings, [fa ? 'تعداد خبرها معادل تقاضا نیست.' : 'Article counts are not demand.'], fa),
+      fa ? 'تازگی خبرها، بازدید مقاله‌های ویکی‌پدیا و شتاب ویدئوهای YouTube را به‌عنوان سیگنال‌های جداگانه بررسی می‌کند.' : 'Separates news recency, Wikimedia article attention and measured YouTube video velocity.',
+      temporalFindings, [
+        fa ? 'بازدید مقاله و نمونه محدود YouTube معادل تقاضای کل بازار نیستند.' : 'Article pageviews and a limited YouTube sample are not market-wide demand.',
+        fa ? 'رشد فقط از snapshotهای تکراری معتبر محاسبه می‌شود.' : 'Growth is reported only when valid repeat snapshots exist.',
+      ], fa),
     makeLens('network', fa ? '۴. نام‌ها و ارتباط‌های مهم' : '4. Entity and relationship graph',
       input.entities.length >= 3 && input.relations.length >= 2 ? 'mixed' : 'limited',
       fa ? 'نام‌ها و ارتباط‌هایی را پیدا می‌کند که در چند منبع تکرار شده‌اند.' : 'Identifies frequent entities and document co-mentions.',

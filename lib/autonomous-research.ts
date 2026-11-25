@@ -3,6 +3,7 @@ import { useScout } from './store';
 import { getKey } from './vault';
 import { searchYouTubeSample } from './api';
 import { uid } from './types';
+import { buildResearchActivityResults } from './research-activity';
 import {
   autonomousPublisherPriority,
   autonomousYouTubePriority,
@@ -50,9 +51,7 @@ function buildPublisherCandidates(
     })
     .sort((a, b) => (Date.parse(b.publishedAt ?? '') || 0) - (Date.parse(a.publishedAt ?? '') || 0))
     .slice(0, 12)
-    .map((item) => {
-      const ageHours = Math.max(0, (now - (Date.parse(item.publishedAt ?? '') || now)) / 3600000);
-      return {
+    .map((item) => ({
         topic: item.topic,
         input: { ...baseInput(preferences), topic: item.topic },
         source: 'publisher',
@@ -60,8 +59,7 @@ function buildPublisherCandidates(
         sourceUrl: item.sourceUrl,
         publishedAt: item.publishedAt,
         priority: autonomousPublisherPriority(item.publishedAt, item.sourceCount, now),
-      };
-    });
+      }));
 }
 
 function buildYouTubeCandidates(
@@ -176,7 +174,22 @@ async function discoverYouTubeTopics(): Promise<void> {
     status: videos.length ? (warning ? 'partial' : 'success') : warning ? 'skipped' : 'empty',
     resultCount: videos.length,
     analyzedCount: candidateCount,
-    results: [],
+    results: buildResearchActivityResults(input.topic, videos.slice(0, 8).map((video) => ({
+      id: video.id,
+      title: video.title,
+      summary: [
+        video.channel,
+        video.viewCount == null ? 'Views unavailable' : video.viewCount.toLocaleString() + ' views',
+        video.growth?.status === 'measured' && video.growth.viewsPerHour !== null
+          ? video.growth.viewsPerHour.toFixed(1) + ' measured views/hour'
+          : 'No repeat snapshot history yet',
+      ].join(' · '),
+      sourceName: video.channel,
+      includedInAnalysis: true,
+      decisionReason: video.growth?.status === 'measured'
+        ? 'Measured from repeat public view-count snapshots; this is a platform observation, not proof of market-wide demand.'
+        : 'Raw public view count only; no growth claim is made without repeat snapshots.',
+    }))),
     warnings: warning ? [warning.slice(0, 700)] : [],
   }).catch(() => undefined);
 }
@@ -251,7 +264,7 @@ async function processNextJob(): Promise<boolean> {
     });
   }
   await saveAutonomousQueue(queue);
-  return true;
+  return Boolean(report);
 }
 
 export async function runAutonomousResearchCycle(maxJobs = 1): Promise<number> {

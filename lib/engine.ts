@@ -1,4 +1,4 @@
-import { type Report, type Idea, type ResearchMemoryEntry, uid } from './types';
+import { type Report, type Idea, type ResearchMemoryEntry, type YouTubeGrowth, uid } from './types';
 import { buildMultiParadigmAnalysis, type ResearchParadigmAnalysis } from './multiparadigm';
 import type { WikiSignal } from './space';
 import type { YouTubeSampleVideo } from './api';
@@ -37,7 +37,7 @@ export type InternalResearchInput = {
   videos?: readonly (Pick<
     YouTubeSampleVideo,
     'id' | 'title' | 'channel' | 'publishedAt' | 'viewCount' | 'likeCount'
-  > & Partial<Pick<YouTubeSampleVideo, 'description'>>)[];
+  > & Partial<Pick<YouTubeSampleVideo, 'description'>> & { growth?: YouTubeGrowth })[];
   feedback?: ResearchFeedbackProfile;
   language?: 'fa' | 'en';
   priorMemory?: ResearchMemoryEntry;
@@ -201,9 +201,17 @@ export function buildInternalResearch(input: InternalResearchInput): InternalRes
   });
   // Analyze all retained YouTube records, not only recent title matches. Description matches
   // are weaker context; the recent, directly matched subset remains a separate audit signal.
+  const measuredViewsPerHour = (video: NonNullable<InternalResearchInput['videos']>[number]) =>
+    video.growth?.status === 'measured' && Number.isFinite(video.growth.viewsPerHour)
+      ? video.growth.viewsPerHour ?? -1 : -1;
+  const measuredOutlierRatio = (video: NonNullable<InternalResearchInput['videos']>[number]) =>
+    video.growth?.status === 'measured' && Number.isFinite(video.growth.channelOutlierRatio)
+      ? video.growth.channelOutlierRatio ?? -1 : -1;
   const rankedVideos = inputVideos.map((video, index) => ({
     video, index, score: topicRelevanceScore(topic, video.title, video.description ?? ''),
   })).filter((entry) => entry.score > 0 && Date.parse(entry.video.publishedAt) <= now + 86400000).sort((a, b) => b.score - a.score ||
+    measuredViewsPerHour(b.video) - measuredViewsPerHour(a.video) ||
+    measuredOutlierRatio(b.video) - measuredOutlierRatio(a.video) ||
     (b.video.viewCount ?? -1) - (a.video.viewCount ?? -1) ||
     (b.video.likeCount ?? -1) - (a.video.likeCount ?? -1) || a.index - b.index);
   const videos = rankedVideos.map((entry) => entry.video);
@@ -222,6 +230,13 @@ export function buildInternalResearch(input: InternalResearchInput): InternalRes
     .sort((a, b) => (b.viewCount ?? 0) - (a.viewCount ?? 0))[0];
   const mostLiked = videos.filter((video) => video.likeCount != null)
     .sort((a, b) => (b.likeCount ?? 0) - (a.likeCount ?? 0))[0];
+  const measuredGrowthVideos = videos.filter((video) =>
+    video.growth?.status === 'measured' &&
+    video.growth.viewsPerHour !== null &&
+    Number.isFinite(video.growth.viewsPerHour),
+  );
+  const fastestMeasuredVideo = [...measuredGrowthVideos]
+    .sort((a, b) => (b.growth?.viewsPerHour ?? -1) - (a.growth?.viewsPerHour ?? -1))[0];
 
   const evidence: InternalEngineEvidence[] = [];
   if (news.length) {
@@ -301,6 +316,18 @@ export function buildInternalResearch(input: InternalResearchInput): InternalRes
       detail: youtubeSample.length
         ? text('A raw YouTube API sample reached the internal engine as transient input through its isolated field and is intentionally excluded from scoring, summarization, source correlation and external model requests under the current project policy.', 'نمونه خام API یوتیوب از مسیر مستقل و بدون تحلیل به موتور رسیده است. طبق سیاست فعلی پروژه، این داده امتیازدهی، خلاصه، با منابع مستقل ترکیب یا به مدل بیرونی ارسال نمی‌شود.')
         : text('No YouTube API sample was supplied to this engine run. The raw sample remains available in its separate report view.', 'در این اجرای موتور نمونه‌ای از API یوتیوب دریافت نشد. نمونه خام در صفحه گزارش جداگانه در دسترس است.')
+    });
+  }
+  if (videos.length) {
+    evidence.push({
+      id: 'youtube-momentum',
+      label: text('Measured YouTube momentum', 'شتاب اندازه‌گیری‌شده در YouTube'),
+      detail: measuredGrowthVideos.length
+        ? (fa
+          ? 'از ' + videos.length + ' ویدئوی هم‌موضوع، ' + measuredGrowthVideos.length + ' مورد سابقه snapshot معتبر دارند. سریع‌ترین نمونه «' + fastestMeasuredVideo!.title + '» با ' + fastestMeasuredVideo!.growth!.viewsPerHour!.toFixed(1) + ' بازدید در ساعت رشد اندازه‌گیری‌شده و نسبت ' + (fastestMeasuredVideo!.growth!.channelOutlierRatio?.toFixed(2) ?? 'ناموجود') + ' برابر خط پایه کانال دارد. این فقط نمونه محدود پلتفرم است، نه تقاضای کل بازار.'
+          : measuredGrowthVideos.length + ' of ' + videos.length + ' matched sample videos have valid repeated snapshots. Fastest measured example: "' + fastestMeasuredVideo!.title + '" at ' + fastestMeasuredVideo!.growth!.viewsPerHour!.toFixed(1) + ' views/hour; channel outlier ratio ' + (fastestMeasuredVideo!.growth!.channelOutlierRatio?.toFixed(2) ?? 'unavailable') + '. This is a bounded platform sample, not market-wide demand.')
+        : text('No matched video has enough repeat snapshots to measure growth. Lifetime view counts remain raw observations and are not described as momentum.', 'هنوز برای هیچ ویدئوی هم‌موضوعی snapshot تکراری کافی برای اندازه‌گیری رشد وجود ندارد. بازدید کل فقط مشاهده خام است و به‌عنوان شتاب رشد گزارش نمی‌شود.'),
+      ...(fastestMeasuredVideo ? { sourceUrl: 'https://www.youtube.com/watch?v=' + fastestMeasuredVideo.id } : {}),
     });
   }
 
@@ -527,6 +554,8 @@ export function buildInternalResearch(input: InternalResearchInput): InternalRes
       title: video.title,
       channel: video.channel,
       publishedAt: video.publishedAt,
+      viewsPerHour: video.growth?.status === 'measured' ? video.growth.viewsPerHour : null,
+      channelOutlierRatio: video.growth?.status === 'measured' ? video.growth.channelOutlierRatio : null,
     })),
     wikiObservations: input.wiki?.monthlyViews ?? [],
     trend,

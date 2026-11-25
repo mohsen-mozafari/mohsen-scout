@@ -726,9 +726,9 @@ export const useScout = create<State>((set, get) => ({
 
       // YouTube is the discovery-first source. Complete its bounded official API
       // sample before fetching publisher, web and Wikimedia context.
-      recordRuntimeStart('YouTube');
       youtubeTaskPromise = youtubeTask();
       await youtubeTaskPromise;
+      recordRuntimeStart('Sources');
       await Promise.all([feedTask(), webTask(), wikiTask()]);
       const independentSourcesReady = publisherNews.length > 0 || webItems.length > 0;
       recordRuntimeFinish('Sources', independentSourcesReady ? 'success' : 'partial', independentSourcesReady ? undefined : 'No independent publisher/web evidence was returned.');
