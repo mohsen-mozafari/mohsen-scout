@@ -724,10 +724,12 @@ export const useScout = create<State>((set, get) => ({
         }
       };
 
-      recordRuntimeStart('Sources');
-      // Independent network lanes overlap; the Deep Research agent awaits this run's YouTube sample before prompting.
+      // YouTube is the discovery-first source. Complete its bounded official API
+      // sample before fetching publisher, web and Wikimedia context.
+      recordRuntimeStart('YouTube');
       youtubeTaskPromise = youtubeTask();
-      await Promise.all([youtubeTaskPromise, feedTask(), webTask(), wikiTask()]);
+      await youtubeTaskPromise;
+      await Promise.all([feedTask(), webTask(), wikiTask()]);
       const independentSourcesReady = publisherNews.length > 0 || webItems.length > 0;
       recordRuntimeFinish('Sources', independentSourcesReady ? 'success' : 'partial', independentSourcesReady ? undefined : 'No independent publisher/web evidence was returned.');
       if (!publisherNews.length) warnings.push('No selected publisher-feed items are currently available.');
