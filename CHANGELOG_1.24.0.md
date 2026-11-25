@@ -27,3 +27,5 @@ Branch: `feature/v1.22.0-autonomous-researcher`
 The new GitHub Actions workflow runs the existing Node regression suite (including the new UI audit tests), source lint/type checks, CSS lint, Expo dependency validation, Android prebuild, R8/signing checks, a signed ARM64 APK build, APK identity/ABI/certificate verification, and release asset checksum verification.
 
 A passing CI run and on-device visual/accessibility testing are separate validation gates; this changelog does not claim those gates have passed until their results are observed.
+
+Build gate: the v1.24.0 full-audit workflow validates the source, signed ARM64 APK identity, certificate and release checksum.
