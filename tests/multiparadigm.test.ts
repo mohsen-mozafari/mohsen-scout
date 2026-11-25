@@ -95,3 +95,29 @@ void test('large batches keep generated findings bounded', () => {
   assert.ok(result.lenses.every((item) => item.findings.length <= 5));
   assert.ok(result.creativeDirections.length <= 5);
 });
+
+void test('temporal lens reports measured YouTube velocity without treating it as market-wide demand', () => {
+  const input = sample();
+  input.wikiObservations = [];
+  input.trend = { direction: 'insufficient-data', observations: 0, changePercent: null, anomaly: null };
+  input.videos = [
+    { id: 'v1', title: 'Fast sample', channel: 'A', publishedAt: '2026-11-12T10:00:00.000Z', viewsPerHour: 2500, channelOutlierRatio: 5 },
+    { id: 'v2', title: 'Second sample', channel: 'B', publishedAt: '2026-11-08T10:00:00.000Z', viewsPerHour: 1200, channelOutlierRatio: 2 },
+    { id: 'v3', title: 'No snapshot history', channel: 'C', publishedAt: '2026-11-01T10:00:00.000Z', viewsPerHour: null, channelOutlierRatio: null },
+  ];
+  const result = buildMultiParadigmAnalysis(input);
+  const temporal = result.lenses.find((item) => item.id === 'temporal');
+  assert.ok(temporal?.findings.some((finding) => finding.includes('2,500')));
+  assert.ok(temporal?.caveats.some((caveat) => caveat.toLowerCase().includes('sample')));
+});
+
+void test('unmeasured YouTube snapshots are not described as growth', () => {
+  const input = sample();
+  input.news = [];
+  input.wikiObservations = [];
+  input.trend = { direction: 'insufficient-data', observations: 0, changePercent: null, anomaly: null };
+  input.videos = input.videos.map((video) => ({ ...video, viewsPerHour: null, channelOutlierRatio: null }));
+  const result = buildMultiParadigmAnalysis(input);
+  const temporal = result.lenses.find((item) => item.id === 'temporal');
+  assert.ok(temporal?.findings.some((finding) => finding.toLowerCase().includes('no measured youtube growth')));
+});
