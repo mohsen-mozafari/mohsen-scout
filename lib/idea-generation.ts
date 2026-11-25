@@ -765,7 +765,6 @@ export function generateEditorialIdeas(input: GenerateEditorialIdeasInput): Idea
       : '') + (negativePreference
         ? (input.language === 'fa' ? '؛ به موضوعی شبیه است که قبلاً نپسندیده‌ای' : '; overlaps a topic you previously rejected')
         : '');
-    const anchorKey = normalizeResearchText(candidate.anchor);
     if (!anchorKey ||
       (!candidate.existingIdeaId && usedAnchors.has(anchorKey)) ||
       (!candidate.existingIdeaId && usedTitles.has(normalizeResearchText(candidate.title))) ||
