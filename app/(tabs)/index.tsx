@@ -12,11 +12,11 @@ import { palette as p } from '@/lib/theme';
 import { useShallow } from 'zustand/react/shallow';
 import { uid, type Idea, DEFAULT_SECOND_OPINION_ORDER } from '@/lib/types';
 import { SPACE_NICHES, getCachedSpaceNews } from '@/lib/space';
-import { buildInternalResearch, rankNewsForTopic, type InternalResearchResult } from '@/lib/engine';
-import { buildResearchInterestProfile, normalizeResearchText, scoreResearchText } from '@/lib/intelligence';
+import { buildInternalResearch, type InternalResearchResult } from '@/lib/engine';
+import { buildResearchInterestProfile, normalizeResearchText } from '@/lib/intelligence';
 import { getTopicDossier } from '@/lib/topic-dossier';
 import { VideoRow } from '@/components/VideoRow';
-import { collectEngineVideoEvidence, engineReviewCacheKey, findCachedEngineReview, selectDashboardFeaturedIdeas, selectDashboardIdeas, selectDashboardVideos } from '@/lib/dashboard';
+import { collectEngineVideoEvidence, engineReviewCacheKey, findCachedEngineReview, selectDashboardFeaturedIdeas } from '@/lib/dashboard';
 import { fingerprintText, getFreeModels, getOpenRouterDailyQuota, formatStructuredSecondOpinion, structuredSecondOpinionPrompt, localDateKey, nextOpenRouterUsage, selectFreeModel } from '@/lib/api';
 import { getKey } from '@/lib/vault';
 import { requestSecondOpinionWithFallback, type SecondOpinionProviderConfig } from '@/lib/ai-gateway';
@@ -382,7 +382,6 @@ function DiscoveryDashboardReady() {
   const [quickTopicDraft, setQuickTopicDraft] = useState<string | undefined>(undefined);
   const quickTopic = quickTopicDraft ?? preferences.lastInput?.topic ?? latestReport?.input.topic ?? '';
   const latestReportId = latestReport?.id ?? '';
-  const latestReportVideoRecords = latestReport?.videos;
   const engineVideoEvidence = useMemo(
     () => collectEngineVideoEvidence(reports, storedVideos),
     [reports, storedVideos],
@@ -432,37 +431,8 @@ function DiscoveryDashboardReady() {
   const latestReportAnalysis = reportAnalysisState?.id === latestReportId
     ? reportAnalysisState.result
     : undefined;
-  const showYouTubeResearch = engineVideoEvidence.length > 0;
-  const deskTopic = latestReport?.input.topic ?? preferences.lastInput?.topic ?? discoveryTopic;
-  const deskAnalysis = showYouTubeResearch ? latestReportAnalysis : undefined;
-  const nicheTerms = useMemo<string[]>(() => {
-    if (preferences.selectedSpaceNiche === 'custom') {
-      return preferences.customSpaceNiche.split(/[,;\n]+/).map((term) => term.trim()).filter(Boolean);
-    }
-    return preferences.selectedSpaceNiche === 'all' ? [] : niche?.keywords ? [...niche.keywords] : [];
-  }, [preferences.selectedSpaceNiche, preferences.customSpaceNiche, niche]);
-  const feedTopic = preferences.selectedSpaceNiche === 'all'
-    ? latestReport?.input.topic ?? discoveryTopic
-    : discoveryTopic;
-  const feedVideos = useMemo(
-    () => selectDashboardVideos(latestReportVideoRecords ?? [], feedTopic, nicheTerms, dashboardNow, 12),
-    [latestReportVideoRecords, feedTopic, nicheTerms, dashboardNow],
-  );
-
-  const audit = deskAnalysis?.intelligence.selfEvaluation;
-  const sharedTerms = deskAnalysis?.intelligence.sharedConcepts ?? [];
-  const nextGap = deskAnalysis?.intelligence.gaps[0];
-  const nextQuery = deskAnalysis?.intelligence.followUpQueries[0];
   const chartAnalysis = latestReportAnalysis ?? cachedTopicAnalysis;
   const chartTopic = latestReportAnalysis ? deskTopic : cachedTopicAnalysis ? discoveryTopic : deskTopic;
-  const chartNews = useMemo(
-    () => rankNewsForTopic(chartTopic, engineNews, Math.max(1, engineNews.length)),
-    [chartTopic, engineNews],
-  );
-  const chartIdeas = useMemo(() => selectDashboardIdeas(ideas, {
-    sourceUrls: new Set(chartNews.filter((item) => scoreResearchText(chartTopic, item.title, item.summary) > 0).map((item) => item.url)),
-    topic: chartTopic,
-  }), [ideas, chartNews, chartTopic]);
   const bestIdea = selectDashboardFeaturedIdeas(ideas, 1)[0];
   const ideaLinkage = useMemo(() => ({
     active: ideas.filter((idea) => !idea.archived && idea.status !== 'Rejected Ideas' && idea.status !== 'Completed Research').length,
@@ -471,8 +441,6 @@ function DiscoveryDashboardReady() {
     reportLinked: ideas.filter((idea) => Boolean(idea.reportId)).length,
     videoLinked: ideas.filter((idea) => idea.videoIds.length > 0).length,
   }), [ideas]);
-  const deskIdeas = chartIdeas;
-  const recommendations = chartIdeas.slice(1, 4);
 
   return (
     <Page
@@ -529,159 +497,7 @@ function DiscoveryDashboardReady() {
           </View>
         </Panel>
 
-        {showYouTubeResearch ? (
-          <Fold
-            title={fa ? 'خلاصه تحقیق · نتیجه و محدودیت‌ها' : 'Research brief · Findings and limits'}
-            summary={deskAnalysis
-              ? (deskAnalysis.intelligence.confidence.level.toUpperCase() + ' confidence · ' +
-                deskAnalysis.intelligence.sourceQuality.uniqueStories + ' reports · ' +
-                engineVideoEvidence.length + ' retained videos')
-              : (fa ? 'در انتظار تکمیل تحلیل نمونه' : 'Waiting for sample analysis')}
-          >
-            {deskAnalysis ? (
-              <View style={{ gap: 10 }}>
-                <View style={styles.softCard}>
-                  <Text style={styles.label}>{fa ? 'برداشت اصلی از شواهد' : 'WHAT THE EVIDENCE SAYS'}</Text>
-                  <Txt>{deskAnalysis.summary}</Txt>
-                </View>
-                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7 }}>
-                  <MetricCard label={fa ? 'خبر یکتای تحلیل‌شده' : 'UNIQUE REPORTS'} value={deskAnalysis.intelligence.sourceQuality.uniqueStories} />
-                  <MetricCard label={fa ? 'خوراک حاضر' : 'FEEDS REPRESENTED'} value={deskAnalysis.intelligence.sourceQuality.feedsRepresented} />
-                  <MetricCard label={fa ? 'ویدئوی نگهداری‌شده' : 'RETAINED VIDEOS'} value={engineVideoEvidence.length} />
-                  <MetricCard label={fa ? 'پرسش/خلأ باز' : 'OPEN GAPS'} value={deskAnalysis.intelligence.gaps.length + deskAnalysis.intelligence.potentialContradictions.length} />
-                </View>
-                <View style={styles.softCard}>
-                  <Text style={styles.label}>{fa ? 'چه چیزی هنوز معلوم نیست؟' : 'WHAT IS STILL UNKNOWN'}</Text>
-                  <Txt muted>{nextGap ?? (fa
-                    ? 'خلأ مشخصی ثبت نشده؛ ادعاهای مهم را پیش از تولید با منبع اصلی بررسی کن.'
-                    : 'No specific gap was flagged. Verify important claims against original sources before production.')}</Txt>
-                </View>
-                {sharedTerms.length ? (
-                  <Txt muted>{(fa ? 'عبارت‌های تکرارشده در نمونه: ' : 'Repeated wording in this sample: ') + sharedTerms.slice(0, 4).join(fa ? '، ' : ', ') + (fa ? '؛ تکرار به‌تنهایی اثبات روند یا تقاضا نیست.' : '; repetition alone does not prove a trend or audience demand.')}</Txt>
-                ) : null}
-                {warnings.slice(0, 2).map((warning) => <Txt muted key={warning}>{warning}</Txt>)}
-                {nextQuery ? (
-                  <Action secondary onPress={() => router.push({ pathname: '/youtube', params: { topic: nextQuery } })}>
-                    {fa ? 'بررسی پرسش پیشنهادی در YouTube' : 'Research the suggested question on YouTube'}
-                  </Action>
-                ) : null}
-                <Action onPress={() => router.push({ pathname: '/deep-research', params: { topic: deskTopic } })}>
-                  {fa ? 'ادامه در تحقیق عمیق' : 'Continue in Deep Research'}
-                </Action>
-              </View>
-            ) : (
-              <View style={{ gap: 8 }}>
-                <Txt muted>{fa
-                  ? 'نمونه ویدئویی ذخیره شده است، اما تحلیل موضوع‌محور هنوز آماده نیست. گزارش و ویدئوها حفظ شده‌اند.'
-                  : 'A saved video sample exists, but its topic-specific analysis is not ready yet. The report and video records remain available.'}</Txt>
-                <Action secondary onPress={() => router.push({ pathname: '/youtube', params: { topic: deskTopic } })}>
-                  {fa ? 'بازبینی نمونه YouTube' : 'Review the YouTube sample'}
-                </Action>
-              </View>
-            )}
-          </Fold>
-        ) : null}
 
-
-        <Fold title="Evidence quality and source audit" summary={deskAnalysis ? deskAnalysis.intelligence.sourceQuality.uniqueStories + ' stories · ' + deskAnalysis.intelligence.sourceQuality.feedsRepresented + ' feeds' : 'No analyzed sample yet'}>
-          {deskAnalysis ? (
-            <View style={{ gap: 12 }}>
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7 }}>
-                <MetricCard label="UNIQUE STORIES" value={deskAnalysis.intelligence.sourceQuality.uniqueStories} />
-                <MetricCard label="FEEDS REPRESENTED" value={deskAnalysis.intelligence.sourceQuality.feedsRepresented} />
-                <MetricCard label="STALE / UNDATED" value={deskAnalysis.intelligence.sourceQuality.staleItems + deskAnalysis.intelligence.sourceQuality.undatedItems} />
-                <MetricCard label="WIKIMEDIA MONTHS" value={audit?.wikimediaMonthlyObservations ?? 0} />
-              </View>
-              {deskAnalysis.evidence
-                .filter((item) => ['publisher-news', 'wikimedia', 'youtube-sample', 'cross-source-overlap'].includes(item.id))
-                .map((item) => (
-                  <View key={item.id} style={{ gap: 4 }}>
-                    <BadgeText>{item.label}</BadgeText>
-                    <Txt muted>{item.detail}</Txt>
-                  </View>
-                ))}
-              <AnalysisSignals result={deskAnalysis} />
-            </View>
-          ) : (
-            <Txt muted>Source-quality details appear after a sample is available.</Txt>
-          )}
-        </Fold>
-
-        <Fold title="Editorial angles and verification" summary={deskAnalysis ? deskAnalysis.angles.length + ' angles · ' + deskAnalysis.verificationQuestions.length + ' checks' : 'Waiting for analysis'}>
-          {deskAnalysis ? deskAnalysis.angles.slice(0, 3).map((angle) => (
-            <View key={angle.id} style={{ gap: 5, paddingBottom: 10 }}>
-              <Heading>{angle.title}</Heading>
-              <Txt>{angle.hook}</Txt>
-              <Txt muted>{angle.approach}</Txt>
-              <Txt muted>{'Verify: ' + angle.verification}</Txt>
-            </View>
-          )) : <Txt muted>Research angles are generated from the available evidence.</Txt>}
-        </Fold>
-
-        <Fold title="Recent research and saved results" summary={reports.length + ' reports · ' + deskIdeas.length + ' ideas'}>
-          <View style={{ gap: 12 }}>
-            {feedVideos.length ? (
-              <View style={{ gap: 8 }}>
-                <Heading>Related videos</Heading>
-                {feedVideos.slice(0, 5).map((video) => <VideoRow key={video.id} video={video} topic={feedTopic} />)}
-              </View>
-            ) : <Txt muted>No saved video matched this focus. Unrelated results are intentionally hidden.</Txt>}
-            {recommendations.length ? (
-              <View style={{ gap: 8 }}>
-                <Heading>Other editorial ideas</Heading>
-                {recommendations.slice(0, 3).map((idea) => (
-                  <View key={idea.id} style={styles.softCard}>
-                    <SourceHeading>{idea.topic}</SourceHeading>
-                    <Txt muted>{idea.concept.slice(0, 180)}</Txt>
-                    <Action secondary onPress={() => router.push({ pathname: '/detail', params: { idea: idea.id } })}>
-                      Open idea
-                    </Action>
-                  </View>
-                ))}
-              </View>
-            ) : null}
-            {reports.length ? (
-              <View style={{ gap: 7 }}>
-                <Heading>Saved research runs</Heading>
-                {reports.slice(0, 4).map((report) => (
-                  <Action key={report.id} secondary onPress={() => router.push({ pathname: '/youtube', params: { topic: report.input.topic, report: report.id } })}>
-                    {report.input.topic + ' · ' + new Date(report.createdAt).toLocaleDateString(preferences.uiLanguage === 'fa' ? 'fa-IR' : 'en-US')}
-                  </Action>
-                ))}
-              </View>
-            ) : null}
-          </View>
-        </Fold>
-
-        <Panel>
-          <Heading>{fa ? 'ابزارهای تکمیلی تحقیق' : 'Additional research tools'}</Heading>
-          <Txt muted>{fa
-            ? 'ابزارهای مستقل برنامه از همین داشبورد هم در دسترس‌اند؛ هرکدام مسیر و خروجی تخصصی خود را دارند.'
-            : 'The app’s dedicated research tools are also accessible here, each with its own focused workflow and results.'}</Txt>
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-            <View style={{ flexGrow: 1, flexBasis: 180 }}>
-              <Panel variant="soft">
-                <Heading>{fa ? 'تحقیق عمیق' : 'Deep Research'}</Heading>
-                <Txt muted>{fa ? 'ساخت پرونده تحقیق با منابع و پرسش‌های قابل پیگیری.' : 'Build a source-linked research brief and follow-up questions.'}</Txt>
-                <Action secondary onPress={() => router.push('/deep-research')}>{fa ? 'شروع تحقیق عمیق' : 'Open Deep Research'}</Action>
-              </Panel>
-            </View>
-            <View style={{ flexGrow: 1, flexBasis: 180 }}>
-              <Panel variant="soft">
-                <Heading>{fa ? 'هوشمندی روندها' : 'Trend Intelligence'}</Heading>
-                <Txt muted>{fa ? 'بررسی نشانه‌های موضوعی و زمینه‌های مرتبط.' : 'Inspect topic signals and related context.'}</Txt>
-                <Action secondary onPress={() => router.push('/trend-intelligence')}>{fa ? 'بررسی روندها' : 'Open Trend Intelligence'}</Action>
-              </Panel>
-            </View>
-            <View style={{ flexGrow: 1, flexBasis: 180 }}>
-              <Panel variant="soft">
-                <Heading>{fa ? 'تقاضای جست‌وجو' : 'Search Demand'}</Heading>
-                <Txt muted>{fa ? 'مقایسه داده‌های در دسترس جست‌وجو و محدودیت‌های آن.' : 'Compare available search signals and their data limits.'}</Txt>
-                <Action secondary onPress={() => router.push('/search-demand')}>{fa ? 'بررسی تقاضا' : 'Open Search Demand'}</Action>
-              </Panel>
-            </View>
-          </View>
-        </Panel>
 
         <Pressable onPress={() => setHealthExpanded((current) => !current)} accessibilityRole="button" accessibilityState={{ expanded: healthExpanded }}>
           <Panel>
