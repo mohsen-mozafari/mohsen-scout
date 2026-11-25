@@ -34,6 +34,7 @@ export type EditorialPriorityCandidate = {
   archived?: boolean;
   status?: string;
   createdAt?: number;
+  engineScoredAt?: number;
 };
 
 const assessmentOrder: Record<string, number> = {
@@ -53,6 +54,7 @@ export function compareEditorialPriority<T extends EditorialPriorityCandidate>(l
   return (right.engineScore ?? -1) - (left.engineScore ?? -1) ||
     (assessmentOrder[right.assessment ?? ''] ?? 0) - (assessmentOrder[left.assessment ?? ''] ?? 0) ||
     evidenceWeight(right) - evidenceWeight(left) ||
+    (right.engineScoredAt ?? right.createdAt ?? 0) - (left.engineScoredAt ?? left.createdAt ?? 0) ||
     (right.createdAt ?? 0) - (left.createdAt ?? 0);
 }
 

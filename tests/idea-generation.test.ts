@@ -612,3 +612,19 @@ void test('refresh with thousands of saved ideas stays bounded and does not muta
   assert.deepEqual(saved.map((idea) => idea.id), originalIds);
   assert.ok(elapsed < 5000, 'a local refresh should not spend seconds scanning 2,500 saved ideas');
 });
+
+void test('refresh updates an active generated idea in place while preserving user-authored fields', () => {
+  const original = generateEditorialIdeas({ ...base, news, videos, limit: 1 })[0];
+  assert.ok(original);
+  const edited = { ...original, note: 'Keep my note', decision: 'Keep my decision', status: 'Saved Opportunities' as const, createdAt: 1234 };
+  const refreshed = generateEditorialIdeas({
+    ...base, news, videos, existingIdeas: [edited], refreshExisting: true, now: base.now + 5000, limit: 1,
+  });
+  const same = refreshed.find((idea) => idea.id === edited.id);
+  assert.ok(same);
+  assert.equal(same.note, 'Keep my note');
+  assert.equal(same.decision, 'Keep my decision');
+  assert.equal(same.status, 'Saved Opportunities');
+  assert.equal(same.createdAt, 1234);
+  assert.ok((same.engineScoredAt ?? 0) > 0);
+});

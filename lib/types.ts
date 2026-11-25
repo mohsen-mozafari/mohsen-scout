@@ -119,6 +119,8 @@ export type Idea = {
   generationKey?: string;
   /** Explainable local editorial-priority score (not a view or revenue forecast). */
   engineScore?: number;
+  /** Timestamp of the latest local engine evaluation. */
+  engineScoredAt?: number;
   engineScoreReason?: string;
   engineScoreBasis?: 'publisher-web-only-v2' | 'platform-aware-v3';
   evidenceSources?: IdeaEvidenceSource[];

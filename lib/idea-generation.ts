@@ -63,6 +63,7 @@ export type GenerateEditorialIdeasInput = {
   now?: number;
   evidenceKey?: string;
   skipExistingEvidence?: boolean;
+  refreshExisting?: boolean;
 };
 
 type Document = {
@@ -706,7 +707,7 @@ export function generateEditorialIdeas(input: GenerateEditorialIdeasInput): Idea
     existing.push(idea);
   }
   const evidenceKey = (input.evidenceKey ?? documents.map((document) => document.id).sort().join('|')).slice(0, 1200);
-  if (input.skipExistingEvidence && existing.some((idea) => idea.generationKey === evidenceKey)) return [];
+  if (input.skipExistingEvidence && !input.refreshExisting && existing.some((idea) => idea.generationKey === evidenceKey)) return [];
   const usedTitles = new Set(existing.map((idea) => normalizeResearchText(idea.topic)));
   const sameEvidenceIdeas = existing.filter((idea) => idea.engineGenerated && idea.generationKey === evidenceKey);
   const existingEngineCount = sameEvidenceIdeas.length;
@@ -746,7 +747,7 @@ export function generateEditorialIdeas(input: GenerateEditorialIdeasInput): Idea
     const anchorKey = normalizeResearchText(candidate.anchor);
     if (!anchorKey || usedAnchors.has(anchorKey) ||
       usedTitles.has(normalizeResearchText(candidate.title)) ||
-      existing.some((idea) => ideaHasSameMeaning(candidate, idea, topic)) ||
+      existing.some((idea) => ideaHasSameMeaning(candidate, idea, topic) && !(input.refreshExisting && idea.engineGenerated && !idea.archived && idea.status !== 'Rejected Ideas' && idea.status !== 'Completed Research')) ||
       candidates.some((prior) => ideaHasSameMeaning(candidate, {
         engineGenerated: true,
         ideaCategory: prior.category,
@@ -790,8 +791,9 @@ export function generateEditorialIdeas(input: GenerateEditorialIdeasInput): Idea
   for (const candidate of candidates) {
     if (output.length >= limit) break;
     const normalizedTitle = normalizeResearchText(candidate.title);
-    if (usedTitles.has(normalizedTitle) ||
-      existing.some((idea) => ideaHasSameMeaning(candidate, idea, topic)) ||
+    const matchingExisting = input.refreshExisting ? existing.find((idea) => idea.engineGenerated && !idea.archived && idea.status !== 'Rejected Ideas' && idea.status !== 'Completed Research' && ideaHasSameMeaning(candidate, idea, topic)) : undefined;
+    if ((usedTitles.has(normalizedTitle) && !matchingExisting) ||
+      (existing.some((idea) => ideaHasSameMeaning(candidate, idea, topic) && !(input.refreshExisting && idea.engineGenerated && !idea.archived && idea.status !== 'Rejected Ideas' && idea.status !== 'Completed Research')) && !matchingExisting) ||
       output.some((idea) => ideaHasSameMeaning(candidate, idea, topic))) continue;
     usedTitles.add(normalizedTitle);
     const evidenceScope = [
@@ -872,16 +874,17 @@ export function generateEditorialIdeas(input: GenerateEditorialIdeasInput): Idea
       evidenceSources.push({ ...source, summary: source.summary.slice(0, 1500) });
       if (evidenceSources.length >= 8) break;
     }
-    output.push({
-      id: uid(),
+    const refreshedAt = now + output.length;
+    const generatedIdea: Idea = {
+      id: matchingExisting?.id ?? uid(),
       topic: candidate.title.slice(0, 180),
       concept: concept.slice(0, 4000),
       note,
       status: 'New Discoveries',
       decision: '',
       videoIds: youtubeVideoIds,
-      createdAt: now + output.length,
-      archived: false,
+      createdAt: matchingExisting?.createdAt ?? refreshedAt,
+      archived: matchingExisting?.archived ?? false,
       assessment: confidence === 'low' ? 'Uncertain' : 'Worth Exploring',
       region: input.region,
       languages: [...input.languages],
@@ -895,10 +898,12 @@ export function generateEditorialIdeas(input: GenerateEditorialIdeasInput): Idea
       ideaCategory: candidate.category,
       generationKey: evidenceKey,
       engineScore: candidate.opportunityScore,
+      engineScoredAt: refreshedAt,
       engineScoreReason: candidate.opportunityReason,
       engineScoreBasis: youtubeVideoIds.length ? 'platform-aware-v3' : 'publisher-web-only-v2',
       ...(evidenceSources.length ? { evidenceSources } : {}),
-    });
+    };
+    output.push(matchingExisting ? { ...generatedIdea, note: matchingExisting.note, status: matchingExisting.status, decision: matchingExisting.decision, archived: matchingExisting.archived, createdAt: matchingExisting.createdAt } : generatedIdea);
   }
   return output;
 }

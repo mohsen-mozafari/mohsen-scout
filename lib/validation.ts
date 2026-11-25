@@ -160,6 +160,7 @@ const schema = z.object({
       ideaCategory: text.max(80).optional(),
       generationKey: text.max(1200).optional(),
       engineScore: z.number().int().min(0).max(100).optional(),
+      engineScoredAt: time.optional(),
       engineScoreReason: text.max(600).optional(),
       engineScoreBasis: z.enum(['publisher-web-only-v2', 'platform-aware-v3']).optional(),
       evidenceSources: z.array(z.object({

@@ -68,3 +68,11 @@ void test('live top opportunities immediately replace completed, rejected and ar
   ], 2);
   assert.deepEqual(ranked.map((idea) => idea.id), ['active-1', 'active-2']);
 });
+
+void test('latest evaluation breaks ties only after score, assessment and evidence breadth', () => {
+  const older = { id: 'older', engineScore: 80, engineScoredAt: 100, videoIds: ['v1'], reportId: 'r1' };
+  const newer = { id: 'newer', engineScore: 80, engineScoredAt: 200, videoIds: ['v1'], reportId: 'r1' };
+  assert.deepEqual([older, newer].sort(compareEditorialPriority).map((item) => item.id), ['newer', 'older']);
+  const higher = { id: 'higher', engineScore: 81, engineScoredAt: 1, videoIds: ['v1'], reportId: 'r1' };
+  assert.deepEqual([newer, higher].sort(compareEditorialPriority).map((item) => item.id), ['higher', 'newer']);
+});

@@ -314,6 +314,7 @@ export default function Opportunities() {
           sourceName: 'Wikimedia Pageviews · attention proxy',
         }] : [],
         existingIdeas: fallbackData.ideas,
+        refreshExisting: true,
         feedback,
         ...(report ? { reportId: report.id } : {}),
         region,
@@ -330,7 +331,7 @@ export default function Opportunities() {
           : 'Fresh research did not complete and retained samples contained no distinct, sufficiently supported angle. No fabricated idea was created.');
         return;
       }
-      await useScout.getState().commit((data) => ({ ...data, ideas: [...generated, ...data.ideas] }));
+      await useScout.getState().commit((data) => ({ ...data, ideas: generated.length ? [...generated.filter((idea) => !data.ideas.some((old) => old.id === idea.id)), ...data.ideas.filter((old) => !generated.some((idea) => idea.id === old.id))] : data.ideas }));
       recordRuntimeFinish('Engine', 'success');
       engineRecorded = true;
       setGenerationMessage(fallbackData.preferences.uiLanguage === 'fa'

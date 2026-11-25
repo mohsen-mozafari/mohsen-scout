@@ -64,6 +64,12 @@ type State = {
 };
 const RETENTION_SWEEP_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
+function mergeGeneratedIdeas(existing: readonly Idea[], incoming: readonly Idea[]): Idea[] {
+  if (!incoming.length) return [...existing];
+  const replacements = new Map(incoming.map((idea) => [idea.id, idea]));
+  return [...incoming, ...existing.filter((idea) => !replacements.has(idea.id))];
+}
+
 function buildLocalResearchFeedback(data: LocalData): ResearchFeedbackProfile {
   const activity = buildResearchActivityFeedbackProfile(data.researchActivity);
   const savedIdeas = buildResearchInterestProfile(data.ideas);
@@ -875,6 +881,7 @@ export const useScout = create<State>((set, get) => ({
         language: currentData.preferences.uiLanguage ?? 'fa',
         ...(ideaOptions?.category ? { category: ideaOptions.category } : {}),
         limit: ideaOptions?.limit ?? 10,
+        refreshExisting: true,
       });
 
       await finishActivity(engineActivityId, {
@@ -914,7 +921,7 @@ export const useScout = create<State>((set, get) => ({
         ...data,
         feedRegistry,
         reports: [report, ...data.reports.filter((item) => item.id !== report.id)],
-        ideas: [...generatedIdeas, ...data.ideas],
+        ideas: mergeGeneratedIdeas(data.ideas, generatedIdeas),
         videos: [...new Map([...data.videos, ...researchVideos].map((video) => [video.id, video])).values()],
         researchMemory: memoryEntry
           ? [
@@ -1057,11 +1064,12 @@ export const useScout = create<State>((set, get) => ({
       languages: report.input.languages,
       language: currentData.preferences.uiLanguage ?? 'fa',
       limit: 10,
+      refreshExisting: true,
     });
     await get().commit((data) => ({
       ...data,
       reports: data.reports.map((r) => (r.id === id ? { ...r, analyzed: true } : r)),
-      ideas: [...generatedIdeas, ...data.ideas],
+      ideas: mergeGeneratedIdeas(data.ideas, generatedIdeas),
     }));
     recordRuntimeFinish('Engine', generatedIdeas.length ? 'success' : 'partial');
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -1150,9 +1158,10 @@ export const useScout = create<State>((set, get) => ({
           language: data.preferences.uiLanguage ?? 'fa',
           limit: 10,
           now,
+          refreshExisting: true,
         });
         replenished = nextIdeas.length;
-        return { ...data, ideas: [...nextIdeas, ...ideas] };
+        return { ...data, ideas: mergeGeneratedIdeas(ideas, nextIdeas) };
       });
       if (closingTransition) recordRuntimeFinish('Engine', replenished ? 'success' : 'partial');
     } catch (error) {
