@@ -23,7 +23,7 @@ on:
       - 'CHANGELOG_1.22.0.md'
 
 # Isolated deep-research candidate build. Default to read-only; only publishing receives write access.
-# UI-only Home/Discovery relocation validation build.
+# Unified autonomous Deep Research and editorial opportunity build.
 permissions:
   contents: read
 
@@ -175,7 +175,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          CURRENT_SHA="$(gh api "repos/${GITHUB_REPOSITORY}/branches/release/v1.22.0-youtube-first" --jq '.commit.sha')"
+          CURRENT_SHA="$(gh api "repos/${GITHUB_REPOSITORY}/branches/feature/v1.22.0-autonomous-researcher" --jq '.commit.sha')"
           if [[ "$CURRENT_SHA" != "$GITHUB_SHA" ]]; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
             echo "::notice::Skipping stale release commit $GITHUB_SHA; branch head is $CURRENT_SHA."
