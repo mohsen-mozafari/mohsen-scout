@@ -768,7 +768,8 @@ export const useScout = create<State>((set, get) => ({
         news: engineNews,
         wiki,
         // Map the stored video record into the engine's transient raw-only input shape.
-        // Do not add this payload to the analysis result, persistence or external prompts.
+        // Keep platform observations distinct from publisher evidence; the same bounded sample
+        // is separately passed to the Deep Research model and independent reviewer below.
         videos: researchVideos.map((video) => ({
           id: video.id,
           title: video.title,

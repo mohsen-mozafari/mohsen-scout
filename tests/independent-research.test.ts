@@ -15,7 +15,7 @@ function isJsonObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-void test('idea generation ignores legacy YouTube samples and scores independent publisher evidence only', () => {
+void test('idea generation links relevant YouTube platform signals while keeping publisher citations separate', () => {
   const ideas = generateEditorialIdeas({
     topic: 'Mars Sample Return',
     region: 'United States',
@@ -42,15 +42,15 @@ void test('idea generation ignores legacy YouTube samples and scores independent
     videos: [{
       id: 'dQw4w9WgXcQ',
       title: 'MOCK YouTube: Mars Sample Return breakthrough and views',
-      description: 'This mock video metadata must not enter idea scoring.',
+      description: 'This mock video is a platform signal; raw counts must not become publisher evidence.',
       channel: 'MOCK channel',
       viewCount: 9999999,
       likeCount: 123456,
     }],
   });
   assert.ok(ideas.length > 0);
-  assert.ok(ideas.every((idea) => idea.videoIds.length === 0));
-  assert.ok(ideas.every((idea) => idea.engineScoreBasis === 'publisher-web-only-v2'));
+  assert.ok(ideas.every((idea) => idea.videoIds.includes('dQw4w9WgXcQ')));
+  assert.ok(ideas.every((idea) => idea.engineScoreBasis === 'platform-aware-v3'));
   assert.ok(ideas.every((idea) => (idea.evidenceSources ?? []).every((source) => source.sourceType === 'publisher')));
   assert.ok(ideas.every((idea) => !/MOCK YouTube|9999999|123456/.test(idea.concept + idea.note)));
 });

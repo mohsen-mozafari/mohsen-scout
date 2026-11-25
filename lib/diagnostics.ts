@@ -1,4 +1,4 @@
-import { defaults, purgeExpired, RETENTION_MS, type ResearchInput, type Video } from './types';
+import { defaults, purgeExpired, type ResearchInput, type Video } from './types';
 import { exportBackup, importBackup, personalLinks, restorePersonalData } from './backup';
 import { moveNoteBlock } from './utils';
 import { validateLocal } from './validation';
@@ -130,15 +130,15 @@ export async function runDiagnostics(): Promise<TestResult[]> {
   };
   const cases: Array<[string, () => void | Promise<void>]> = [
     [
-      'Retention removes expired report refs, keeps saved links',
+      'YouTube metadata remains retained beyond 29 days; saved links remain separate',
       () => {
         const data = defaults();
         data.links = [savedLink];
-        data.videos = [{ ...video, fetchedAt: now - RETENTION_MS }];
-        data.reports = [{ ...report, createdAt: now - RETENTION_MS }];
+        data.videos = [{ ...video, fetchedAt: now - 120 * 86400000 }];
+        data.reports = [{ ...report, createdAt: now - 120 * 86400000 }];
         data.ideas = [{ ...idea, reportId: report.id, videoIds: [video.id, 'unsaved'] }];
         const clean = purgeExpired(data, now);
-        check(clean.ideas[0].reportId === undefined);
+        check(clean.ideas[0].reportId === report.id);
         check(clean.ideas[0].videoIds.join() === video.id);
         check(clean.ideas[0].concept === idea.concept);
       },
@@ -153,11 +153,11 @@ export async function runDiagnostics(): Promise<TestResult[]> {
       },
     ],
     [
-      'Nested report videos obey their own expiry',
+      'Nested report videos remain retained indefinitely',
       () => {
         const data = defaults();
-        data.reports = [{ ...report, videos: [{ ...video, fetchedAt: now - RETENTION_MS }] }];
-        check(purgeExpired(data, now).reports[0].videos.length === 0);
+        data.reports = [{ ...report, videos: [{ ...video, fetchedAt: now - 120 * 86400000 }] }];
+        check(purgeExpired(data, now).reports[0].videos.length === 1);
       },
     ],
     [
@@ -282,7 +282,7 @@ export async function runDiagnostics(): Promise<TestResult[]> {
       },
     ],
     [
-      'Expire API metadata at 29 days',
+      'Retain API metadata beyond 29 days',
       () => {
         const data = defaults();
         data.videos = [video, { ...video, fetchedAt: now - RETENTION_MS }];

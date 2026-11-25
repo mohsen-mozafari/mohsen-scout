@@ -955,9 +955,9 @@ export const structuredSecondOpinionSchema = z.object({
 export type StructuredSecondOpinion = z.infer<typeof structuredSecondOpinionSchema>;
 
 /**
- * OpenRouter receives only the user's topic and candidate editorial concept.
- * It does not receive raw sources, YouTube API data, aggregate engine scores,
- * source counts, or the local engine's ranking decision.
+ * The explicitly invoked second-opinion model receives the topic, candidate concept,
+ * bounded independent evidence and bounded YouTube platform signals. It never receives
+ * credentials, private notes, aggregate engine scores or the local ranking decision.
  */
 export function structuredSecondOpinionPrompt(
   topic: string,
@@ -978,7 +978,7 @@ export function structuredSecondOpinionPrompt(
     } catch { return []; }
   });
   const instruction = language === 'fa'
-    ? 'موضوع و ایده را با اتکا به منابع مستقل و سیگنال‌های پلتفرمی YouTube که همراه درخواست آمده‌اند، نقادانه بررسی کن. منابع ممکن است ناقص یا قدیمی باشند؛ ادعای باز کردن یا راستی‌آزمایی صفحه‌ای را نکن. نمونه ویدئوها، عنوان، کانال، آمار عمومی و رشد اندازه‌گیری‌شده YouTube را برای کشف روند و زاویه محتوا تحلیل کن، اما آن‌ها را استناد ناشر مستقل یا اثبات ادعای علمی/خبری تلقی نکن. رشد اندازه‌گیری‌شده را از پیش‌بینی جدا کن و هیچ تضمین بازدید نساز. منابع مستقل و قضاوت شخصی را از هم جدا کن و در صورت ناکافی بودن شواهد صریحاً بگو. فقط JSON معتبر و بدون Markdown با کلیدهای decision (develop, gather_more_evidence یا reframe)، strengths (حداکثر ۳)، risks (حداکثر ۳)، missingData (حداکثر ۳)، validationSteps (حداکثر ۳) و nextAction برگردان.'
+    ? 'موضوع و ایده را با اتکا به منابع مستقل و سیگنال‌های پلتفرمی YouTube که همراه درخواست آمده‌اند، نقادانه بررسی کن. منابع ممکن است ناقص یا قدیمی باشند؛ ادعای باز کردن یا راستی‌آزمایی صفحه‌ای را نکن. نمونه ویدئوها، عنوان، کانال، آمار عمومی و رشد اندازه‌گیری‌شده YouTube را برای کشف روند و زاویه محتوا تحلیل کن، اما آن‌ها را استناد ناشر مستقل یا اثبات ادعای علمی/خبری تلقی نکن. رشد اندازه‌گیری‌شده را از پیش‌بینی جدا کن و هیچ تضمین بازدید نساز. منابع مستقل و قضاوت شخصی را از هم جدا کن و در صورت ناکافی بودن شواهد صریحاً بگو. با زبان طبیعی و روان و بدون اصطلاح تخصصی نامفهوم بنویس. فقط JSON معتبر و بدون Markdown با کلیدهای decision (develop, gather_more_evidence یا reframe)، strengths (حداکثر ۳)، risks (حداکثر ۳)، missingData (حداکثر ۳)، validationSteps (حداکثر ۳) و nextAction برگردان.'
     : 'Critically assess this idea using the independent sources and YouTube platform observations supplied here. Sources may be incomplete or stale; do not claim to have opened or verified them. Analyze YouTube sample videos, titles, channels, public statistics and measured growth for platform trends and content angles, but never present them as independent publisher citations or proof of scientific/news claims. Distinguish measured growth from forecasts and do not promise views or virality. Write natural, concise language without unexplained jargon. Return only valid JSON: decision (develop, gather_more_evidence, reframe), strengths (max 3), risks (max 3), missingData (max 3), validationSteps (max 3), nextAction.';
   const youtubePlatformSignals = youtubeSignals.slice(0, 18).map((video) => ({
     videoId: video.id, title: video.title.slice(0, 180), description: video.description.slice(0, 360),

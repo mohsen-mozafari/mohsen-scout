@@ -70,7 +70,7 @@ void test('research prompt receives primary YouTube platform signals, growth and
   assert.ok(prompt.includes('7.2'));
   assert.ok(prompt.includes('space science and exploration'));
   assert.ok(prompt.includes('Local engine found a new platform trend.'));
-  assert.ok(prompt.includes('not independent publisher citations'));
+  assert.ok(prompt.includes('platform observations, not independent publisher citations'));
 });
 void test('research response parser accepts fenced JSON but rejects non-object payloads', () => {
   assert.deepEqual(parseResearchAgentJson('\x60\x60\x60json\n{"hypotheses":[]}\n\x60\x60\x60'), { hypotheses: [] });
