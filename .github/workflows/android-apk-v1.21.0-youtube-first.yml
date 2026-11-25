@@ -23,6 +23,7 @@ on:
       - 'CHANGELOG_1.21.0.md'
 
 # Isolated deep-research candidate build. Default to read-only; only publishing receives write access.
+# UI-only Home/Discovery relocation validation build.
 permissions:
   contents: read
 
