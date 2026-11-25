@@ -31,3 +31,5 @@ A passing CI run and on-device visual/accessibility testing are separate validat
 Build gate: the v1.24.0 full-audit workflow validates the source, signed ARM64 APK identity, certificate and release checksum.
 
 Static analysis follow-up: release candidate syntax, URL validation, and page composition fixes are included in the current source commit.
+
+Final link audit: the video thumbnail action on the idea detail screen also uses the shared validated external-link handler.
