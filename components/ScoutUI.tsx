@@ -53,13 +53,13 @@ export const styles = StyleSheet.create({
     paddingHorizontal: 18,
     paddingTop: 8,
     paddingBottom: 30,
-    gap: 13,
+    gap: 15,
     width: '100%',
     maxWidth: 720,
     alignSelf: 'center',
   },
   brandBar: {
-    minHeight: 52,
+    minHeight: 56,
     paddingHorizontal: 18,
     paddingBottom: 8,
     position: 'relative',
@@ -90,11 +90,12 @@ export const styles = StyleSheet.create({
   brandSubtitle: {
     color: p.muted,
     fontFamily: 'Inter_500Medium',
-    fontSize: 9,
-    letterSpacing: 1.1,
+    fontSize: 10,
+    letterSpacing: 0.9,
     marginTop: 2,
   },
-  intro: { gap: 7, paddingTop: 6, paddingBottom: 4 },
+  intro: { gap: 8, paddingTop: 8, paddingBottom: 5 },
+  introSubtitle: { color: p.muted, fontFamily: 'Inter_400Regular', fontSize: 13, lineHeight: 20, flexShrink: 1, minWidth: 0 },
   eyebrow: {
     color: p.muted,
     fontFamily: 'Inter_700Bold',
@@ -105,15 +106,15 @@ export const styles = StyleSheet.create({
   title: {
     color: p.text,
     fontFamily: 'Inter_700Bold',
-    fontSize: 27,
-    lineHeight: 33,
+    fontSize: 28,
+    lineHeight: 36,
     letterSpacing: -0.55,
   },
   heading: {
     color: p.text,
     fontFamily: 'Inter_700Bold',
-    fontSize: 14,
-    lineHeight: 20,
+    fontSize: 15,
+    lineHeight: 22,
     letterSpacing: -0.2,
     flexShrink: 1,
     minWidth: 0,
@@ -121,37 +122,37 @@ export const styles = StyleSheet.create({
   text: {
     color: p.text,
     fontFamily: 'Inter_400Regular',
-    fontSize: 13,
-    lineHeight: 19,
+    fontSize: 14,
+    lineHeight: 21,
     flexShrink: 1,
     minWidth: 0,
   },
   muted: {
     color: p.muted,
     fontFamily: 'Inter_400Regular',
-    fontSize: 12,
-    lineHeight: 18,
+    fontSize: 13,
+    lineHeight: 20,
     flexShrink: 1,
     minWidth: 0,
   },
   badge: {
     color: p.accent,
     fontFamily: 'Inter_700Bold',
-    fontSize: 10,
-    lineHeight: 15,
-    letterSpacing: 0.7,
+    fontSize: 11,
+    lineHeight: 16,
+    letterSpacing: 0.55,
   },
   panel: {
-    padding: 16,
-    borderRadius: 18,
+    padding: 17,
+    borderRadius: 19,
     backgroundColor: p.surface,
     borderColor: p.border,
     borderWidth: 1,
     gap: 12,
   },
   heroPanel: {
-    padding: 18,
-    borderRadius: 20,
+    padding: 20,
+    borderRadius: 22,
     borderWidth: 1,
     borderColor: p.accentLine,
     gap: 13,
@@ -160,16 +161,16 @@ export const styles = StyleSheet.create({
   },
   // eslint-disable-next-line react-native/no-unused-styles -- Shared list surface consumed by collection screens.
   listCard: {
-    padding: 14,
-    borderRadius: 14,
+    padding: 15,
+    borderRadius: 16,
     backgroundColor: p.surface,
     borderColor: p.border,
     borderWidth: 1,
     gap: 10,
   },
   softCard: {
-    padding: 13,
-    borderRadius: 13,
+    padding: 14,
+    borderRadius: 15,
     backgroundColor: p.surfaceAlt,
     borderColor: p.borderSoft,
     borderWidth: 1,
@@ -188,8 +189,8 @@ export const styles = StyleSheet.create({
     letterSpacing: 0.9,
   },
   action: {
-    minHeight: 46,
-    paddingHorizontal: 14,
+    minHeight: 48,
+    paddingHorizontal: 15,
     paddingVertical: 10,
     borderRadius: 12,
     flexDirection: 'row',
@@ -214,10 +215,10 @@ export const styles = StyleSheet.create({
   },
   actionPressed: { opacity: 0.82 },
   actionDisabled: { opacity: 0.42 },
-  actionLabel: { fontFamily: 'Inter_600SemiBold', fontSize: 13, lineHeight: 18, flexShrink: 1, minWidth: 0 },
+  actionLabel: { fontFamily: 'Inter_600SemiBold', fontSize: 14, lineHeight: 20, flexShrink: 1, minWidth: 0 },
   choice: {
-    minHeight: 36,
-    paddingHorizontal: 12,
+    minHeight: 40,
+    paddingHorizontal: 13,
     paddingVertical: 8,
     borderRadius: 10,
     borderWidth: 1,
@@ -229,7 +230,7 @@ export const styles = StyleSheet.create({
   },
   choiceSelected: { backgroundColor: p.accentSoft, borderColor: p.accent },
   choicePressed: { opacity: 0.75 },
-  choiceLabel: { fontFamily: 'Inter_600SemiBold', fontSize: 11, lineHeight: 16 },
+  choiceLabel: { fontFamily: 'Inter_600SemiBold', fontSize: 12, lineHeight: 18 },
   errorAction: {
     minHeight: 34,
     justifyContent: 'center',
@@ -239,7 +240,7 @@ export const styles = StyleSheet.create({
     backgroundColor: p.dangerLine,
   },
   errorActionText: { color: p.danger, fontFamily: 'Inter_700Bold', fontSize: 11 },
-  foldTrigger: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  foldTrigger: { minHeight: 52, flexDirection: 'row', alignItems: 'center', gap: 10 },
   foldIcon: {
     width: 30,
     height: 30,
@@ -248,7 +249,7 @@ export const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: 'transparent',
   },
-  foldLabel: { color: p.text, fontFamily: 'Inter_600SemiBold', fontSize: 14, lineHeight: 20 },
+  foldLabel: { color: p.text, fontFamily: 'Inter_600SemiBold', fontSize: 14, lineHeight: 21 },
   fold: {
     borderRadius: 0,
     backgroundColor: 'transparent',
@@ -260,8 +261,8 @@ export const styles = StyleSheet.create({
   },
   foldContent: { paddingHorizontal: 0, paddingBottom: 10, gap: 12 },
   fieldBox: {
-    minHeight: 48,
-    borderRadius: 12,
+    minHeight: 52,
+    borderRadius: 14,
     backgroundColor: p.input,
     borderColor: p.border,
     borderWidth: 1,
@@ -273,8 +274,8 @@ export const styles = StyleSheet.create({
     paddingVertical: 10,
     color: p.text,
     fontFamily: 'Inter_400Regular',
-    fontSize: 14,
-    lineHeight: 20,
+    fontSize: 15,
+    lineHeight: 22,
     textAlignVertical: 'center',
   },
   multilineText: { minHeight: 112, textAlignVertical: 'top', paddingTop: 12 },
@@ -282,23 +283,23 @@ export const styles = StyleSheet.create({
   metricLabel: {
     color: p.muted,
     fontFamily: 'Inter_700Bold',
-    fontSize: 9,
-    lineHeight: 14,
-    letterSpacing: 0.65,
+    fontSize: 10,
+    lineHeight: 15,
+    letterSpacing: 0.55,
   },
   metricCard: {
     flex: 1,
-    minWidth: 88,
-    padding: 11,
-    borderRadius: 12,
+    minWidth: 96,
+    padding: 12,
+    borderRadius: 14,
     borderWidth: 1,
     gap: 5,
   },
   shortcutCard: {
     width: '100%',
-    minHeight: 68,
-    padding: 12,
-    borderRadius: 12,
+    minHeight: 74,
+    padding: 13,
+    borderRadius: 14,
     borderWidth: 1,
     flexDirection: 'row',
     alignItems: 'center',
@@ -412,6 +413,7 @@ export function AppHeader({ showBack = false }: { showBack?: boolean }) {
 function PageHeading({
   title,
   eyebrow,
+  subtitle,
 }: {
   title: string;
   eyebrow?: string;
@@ -420,7 +422,9 @@ function PageHeading({
   const language = useScout((s) => s.data.preferences.uiLanguage ?? 'fa');
   const translatedTitle = translateText(title, language);
   const translatedEyebrow = eyebrow ? translateText(eyebrow, language) : 'WORKSPACE';
+  const translatedSubtitle = subtitle ? translateText(subtitle, language) : '';
   const direction = resolveParagraphDirection(translatedTitle, language);
+  const subtitleDirection = resolveParagraphDirection(translatedSubtitle, language);
   return (
     <View style={styles.intro}>
       <Text style={[styles.eyebrow, { writingDirection: resolveParagraphDirection(translatedEyebrow, language) }]}>
@@ -429,6 +433,11 @@ function PageHeading({
       <Text style={[styles.title, { writingDirection: direction, textAlign: direction === 'rtl' ? 'right' : 'left' }]}>
         {translatedTitle}
       </Text>
+      {translatedSubtitle ? (
+        <Text style={[styles.introSubtitle, { writingDirection: subtitleDirection, textAlign: subtitleDirection === 'rtl' ? 'right' : 'left' }]}>
+          {isolateMixedDirectionText(translatedSubtitle, subtitleDirection)}
+        </Text>
+      ) : null}
     </View>
   );
 }
@@ -436,6 +445,7 @@ function PageHeading({
 export function ScreenIntro({
   eyebrow,
   title,
+  subtitle,
   icon: Icon,
 }: {
   eyebrow: string;
@@ -446,7 +456,9 @@ export function ScreenIntro({
   const language = useScout((s) => s.data.preferences.uiLanguage ?? 'fa');
   const translatedTitle = translateText(title, language);
   const translatedEyebrow = translateText(eyebrow, language);
+  const translatedSubtitle = subtitle ? translateText(subtitle, language) : '';
   const direction = resolveParagraphDirection(translatedTitle, language);
+  const subtitleDirection = resolveParagraphDirection(translatedSubtitle, language);
   return (
     <View style={styles.intro}>
       {Icon ? (
@@ -456,6 +468,11 @@ export function ScreenIntro({
       ) : null}
       <Text style={[styles.eyebrow, { writingDirection: resolveParagraphDirection(translatedEyebrow, language) }]}>{translatedEyebrow}</Text>
       <Text style={[styles.title, { writingDirection: direction, textAlign: direction === 'rtl' ? 'right' : 'left' }]}>{translatedTitle}</Text>
+      {translatedSubtitle ? (
+        <Text style={[styles.introSubtitle, { writingDirection: subtitleDirection, textAlign: subtitleDirection === 'rtl' ? 'right' : 'left' }]}>
+          {isolateMixedDirectionText(translatedSubtitle, subtitleDirection)}
+        </Text>
+      ) : null}
     </View>
   );
 }
@@ -869,12 +886,14 @@ export function Fold({
   title,
   summary,
   children,
+  defaultExpanded = false,
 }: {
   title: string;
   summary?: string;
   children: ReactNode;
+  defaultExpanded?: boolean;
 }) {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(defaultExpanded);
   const language = useScout((s) => s.data.preferences.uiLanguage ?? 'fa');
   const translatedTitle = translateText(title, language);
   const translatedSummary = summary ? translateText(summary, language) : '';

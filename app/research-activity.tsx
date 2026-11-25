@@ -29,7 +29,6 @@ const ENGINES = [
 ] as const;
 const STATUSES = ['running', 'success', 'partial', 'empty', 'error', 'skipped'] as const;
 const TIME_RANGES = ['24 hours', '7 days', '30 days', 'All time'] as const;
-const ACTIVITY_VIEW_STARTED_AT = Date.now();
 const FEEDBACK: { value: ResearchActivityFeedback; label: string }[] = [
   { value: 'useful', label: 'Useful' },
   { value: 'irrelevant', label: 'Irrelevant' },
@@ -242,13 +241,14 @@ export default function ResearchActivityScreen() {
   const [timeRange, setTimeRange] = useState<(typeof TIME_RANGES)[number]>('7 days');
   const [search, setSearch] = useState('');
   const [expandedId, setExpandedId] = useState<string>();
+  const [viewStartedAt] = useState(() => Date.now());
   const refreshTime = timeRange === '24 hours' ? 86400000
     : timeRange === '7 days' ? 7 * 86400000
       : timeRange === '30 days' ? 30 * 86400000 : Number.POSITIVE_INFINITY;
   const niches = useMemo(() => ['All niches', ...new Set(events.map((event) => event.niche).filter(Boolean).sort())], [events]);
   const filtered = useMemo(() => {
     const query = search.trim().toLocaleLowerCase();
-    const since = ACTIVITY_VIEW_STARTED_AT - refreshTime;
+    const since = viewStartedAt - refreshTime;
     return events.filter((event) =>
       (engine === 'All engines' || event.engine === engine) &&
       (status === 'All statuses' || event.status === status) &&
@@ -257,7 +257,7 @@ export default function ResearchActivityScreen() {
       (!query || [event.query, event.topic, event.niche, event.engine, ...event.results.map((item) => item.title + ' ' + item.sourceName)]
         .join(' ').toLocaleLowerCase().includes(query)),
     ).sort((a, b) => b.startedAt - a.startedAt);
-  }, [events, engine, status, niche, refreshTime, search]);
+  }, [events, engine, status, niche, refreshTime, search, viewStartedAt]);
   const header = (
     <View style={{ gap: 14, paddingBottom: 14 }}>
       <ScreenIntro
@@ -314,7 +314,7 @@ export default function ResearchActivityScreen() {
     </View>
   );
   return (
-    <Page scroll={false} title={fa ? 'فعالیت تحقیق' : 'Research activity'} showBack>
+    <Page scroll={false} showBack>
       <FlatList
         data={filtered}
         keyExtractor={(item) => item.id}

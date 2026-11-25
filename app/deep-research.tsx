@@ -550,7 +550,7 @@ export default function DeepResearch() {
       id: uid(),
       title: ((fa ? 'پژوهش فضایی: ' : 'Space research: ') + brief.topic).slice(0, 120),
       folder: fa ? 'پژوهش فضایی' : 'Space Research',
-      tags: fa ? ['فضا', 'پژوهش'] : ['space', 'research'],
+      tags: fa ? ['فضا', 'پژوهش', 'deep-research'] : ['space', 'research', 'deep-research'],
       blocks,
       updatedAt: Date.now(),
       ...(linkedIdea ? { ideaId: linkedIdea.id } : {}),
@@ -589,7 +589,7 @@ export default function DeepResearch() {
               </View>
             )) : <Txt muted>No sufficiently distinct angle could be generated from the returned evidence. Add more source material or choose a narrower question.</Txt>}
           </Panel>
-</Fold>          <Fold title="4 · Engine findings, evidence & confidence" summary={brief.internalAnalysis.evidence.length + ' evidence signals · ' + brief.internalAnalysis.angles.length + ' content angles'}>          <Panel>
+</Fold>          <Fold title="4 · Engine findings, evidence & confidence" summary={brief.internalAnalysis.evidence.length + ' evidence signals · ' + brief.internalAnalysis.angles.length + ' content angles'} defaultExpanded>          <Panel>
             <Heading>Internal Research Engine</Heading>
             <ResearchOverviewChart
               topic={brief.topic}
@@ -677,6 +677,7 @@ export default function DeepResearch() {
             <Fold
               title={preferences.uiLanguage === 'fa' ? 'پرونده تحقیق عمیق و اکتشاف چندمرحله‌ای' : 'Deep research dossier · iterative discovery'}
               summary={brief.researchDossier.hypotheses.length + ' hypotheses · ' + brief.researchDossier.completedQueries.length + ' follow-up searches'}
+              defaultExpanded
             >
               <Panel>
                 <Heading>{preferences.uiLanguage === 'fa' ? 'جمع‌بندی انتقادی' : 'Critical synthesis'}</Heading>

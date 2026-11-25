@@ -20,13 +20,13 @@ export default function TabLayout() {
           tabBarStyle: {
             direction: language === 'fa' ? 'rtl' : 'ltr',
             backgroundColor: p.nav, borderTopColor: p.border, borderTopWidth: 1,
-            height: 64 + insets.bottom, paddingTop: 5, paddingBottom: 3 + insets.bottom,
+            height: 70 + insets.bottom, paddingTop: 6, paddingBottom: 4 + insets.bottom,
             elevation: 0, shadowOpacity: 0,
           },
           tabBarActiveTintColor: p.accentStrong,
           tabBarInactiveTintColor: p.muted,
-          tabBarLabelStyle: { fontFamily: 'Inter_600SemiBold', fontSize: 9, marginTop: 1 },
-          tabBarItemStyle: { paddingHorizontal: 0 },
+          tabBarLabelStyle: { fontFamily: 'Inter_600SemiBold', fontSize: 10, lineHeight: 14, marginTop: 2 },
+          tabBarItemStyle: { paddingHorizontal: 1, paddingTop: 2 },
           tabBarIconStyle: { marginTop: 0 },
           tabBarHideOnKeyboard: true,
         }}

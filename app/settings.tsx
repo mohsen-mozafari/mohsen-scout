@@ -749,9 +749,9 @@ export default function Settings() {
           OpenRouter privacy
         </Action>
       </Fold>
-      <Fold title="App info & mock diagnostics" summary="Version 1.10.0 · local-first · isolated test runner">
+      <Fold title="App info & mock diagnostics" summary="Version 1.23.0 · local-first · isolated test runner">
         <Heading>MOHSEN SCOUT</Heading>
-        <Txt>Version 1.10.0</Txt>
+        <Txt>Version 1.23.0</Txt>
         <Txt muted>Run synthetic regression checks with mocked responses. They do not call YouTube or OpenRouter, use saved API keys, or change your research workspace.</Txt>
         <Action secondary icon={Bug} onPress={() => router.push({
           pathname: '/diagnostics',

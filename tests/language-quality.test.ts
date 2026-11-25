@@ -35,6 +35,10 @@ void test('app-owned labels and enum values have natural Persian equivalents', (
   assert.equal(translateText('high', 'fa'), 'زیاد');
   assert.equal(translateText('Source findings', 'fa'), 'یافته‌های منابع');
   assert.equal(translateText('Verification checklist', 'fa'), 'فهرست راستی‌آزمایی');
+  assert.equal(translateText('Open latest YouTube report', 'fa'), 'بازکردن آخرین گزارش یوتیوب');
+  assert.equal(translateText('RESEARCH ARCHIVE', 'fa'), 'بایگانی پژوهش');
+  assert.equal(translateText('Choose a question, build one evidence-backed brief, then review the sections you need.', 'fa'), 'یک پرسش انتخاب کن، گزارش مبتنی بر شواهد بساز و سپس بخش‌های موردنیازت را بررسی کن.');
+  assert.equal(translateText('Open page', 'fa'), 'بازکردن صفحه');
 });
 
 void test('Persian research outline reads naturally and preserves original publisher headlines verbatim', () => {

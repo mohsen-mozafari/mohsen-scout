@@ -16,13 +16,7 @@ export default function Discover() {
   const latestReport = reports[0];
 
   return (
-    <Page
-      title={fa ? 'اکتشاف و تحقیق' : 'Discover & Research'}
-      eyebrow={fa ? 'مرکز پژوهش هوشمند' : 'AUTONOMOUS RESEARCH DESK'}
-      subtitle={fa
-        ? 'یک مسیر روشن از کشف موضوع تا تحقیق چندمرحله‌ای، راستی‌آزمایی و ایدهٔ قابل پیگیری.'
-        : 'One clear path from topic discovery to iterative research, evidence review and traceable video ideas.'}
-    >
+    <Page>
       <ScreenIntro
         eyebrow={fa ? 'میز پژوهش یکپارچه' : 'UNIFIED RESEARCH WORKSPACE'}
         title={fa ? 'موضوع را پیدا کن؛ شواهد را بررسی کن؛ ایده را بساز' : 'Discover a topic, verify the evidence, develop the idea'}
@@ -55,15 +49,18 @@ export default function Discover() {
           </Action>
           {latestReport ? (
             <View style={{ gap: 5, borderTopWidth: 1, borderTopColor: p.border, paddingTop: 10 }}>
-              <Text style={styles.badge}>{fa ? 'آخرین پروندهٔ ذخیره‌شده' : 'LATEST SAVED RESEARCH'}</Text>
+              <Text style={styles.badge}>{fa ? 'آخرین گزارش ذخیره‌شده یوتیوب' : 'LATEST SAVED YOUTUBE REPORT'}</Text>
               <Heading>{latestReport.input.topic}</Heading>
               <Txt muted>
                 {latestReport.videos.length + (fa ? ' ویدئو · ' : ' videos · ') +
                   latestReport.queries.length + (fa ? ' جست‌وجو · ' : ' searches · ') +
                   new Date(latestReport.createdAt).toLocaleString(fa ? 'fa-IR' : 'en-US')}
               </Txt>
+              <Action secondary onPress={() => router.push({ pathname: '/youtube', params: { topic: latestReport.input.topic, report: latestReport.id } })}>
+                {fa ? 'بازکردن همان گزارش یوتیوب' : 'Open latest YouTube report'}
+              </Action>
               <Action secondary onPress={() => router.push({ pathname: '/deep-research', params: { topic: latestReport.input.topic } })}>
-                {fa ? 'ادامهٔ تحقیق آخر' : 'Continue latest research'}
+                {fa ? 'اجرای تحقیق عمیق دوباره برای همین موضوع' : 'Run Deep Research for this topic'}
               </Action>
             </View>
           ) : (
@@ -82,6 +79,9 @@ export default function Discover() {
               <Txt muted>{fa ? 'فرضیه‌ها، نقل‌قول‌ها، شواهد موافق و مخالف و خلأهای باقی‌مانده در نتیجهٔ تحقیق بالا نمایش داده می‌شوند.' : 'Hypotheses, quotations, supporting and challenging evidence, and unresolved gaps appear in the research brief above.'}</Txt>
             </View>
           </View>
+          <Action secondary icon={BookOpen} onPress={() => router.push({ pathname: '/deep-research', params: { topic: topic.trim() || latestReport?.input.topic || '' } })}>
+            {fa ? 'بازکردن پرونده تحقیق عمیق' : 'Open Deep Research dossier'}
+          </Action>
           <View style={{ height: 1, backgroundColor: p.border, marginVertical: 4 }} />
           <View style={{ flexDirection: fa ? 'row-reverse' : 'row', alignItems: 'center', gap: 9 }}>
             <Globe color={p.accentStrong} size={20} />
