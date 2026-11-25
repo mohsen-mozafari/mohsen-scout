@@ -375,6 +375,10 @@ export default function CosmicNews() {
                 </View>
               ) : null}
               </Fold>
+            </Panel>
+            <Panel>
+              <Heading>{fa ? 'خوراک خبرهای ناشران' : 'Publisher feed'}</Heading>
+              <Txt muted>{fa ? 'خبرها، فیلتر حوزه و وضعیت تازه‌سازی در این بخش جدا از سیگنال‌های توجه عمومی قرار دارند.' : 'Browse publisher stories, filter by niche and refresh feeds separately from public-attention signals.'}</Txt>
               <View style={styles.rowBetween}>
                 <Txt muted>{lastUpdatedAt > 0
                   ? 'Last successful publisher response: ' + new Date(lastUpdatedAt).toLocaleString()

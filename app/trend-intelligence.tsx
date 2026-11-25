@@ -1,7 +1,7 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { View, Text } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
-import { Page, Panel, Heading, Txt, Field, Action, Choices, styles, ErrorBox, useOperation } from '@/components/ScoutUI';
+import { Panel, Heading, Txt, Field, Action, Choices, styles, ErrorBox, useOperation } from '@/components/ScoutUI';
 import { useScout } from '@/lib/store';
 import { SETTINGS_ROUTE } from '@/lib/routes';
 import { searchYouTubeSample, type YouTubeSampleVideo } from '@/lib/api';
@@ -14,7 +14,7 @@ import type { Video } from '@/lib/types';
 
 const formatCount = (value: number | null, label: string) => value === null ? label + ' unavailable' : value.toLocaleString() + ' ' + label;
 
-export default function TrendIntelligence() {
+export function AdvancedDiscoveryPanel() {
   const params = useLocalSearchParams<{ topic?: string; idea?: string }>();
   const preferences = useScout((state) => state.data.preferences);
   const linkedIdea = useScout((state) => state.data.ideas.find((idea) => idea.id === params.idea));
@@ -122,7 +122,7 @@ export default function TrendIntelligence() {
   const channels = new Set(videos.map((video) => video.channelId)).size;
 
   return (
-    <Page title="Advanced YouTube Discovery Mix" eyebrow="MULTI-LANE API SAMPLE" showBack subtitle="Explore a paginated sample built from several official YouTube search lanes. This is not continuous trend monitoring or a measured growth forecast.">
+    <>
       <Txt muted>Use this advanced mode when one standard YouTube query is not enough. It combines distinct official result lanes, deduplicates them and paginates the bounded sample; it does not claim to measure the whole platform.</Txt>
       {linkedIdea ? <Txt muted>Research context: {linkedIdea.topic}. Only video links you explicitly save below become durable personal references.</Txt> : null}
       <Panel>
@@ -189,6 +189,21 @@ export default function TrendIntelligence() {
       {Boolean(op.error) && <ErrorBox message={op.error} onRetry={run} />}
       {Boolean(op.message) && <Txt muted>{op.message}</Txt>}
       <Action secondary onPress={() => router.push(SETTINGS_ROUTE)}>Manage YouTube API key and research defaults</Action>
-    </Page>
+    </>
   );
+}
+
+export default function TrendIntelligence() {
+  const params = useLocalSearchParams<{ topic?: string; idea?: string }>();
+  useEffect(() => {
+    router.replace({
+      pathname: '/youtube',
+      params: {
+        mode: 'advanced',
+        ...(typeof params.topic === 'string' ? { topic: params.topic } : {}),
+        ...(typeof params.idea === 'string' ? { idea: params.idea } : {}),
+      },
+    });
+  }, [params.topic, params.idea]);
+  return null;
 }

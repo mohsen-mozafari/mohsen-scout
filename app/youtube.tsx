@@ -28,6 +28,7 @@ import { sortResearchVideos, type ResearchVideoSort } from '@/lib/intelligence';
 import { getKey } from '@/lib/vault';
 import { openExternalUrl } from '@/lib/external-links';
 import { SETTINGS_ROUTE } from '@/lib/routes';
+import { AdvancedDiscoveryPanel } from './trend-intelligence';
 const RESEARCH_SORT_OPTIONS: ResearchVideoSort[] = [
   'Newest', 'Oldest', 'Most Views', 'Least Views',
   'Most Likes', 'Least Likes', 'Most Relevant', 'A-Z', 'Z-A',
@@ -36,7 +37,7 @@ const isResearchVideoSort = (value: string): value is ResearchVideoSort =>
   RESEARCH_SORT_OPTIONS.some((option) => option === value);
 
 export default function Discover() {
-  const params = useLocalSearchParams<{ topic?: string; idea?: string; report?: string }>();
+  const params = useLocalSearchParams<{ topic?: string; idea?: string; report?: string; mode?: string }>();
   const preferences = useScout((s) => s.data.preferences);
   const ready = useScout((s) => s.ready);
   const busy = useScout((s) => s.busy);
@@ -231,6 +232,14 @@ export default function Discover() {
           <ArrowRight size={16} color={p.muted} />
         </Button>
       )}
+      <Fold
+        title="Advanced YouTube Discovery Mix"
+        summary="Multi-lane, paginated official API sampling"
+        defaultExpanded={params.mode === 'advanced'}
+      >
+        <Txt muted>Both research modes now live in this workspace. Standard research gives you a focused query and saved report; the advanced mode samples several official search lanes and supports pagination. Neither is a real-time or platform-wide trend census.</Txt>
+        <AdvancedDiscoveryPanel />
+      </Fold>
       {busy && (
         <View style={{ gap: 12 }}>
           <Txt muted>{progress}</Txt>

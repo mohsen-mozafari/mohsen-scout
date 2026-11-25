@@ -45,12 +45,46 @@ void test('public-attention comparisons support a bounded dynamic topic list', (
   assert.match(demand, /PUBLIC ATTENTION/);
 });
 
-void test('YouTube research distinguishes standard sample from advanced Discovery Mix', () => {
+void test('standard and advanced YouTube discovery share one research workspace', () => {
   const standard = source('app/youtube.tsx');
   const advanced = source('app/trend-intelligence.tsx');
-  assert.match(standard, /multi-lane Discovery Mix/);
-  assert.match(advanced, /Advanced YouTube Discovery Mix/);
-  assert.match(advanced, /not continuous trend monitoring/i);
+  const detail = source('app/detail.tsx');
+  assert.match(standard, /AdvancedDiscoveryPanel/);
+  assert.match(standard, /title="Advanced YouTube Discovery Mix"/);
+  assert.match(advanced, /export function AdvancedDiscoveryPanel/);
+  assert.match(advanced, /router\.replace\(/);
+  assert.match(advanced, /pathname: '\/youtube'/);
+  assert.match(detail, /mode: 'advanced'/);
+  assert.match(advanced, /does not claim to measure the whole platform/i);
+});
+
+void test('Cosmic News separates signal overview from publisher-feed controls', () => {
+  const news = source('app/cosmic-news.tsx');
+  assert.match(news, /Publisher feed/);
+  assert.match(news, /public-attention signals/);
+  assert.match(news, /SPACE RADAR · OFFICIAL SIGNALS/);
+});
+
+void test('shared controls expose labels, expanded state and RTL-aware direction', () => {
+  const ui = source('components/ScoutUI.tsx');
+  assert.match(ui, /accessibilityLabel=\{summary \? translatedTitle/);
+  assert.match(ui, /accessibilityHint=\{translateText\(expanded \?/);
+  assert.match(ui, /accessibilityLabel=\{translatedLabel\}/);
+  assert.match(ui, /accessibilityLabel=\{title\}/);
+  assert.match(ui, /writingDirection: direction/);
+});
+
+void test('detail page folds optional AI review and idea-management actions', () => {
+  const detail = source('app/detail.tsx');
+  assert.match(detail, /<Fold title="Second opinion and AI review"/);
+  assert.match(detail, /<Fold title="Idea management and retention"/);
+});
+
+void test('browser, unified research and accessibility copy has Persian translations', () => {
+  const i18n = source('lib/i18n.ts');
+  for (const phrase of ['Web Browser', 'Open a website or search the web', 'Open in external browser', 'Advanced YouTube Discovery Mix', 'Publisher feed', 'Collapse section']) {
+    assert.ok(i18n.includes(JSON.stringify(phrase) + ':'));
+  }
 });
 
 void test('settings use task-based sections and diagnostics are explicitly synthetic', () => {
@@ -80,4 +114,14 @@ void test('shared video rows use the validated external-link handler', () => {
   const videoRow = source('components/VideoRow.tsx');
   assert.match(videoRow, /openExternalUrl\(/);
   assert.doesNotMatch(videoRow, /Linking\.openURL/);
+});
+
+void test('release metadata and workflow agree on version 1.25.0', () => {
+  const config = source('app.config.ts');
+  const workflow = source('.github/workflows/android-apk-v1.24.0-full-audit.yml');
+  assert.match(config, /version: '1\.25\.0'/);
+  assert.match(config, /versionCode: 46/);
+  assert.match(workflow, /versionCode='46'/);
+  assert.match(workflow, /1\.25\.0/);
+  assert.match(workflow, /android-apk-v1\.24\.0-full-audit\.yml/);
 });

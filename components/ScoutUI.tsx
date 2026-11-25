@@ -699,6 +699,7 @@ export function Field({
       <Text style={[styles.label, { textAlign: labelDirection === 'rtl' ? 'right' : 'left', writingDirection: labelDirection }]}>{translatedLabel}</Text>
       <View style={styles.fieldBox}>
         <TextInput
+          accessibilityLabel={translatedLabel}
           value={value}
           onChangeText={onChange}
           placeholder={translatedPlaceholder}
@@ -755,6 +756,7 @@ export function Choices<T extends string>({
                 );
               }}
               accessibilityRole="button"
+              accessibilityLabel={title}
               accessibilityState={{ selected: active }}
               style={({ pressed }) => [
                 styles.choice,
@@ -904,6 +906,8 @@ export function Fold({
       <Pressable
         onPress={() => { void Haptics.selectionAsync(); setExpanded((current) => !current); }}
         accessibilityRole="button"
+        accessibilityLabel={summary ? translatedTitle + '. ' + translatedSummary : translatedTitle}
+        accessibilityHint={translateText(expanded ? 'Collapse section' : 'Expand section', language)}
         accessibilityState={{ expanded }}
         style={({ pressed }) => [styles.foldTrigger, pressed ? { opacity: 0.72 } : null]}
       >

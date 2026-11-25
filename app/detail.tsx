@@ -292,7 +292,7 @@ export default function Detail() {
             <Heading>Continue this research</Heading>
             <Txt muted>Each tool opens with this idea&apos;s topic. Results can be connected back here without creating a second copy of the idea.</Txt>
             <Action secondary onPress={() => router.push({ pathname: '/youtube', params: { topic: idea.topic, idea: idea.id } })}>YouTube research</Action>
-            <Action secondary onPress={() => router.push({ pathname: '/trend-intelligence', params: { topic: idea.topic, idea: idea.id } })}>Explore a paginated YouTube sample</Action>
+            <Action secondary onPress={() => router.push({ pathname: '/youtube', params: { topic: idea.topic, idea: idea.id, mode: 'advanced' } })}>Explore a paginated YouTube sample</Action>
             <Action secondary onPress={() => router.push({ pathname: '/search-demand', params: { topic: idea.topic, idea: idea.id } })}>Compare public interest</Action>
             <Action secondary onPress={() => router.push({ pathname: '/deep-research', params: { topic: idea.topic, idea: idea.id } })}>Prepare a deep research brief</Action>
           </Panel>
@@ -402,6 +402,7 @@ export default function Detail() {
               </Action>
             </Panel>
           )}
+          <Fold title="Second opinion and AI review" summary={uiLanguage === 'fa' ? 'اختیاری · فقط پس از تأیید شما' : 'Optional · only sent after your confirmation'}>
           <Heading>Second opinion</Heading>
           <Txt muted>
             Optional. Sends only your editorial topic, concept and personal decision to the configured AI provider priority chain.
@@ -456,6 +457,8 @@ export default function Detail() {
                 </Action>
               </Panel>
             ))}
+          </Fold>
+          <Fold title="Idea management and retention" summary={uiLanguage === 'fa' ? 'بایگانی یا حذف این ایده' : 'Archive or delete this idea'}>
           <Action
             secondary
             onPress={() =>
@@ -490,6 +493,7 @@ export default function Detail() {
           >
             {confirm ? 'Confirm delete idea' : 'Delete idea'}
           </Action>
+          </Fold>
         </>
       )}
       {video && (
