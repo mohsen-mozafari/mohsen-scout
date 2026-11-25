@@ -21,7 +21,7 @@ import {
   ScreenIntro,
 } from '@/components/ScoutUI';
 import { useScout } from '@/lib/store';
-import { statuses, uid, type Idea, type ResearchInput } from '@/lib/types';
+import { statuses, type Idea, type ResearchInput } from '@/lib/types';
 import { getIdeaDisplayTitle, isIdeaDisplayable } from '@/lib/idea-research';
 import { createManualIdea } from '@/lib/engine';
 import { deduplicateDisplayIdeas, generateEditorialIdeas, selectIdeaGenerationVideos, IDEA_GENERATION_CATEGORIES, type IdeaGenerationCategory } from '@/lib/idea-generation';
