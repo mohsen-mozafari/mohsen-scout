@@ -1,4 +1,4 @@
-import { Bookmark, Compass, Lightbulb, NotebookPen, Newspaper } from 'lucide-react-native';
+import { Bookmark, Compass, Lightbulb, Newspaper, Search } from 'lucide-react-native';
 import { Tabs } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as Haptics from 'expo-haptics';
@@ -45,6 +45,11 @@ export default function TabLayout() {
           title: translateText('Cosmic News', language),
           tabBarLabel: translateText('News', language),
           tabBarIcon: ({ color, focused }) => <Newspaper size={21} strokeWidth={focused ? 2.15 : 1.7} color={color} />,
+        }} />
+        <Tabs.Screen name="discover" options={{
+          title: translateText('Research Discovery', language),
+          tabBarLabel: translateText('Discover', language),
+          tabBarIcon: ({ color, focused }) => <Search size={21} strokeWidth={focused ? 2.15 : 1.7} color={color} />,
         }} />
         <Tabs.Screen name="opportunities" options={{
           title: translateText('Opportunities', language),
