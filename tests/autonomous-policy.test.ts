@@ -1,6 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildAutonomousResearchInput, isAutonomousYouTubeDiscoveryDue } from '../lib/autonomous-policy';
+import {
+  autonomousPublisherPriority,
+  autonomousYouTubePriority,
+  buildAutonomousResearchInput,
+  isAutonomousYouTubeDiscoveryDue,
+} from '../lib/autonomous-policy';
 import { defaults } from '../lib/types';
 
 void test('automatic research can start from the selected niche without any previous manual search', () => {
@@ -31,4 +36,28 @@ void test('automatic YouTube discovery is rate-limited but becomes due again aft
   assert.equal(isAutonomousYouTubeDiscoveryDue(now - 60_000, now), false);
   assert.equal(isAutonomousYouTubeDiscoveryDue(now - 6 * 60 * 60 * 1000, now), true);
   assert.equal(isAutonomousYouTubeDiscoveryDue(Number.NaN, now), true);
+});
+
+void test('YouTube discoveries outrank even the freshest publisher fallback', () => {
+  const now = Date.parse('2026-11-25T12:00:00.000Z');
+  const publisherPriority = autonomousPublisherPriority('2026-11-25T12:00:00.000Z', 2, now);
+  const unmeasuredYouTubePriority = autonomousYouTubePriority({});
+  assert.ok(unmeasuredYouTubePriority > publisherPriority);
+});
+
+void test('measured YouTube velocity and channel outliers raise discovery priority', () => {
+  const baseline = autonomousYouTubePriority({});
+  const measured = autonomousYouTubePriority({
+    growth: {
+      snapshotCount: 3,
+      deltaViews: 12000,
+      viewsPerHour: 500,
+      viewsPerDay: 12000,
+      channelBaselineViewsPerDay: 3000,
+      channelOutlierRatio: 4,
+      measuredAt: 1_800_000_000_000,
+      status: 'measured',
+    },
+  });
+  assert.ok(measured > baseline);
 });
