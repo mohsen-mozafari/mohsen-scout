@@ -856,7 +856,7 @@ Object.assign(fa, {
   "Could not open link": "بازکردن پیوند ناموفق بود",
   "Invalid link": "پیوند نامعتبر",
   "Only HTTP and HTTPS web links can be opened.": "فقط پیوندهای وب با HTTP یا HTTPS قابل بازکردن هستند.",
-  "The device could not open this link. Check connectivity and your default browser.": "دستگاه نتوانست این پیوند را باز کند. اتصال و مرورگر پیش‌فرض را بررسی کن."
+  "The device could not open this link. Check connectivity and your default browser.": "دستگاه نتوانست این پیوند را باز کند. اتصال و مرورگر پیش‌فرض را بررسی کن.",
   "Unified research archive": "بایگانی یکپارچه پژوهش",
   "Saved ideas": "ایده‌های ذخیره‌شده",
   "Personal video links": "پیوندهای ویدئویی شخصی",
