@@ -32,13 +32,15 @@ export type AutonomousResearchQueue = {
   jobs: AutonomousResearchJob[];
   seenKeys: { key: string; seenAt: number }[];
   lastNicheSeedAt: number;
+  /** Last attempted YouTube-first autonomous niche discovery, persisted to avoid quota loops. */
+  lastYouTubeDiscoveryAt: number;
 };
 
 export type AutonomousResearchCandidate = Omit<AutonomousResearchJob,
   'id' | 'discoveredAt' | 'attempts' | 'status'>;
 
 export function emptyAutonomousQueue(): AutonomousResearchQueue {
-  return { version: 1, jobs: [], seenKeys: [], lastNicheSeedAt: 0 };
+  return { version: 1, jobs: [], seenKeys: [], lastNicheSeedAt: 0, lastYouTubeDiscoveryAt: 0 };
 }
 
 function validInput(value: unknown): value is ResearchInput {
@@ -96,6 +98,8 @@ export function normalizeAutonomousQueue(
     ],
     seenKeys,
     lastNicheSeedAt: typeof item.lastNicheSeedAt === 'number' ? item.lastNicheSeedAt : 0,
+    lastYouTubeDiscoveryAt: typeof item.lastYouTubeDiscoveryAt === 'number' && Number.isFinite(item.lastYouTubeDiscoveryAt)
+      ? item.lastYouTubeDiscoveryAt : 0,
   };
 }
 
@@ -155,7 +159,7 @@ export function enqueueAutonomousCandidates(
         if (b.status === 'completed' && a.status !== 'completed') return -1;
         const aDate = a.publishedAt ? Date.parse(a.publishedAt) || 0 : 0;
         const bDate = b.publishedAt ? Date.parse(b.publishedAt) || 0 : 0;
-        return bDate - aDate || b.priority - a.priority || b.discoveredAt - a.discoveredAt;
+        return b.priority - a.priority || bDate - aDate || b.discoveredAt - a.discoveredAt;
       })
       .slice(0, AUTONOMOUS_QUEUE_LIMIT + 100),
     seenKeys: seenKeys.slice(-AUTONOMOUS_SEEN_LIMIT),
@@ -184,6 +188,6 @@ export function nextAutonomousJob(
     .sort((a, b) => {
       const aDate = a.publishedAt ? Date.parse(a.publishedAt) || 0 : 0;
       const bDate = b.publishedAt ? Date.parse(b.publishedAt) || 0 : 0;
-      return bDate - aDate || b.priority - a.priority || b.discoveredAt - a.discoveredAt;
+      return b.priority - a.priority || bDate - aDate || b.discoveredAt - a.discoveredAt;
     })[0];
 }
