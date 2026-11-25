@@ -309,7 +309,7 @@ export default function Opportunities() {
           title: dossier.wiki.articleTitle,
           summary: [dossier.wiki.summary, dossier.wiki.monthlyViews.length
             ? 'Monthly Wikipedia article pageviews: ' + dossier.wiki.monthlyViews.map((point) => point.month + '=' + point.views).join(', ')
-            : 'No monthly Wikimedia pageview observations were returned.'].filter(Boolean).join('\\n'),
+            : 'No monthly Wikimedia pageview observations were returned.'].filter(Boolean).join('\n'),
           sourceUrl: dossier.wiki.articleUrl,
           sourceName: 'Wikimedia Pageviews · attention proxy',
         }] : [],

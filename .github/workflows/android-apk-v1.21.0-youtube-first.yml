@@ -1,11 +1,11 @@
-name: Build MOHSEN SCOUT APK v1.21.0 · Grok + Cloudflare AI · Typecheck
+name: Build MOHSEN SCOUT APK v1.21.0 · YouTube-first autonomous Deep Research
 
 on:
   workflow_dispatch:
   push:
-    branches: [autonomous-research-v1.21.0]
+    branches: [autonomous-research-v1.21.0-youtube-first]
     paths:
-      - '.github/workflows/android-apk-v1.21.0-xai-grok.yml'
+      - '.github/workflows/android-apk-v1.21.0-youtube-first.yml'
       - 'app.config.ts'
       - 'package.json'
       - 'package-lock.json'
@@ -159,7 +159,7 @@ jobs:
           retention-days: 1
 
   publish-release:
-    if: github.ref == 'refs/heads/release/v1.21.0-xai-grok'
+    if: github.ref == 'refs/heads/release/v1.21.0-youtube-first'
     name: Publish verified APK release
     needs: build-android
     runs-on: ubuntu-latest
@@ -174,7 +174,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          CURRENT_SHA="$(gh api "repos/${GITHUB_REPOSITORY}/branches/release/v1.21.0-xai-grok" --jq '.commit.sha')"
+          CURRENT_SHA="$(gh api "repos/${GITHUB_REPOSITORY}/branches/release/v1.21.0-youtube-first" --jq '.commit.sha')"
           if [[ "$CURRENT_SHA" != "$GITHUB_SHA" ]]; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
             echo "::notice::Skipping stale release commit $GITHUB_SHA; branch head is $CURRENT_SHA."
