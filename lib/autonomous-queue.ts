@@ -2,7 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { ResearchInput } from './types';
 import { uid } from './types';
 import { normalizeResearchText } from './intelligence';
-import { AUTONOMOUS_QUEUE_MAX_AGE_MS, isAutonomousDiscoveryFresh, sortAutonomousPriority } from './autonomous-priority';
+import { isAutonomousDiscoveryFresh, sortAutonomousPriority } from './autonomous-priority';
 export { AUTONOMOUS_QUEUE_MAX_AGE_MS } from './autonomous-priority';
 
 const KEY = 'mohsen-scout.autonomous-research-queue.v1';

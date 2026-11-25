@@ -57,10 +57,13 @@ async function readRaw(): Promise<PendingResearch[]> {
     const parsed: unknown = JSON.parse(legacy);
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
       const record = parsed as Record<string, unknown>;
+      const savedAt = typeof record.savedAt === 'number' && Number.isFinite(record.savedAt) && record.savedAt >= 0
+        ? record.savedAt
+        : Date.now();
       const item = {
-        id: 'legacy-' + String(record.savedAt ?? uid()),
+        id: 'legacy-' + String(savedAt),
         input: record.input,
-        savedAt: record.savedAt,
+        savedAt,
         stage: 'queued' as const,
       };
       if (valid(item)) {

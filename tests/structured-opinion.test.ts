@@ -10,10 +10,10 @@ void test('second-opinion prompt includes selected topic/concept and an empty Yo
   const prompt = structuredSecondOpinionPrompt('Mars exploration', 'A source-led explainer about sample return.', 'en');
   assert.ok(prompt.includes('Mars exploration'));
   assert.ok(prompt.includes('A source-led explainer'));
-  assert.ok(prompt.includes('\"topic\":\"Mars exploration\"'));
-  assert.ok(prompt.includes('\"candidateConcept\":\"A source-led explainer about sample return.\"'));
-  assert.ok(prompt.includes('\"youtubePlatformSignals\":[]'));
-  assert.ok(prompt.includes('\"independentSources\":[]'));
+  assert.ok(prompt.includes('"topic":"Mars exploration"'));
+  assert.ok(prompt.includes('"candidateConcept":"A source-led explainer about sample return."'));
+  assert.ok(prompt.includes('"youtubePlatformSignals":[]'));
+  assert.ok(prompt.includes('"independentSources":[]'));
 });
 
 void test('structured second opinion accepts the exact schema and formats both languages', () => {
