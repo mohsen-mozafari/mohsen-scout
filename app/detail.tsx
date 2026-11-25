@@ -233,9 +233,6 @@ export default function Detail() {
           <Action icon={Bookmark} busy={op.busy} onPress={saveVideoIdea}>
             Save Opportunity
           </Action>
-          <Action icon={Sparkles} secondary busy={op.busy} onPress={saveVideoIdea}>
-            Create idea for AI opinion
-          </Action>
         </Panel>
       )}
       {idea && (

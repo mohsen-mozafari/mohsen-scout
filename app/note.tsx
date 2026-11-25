@@ -32,6 +32,7 @@ export default function NoteEditor() {
   }>();
   const existing = useScout((s) => s.data.notes.find((n) => n.id === id));
   const ready = useScout((s) => s.ready);
+  const language = useScout((s) => s.data.preferences.uiLanguage ?? 'fa');
   const [note, setNote] = useState<Note>(
     () =>
       existing ?? {

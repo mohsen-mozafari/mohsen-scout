@@ -65,7 +65,8 @@ test('settings use task-based sections and diagnostics are explicitly synthetic'
 });
 
 test('publisher and research-source links do not silently swallow open failures', () => {
-  for (const path of ['app/cosmic-news.tsx', 'app/deep-research.tsx', 'app/detail.tsx', 'app/research-activity.tsx', 'app/youtube.tsx', 'app/trend-intelligence.tsx']) {
+  for (const path of ['app/cosmic-news.tsx', 'app/deep-research.tsx', 'app/detail.tsx', 'app/research-activity.tsx', 'app/youtube.tsx', 'app/trend-intelligence.tsx', 'app/(tabs)/library.tsx', 'app/note.tsx']) {
     assert.doesNotMatch(source(path), /Linking\.openURL\([^\n]*\.catch\(\(\) => \{\}\)/);
+    assert.doesNotMatch(source(path), /Linking\.openURL/);
   }
 });

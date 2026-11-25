@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { translateText } from '@/lib/i18n';
-import { View, Text, Linking, FlatList } from 'react-native';
+import { View, Text, FlatList } from 'react-native';
 import { Button } from 'heroui-native';
 import { router } from 'expo-router';
 import { ArrowUpRight, Plus, Download, Bookmark } from 'lucide-react-native';
@@ -24,6 +24,7 @@ import { matchesSearchText } from '@/lib/search';
 import { type SavedLink } from '@/lib/types';
 import { palette as p } from '@/lib/theme';
 import { personalLinks } from '@/lib/backup';
+import { openExternalUrl } from '@/lib/external-links';
 import { shareText } from '@/lib/transfer';
 import { MediaPreview } from '@/components/MediaPreview';
 export default function Library() {
@@ -238,13 +239,7 @@ export default function Library() {
                 <View style={{ flex: 1 }}>
                   <Action
                     secondary
-                    onPress={() =>
-                      void op.run(async () => {
-                        if (!(await Linking.canOpenURL(item.url)))
-                          throw new Error('Could not open YouTube on this device.');
-                        await Linking.openURL(item.url);
-                      })
-                    }
+                    onPress={() => void openExternalUrl(item.url, language)}
                   >
                     YouTube
                   </Action>
