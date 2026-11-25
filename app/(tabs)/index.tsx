@@ -5,7 +5,7 @@ import { Search } from 'lucide-react-native';
 import { router } from 'expo-router';
 import {
   Page, Panel, Heading, Txt, Action, Fold, Field, styles, ErrorBox,
-  SourceHeading, SourceText, BadgeText, MetricCard,
+  SourceText, BadgeText, MetricCard,
 } from '@/components/ScoutUI';
 import { useScout } from '@/lib/store';
 import { palette as p } from '@/lib/theme';
@@ -15,7 +15,6 @@ import { SPACE_NICHES, getCachedSpaceNews } from '@/lib/space';
 import { buildInternalResearch, type InternalResearchResult } from '@/lib/engine';
 import { buildResearchInterestProfile, normalizeResearchText } from '@/lib/intelligence';
 import { getTopicDossier } from '@/lib/topic-dossier';
-import { VideoRow } from '@/components/VideoRow';
 import { collectEngineVideoEvidence, engineReviewCacheKey, findCachedEngineReview, selectDashboardFeaturedIdeas } from '@/lib/dashboard';
 import { fingerprintText, getFreeModels, getOpenRouterDailyQuota, formatStructuredSecondOpinion, structuredSecondOpinionPrompt, localDateKey, nextOpenRouterUsage, selectFreeModel } from '@/lib/api';
 import { getKey } from '@/lib/vault';
@@ -23,89 +22,6 @@ import { requestSecondOpinionWithFallback, type SecondOpinionProviderConfig } fr
 import { ResearchOverviewChart } from '@/components/ResearchOverviewChart';
 import { recordRuntimeFinish, recordRuntimeStart, runtimeErrorHint, useRuntimeMetrics } from '@/lib/runtime-metrics';
 
-
-function AnalysisSignals({ result }: { result: InternalResearchResult }) {
-  const language = useScout((state) => state.data.preferences.uiLanguage ?? 'fa');
-  const fa = language === 'fa';
-  const audit = result.intelligence.selfEvaluation;
-  const confidence = result.intelligence.confidence.level;
-  const confidenceLabel = fa
-    ? confidence === 'high' ? 'بالا' : confidence === 'moderate' ? 'متوسط' : 'پایین'
-    : confidence;
-  return (
-    <Fold title={fa ? 'کیفیت شواهد و گام‌های بعدی' : 'Evidence quality & next steps'} summary={(fa ? 'اطمینان ' : 'Confidence ') + confidenceLabel + ' · ' + result.intelligence.sourceQuality.uniqueStories + (fa ? ' خبر یکتا' : ' unique stories')}>
-      <Heading>{fa ? 'حد و حدود اطمینان تحلیل' : 'Confidence and evidence scope'}</Heading>
-      <BadgeText>{(fa ? 'میزان اطمینان: ' : 'Confidence: ') + confidenceLabel}</BadgeText>
-      <Txt muted>{result.intelligence.confidence.reason}</Txt>
-      <Heading>{fa ? 'تطبیق نمونه با موضوع' : 'Topic match in the sample'}</Heading>
-      <Txt muted>{fa
-        ? 'خبرهای هم‌موضوع در نمونه ناشران: ' + audit.topicMatchedNewsCount + ' از ' + audit.uniqueNewsCount + ' · بررسی تاریخ انتشار و هم‌پوشانی منبع برای جلوگیری از دوباره‌شماری انجام شده است.'
-        : 'Topic-matched publisher reports: ' + audit.topicMatchedNewsCount + '/' + audit.uniqueNewsCount + ' · Publication dates and source overlap are checked to reduce duplicate counting.'}</Txt>
-      <Txt muted>{fa
-        ? 'خوراک‌های حاضر: ' + result.intelligence.sourceQuality.feedsRepresented +
-          ' · گروه‌های مستقل ناشر: ' + result.intelligence.sourceQuality.independentPublishers +
-          ' · خبرهای تکراری ادغام‌شده: ' + result.intelligence.sourceQuality.duplicateStoriesMerged
-        : 'Feeds represented: ' + result.intelligence.sourceQuality.feedsRepresented +
-          ' · Independent publisher groups: ' + result.intelligence.sourceQuality.independentPublishers +
-          ' · Duplicate stories merged: ' + result.intelligence.sourceQuality.duplicateStoriesMerged}</Txt>
-      {result.intelligence.gaps.length > 0 && (
-        <View style={{ gap: 5 }}>
-          <Heading>{fa ? 'خلأهای تحقیق' : 'Research gaps'}</Heading>
-          {result.intelligence.gaps.map((gap) => <Txt muted key={gap}>{gap}</Txt>)}
-        </View>
-      )}
-      {result.intelligence.sharedConcepts.length > 0 && (
-        <View style={{ gap: 5 }}>
-          <Heading>{fa ? 'مفهوم‌های تکرارشده در خبرها و زمینه تحقیق' : 'Recurring concepts in publisher and research context'}</Heading>
-          <SourceText>{result.intelligence.sharedConcepts.join(fa ? '، ' : ', ')}</SourceText>
-          <Txt muted>{fa
-            ? 'این بخش فقط هم‌پوشانی واژگانی منابع ناشر و زمینه تحقیق را نشان می‌دهد، نه تقاضا یا توافق معنایی.'
-            : 'This is wording overlap in publisher sources and research context, not proof of semantic agreement or audience demand.'}</Txt>
-        </View>
-      )}
-      {result.entityCandidates.length > 0 && (
-        <View style={{ gap: 5 }}>
-          <Heading>{fa ? 'موجودیت‌های شناخته‌شده در شواهد' : 'Recognized entities in evidence'}</Heading>
-          {result.entityCandidates.slice(0, 12).map((entity) => (
-            <View key={entity.id} style={{ gap: 2 }}>
-              <SourceText>{entity.name}</SourceText>
-              <Txt muted>{entity.kind} · {entity.mentionCount} {fa ? 'ذکر' : 'mentions'} · {entity.evidenceIds.length} {fa ? 'رکورد شاهد' : 'evidence records'}</Txt>
-            </View>
-          ))}
-          <Txt muted>{fa
-            ? 'این فهرست از تطبیق نام‌ها و نام‌های جایگزین شناخته‌شده ساخته شده است؛ به‌معنای تشخیص جامع همه موجودیت‌ها یا اثبات رابطه علّی نیست.'
-            : 'These are exact matches against a bounded alias catalogue, not exhaustive entity recognition or proof of causal relationships.'}</Txt>
-          {result.entityRelations.length > 0 && (
-            <Txt muted>{fa
-              ? 'هم‌ذکری‌های ثبت‌شده: ' + result.entityRelations.length + '؛ هر رابطه فقط هم‌وقوعی در یک رکورد شاهد است.'
-              : 'Recorded co-mentions: ' + result.entityRelations.length + '; each link means co-occurrence in an evidence record only.'}</Txt>
-          )}
-        </View>
-      )}
-      <Txt muted>{fa
-        ? 'زمان پردازش موتور: ' + result.intelligence.selfEvaluation.processingMs + ' میلی‌ثانیه'
-        : 'Engine processing time: ' + result.intelligence.selfEvaluation.processingMs + ' ms'}</Txt>
-      {result.intelligence.potentialContradictions.length > 0 && (
-        <View style={{ gap: 5 }}>
-          <Heading>{fa ? 'اختلاف‌هایی که باید بررسی شوند' : 'Discrepancies to verify'}</Heading>
-          {result.intelligence.potentialContradictions.map((item) => <Txt muted key={item}>{item}</Txt>)}
-        </View>
-      )}
-      {result.intelligence.followUpQueries.length > 0 && (
-        <View style={{ gap: 5 }}>
-          <Heading>{fa ? 'جست‌وجوهای تکمیلی پیشنهادی' : 'Suggested follow-up searches'}</Heading>
-          {result.intelligence.followUpQueries.map((query) => <SourceText key={query}>{query}</SourceText>)}
-        </View>
-      )}
-      {result.intelligence.scenarios.length > 0 && (
-        <View style={{ gap: 5 }}>
-          <Heading>{fa ? 'سناریوهای مشروط' : 'Conditional scenarios'}</Heading>
-          {result.intelligence.scenarios.map((scenario) => <Txt muted key={scenario}>{scenario}</Txt>)}
-        </View>
-      )}
-    </Fold>
-  );
-}
 
 function EngineAIReview({ topic, idea }: { topic: string; idea?: Idea }) {
   const preferences = useScout(useShallow((state) => ({
@@ -432,7 +348,7 @@ function DiscoveryDashboardReady() {
     ? reportAnalysisState.result
     : undefined;
   const chartAnalysis = latestReportAnalysis ?? cachedTopicAnalysis;
-  const chartTopic = latestReportAnalysis ? deskTopic : cachedTopicAnalysis ? discoveryTopic : deskTopic;
+  const chartTopic = latestReport?.input.topic ?? preferences.lastInput?.topic ?? discoveryTopic;
   const bestIdea = selectDashboardFeaturedIdeas(ideas, 1)[0];
   const ideaLinkage = useMemo(() => ({
     active: ideas.filter((idea) => !idea.archived && idea.status !== 'Rejected Ideas' && idea.status !== 'Completed Research').length,
