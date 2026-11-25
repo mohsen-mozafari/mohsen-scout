@@ -452,7 +452,7 @@ export const useScout = create<State>((set, get) => ({
           const webKey = await getKey('firecrawl').catch(() => undefined);
           const savedQueries = savedCheckpoint?.queryHistory ?? [];
           const asked = new Set<string>(savedQueries.map((query) => normalizeResearchText(query)));
-          const collected = new Map<string, (typeof webItems)[number]>((savedCheckpoint?.evidence ?? []).map((item) => [item.url, { ...item }] as const));
+          const collected = new Map<string, (typeof webItems)[number]>((savedCheckpoint?.evidence ?? []).map((item) => [item.url, { ...item, publishedAt: item.publishedAt ?? undefined }] as const));
           const queryWarnings: string[] = [];
           let latestAiDossier: ResearchDossier | undefined = savedCheckpoint?.researchDossier;
           const queries = collected.size
