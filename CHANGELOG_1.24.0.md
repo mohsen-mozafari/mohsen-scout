@@ -29,3 +29,5 @@ The new GitHub Actions workflow runs the existing Node regression suite (includi
 A passing CI run and on-device visual/accessibility testing are separate validation gates; this changelog does not claim those gates have passed until their results are observed.
 
 Build gate: the v1.24.0 full-audit workflow validates the source, signed ARM64 APK identity, certificate and release checksum.
+
+Static analysis follow-up: release candidate syntax, URL validation, and page composition fixes are included in the current source commit.
