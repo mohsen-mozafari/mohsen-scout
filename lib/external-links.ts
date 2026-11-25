@@ -5,7 +5,7 @@ export type ExternalLinkLanguage = 'fa' | 'en';
 /** Open only ordinary web URLs and show a visible, localized error when the host cannot open them. */
 export async function openExternalUrl(url: string, language: ExternalLinkLanguage = 'fa'): Promise<boolean> {
   const value = url.trim();
-  if (!/^https?:\\/\\//i.test(value)) {
+  if (!(value.startsWith('https://') || value.startsWith('http://'))) {
     Alert.alert(
       language === 'fa' ? 'پیوند نامعتبر' : 'Invalid link',
       language === 'fa' ? 'فقط پیوندهای وب با HTTP یا HTTPS قابل بازکردن هستند.' : 'Only HTTP and HTTPS web links can be opened.',

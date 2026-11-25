@@ -218,7 +218,7 @@ function ActivityCard({
           {event.warnings.length ? (
             <View style={{ gap: 5 }}>
               <Txt muted>{fa ? 'هشدارها و محدودیت‌ها' : 'Warnings and limitations'}</Txt>
-              {event.warnings.map((warning, index) => <Txt key={index}>{warning}</Txt>)}
+              {event.warnings.map((warning) => <Txt key={event.id + '-warning-' + warning}>{warning}</Txt>)}
             </View>
           ) : null}
           {!event.results.length && event.engine !== 'YouTube Data API' ? (

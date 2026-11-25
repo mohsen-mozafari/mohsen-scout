@@ -770,7 +770,7 @@ export default function Settings() {
       </Fold>
       </Fold>
       {Boolean(op.error) && <ErrorBox message={op.error} onDismiss={op.clear} />}
-      {Boolean(op.message} && <Txt muted>{op.message}</Txt>}
+      {Boolean(op.message) && <Txt muted>{op.message}</Txt>}
     </Page>
   );
 }

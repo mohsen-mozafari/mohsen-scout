@@ -212,7 +212,7 @@ export default function Detail() {
       ) : null}
       {video && (
         <>
-          <MediaPreview uri={video.thumbnail} aspectRatio={16 / 9} onPress={() => void openExternalUrl('https://www.youtube.com/watch?v=' + video.id, uiLanguage)} alt={video.title} />
+          <MediaPreview uri={video.thumbnail} aspectRatio={16 / 9} onPress={() => void Linking.openURL('https://www.youtube.com/watch?v=' + video.id).catch(() => {})} alt={video.title} />
           <SourceText>
             {video.channel} · {new Date(video.publishedAt).toLocaleDateString('en-US')}
           </SourceText>
@@ -252,7 +252,9 @@ export default function Detail() {
               : 'This idea’s editorial priority uses publisher news, independent web search and encyclopedia context only. The YouTube sample is displayed separately and does not affect the score or AI critique.'}</Txt>
           </Panel>
           </Fold>
-          <Fold title={data.preferences.uiLanguage === 'fa' ? 'تحلیل تحریری موتور داخلی' : 'Internal editorial analysis'} summary={uiLanguage === 'fa' ? 'تحلیل محلی جدا از نمونه YouTube و نقد مدل' : 'Local analysis, separate from YouTube and external AI review'}> : 'Internal editorial analysis'}</Heading>
+          <Fold title={data.preferences.uiLanguage === 'fa' ? 'تحلیل تحریری موتور داخلی' : 'Internal editorial analysis'} summary={uiLanguage === 'fa' ? 'تحلیل محلی جدا از نمونه YouTube و نقد مدل' : 'Local analysis, separate from YouTube and external AI review'}>
+          <Panel>
+            <Heading>{data.preferences.uiLanguage === 'fa' ? 'تحلیل تحریری موتور داخلی' : 'Internal editorial analysis'}</Heading>
             <Txt muted>{data.preferences.uiLanguage === 'fa'
               ? 'این بخش تحلیل تحریری محلی را از نقد خودکار مدل خارجی جدا می‌کند. داده‌های خام YouTube در تحلیل محلی این ایده ادغام نمی‌شوند.'
               : 'This section separates the local editorial checklist from the automatic external-model critique. Raw YouTube API data is not merged into this idea analysis.'}</Txt>
@@ -263,6 +265,7 @@ export default function Detail() {
                 {section.items?.map((item) => <SourceText muted key={item}>{'• ' + item}</SourceText>)}
               </View>
             ))}
+          </Panel>
           </Fold>
           <Txt muted>
             {idea.region} · {idea.languages.map((l) => languages[l] || l).join(', ')}
@@ -288,11 +291,14 @@ export default function Detail() {
             </Fold>
           ) : null}
           <Fold title={uiLanguage === 'fa' ? 'ادامه پژوهش با ابزارهای دیگر' : 'Continue with other research tools'} summary={uiLanguage === 'fa' ? 'YouTube، توجه عمومی و وب مستقل' : 'YouTube, public attention and independent web'}>
+          <Panel>
+            <Heading>Continue this research</Heading>
             <Txt muted>Each tool opens with this idea&apos;s topic. Results can be connected back here without creating a second copy of the idea.</Txt>
             <Action secondary onPress={() => router.push({ pathname: '/youtube', params: { topic: idea.topic, idea: idea.id } })}>YouTube research</Action>
-            <Action secondary onPress={() => router.push({ pathname: '/trend-intelligence', params: { topic: idea.topic, idea: idea.id } })}>Advanced YouTube Discovery Mix</Action>
+            <Action secondary onPress={() => router.push({ pathname: '/trend-intelligence', params: { topic: idea.topic, idea: idea.id } })}>Explore a paginated YouTube sample</Action>
             <Action secondary onPress={() => router.push({ pathname: '/search-demand', params: { topic: idea.topic, idea: idea.id } })}>Compare public interest</Action>
             <Action secondary onPress={() => router.push({ pathname: '/deep-research', params: { topic: idea.topic, idea: idea.id } })}>Prepare a deep research brief</Action>
+          </Panel>
           </Fold>
           {savedReferences.length > 0 && (
             <Fold title={`Saved video references (${savedReferences.length})`}>

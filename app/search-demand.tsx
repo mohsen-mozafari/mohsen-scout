@@ -108,7 +108,7 @@ export default function SearchDemand() {
             {topics.length > 1 ? <Action secondary disabled={op.busy} onPress={() => { setTopics((current) => current.filter((item) => item.id !== topic.id)); setResults([]); setFailures([]); }}>{preferences.uiLanguage === 'fa' ? 'حذف موضوع ' + (index + 1) : 'Remove topic ' + (index + 1)}</Action> : null}
           </View>
         ))}
-        <Action secondary disabled={topics.length >= 8 || op.busy} onPress={() => setTopics((current) => [...current, { id: uid(), value: '' }])}>{preferences.uiLanguage === 'fa' ? 'افزودن موضوع مقایسه' : 'Add comparison topic'} ({topics.length}/8)</Action>
+        <Action secondary disabled={topics.length >= 8 || op.busy} onPress={() => setTopics((current) => [...current, { id: uid(), value: '' }])}>{(preferences.uiLanguage === 'fa' ? 'افزودن موضوع مقایسه' : 'Add comparison topic') + ' (' + topics.length + '/8)'}</Action>
         <Txt muted>{preferences.uiLanguage === 'fa' ? active.length + ' موضوع برای مقایسه انتخاب شده؛ حداکثر ۸ موضوع در هر اجرا.' : active.length + ' topic(s) will be compared. Maximum 8 per run to keep requests bounded.'}</Txt>
         <Txt muted>{language.toUpperCase()} Wikipedia project · change this default in Settings.</Txt>
         <Heading>Google Trends comparison settings</Heading>
