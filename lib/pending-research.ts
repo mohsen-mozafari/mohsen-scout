@@ -3,7 +3,7 @@ import type { ResearchDossier, ResearchInput } from './types';
 
 export type PendingResearchEvidence = {
   id: string; title: string; summary: string; url: string; sourceName: string;
-  publishedAt?: string; category: 'web' | 'news';
+  publishedAt?: string | null; category: 'web' | 'news';
 };
 import { uid } from './types';
 
