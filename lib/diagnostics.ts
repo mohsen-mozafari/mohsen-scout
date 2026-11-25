@@ -285,8 +285,8 @@ export async function runDiagnostics(): Promise<TestResult[]> {
       'Retain API metadata beyond 29 days',
       () => {
         const data = defaults();
-        data.videos = [video, { ...video, fetchedAt: now - 120 * 86400000 }];
-        check(purgeExpired(data, now).videos.length === 1);
+        data.videos = [video, { ...video, id: 'old-video', fetchedAt: now - 120 * 86400000 }];
+        check(purgeExpired(data, now).videos.length === 2);
       },
     ],
     [
