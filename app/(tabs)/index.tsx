@@ -460,6 +460,7 @@ function DiscoveryDashboardReady() {
             ? <EngineAIReview topic={bestIdea?.topic ?? chartTopic} idea={bestIdea} />
             : undefined}
         />
+        {warnings.map((warning) => <Txt muted key={warning}>{warning}</Txt>)}
 
         <Panel variant="hero">
           <View style={{ gap: 11 }}>
