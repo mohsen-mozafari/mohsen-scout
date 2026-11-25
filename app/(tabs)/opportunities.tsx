@@ -211,7 +211,7 @@ export default function Opportunities() {
     const initial = useScout.getState().data;
     const niche = SPACE_NICHES.find((item) => item.id === initial.preferences.selectedSpaceNiche);
     const topic = initial.preferences.selectedSpaceNiche === 'custom'
-      ? initial.preferences.customSpaceNiche.trim() || initial.preferences.lastInput?.topic.trim()
+      ? initial.preferences.customSpaceNiche.trim() || initial.preferences.lastInput?.topic.trim() || 'space science and exploration'
       : initial.preferences.selectedSpaceNiche === 'all'
         ? initial.preferences.lastInput?.topic ?? initial.reports[0]?.input.topic ?? 'Space science and exploration'
         : niche?.topic ?? initial.preferences.lastInput?.topic ?? 'Space science and exploration';

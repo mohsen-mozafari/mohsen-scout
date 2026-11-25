@@ -3,7 +3,7 @@ import { useScout } from './store';
 import { getKey } from './vault';
 import { searchYouTubeSample } from './api';
 import { uid } from './types';
-import { buildResearchActivityResults } from './research-activity';
+import { selectIdeaGenerationVideos } from './idea-generation';
 import {
   autonomousPublisherPriority,
   autonomousYouTubePriority,
@@ -21,7 +21,7 @@ import {
   updateAutonomousJob,
   type AutonomousResearchCandidate,
 } from './autonomous-queue';
-import type { ResearchInput, Video } from './types';
+import type { Video } from './types';
 
 const FOREGROUND_IDLE_MS = 20_000;
 const DISCOVERY_AGE_MS = 14 * 24 * 60 * 60 * 1000;
@@ -68,18 +68,34 @@ function buildYouTubeCandidates(
   now: number,
   parentTopic: string,
 ): AutonomousResearchCandidate[] {
-  return videos
-    .filter((video) => {
-      const published = Date.parse(video.publishedAt);
-      return Number.isFinite(published) && published <= now + 60 * 60 * 1000 &&
-        now - published <= DISCOVERY_AGE_MS;
-    })
-    .sort((a, b) =>
-      (b.growth?.viewsPerHour ?? b.viewCount ?? 0) - (a.growth?.viewsPerHour ?? a.viewCount ?? 0) ||
-      Date.parse(b.publishedAt) - Date.parse(a.publishedAt),
-    )
-    .slice(0, 5)
+  const currentVideos = videos.filter((video) => {
+    const published = Date.parse(video.publishedAt);
+    return Number.isFinite(published) && published <= now + 60 * 60 * 1000 &&
+      now - published <= DISCOVERY_AGE_MS;
+  });
+  const relevantVideos = selectIdeaGenerationVideos(parentTopic, currentVideos.map((video) => ({
+    id: video.id,
+    title: video.title,
+    description: video.description,
+    channel: video.channel,
+    publishedAt: video.publishedAt,
+    viewCount: video.viewCount,
+    likeCount: video.likeCount,
+    growth: video.growth,
+    thumbnailUrl: video.thumbnail,
+  })));
+  return [...relevantVideos]
     .filter((video) => video.title.trim() && video.title.trim().toLowerCase() !== parentTopic.trim().toLowerCase())
+    .sort((a, b) => {
+      const aRate = a.growth?.status === 'measured' ? a.growth.viewsPerHour ?? -1 : -1;
+      const bRate = b.growth?.status === 'measured' ? b.growth.viewsPerHour ?? -1 : -1;
+      const aOutlier = a.growth?.status === 'measured' ? a.growth.channelOutlierRatio ?? -1 : -1;
+      const bOutlier = b.growth?.status === 'measured' ? b.growth.channelOutlierRatio ?? -1 : -1;
+      return bRate - aRate || bOutlier - aOutlier ||
+        (b.viewCount ?? -1) - (a.viewCount ?? -1) ||
+        Date.parse(b.publishedAt ?? '') - Date.parse(a.publishedAt ?? '');
+    })
+    .slice(0, 5)
     .map((video) => ({
       topic: video.title,
       input: { ...baseInput(preferences), topic: video.title },
@@ -174,22 +190,9 @@ async function discoverYouTubeTopics(): Promise<void> {
     status: videos.length ? (warning ? 'partial' : 'success') : warning ? 'skipped' : 'empty',
     resultCount: videos.length,
     analyzedCount: candidateCount,
-    results: buildResearchActivityResults(input.topic, videos.slice(0, 8).map((video) => ({
-      id: video.id,
-      title: video.title,
-      summary: [
-        video.channel,
-        video.viewCount == null ? 'Views unavailable' : video.viewCount.toLocaleString() + ' views',
-        video.growth?.status === 'measured' && video.growth.viewsPerHour !== null
-          ? video.growth.viewsPerHour.toFixed(1) + ' measured views/hour'
-          : 'No repeat snapshot history yet',
-      ].join(' · '),
-      sourceName: video.channel,
-      includedInAnalysis: true,
-      decisionReason: video.growth?.status === 'measured'
-        ? 'Measured from repeat public view-count snapshots; this is a platform observation, not proof of market-wide demand.'
-        : 'Raw public view count only; no growth claim is made without repeat snapshots.',
-    }))),
+    // Raw video metadata remains in the dedicated local video/report store;
+    // activity history retains only the bounded operation count.
+    results: [],
     warnings: warning ? [warning.slice(0, 700)] : [],
   }).catch(() => undefined);
 }

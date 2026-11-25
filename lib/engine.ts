@@ -18,7 +18,7 @@ import {
 } from './intelligence';
 
 export const limitations =
-  'This is a limited YouTube search sample, not a real-time trend report. Region controls availability, not audience location. Language is a relevance hint, not a strict language filter. Search ordering is supplied by YouTube. No temporal growth rate, competition score, or viral prediction is inferred from a single snapshot.';
+  'This is a limited YouTube search sample, not a real-time trend report. Region controls availability, not audience location. Language is a relevance hint, not a strict language filter. Search ordering is supplied by YouTube. Growth is measured only from valid repeat snapshots; a single snapshot cannot establish velocity. The engine does not predict competition, views or virality.';
 
 export type EngineNewsItem = {
   title: string;

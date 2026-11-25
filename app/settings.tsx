@@ -418,8 +418,8 @@ export default function Settings() {
       <Fold title="Second Opinion · Multi-provider" summary={providerOrder.map(providerName).join(' → ')}>
         <Txt muted>
           {prefs.uiLanguage === 'fa'
-            ? 'پس از تولید ایده، نقد خودکار با ترتیب اولویت ذخیره‌شده اجرا می‌شود. هر سرویس در صورت خطا، محدودیت یا پاسخ نامعتبر به سرویس بعدی واگذار می‌کند. فقط موضوع، مفهوم ایده و خلاصه/پیوند منابع مستقل وب و ناشران ارسال می‌شود. هیچ داده YouTube API، عنوان ویدئو، شناسه، آمار بازدید/پسند، تصویر یا امتیاز YouTube به مدل‌ها ارسال یا با منابع دیگر ترکیب نمی‌شود.'
-            : 'After local idea generation, automatic critique runs through the saved provider priority order. On an error, rate limit or invalid response, the next provider is tried. Providers receive the idea topic/concept plus summaries and links from independent web/publisher sources. No YouTube API data, video titles, IDs, view/like statistics, thumbnails or YouTube-derived scores are sent to models or combined with external sources.'}
+            ? 'پس از تولید ایده، نقد خودکار با ترتیب اولویت ذخیره‌شده اجرا می‌شود. در صورت خطا، محدودیت یا پاسخ نامعتبر، سرویس بعدی امتحان می‌شود. برای نقد ایده، موضوع و مفهوم، حداکثر ۶ منبع مستقل و سیگنال‌های پلتفرمی YouTube همان ایده (تا ۱۸ ویدئو شامل عنوان، توضیح محدود، شناسه/کانال، آمار عمومی و رشد اندازه‌گیری‌شده) ممکن است به ارائه‌دهنده منتخب ارسال شود. داده YouTube استناد مستقل یا اثبات ادعای علمی/خبری نیست. کلیدها، هدرهای احراز هویت و یادداشت‌های خصوصی ارسال نمی‌شوند.'
+            : 'After local idea generation, automatic critique uses the saved provider priority order and falls back on failures or invalid responses. The selected provider may receive the idea topic/concept, up to six independent sources, and YouTube platform signals for that idea (up to 18 videos with titles, limited descriptions, IDs/channels, public statistics and measured growth). YouTube data is platform context, not independent proof of scientific or news claims. API keys, authorization headers and private notes are not sent.'}
         </Txt>
         <Txt muted>
           {prefs.uiLanguage === 'fa'

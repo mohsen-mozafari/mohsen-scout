@@ -34,7 +34,7 @@ if (!TaskManager.isTaskDefined(TASK))
     }
   });
 export const scheduleNotice =
-  'Android chooses execution time; the selected interval is a minimum, not a guarantee. Doze, battery restrictions and force-stop can delay or prevent runs. Scheduled cycles start from the selected niche, discover YouTube topics first, and use the existing YouTube quota.';
+  'Android WorkManager chooses the actual execution time; the selected interval is a minimum, not a guarantee. A network connection and suitable battery conditions are required. Doze, vendor battery restrictions and force-stop can delay or prevent runs. Scheduled cycles seed the selected niche and discover YouTube topics first; no manual search is required.';
 export async function configureSchedule(prefs: Preferences) {
   if (prefs.schedule === 'Manual' || prefs.paused) {
     if (await TaskManager.isTaskRegisteredAsync(TASK))
