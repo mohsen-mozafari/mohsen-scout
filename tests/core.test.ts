@@ -7,7 +7,6 @@ import { exportBackup, importBackup, personalLinks, restorePersonalData } from '
 import { moveNoteBlock } from '../lib/utils';
 import {
   defaults,
-  RETENTION_MS,
   purgeExpired,
   type Video,
   type Report,
@@ -518,24 +517,20 @@ void test('Foundation: defaults belong to Mohsen and have no secrets', () => {
 void test('Storage: malformed persisted data is rejected', () => {
   assert.throws(() => validateLocal({ ...defaults(), notes: 'bad' }));
 });
-void test('Storage: API metadata expires at 29 days while personal notes and links remain', () => {
+void test('Storage: YouTube videos, reports and snapshots persist beyond the former 29-day boundary', () => {
   const d = defaults();
-  d.videos = [video, { ...video, id: 'old', fetchedAt: now - RETENTION_MS }];
-  d.links = [
-    {
-      id: 'old',
-      url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
-      manualTitle: 'My label',
-      topic: 'My topic',
-      note: 'My note',
-      folder: 'Ideas',
-      tags: ['personal'],
-      savedAt: 0,
-    },
-  ];
+  const old = now - 90 * 86400000;
+  d.videos = [{ ...video, id: 'old-retained', fetchedAt: old }];
+  d.reports = [{ ...regressionReport, id: 'old-report', createdAt: old, videos: [{ ...video, id: 'old-retained', fetchedAt: old }] }];
+  d.youtubeSnapshots = [{
+    id: 'snapshot-old', videoId: 'old-retained', channel: 'MOCK channel',
+    capturedAt: old, viewCount: 1000, likeCount: 20, commentCount: 1,
+  }];
   const clean = purgeExpired(d, now);
   assert.equal(clean.videos.length, 1);
-  assert.equal(clean.links[0].note, 'My note');
+  assert.equal(clean.reports.length, 1);
+  assert.equal(clean.reports[0]?.videos.length, 1);
+  assert.equal(clean.youtubeSnapshots.length, 1);
 });
 void test('Backup: round trip preserves personal data and strips all API metadata/opinions/schedules', () => {
   const d = defaults();
@@ -1052,16 +1047,23 @@ const regressionLink = {
   tags: [],
   savedAt: now,
 };
-void test('Retention: expired reports lose references but personal bookmarked URLs remain', () => {
+void test('Retention: old YouTube metadata never expires and report links stay intact', () => {
   const data = defaults();
+  const old = now - 120 * 86400000;
   data.links = [regressionLink];
-  data.videos = [{ ...video, fetchedAt: now - RETENTION_MS }];
-  data.reports = [{ ...regressionReport, createdAt: now - RETENTION_MS }];
-  data.ideas = [{ ...regressionIdea, videoIds: [video.id, 'unsaved'] }];
+  data.videos = [{ ...video, fetchedAt: old }];
+  data.reports = [{ ...regressionReport, createdAt: old, videos: [{ ...video, fetchedAt: old }] }];
+  data.ideas = [{ ...regressionIdea, reportId: regressionReport.id, videoIds: [video.id] }];
+  data.youtubeSnapshots = [{
+    id: 'old-snapshot', videoId: video.id, channel: video.channel,
+    capturedAt: old, viewCount: 900, likeCount: 30, commentCount: 2,
+  }];
   const clean = purgeExpired(data, now);
-  assert.equal(clean.ideas[0].reportId, undefined);
-  assert.deepEqual(clean.ideas[0].videoIds, [video.id]);
-  assert.equal(clean.ideas[0].concept, regressionIdea.concept);
+  assert.equal(clean.videos.length, 1);
+  assert.equal(clean.reports.length, 1);
+  assert.equal(clean.ideas[0]?.reportId, regressionReport.id);
+  assert.deepEqual(clean.ideas[0]?.videoIds, [video.id]);
+  assert.equal(clean.youtubeSnapshots.length, 1);
 });
 void test('Retention: metadata clearing removes automated report and video references', () => {
   const data = defaults();
@@ -1070,13 +1072,13 @@ void test('Retention: metadata clearing removes automated report and video refer
   assert.equal(clean.ideas[0].reportId, undefined);
   assert.deepEqual(clean.ideas[0].videoIds, []);
 });
-void test('Retention: nested video metadata expires independently of a current report', () => {
+void test('Retention: nested historical video metadata remains in its report', () => {
   const data = defaults();
-  data.reports = [{ ...regressionReport, videos: [{ ...video, fetchedAt: now - RETENTION_MS }] }];
-  assert.deepEqual(purgeExpired(data, now).reports[0].videos, []);
+  data.reports = [{ ...regressionReport, videos: [{ ...video, fetchedAt: now - 120 * 86400000 }] }];
+  assert.equal(purgeExpired(data, now).reports[0]?.videos.length, 1);
 });
 
-void test('Retention: activity report links are pruned when nested YouTube metadata expires', () => {
+void test('Retention: activity links to retained historical reports remain valid; orphan links are pruned', () => {
   const data = defaults();
   data.reports = [
     {
@@ -1109,8 +1111,8 @@ void test('Retention: activity report links are pruned when nested YouTube metad
     { ...activity, id: 'orphan-video-link', reportId: 'missing-report' },
   ];
   const clean = purgeExpired(data, now);
-  assert.deepEqual(clean.reports.find((report) => report.id === 'retention-report')?.videos, []);
-  assert.equal(clean.researchActivity.find((event) => event.id === 'expired-video-link')?.reportId, undefined);
+  assert.equal(clean.reports.find((report) => report.id === 'retention-report')?.videos.length, 1);
+  assert.equal(clean.researchActivity.find((event) => event.id === 'expired-video-link')?.reportId, 'retention-report');
   assert.equal(clean.researchActivity.find((event) => event.id === 'orphan-video-link')?.reportId, undefined);
   assert.equal(clean.researchActivity.find((event) => event.id === 'live-video-link')?.reportId, 'live-retention-report');
 });
@@ -1522,7 +1524,8 @@ void test('Editorial priority bands use the centralized, evidence-only threshold
     EDITORIAL_PRIORITY_CONFIG.weights.relevance +
       EDITORIAL_PRIORITY_CONFIG.weights.evidenceBreadth +
       EDITORIAL_PRIORITY_CONFIG.weights.freshness +
-      EDITORIAL_PRIORITY_CONFIG.weights.differentiation,
+      EDITORIAL_PRIORITY_CONFIG.weights.differentiation +
+      EDITORIAL_PRIORITY_CONFIG.weights.platformMomentum,
     1,
   );
   assert.equal(getEditorialPriorityBand(85), 'strong');
@@ -1530,6 +1533,7 @@ void test('Editorial priority bands use the centralized, evidence-only threshold
   assert.equal(getEditorialPriorityBand(64), 'weak');
   assert.equal(getEditorialPriorityBand(100), 'strong');
   assert.equal(getEditorialPriorityBand(0), 'weak');
+  assert.equal(EDITORIAL_PRIORITY_CONFIG.baseWeights.relevance + EDITORIAL_PRIORITY_CONFIG.baseWeights.evidenceBreadth + EDITORIAL_PRIORITY_CONFIG.baseWeights.freshness + EDITORIAL_PRIORITY_CONFIG.baseWeights.differentiation, 1);
 });
 
 function makeEditorialPriorityTestIdea(topic: string, engineScore?: number) {
@@ -1582,7 +1586,7 @@ void test('Editorial priority does not fabricate freshness when all matched evid
   assert.equal(result.components.freshness, 0);
 });
 
-void test('Editorial scoring is identical with or without raw YouTube API samples', () => {
+void test('Editorial scoring uses measured YouTube velocity without counting videos as independent publisher groups', () => {
   const base = {
     topic: 'Mars sample return',
     anchor: 'Mars sample return technical review',
@@ -1598,12 +1602,16 @@ void test('Editorial scoring is identical with or without raw YouTube API sample
   const withVideoSamples = scoreEditorialOpportunity({
     ...base,
     videos: [
-      { title: 'MOCK Mars sample return views', channel: 'MOCK channel A', publishedAt: '2026-11-19T00:00:00Z', viewCount: 9000000 },
-      { title: 'MOCK Mars sample return high engagement', channel: 'MOCK channel B', publishedAt: '2026-11-18T00:00:00Z', viewCount: 8000000 },
-      { title: 'MOCK Mars sample return breakthrough', channel: 'MOCK channel C', publishedAt: '2026-11-17T00:00:00Z', viewCount: 7000000 },
+      { title: 'MOCK Mars sample return views', channel: 'MOCK channel A', publishedAt: '2026-11-19T00:00:00Z', viewCount: 9000000, viewsPerHour: 1200, channelOutlierRatio: 5 },
+      { title: 'MOCK Mars sample return high engagement', channel: 'MOCK channel B', publishedAt: '2026-11-18T00:00:00Z', viewCount: 8000000, viewsPerHour: 600, channelOutlierRatio: 3 },
+      { title: 'MOCK Mars sample return breakthrough', channel: 'MOCK channel C', publishedAt: '2026-11-17T00:00:00Z', viewCount: 7000000, viewsPerHour: 300, channelOutlierRatio: 2 },
     ],
   });
-  assert.deepEqual(withVideoSamples, withoutVideoSamples);
+  assert.ok(withVideoSamples.score > withoutVideoSamples.score);
+  assert.equal(withVideoSamples.components.audienceSignal, null);
+  assert.ok(withVideoSamples.components.platformMomentum > 0);
+  assert.ok(withVideoSamples.reason.includes('2 publisher group(s)'));
+  assert.ok(withVideoSamples.reason.includes('measured platform momentum'));
 });
 
 void test('YouTube growth requires two snapshots and computes elapsed-time velocity', () => {
@@ -1624,4 +1632,22 @@ void test('YouTube growth does not invent velocity for zero or too-short interva
   const second = captureYouTubeSnapshots([{ ...first, viewCount: 1500 }], initial.snapshots, now + 5 * 60000);
   assert.equal(second.videos[0].growth?.status, 'insufficient-history');
   assert.equal(second.videos[0].growth?.viewsPerHour, null);
+});
+
+void test('YouTube channel baseline excludes the measured video and uses three peer histories', () => {
+  const capturedAt = Date.UTC(2026, 10, 25, 12, 0, 0);
+  const day = 86400000;
+  const history: import('../lib/types').YouTubeSnapshot[] = [];
+  for (const [videoId, rate] of [['peer-1', 100], ['peer-2', 200], ['peer-3', 300], ['target', 1000]] as const) {
+    history.push(
+      { id: videoId + ':a', videoId, channel: 'Shared channel', capturedAt: capturedAt - 2 * day, viewCount: 0, likeCount: null, commentCount: null },
+      { id: videoId + ':b', videoId, channel: 'Shared channel', capturedAt: capturedAt - day, viewCount: rate, likeCount: null, commentCount: null },
+    );
+  }
+  const target: Video = { ...video, id: 'target', channel: 'Shared channel', viewCount: 2000, likeCount: null };
+  const result = captureYouTubeSnapshots([target], history, capturedAt);
+  assert.equal(result.videos[0]?.growth?.viewsPerDay, 1000);
+  assert.equal(result.videos[0]?.growth?.channelBaselineViewsPerDay, 200);
+  assert.equal(result.videos[0]?.growth?.channelOutlierRatio, 5);
+  assert.equal(result.videos[0]?.growth?.snapshotCount, 3);
 });

@@ -209,8 +209,8 @@ void test('cross-source editorial angles require publisher and independent web e
   });
   assert.ok(generated.length > 0);
   assert.ok(generated.every((idea) => idea.ideaCategory === 'Cross-source'));
-  assert.ok(generated.every((idea) => idea.videoIds.length === 0));
-  assert.ok(generated.every((idea) => idea.engineScoreBasis === 'publisher-web-only-v2'));
+  assert.ok(generated.every((idea) => idea.videoIds.length > 0));
+  assert.ok(generated.every((idea) => idea.engineScoreBasis === 'platform-aware-v3'));
 });
 
 void test('no evidence produces no fabricated generated idea', () => {
@@ -301,7 +301,7 @@ void test('one isolated YouTube video is insufficient evidence for an automated 
   assert.deepEqual(generated, []);
 });
 
-void test('YouTube-only videos cannot support generated editorial ideas', () => {
+void test('multiple YouTube platform signals can support a platform-aware idea without becoming publisher citations', () => {
   const rawTitles = [
     'MOCK: JWST exoplanet atmosphere methane spectroscopy signals',
     'MOCK: James Webb exoplanet atmosphere water vapor analysis',
@@ -315,28 +315,24 @@ void test('YouTube-only videos cannot support generated editorial ideas', () => 
     news: [],
     reportId: 'report-video-test',
     videos: [
-      {
-        id: 'dQw4w9WgXcQ',
-        title: rawTitles[0],
-        description: rawDescriptions[0],
-        channel: 'MOCK Science Channel A',
-        publishedAt: '2026-11-15T12:00:00Z',
-        viewCount: 2400000,
-      },
-      {
-        id: '9bZkp7q19f0',
-        title: rawTitles[1],
-        description: rawDescriptions[1],
-        channel: 'MOCK Science Channel B',
-        publishedAt: '2026-11-14T12:00:00Z',
-        viewCount: 1200000,
-      },
+      { id: 'dQw4w9WgXcQ', title: rawTitles[0], description: rawDescriptions[0],
+        channel: 'MOCK Science Channel A', publishedAt: '2026-11-15T12:00:00Z',
+        viewCount: 2400000, growth: { snapshotCount: 3, deltaViews: 90000, viewsPerHour: 3750,
+          viewsPerDay: 90000, channelBaselineViewsPerDay: 10000, channelOutlierRatio: 9,
+          measuredAt: base.now, status: 'measured' } },
+      { id: '9bZkp7q19f0', title: rawTitles[1], description: rawDescriptions[1],
+        channel: 'MOCK Science Channel B', publishedAt: '2026-11-14T12:00:00Z',
+        viewCount: 1200000, growth: { snapshotCount: 2, deltaViews: 24000, viewsPerHour: 1000,
+          viewsPerDay: 24000, channelBaselineViewsPerDay: 4000, channelOutlierRatio: 6,
+          measuredAt: base.now, status: 'measured' } },
     ],
     limit: 5,
   });
-  assert.deepEqual(generated, []);
+  assert.ok(generated.length > 0);
+  assert.ok(generated.every((idea) => idea.engineScoreBasis === 'platform-aware-v3'));
+  assert.ok(generated.every((idea) => idea.videoIds.length >= 2));
+  assert.ok(generated.every((idea) => !(idea.evidenceSources ?? []).some((source) => source.sourceUrl.includes('youtube.com'))));
 });
-
 void test('user-provided topic text alone is not treated as independent evidence', () => {
   const generated = generateEditorialIdeas({
     ...base,
@@ -433,10 +429,10 @@ void test('publisher-backed ideas use publisher evidence and ignore the separate
   });
   assert.ok(generated.length > 0);
   assert.ok(generated[0].concept.includes('3 publisher item(s) received; 2 topic-matched'));
-  assert.ok(!generated[0].concept.includes('YouTube sample'));
+  assert.ok(generated[0].concept.includes('YouTube'));
   assert.ok(generated[0].sourceUrl?.startsWith('https://'));
-  assert.equal(generated[0].videoIds.length, 0);
-  assert.equal(generated[0].engineScoreBasis, 'publisher-web-only-v2');
+  assert.ok(generated[0].videoIds.length > 0);
+  assert.equal(generated[0].engineScoreBasis, 'platform-aware-v3');
   assert.ok((generated[0].evidenceSources ?? []).length > 0);
   assert.ok((generated[0].evidenceSources ?? []).every((source) => source.sourceType === 'publisher'));
   assert.equal(generated[0].reportId, 'report-from-separate-youtube-sample');

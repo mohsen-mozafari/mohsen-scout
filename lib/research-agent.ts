@@ -16,6 +16,14 @@ import {
 } from './research-agent-core';
 export type { ResearchAgentInput } from './research-agent-core';
 
+let providerQueue: Promise<unknown> = Promise.resolve();
+
+export function withResearchProviderQueue<T>(work: () => Promise<T>): Promise<T> {
+  const action = providerQueue.then(work, work);
+  providerQueue = action.then(() => undefined, () => undefined);
+  return action;
+}
+
 export type ResearchAgentOutcome = {
   dossier?: ResearchDossier;
   provider?: SecondOpinionProvider;
@@ -93,6 +101,7 @@ export async function runResearchAgent(input: ResearchAgentInput): Promise<Resea
             input.evidence,
             input.preferences.uiLanguage ?? 'fa',
             input.youtubeSignals ?? [],
+            { researchNiche: input.researchNiche, internalEngineFindings: input.internalEngineFindings },
           ),
           fetch,
           input.beforeProviderRequest,
@@ -136,4 +145,10 @@ export async function runResearchAgent(input: ResearchAgentInput): Promise<Resea
       ],
     };
   }
+}
+
+
+/** Runs a complete first-model + independent-review pair without provider interleaving. */
+export function runResearchAgentSerialized(input: ResearchAgentInput): Promise<ResearchAgentOutcome> {
+  return withResearchProviderQueue(() => runResearchAgent(input));
 }

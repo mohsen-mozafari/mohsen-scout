@@ -120,7 +120,7 @@ export type Idea = {
   /** Explainable local editorial-priority score (not a view or revenue forecast). */
   engineScore?: number;
   engineScoreReason?: string;
-  engineScoreBasis?: 'publisher-web-only-v2';
+  engineScoreBasis?: 'publisher-web-only-v2' | 'platform-aware-v3';
   evidenceSources?: IdeaEvidenceSource[];
 };
 export type Report = {
@@ -381,7 +381,6 @@ export type LocalData = {
   budget: Budget;
 };
 export const uid = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
-export const RETENTION_MS = 29 * 24 * 60 * 60 * 1000;
 export function defaults(): LocalData {
   return {
     feedRegistry: [],
@@ -420,65 +419,34 @@ export function defaults(): LocalData {
     budget: { date: '', units: 0, requests: 0, exhausted: false, searchExhausted: false, otherExhausted: false, searchManualRequests: 0, searchAutomaticRequests: 0, searchReserveRequests: 0, otherManualUnits: 0, otherAutomaticUnits: 0, otherReserveUnits: 0 },
   };
 }
-export function purgeExpired(data: LocalData, now = Date.now()): LocalData {
-  const hasExpiredVideo = data.videos.some((video) => now - video.fetchedAt >= RETENTION_MS);
-  const hasExpiredReport = data.reports.some((report) =>
-    now - report.createdAt >= RETENTION_MS ||
-    report.videos.some((video) => now - video.fetchedAt >= RETENTION_MS),
-  );
-
-  const originalReportIds = new Set(data.reports.map((report) => report.id));
-  const originalVideoIds = new Set([...data.videos.map((video) => video.id), ...data.links.map((link) => link.id)]);
+export function purgeExpired(data: LocalData, _now = Date.now()): LocalData {
+  // YouTube reports, videos and snapshots are owner-retained data: never expire them.
+  // This maintenance pass only removes dangling links after an explicit user deletion.
+  const reportIds = new Set(data.reports.map((report) => report.id));
+  const videoIds = new Set([...data.videos.map((video) => video.id), ...data.links.map((link) => link.id)]);
   const hasOrphanedIdeaReference = data.ideas.some((idea) =>
-    Boolean(idea.reportId && !originalReportIds.has(idea.reportId)) ||
-    idea.videoIds.some((id) => !originalVideoIds.has(id)),
+    Boolean(idea.reportId && !reportIds.has(idea.reportId)) ||
+    idea.videoIds.some((id) => !videoIds.has(id)),
   );
-
-  const videos = hasExpiredVideo
-    ? data.videos.filter((video) => now - video.fetchedAt < RETENTION_MS)
-    : data.videos;
-  const reports = hasExpiredReport
-    ? data.reports
-      .filter((report) => now - report.createdAt < RETENTION_MS)
-      .map((report) => {
-        const keptVideos = report.videos.filter((video) => now - video.fetchedAt < RETENTION_MS);
-        return keptVideos.length === report.videos.length ? report : { ...report, videos: keptVideos };
-      })
-    : data.reports;
-
-  // Keep automated activity links only while the referenced report has live
-  // YouTube API metadata. The detailed raw sample remains in the 29-day domain.
-  const liveYoutubeReportIds = new Set(reports
-    .filter((report) => report.videos.some((video) =>
-      video.fetchedAt > 0 && now >= video.fetchedAt && now - video.fetchedAt < RETENTION_MS,
-    ))
-    .map((report) => report.id));
   const hasOrphanedActivityReference = data.researchActivity.some((event) =>
-    Boolean(event.reportId && !liveYoutubeReportIds.has(event.reportId)),
+    Boolean(event.reportId && !reportIds.has(event.reportId)),
   );
-  if (!hasExpiredVideo && !hasExpiredReport && !hasOrphanedIdeaReference && !hasOrphanedActivityReference) return data;
-
-  const reportIds = new Set(reports.map((report) => report.id));
-  const retainedIds = new Set([...videos.map((video) => video.id), ...data.links.map((link) => link.id)]);
+  if (!hasOrphanedIdeaReference && !hasOrphanedActivityReference) return data;
   let ideasChanged = false;
   const ideas = data.ideas.map((idea) => {
-    const videoIds = idea.videoIds.filter((id) => retainedIds.has(id));
+    const nextVideoIds = idea.videoIds.filter((id) => videoIds.has(id));
     const reportId = idea.reportId && reportIds.has(idea.reportId) ? idea.reportId : undefined;
-    if (videoIds.length === idea.videoIds.length && reportId === idea.reportId) return idea;
+    if (nextVideoIds.length === idea.videoIds.length && reportId === idea.reportId) return idea;
     ideasChanged = true;
-    return { ...idea, videoIds, reportId };
+    return { ...idea, videoIds: nextVideoIds, reportId };
   });
   const researchActivity = hasOrphanedActivityReference
     ? data.researchActivity.map((event) =>
-      event.reportId && !liveYoutubeReportIds.has(event.reportId)
-        ? { ...event, reportId: undefined }
-        : event,
-    )
+        event.reportId && !reportIds.has(event.reportId) ? { ...event, reportId: undefined } : event,
+      )
     : data.researchActivity;
   return {
     ...data,
-    videos,
-    reports,
     ideas: ideasChanged ? ideas : data.ideas,
     researchActivity,
   };

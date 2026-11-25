@@ -1,5 +1,4 @@
-import type { LocalData, Report, Video } from './types';
-import { RETENTION_MS } from './types';
+import type { LocalData } from './types';
 
 export const RECORD_DOMAINS = [
   'ideas', 'links', 'notes', 'opinions', 'researchMemory', 'researchActivity', 'reports', 'videos', 'youtubeSnapshots',
@@ -61,20 +60,10 @@ export function recordUpdatedAt(domain: RecordDomain, value: unknown, now = Date
   return typeof candidate === 'number' && Number.isFinite(candidate) && candidate >= 0 ? candidate : now;
 }
 
-export function recordExpiresAt(domain: RecordDomain, value: unknown): number | null {
-  const record = value as Record<string, unknown>;
-  if (domain === 'youtubeSnapshots') {
-    const capturedAt = (record as { capturedAt: number }).capturedAt;
-    return Number.isFinite(capturedAt) ? capturedAt + RETENTION_MS : 0;
-  }
-  if (domain === 'videos') {
-    const fetchedAt = (record as unknown as Video).fetchedAt;
-    return Number.isFinite(fetchedAt) ? fetchedAt + RETENTION_MS : 0;
-  }
-  if (domain === 'reports') {
-    const createdAt = (record as unknown as Report).createdAt;
-    return Number.isFinite(createdAt) ? createdAt + RETENTION_MS : 0;
-  }
+export const NO_EXPIRY = Number.MAX_SAFE_INTEGER;
+
+export function recordExpiresAt(domain: RecordDomain, _value: unknown): number | null {
+  if (domain === 'reports' || domain === 'videos' || domain === 'youtubeSnapshots') return NO_EXPIRY;
   return null;
 }
 

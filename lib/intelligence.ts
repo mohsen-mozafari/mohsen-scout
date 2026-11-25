@@ -1,3 +1,4 @@
+import { EDITORIAL_PRIORITY_CONFIG } from './editorial-priority';
 export type ResearchFeedbackProfile = {
   positiveTopics: string[];
   negativeTopics: string[];
@@ -649,9 +650,11 @@ export type EditorialOpportunitySignals = {
     relevance: number;
     evidenceBreadth: number;
     freshness: number;
-    /** Always null: raw lifetime views are not converted into demand or growth estimates. */
+    /** Always null: this score is not a forecast of audience size or demand. */
     audienceSignal: null;
     differentiation: number;
+    /** Bounded score from measured snapshot velocity and channel-relative outlier data only. */
+    platformMomentum: number;
   };
   reason: string;
 };
@@ -659,15 +662,15 @@ export type EditorialOpportunitySignals = {
 /**
  * Explainable editorial prioritization from the supplied research sample.
  * This is a relative editorial decision aid, never a prediction of views,
- * revenue, audience demand, growth or virality. Raw view counts are deliberately
- * excluded from the calculation; missing evidence is not fabricated.
+ * revenue, audience demand or virality. Lifetime view counts are excluded;
+ * platform momentum uses measured snapshot velocity and channel-relative history only.
  */
 export type EditorialOpportunityScorerInput = {
   topic: string;
   news: readonly ResearchDocument[];
   historicalNews?: readonly ResearchDocument[];
   context?: readonly ResearchDocument[];
-  videos: readonly { title: string; description?: string; channel?: string; publishedAt?: string; viewCount?: number | null }[];
+  videos: readonly { title: string; description?: string; channel?: string; publishedAt?: string; viewCount?: number | null; viewsPerHour?: number | null; viewsPerDay?: number | null; channelOutlierRatio?: number | null }[];
   now?: number;
 };
 
@@ -676,6 +679,7 @@ type IndexedEditorialDocument = {
   families: readonly string[];
   kind: 'news' | 'history' | 'video' | 'context';
   channel: string;
+  momentum: number;
 };
 
 /**
@@ -694,36 +698,43 @@ export function createEditorialOpportunityScorer(
     families: readonly string[];
     kind: IndexedEditorialDocument['kind'];
     channel: string;
+    momentum: number;
   }[] = [
     ...input.news.map((item) => ({
       text: item.title + ' ' + (item.summary ?? ''),
       date: timestamp(item.publishedAt),
       families: publisherFamilies(item),
       kind: 'news' as const,
-      channel: '',
+      channel: '', momentum: 0,
     })),
     ...(input.historicalNews ?? []).map((item) => ({
       text: item.title + ' ' + (item.summary ?? ''),
       date: timestamp(item.publishedAt),
       families: publisherFamilies(item),
       kind: 'history' as const,
-      channel: '',
+      channel: '', momentum: 0,
     })),
     ...(input.context ?? []).map((item) => ({
       text: item.title + ' ' + (item.summary ?? ''),
       date: timestamp(item.publishedAt),
       families: [] as string[],
       kind: 'context' as const,
-      channel: '',
+      channel: '', momentum: 0,
     })),
-    // YouTube API metadata is a separate display-only lane. Editorial scores ignore it.
-    ...([] as EditorialOpportunityScorerInput['videos']).map((item) => ({
-      text: item.title + ' ' + (item.description ?? ''),
-      date: timestamp(item.publishedAt),
-      families: [] as string[],
-      kind: 'video' as const,
-      channel: item.channel ?? '',
-    })),
+    // YouTube contributes platform relevance/freshness, never independent-publisher corroboration.
+    ...input.videos.map((item) => {
+      const rate = item.viewsPerHour ?? (item.viewsPerDay == null ? null : item.viewsPerDay / 24);
+      const velocityScore = rate !== null && Number.isFinite(rate) && rate > 0
+        ? Math.min(100, Math.log10(1 + rate) * 22) : 0;
+      const outlierScore = item.channelOutlierRatio !== null && item.channelOutlierRatio !== undefined &&
+        Number.isFinite(item.channelOutlierRatio) && item.channelOutlierRatio > 0
+        ? Math.min(100, Math.log10(1 + item.channelOutlierRatio) * 35) : 0;
+      return {
+        text: item.title + ' ' + (item.description ?? ''), date: timestamp(item.publishedAt),
+        families: [] as string[], kind: 'video' as const, channel: item.channel ?? '',
+        momentum: Math.round(velocityScore * 0.7 + outlierScore * 0.3),
+      };
+    }),
   ];
 
   const documents: IndexedEditorialDocument[] = [];
@@ -738,6 +749,7 @@ export function createEditorialOpportunityScorer(
       families: source.families,
       kind: source.kind,
       channel: source.channel,
+      momentum: source.momentum,
     });
 
     if (scoreResearchText(input.topic, source.text) > 0) {
@@ -784,14 +796,25 @@ export function createEditorialOpportunityScorer(
     // Missing dates are missing evidence, not a neutral or invented freshness score.
     const freshness = dated.length ? Math.round(100 * fresh / dated.length) : 0;
     const audienceSignal = null;
+    const platformVideos = relevant.filter((item) => item.kind === 'video');
+    const platformMomentum = platformVideos.length
+      ? Math.round(platformVideos.reduce((sum, item) => sum + item.momentum, 0) / platformVideos.length)
+      : 0;
     const anchorFrequency = anchorDocuments.size;
     const differentiation = Math.round(Math.max(0, Math.min(100,
       100 - Math.min(65, Math.max(0, anchorFrequency - 1) * 7))));
+    const measuredMomentumAvailable = platformVideos.some((item) => item.momentum > 0);
+    const activeWeights = measuredMomentumAvailable
+      ? EDITORIAL_PRIORITY_CONFIG.weights
+      : EDITORIAL_PRIORITY_CONFIG.baseWeights;
     const weighted = [
-      { value: relevance, weight: 0.30 },
-      { value: evidenceBreadth, weight: 0.30 },
-      { value: freshness, weight: 0.20 },
-      { value: differentiation, weight: 0.20 },
+      { value: relevance, weight: activeWeights.relevance },
+      { value: evidenceBreadth, weight: activeWeights.evidenceBreadth },
+      { value: freshness, weight: activeWeights.freshness },
+      { value: differentiation, weight: activeWeights.differentiation },
+      ...(measuredMomentumAvailable
+        ? [{ value: platformMomentum, weight: EDITORIAL_PRIORITY_CONFIG.weights.platformMomentum }]
+        : []),
     ];
     const score = Math.round(weighted.reduce((sum, part) => sum + part.value * part.weight, 0));
     const freshnessRatio = dated.length ? fresh / dated.length : 0;
@@ -808,14 +831,15 @@ export function createEditorialOpportunityScorer(
       publisherGroups.size ? publisherGroups.size + ' publisher group(s) across current and saved research' : 'no directly relevant publisher group',
       currentPublisherItems + ' current and ' + historicalPublisherItems + ' historical publisher record(s) matched',
       supportingContextItems + ' supporting context record(s) matched',
-      'YouTube API metadata is intentionally excluded from editorial scores',
+      platformVideos.length + ' YouTube platform observation(s) matched',
+      platformVideos.length ? 'measured platform momentum ' + platformMomentum + '/100 from view velocity and channel-relative outliers; not a demand forecast' : 'no measured platform-momentum sample',
       fresh ? fresh + ' fresh dated evidence record(s)' : 'no fresh dated evidence record',
-      'raw view counts are not treated as demand or growth indicators',
+      'lifetime view counts are not used as demand; platform momentum uses measured snapshot velocity only',
     ].join('; ');
     return {
       score,
       confidence,
-      components: { relevance, evidenceBreadth, freshness, audienceSignal, differentiation },
+      components: { relevance, evidenceBreadth, freshness, audienceSignal, differentiation, platformMomentum },
       reason,
     };
   };

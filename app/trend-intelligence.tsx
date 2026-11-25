@@ -9,6 +9,7 @@ import { getKey } from '@/lib/vault';
 import { MediaPreview } from '@/components/MediaPreview';
 import { rememberTopicDossier } from '@/lib/topic-dossier';
 import { recordRuntimeFinish, recordRuntimeStart } from '@/lib/runtime-metrics';
+import type { Video } from '@/lib/types';
 
 const formatCount = (value: number | null, label: string) => value === null ? label + ' unavailable' : value.toLocaleString() + ' ' + label;
 
@@ -62,9 +63,23 @@ export default function TrendIntelligence() {
       throw error;
     }
     if (generation !== searchGeneration.current) return;
+    let persistedVideos: Video[] = [];
+    try {
+      const fetchedAt = Date.now();
+      persistedVideos = await useScout.getState().saveYouTubeSample(result.videos.map((video) => ({
+        id: video.id, title: video.title, description: video.description, channel: video.channel,
+        thumbnail: video.thumbnailUrl, publishedAt: video.publishedAt, fetchedAt,
+        query: search.topic, viewCount: video.viewCount, likeCount: video.likeCount,
+        commentCount: null, channelId: video.channelId,
+      })));
+    } catch {
+      setWarning('YouTube sample was loaded, but its local growth snapshot could not be saved.');
+    }
+    const growthById = new Map(persistedVideos.map((video) => [video.id, video.growth]));
+    const pageVideos = result.videos.map((video) => ({ ...video, growth: growthById.get(video.id) ?? video.growth }));
     const combinedVideos = append
-      ? [...videos, ...result.videos.filter((video) => !videos.some((item) => item.id === video.id))]
-      : result.videos;
+      ? [...videos, ...pageVideos.filter((video) => !videos.some((item) => item.id === video.id))]
+      : pageVideos;
     rememberTopicDossier(search.topic, {
       videos: combinedVideos,
       videoCriteria: {
@@ -148,6 +163,7 @@ export default function TrendIntelligence() {
             <Heading>{video.title}</Heading>
             <Text style={styles.badge}>{video.channel}</Text>
             <Txt muted>{formatCount(video.viewCount, 'views')} · {formatCount(video.likeCount, 'likes')}</Txt>
+            <Txt muted>{video.growth?.viewsPerHour == null ? 'Growth: awaiting another snapshot' : video.growth.viewsPerHour.toLocaleString(undefined, { maximumFractionDigits: 1 }) + ' views/hour'} · {video.growth?.channelOutlierRatio == null ? 'Channel baseline unavailable' : video.growth.channelOutlierRatio.toLocaleString(undefined, { maximumFractionDigits: 2 }) + '× channel baseline'}</Txt>
             <Txt muted>{video.channelSubscriberCount === null ? 'Subscribers hidden/unavailable' : video.channelSubscriberCount.toLocaleString() + ' subscribers'} · {video.channelVideoCount === null ? 'Channel video total unavailable' : video.channelVideoCount.toLocaleString() + ' channel videos'}</Txt>
             <Txt muted>Published {new Date(video.publishedAt).toLocaleDateString()}</Txt>
           </View>

@@ -30,29 +30,48 @@ const evidence: WebResearchItem[] = [
   },
 ];
 
-void test('research prompt contains only independent web evidence and previous research, never YouTube API metadata', () => {
+void test('research prompt receives primary YouTube platform signals, growth and selected niche without treating them as publisher citations', () => {
   const input: ResearchAgentInput = {
     topic: 'battery recycling',
-    evidence: [
-      ...evidence,
-      {
-        id: 'yt:private-video',
-        title: 'Raw YouTube title must not leave the device',
-        summary: 'viewCount 987654 and likeCount 12345',
-        url: 'https://www.youtube.com/watch?v=abcdefghijk',
-        sourceName: 'YouTube',
-        category: 'web',
+    researchNiche: 'space science and exploration',
+    evidence,
+    youtubeSignals: [{
+      id: 'video-1',
+      title: 'MOCK YouTube trend: battery recycling breakthrough',
+      description: 'A sampled video with measured view velocity.',
+      channel: 'MOCK science channel',
+      channelId: 'UCmock',
+      publishedAt: '2026-11-20T12:00:00.000Z',
+      thumbnailUrl: 'https://example.org/thumb.jpg',
+      viewCount: 120000,
+      likeCount: 6000,
+      channelSubscriberCount: 50000,
+      channelVideoCount: 1200,
+      url: 'https://www.youtube.com/watch?v=abcdefghijk',
+      growth: {
+        snapshotCount: 3, deltaViews: 18000, viewsPerHour: 750, viewsPerDay: 18000,
+        channelBaselineViewsPerDay: 2500, channelOutlierRatio: 7.2,
+        measuredAt: 1795195200000, status: 'measured',
       },
-    ],
+    }],
+    internalEngineFindings: {
+      summary: 'Local engine found a new platform trend.',
+      keyFindings: ['Three related videos accelerated.'],
+      gaps: ['Independent primary data is missing.'],
+      verificationQuestions: ['Is the reported mechanism real?'],
+      potentialContradictions: ['One publisher disputes the reported scale.'],
+    },
     preferences: defaults().preferences,
   };
   const prompt = buildResearchAgentPrompt(input);
   assert.ok(prompt.includes('Independent battery recycling study'));
-  assert.ok(!prompt.includes('Raw YouTube title must not leave the device'));
-  assert.ok(!prompt.includes('987654'));
-  assert.ok(prompt.includes('counterevidence'));
+  assert.ok(prompt.includes('MOCK YouTube trend: battery recycling breakthrough'));
+  assert.ok(prompt.includes('750'));
+  assert.ok(prompt.includes('7.2'));
+  assert.ok(prompt.includes('space science and exploration'));
+  assert.ok(prompt.includes('Local engine found a new platform trend.'));
+  assert.ok(prompt.includes('not independent publisher citations'));
 });
-
 void test('research response parser accepts fenced JSON but rejects non-object payloads', () => {
   assert.deepEqual(parseResearchAgentJson('\x60\x60\x60json\n{"hypotheses":[]}\n\x60\x60\x60'), { hypotheses: [] });
   assert.throws(() => parseResearchAgentJson('[]'));

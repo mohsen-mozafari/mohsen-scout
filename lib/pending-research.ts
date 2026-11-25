@@ -1,41 +1,132 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import type { ResearchInput } from './types';
+import type { ResearchDossier, ResearchInput } from './types';
 
-const KEY = 'mohsen-scout.pending-research.v1';
-const MAX_AGE_MS = 14 * 24 * 60 * 60 * 1000;
+export type PendingResearchEvidence = {
+  id: string; title: string; summary: string; url: string; sourceName: string;
+  publishedAt?: string | null; category: 'web' | 'news';
+};
+import { uid } from './types';
+
+const KEY = 'mohsen-scout.pending-research.v2';
+const LEGACY_KEY = 'mohsen-scout.pending-research.v1';
+
+// AsyncStorage is a single shared key: serialize read/modify/write operations so
+// concurrent research runs cannot overwrite each other's recovery checkpoints.
+let pendingQueue: Promise<unknown> = Promise.resolve();
+function serializePending<T>(operation: () => Promise<T>): Promise<T> {
+  const next = pendingQueue.then(operation);
+  pendingQueue = next.then(() => undefined, () => undefined);
+  return next;
+}
 
 export type PendingResearch = {
+  id: string;
   input: ResearchInput;
   savedAt: number;
+  reportId?: string;
+  stage?: 'queued' | 'youtube-saved' | 'sources-reviewed' | 'ideas-saved';
+  researchDossier?: ResearchDossier;
+  evidence?: PendingResearchEvidence[];
+  queryHistory?: string[];
 };
 
-export async function savePendingResearch(input: ResearchInput): Promise<void> {
-  const pending: PendingResearch = { input, savedAt: Date.now() };
-  await AsyncStorage.setItem(KEY, JSON.stringify(pending));
+function valid(value: unknown): value is PendingResearch {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const item = value as Record<string, unknown>;
+  const input = item.input as ResearchInput | undefined;
+  return typeof item.id === 'string' && item.id.length > 0 &&
+    Boolean(input && typeof input.topic === 'string' && input.topic.trim() &&
+      Array.isArray(input.languages) && input.languages.length > 0) &&
+    typeof item.savedAt === 'number' && Number.isFinite(item.savedAt) && item.savedAt >= 0 &&
+    (item.evidence === undefined || (Array.isArray(item.evidence) && item.evidence.length <= 48 && item.evidence.every((entry) =>
+      Boolean(entry && typeof entry.id === 'string' && typeof entry.title === 'string' && typeof entry.summary === 'string' && typeof entry.url === 'string' && typeof entry.sourceName === 'string')))) &&
+    (item.queryHistory === undefined || (Array.isArray(item.queryHistory) && item.queryHistory.length <= 40 && item.queryHistory.every((query) => typeof query === 'string')));
 }
 
-export async function readPendingResearch(): Promise<PendingResearch | undefined> {
+async function readRaw(): Promise<PendingResearch[]> {
   const raw = await AsyncStorage.getItem(KEY);
-  if (!raw) return undefined;
-  try {
-    const value: unknown = JSON.parse(raw);
-    if (!value || typeof value !== 'object') return undefined;
-    const record = value as Record<string, unknown>;
-    const input = record.input as ResearchInput | undefined;
-    const savedAt = record.savedAt;
-    if (!input || typeof input.topic !== 'string' || !input.topic.trim() ||
-      !Array.isArray(input.languages) || typeof savedAt !== 'number' ||
-      !Number.isFinite(savedAt) || Date.now() - savedAt > MAX_AGE_MS) {
-      await AsyncStorage.removeItem(KEY);
-      return undefined;
+  if (raw) {
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed.filter(valid);
+    } catch {
+      // Recover from the legacy key below without deleting completed local research.
     }
-    return { input, savedAt };
-  } catch {
-    await AsyncStorage.removeItem(KEY);
-    return undefined;
   }
+  const legacy = await AsyncStorage.getItem(LEGACY_KEY);
+  if (!legacy) return [];
+  try {
+    const parsed: unknown = JSON.parse(legacy);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      const record = parsed as Record<string, unknown>;
+      const item = {
+        id: 'legacy-' + String(record.savedAt ?? uid()),
+        input: record.input,
+        savedAt: record.savedAt,
+        stage: 'queued' as const,
+      };
+      if (valid(item)) {
+        await AsyncStorage.setItem(KEY, JSON.stringify([item]));
+        await AsyncStorage.removeItem(LEGACY_KEY);
+        return [item];
+      }
+    }
+  } catch {
+    // Invalid recovery metadata is discarded; SQLite research results remain untouched.
+  }
+  return [];
 }
 
-export async function clearPendingResearch(): Promise<void> {
-  await AsyncStorage.removeItem(KEY);
+export function readPendingResearch(): Promise<PendingResearch[]> {
+  return serializePending(async () => (await readRaw()).sort((a, b) => b.savedAt - a.savedAt));
+}
+
+export function getPendingResearch(id: string): Promise<PendingResearch | undefined> {
+  return serializePending(async () => (await readRaw()).find((item) => item.id === id));
+}
+
+export function savePendingResearch(
+  input: ResearchInput,
+  id = uid(),
+  reportId?: string,
+): Promise<void> {
+  return serializePending(async () => {
+    const previous = await readRaw();
+    const current = previous.find((item) => item.id === id);
+    const next: PendingResearch = {
+      ...current,
+      id,
+      input,
+      savedAt: current?.savedAt ?? Date.now(),
+      ...(reportId ?? current?.reportId ? { reportId: reportId ?? current?.reportId } : {}),
+      stage: current?.stage ?? 'queued',
+    };
+    await AsyncStorage.setItem(KEY, JSON.stringify([
+      next,
+      ...previous.filter((item) => item.id !== id),
+    ]));
+  });
+}
+
+export function updatePendingResearch(
+  id: string,
+  patch: Partial<Pick<PendingResearch, 'reportId' | 'stage' | 'researchDossier' | 'evidence' | 'queryHistory'>>,
+): Promise<void> {
+  return serializePending(async () => {
+    const previous = await readRaw();
+    const next = previous.map((item) => item.id === id ? { ...item, ...patch } : item);
+    await AsyncStorage.setItem(KEY, JSON.stringify(next));
+  });
+}
+
+export function clearPendingResearch(id?: string): Promise<void> {
+  return serializePending(async () => {
+    if (!id) {
+      await AsyncStorage.removeItem(KEY);
+      await AsyncStorage.removeItem(LEGACY_KEY);
+      return;
+    }
+    const previous = await readRaw();
+    await AsyncStorage.setItem(KEY, JSON.stringify(previous.filter((item) => item.id !== id)));
+  });
 }

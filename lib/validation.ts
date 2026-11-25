@@ -69,7 +69,7 @@ export const researchDossierSchema = z.object({
 });
 
 const youtubeGrowth = z.object({
-  snapshotCount: z.number().int().min(1).max(10000),
+  snapshotCount: z.number().int().min(1),
   deltaViews: z.number().finite().nullable(),
   viewsPerHour: z.number().finite().nonnegative().nullable(),
   viewsPerDay: z.number().finite().nonnegative().nullable(),
@@ -161,7 +161,7 @@ const schema = z.object({
       generationKey: text.max(1200).optional(),
       engineScore: z.number().int().min(0).max(100).optional(),
       engineScoreReason: text.max(600).optional(),
-      engineScoreBasis: z.literal('publisher-web-only-v2').optional(),
+      engineScoreBasis: z.enum(['publisher-web-only-v2', 'platform-aware-v3']).optional(),
       evidenceSources: z.array(z.object({
         sourceType: z.enum(['publisher', 'web', 'encyclopedia']),
         sourceName: text.max(160),
@@ -223,7 +223,7 @@ const schema = z.object({
     }),
   ),
   videos: z.array(video),
-  youtubeSnapshots: z.array(youtubeSnapshot).max(10000).optional().default([]),
+  youtubeSnapshots: z.array(youtubeSnapshot).optional().default([]),
   researchActivity: z.array(z.object({
     id: id.max(120),
     engine: z.enum(['YouTube Data API', 'Firecrawl Search', 'Publisher Feeds', 'Wikimedia', 'Internal Engine', 'AI Provider Review']),

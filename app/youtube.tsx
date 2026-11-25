@@ -192,10 +192,10 @@ export default function Discover() {
         </Fold>
         <Action
           icon={Search}
-          disabled={busy || !ready || !topic.trim() || !selectedLanguages.length}
+          disabled={!ready || !topic.trim() || !selectedLanguages.length}
           onPress={() => void run()}
         >
-          {busy ? 'Researching…' : '2 · Search YouTube sample'}
+          {busy ? 'Start another research task' : '2 · Search YouTube sample'}
         </Action>
       </Panel>
       {Boolean(topic.trim()) && !report && (
@@ -259,7 +259,7 @@ export default function Discover() {
           {linkedIdea ? (
             <Panel>
               <Heading>Connect this research</Heading>
-              <Txt muted>Current idea: {linkedIdea.topic}. Connecting stores this report and its temporary video references locally. YouTube metadata remains subject to the existing retention policy.</Txt>
+              <Txt muted>Current idea: {linkedIdea.topic}. Connecting stores this report and its persistent YouTube video references locally.</Txt>
               <Action
                 secondary
                 busy={op.busy}
@@ -277,7 +277,7 @@ export default function Discover() {
             <Txt muted>{limitations}</Txt>
             <Txt muted>
               Collected {new Date(report.createdAt).toLocaleString('en-US')}. Cached for 15 minutes.
-              Metadata expires after 29 days.
+              YouTube reports, metadata and growth snapshots are retained locally without automatic expiry.
             </Txt>
             <Txt muted>Queries: {report.queries.join(' · ')}</Txt>
           </Fold>

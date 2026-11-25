@@ -3,7 +3,7 @@ name: Build MOHSEN SCOUT APK v1.20.1 · Grok + Cloudflare AI · Typecheck
 on:
   workflow_dispatch:
   push:
-    branches: [release/v1.20.1-xai-grok]
+    branches: [autonomous-research-v1.20.1]
     paths:
       - '.github/workflows/android-apk-v1.20.1-xai-grok.yml'
       - 'app.config.ts'

@@ -313,7 +313,7 @@ export default function Opportunities() {
       }
     }
 
-    // If the fresh YouTube request cannot complete, fall back to metadata still within its 29-day retention.
+    // If the fresh YouTube request cannot complete, fall back to the complete locally retained YouTube history.
     const fallbackData = useScout.getState().data;
     const report = fallbackData.reports.find((item) =>
       normalizeSearchText(item.input.topic) === normalizeSearchText(topic),

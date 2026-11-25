@@ -6,7 +6,7 @@ import { Page, Panel, Heading, Txt, Field, Action, Fold, styles, ErrorBox, useOp
 import { palette as p } from '@/lib/theme';
 import { useScout } from '@/lib/store';
 import { translateText } from '@/lib/i18n';
-import { uid, RETENTION_MS, type Idea, type ResearchDossier } from '@/lib/types';
+import { uid, type Idea, type ResearchDossier, type Video } from '@/lib/types';
 import { getKey } from '@/lib/vault';
 import { enrichResearchEvidence, fetchWebResearch, type WebResearchItem } from '@/lib/web-research';
 import { assessEvidenceProvenance } from '@/lib/research-provenance';
@@ -18,7 +18,7 @@ import { getTopicDossier, rememberTopicDossier } from '@/lib/topic-dossier';
 import { generateEditorialIdeas } from '@/lib/idea-generation';
 import { buildPublisherIntelligence, type PublisherIntelligence } from '@/lib/news-intelligence';
 import { createResearchMemoryEntry } from '@/lib/research-memory';
-import { runResearchAgent } from '@/lib/research-agent';
+import { runResearchAgentSerialized } from '@/lib/research-agent';
 import { assessResearchEvidenceCoverage, MAX_DEEP_RESEARCH_RESULTS_PER_QUERY, MAX_DEEP_RESEARCH_ROUNDS, mergeIndependentResearchEvidence, planResearchRound } from '@/lib/research-orchestrator';
 import { recordRuntimeFinish, recordRuntimeStart } from '@/lib/runtime-metrics';
 import { searchYouTubeSample, type YouTubeSampleVideo } from '@/lib/api';
@@ -118,11 +118,10 @@ export default function DeepResearch() {
       }
     }
     let videos: YouTubeSampleVideo[] = [];
+    let fetchedFreshYouTube = false;
     let videoCriteria = cachedDossier?.videoCriteria;
     const linkedReport = linkedIdea?.reportId ? reports.find((report) => report.id === linkedIdea.reportId) : undefined;
-    const reusableReport = linkedReport && linkedReport.videos.length > 0 && Date.now() - linkedReport.createdAt < RETENTION_MS
-      ? linkedReport
-      : undefined;
+    const reusableReport = linkedReport && linkedReport.videos.length > 0 ? linkedReport : undefined;
     if (reusableReport) {
       videoCriteria = undefined;
       videos = reusableReport.videos.map((video) => ({
@@ -130,7 +129,7 @@ export default function DeepResearch() {
         channel: video.channel, channelId: '', publishedAt: video.publishedAt,
         thumbnailUrl: video.thumbnail, viewCount: video.viewCount ?? null,
         likeCount: video.likeCount ?? null, channelSubscriberCount: null,
-        channelVideoCount: null, url: 'https://www.youtube.com/watch?v=' + video.id,
+        channelVideoCount: null, url: 'https://www.youtube.com/watch?v=' + video.id, growth: video.growth,
       }));
       warnings.push('Reused the YouTube report already linked to this idea; no additional YouTube quota was used.');
     } else if (cachedDossier?.videos.length && cachedDossier.videoCriteria?.days === (preferences.defaultResearchDays ?? 30) && cachedDossier.videoCriteria.region === preferences.region && cachedDossier.videoCriteria.language === (preferences.languages[0] ?? '') && cachedDossier.videoCriteria.order === 'viewCount') {
@@ -148,6 +147,7 @@ export default function DeepResearch() {
               onQuota: () => useScout.getState().commit((data) => ({ ...data, budget: { ...data.budget, exhausted: true } })),
             }, 25, { days: preferences.defaultResearchDays ?? 30, region: preferences.region, language: preferences.languages[0] });
             videos = sample.videos;
+            fetchedFreshYouTube = true;
             videoCriteria = {
               days: preferences.defaultResearchDays ?? 30,
               region: preferences.region,
@@ -182,6 +182,18 @@ export default function DeepResearch() {
       warnings.push(preferences.uiLanguage === 'fa'
         ? 'خوشه‌بندی خبرهای ناشران کامل نشد؛ تحلیل و ایده‌های اصلی ادامه پیدا می‌کنند.'
         : 'Publisher clustering could not finish; the core analysis and idea generation will continue.');
+    }
+    if (fetchedFreshYouTube && videos.length) {
+      const fetchedAt = Date.now();
+      const records: Video[] = videos.map((video) => ({
+        id: video.id, title: video.title, description: video.description,
+        channel: video.channel, thumbnail: video.thumbnailUrl, publishedAt: video.publishedAt,
+        fetchedAt, query, viewCount: video.viewCount, likeCount: video.likeCount,
+        commentCount: null, channelId: video.channelId,
+      }));
+      const persisted = await useScout.getState().saveYouTubeSample(records);
+      const growthById = new Map(persisted.map((video) => [video.id, video.growth]));
+      videos = videos.map((video) => ({ ...video, growth: growthById.get(video.id) }));
     }
     const outline = buildResearchOutline(query, selectedNews.map((item) => item.title), preferences.uiLanguage ?? 'fa');
     const internalAnalysis = buildInternalResearch({
@@ -243,8 +255,16 @@ export default function DeepResearch() {
     let researchDossier: ResearchDossier | undefined;
     try {
       recordRuntimeStart('AI');
-      let outcome = await runResearchAgent({
+      let outcome = await runResearchAgentSerialized({
         topic: query,
+        researchNiche: niche?.topic ?? (nicheId === 'custom' ? preferences.customSpaceNiche : query),
+        internalEngineFindings: {
+          summary: internalAnalysis.summary,
+          keyFindings: internalAnalysis.evidence.map((item) => item.detail),
+          gaps: internalAnalysis.intelligence.gaps,
+          verificationQuestions: internalAnalysis.verificationQuestions,
+          potentialContradictions: internalAnalysis.intelligence.potentialContradictions,
+        },
         evidence: researchEvidence,
         youtubeSignals: videos,
         preferences,
@@ -297,8 +317,16 @@ export default function DeepResearch() {
           researchStopReason = 'Research stopped because the latest focused searches added no new independent source URLs.';
           break;
         }
-        const nextOutcome = await runResearchAgent({
+        const nextOutcome = await runResearchAgentSerialized({
           topic: query,
+          researchNiche: niche?.topic ?? (nicheId === 'custom' ? preferences.customSpaceNiche : query),
+          internalEngineFindings: {
+            summary: internalAnalysis.summary,
+            keyFindings: internalAnalysis.evidence.map((item) => item.detail),
+            gaps: internalAnalysis.intelligence.gaps,
+            verificationQuestions: internalAnalysis.verificationQuestions,
+            potentialContradictions: internalAnalysis.intelligence.potentialContradictions,
+          },
           evidence: researchEvidence,
           youtubeSignals: videos,
           preferences,
@@ -383,6 +411,19 @@ export default function DeepResearch() {
       news: selectedNews,
       context: [
         ...webResults.map((item) => ({ title: item.title, summary: item.summary, sourceUrl: item.url, sourceName: item.sourceName, publishedAt: item.publishedAt ?? null })),
+        ...videos.slice(0, 25).map((video) => ({
+          title: video.title,
+          summary: [
+            'YouTube platform observation from channel ' + video.channel,
+            'Views: ' + (video.viewCount ?? 'unavailable') + '; likes: ' + (video.likeCount ?? 'unavailable'),
+            'Measured growth: ' + (video.growth?.viewsPerHour == null ? 'insufficient snapshot history' : video.growth.viewsPerHour.toFixed(2) + ' views/hour'),
+          ].join('. '),
+          sourceName: 'YouTube platform signal', sourceUrl: video.url, publishedAt: video.publishedAt,
+          platform: 'youtube' as const, videoId: video.id, thumbnailUrl: video.thumbnailUrl,
+          channel: video.channel, viewCount: video.viewCount, likeCount: video.likeCount,
+          viewsPerHour: video.growth?.viewsPerHour ?? null, viewsPerDay: video.growth?.viewsPerDay ?? null,
+          channelOutlierRatio: video.growth?.channelOutlierRatio ?? null,
+        })),
         ...(wiki ? [{ title: wiki.articleTitle, summary: wiki.summary, sourceUrl: wiki.articleUrl, sourceName: 'Wikimedia' }] : []),
         ...(researchDossier ? [{
           title: 'Research synthesis: ' + researchDossier.conclusion,

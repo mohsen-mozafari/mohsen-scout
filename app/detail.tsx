@@ -30,6 +30,7 @@ import { structuredSecondOpinionPrompt, formatStructuredSecondOpinion, getFreeMo
 import { requestSecondOpinionWithFallback, DEFAULT_SECOND_OPINION_MODELS, type SecondOpinionProviderConfig } from '@/lib/ai-gateway';
 import { uid } from '@/lib/types';
 import { recordRuntimeFinish, recordRuntimeStart } from '@/lib/runtime-metrics';
+import { withResearchProviderQueue } from '@/lib/research-agent';
 import { MediaPreview } from '@/components/MediaPreview';
 import { palette as p } from '@/lib/theme';
 import { getEditorialPriorityBand } from '@/lib/editorial-priority';
@@ -104,8 +105,16 @@ export default function Detail() {
           ideaOpinionTopic,
           idea.concept + decisionContext,
           uiLanguage,
+          idea.evidenceSources ?? [],
+          related.slice(0, 25).map((video) => ({
+            id: video.id, title: video.title, description: video.description, channel: video.channel,
+            channelId: video.channelId ?? '', publishedAt: video.publishedAt, thumbnailUrl: video.thumbnail,
+            viewCount: video.viewCount ?? null, likeCount: video.likeCount ?? null,
+            channelSubscriberCount: null, channelVideoCount: null,
+            url: 'https://www.youtube.com/watch?v=' + video.id, growth: video.growth,
+          })),
         );
-        const result = await requestSecondOpinionWithFallback(configs, prompt);
+        const result = await withResearchProviderQueue(() => requestSecondOpinionWithFallback(configs, prompt));
         const formatted = formatStructuredSecondOpinion(result.opinion, uiLanguage);
         await useScout.getState().commit((d) => ({
           ...d,

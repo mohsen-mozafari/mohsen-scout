@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { type Budget, type ResearchInput, type Video, type Region } from './types';
+import { type Budget, type ResearchInput, type Video, type Region, type YouTubeGrowth } from './types';
 import { matchesStrongResearchTopic, scoreResearchText } from './intelligence';
 export type Fetcher = typeof fetch;
 export class ApiError extends Error {
@@ -555,6 +555,7 @@ export type YouTubeSampleVideo = {
   channelSubscriberCount: number | null;
   channelVideoCount: number | null;
   url: string;
+  growth?: YouTubeGrowth;
 };
 export type YouTubeSampleFilters = {
   days?: 0 | 7 | 30 | 90;
@@ -963,6 +964,7 @@ export function structuredSecondOpinionPrompt(
   concept: string,
   language: 'fa' | 'en' = 'en',
   evidenceSources: readonly { sourceType?: string; sourceName: string; title: string; summary?: string; sourceUrl: string }[] = [],
+  youtubeSignals: readonly YouTubeSampleVideo[] = [],
 ): string {
   const cleanTopic = topic.trim().slice(0, 180);
   const cleanConcept = concept.trim().slice(0, 1200);
@@ -976,9 +978,21 @@ export function structuredSecondOpinionPrompt(
     } catch { return []; }
   });
   const instruction = language === 'fa'
-    ? 'موضوع و ایده را با اتکا به منابع مستقلی که همراه درخواست آمده‌اند، نقادانه بررسی کن. منابع ممکن است ناقص یا قدیمی باشند؛ ادعای باز کردن یا راستی‌آزمایی صفحه‌ای را نکن. ادعای منبع را از برداشت خودت جدا کن. آمار عملکرد، تقاضا، رقابت، پیش‌بینی یا امتیاز نساز و امتیاز داخلی را حدس نزن. هیچ داده یا متادیتای YouTube در این درخواست نیست. با زبان طبیعی و روان فارسی بنویس و اصطلاح تخصصیِ بی‌توضیح به کار نبر؛ جمله‌ها کوتاه و روشن باشند. فقط JSON معتبر و بدون Markdown با کلیدهای decision (develop, gather_more_evidence یا reframe)، strengths (حداکثر ۳)، risks (حداکثر ۳)، missingData (حداکثر ۳)، validationSteps (حداکثر ۳) و nextAction برگردان. کلید دیگری اضافه نکن.'
-    : 'Critically assess this idea using only the independent sources supplied here. Sources may be incomplete or stale; do not claim to have opened or verified them. Distinguish source claims from your interpretation. Do not invent performance, demand, competition, forecasts or scores. No YouTube API data is provided. Write in natural, clear language and avoid unexplained technical jargon. Return only valid JSON: decision (develop, gather_more_evidence, reframe), strengths (max 3), risks (max 3), missingData (max 3), validationSteps (max 3), nextAction. Write natural concise English; add no keys.';
-  return (instruction + '\n\n' + JSON.stringify({ topic: cleanTopic, candidateConcept: cleanConcept, independentSources })).slice(0, 6500);
+    ? 'موضوع و ایده را با اتکا به منابع مستقل و سیگنال‌های پلتفرمی YouTube که همراه درخواست آمده‌اند، نقادانه بررسی کن. منابع ممکن است ناقص یا قدیمی باشند؛ ادعای باز کردن یا راستی‌آزمایی صفحه‌ای را نکن. نمونه ویدئوها، عنوان، کانال، آمار عمومی و رشد اندازه‌گیری‌شده YouTube را برای کشف روند و زاویه محتوا تحلیل کن، اما آن‌ها را استناد ناشر مستقل یا اثبات ادعای علمی/خبری تلقی نکن. رشد اندازه‌گیری‌شده را از پیش‌بینی جدا کن و هیچ تضمین بازدید نساز. منابع مستقل و قضاوت شخصی را از هم جدا کن و در صورت ناکافی بودن شواهد صریحاً بگو. فقط JSON معتبر و بدون Markdown با کلیدهای decision (develop, gather_more_evidence یا reframe)، strengths (حداکثر ۳)، risks (حداکثر ۳)، missingData (حداکثر ۳)، validationSteps (حداکثر ۳) و nextAction برگردان.'
+    : 'Critically assess this idea using the independent sources and YouTube platform observations supplied here. Sources may be incomplete or stale; do not claim to have opened or verified them. Analyze YouTube sample videos, titles, channels, public statistics and measured growth for platform trends and content angles, but never present them as independent publisher citations or proof of scientific/news claims. Distinguish measured growth from forecasts and do not promise views or virality. Write natural, concise language without unexplained jargon. Return only valid JSON: decision (develop, gather_more_evidence, reframe), strengths (max 3), risks (max 3), missingData (max 3), validationSteps (max 3), nextAction.';
+  const youtubePlatformSignals = youtubeSignals.slice(0, 18).map((video) => ({
+    videoId: video.id, title: video.title.slice(0, 180), description: video.description.slice(0, 360),
+    channel: video.channel.slice(0, 100), publishedAt: video.publishedAt,
+    viewCount: video.viewCount, likeCount: video.likeCount,
+    channelSubscriberCount: video.channelSubscriberCount, channelVideoCount: video.channelVideoCount,
+    growth: video.growth ? {
+      snapshotCount: video.growth.snapshotCount, deltaViews: video.growth.deltaViews,
+      viewsPerHour: video.growth.viewsPerHour, viewsPerDay: video.growth.viewsPerDay,
+      channelBaselineViewsPerDay: video.growth.channelBaselineViewsPerDay,
+      channelOutlierRatio: video.growth.channelOutlierRatio, status: video.growth.status,
+    } : null,
+  }));
+  return (instruction + '\n\n' + JSON.stringify({ topic: cleanTopic, candidateConcept: cleanConcept, independentSources, youtubePlatformSignals })).slice(0, 8500);
 }
 export function parseStructuredSecondOpinion(content: string): StructuredSecondOpinion {
   const cleaned = content.trim()
