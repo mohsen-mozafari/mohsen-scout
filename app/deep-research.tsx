@@ -58,6 +58,13 @@ export default function DeepResearch() {
   const op = useOperation();
   const nicheId = typeof params.niche === 'string' ? params.niche : preferences.selectedSpaceNiche;
   const niche = SPACE_NICHES.find((item) => item.id === nicheId);
+  const measuredYouTubeGrowth = brief?.videos.filter((video) =>
+    video.growth?.status === 'measured' && typeof video.growth.viewsPerHour === 'number',
+  ) ?? [];
+  const fastestYouTubeGrowth = [...measuredYouTubeGrowth].sort((a, b) =>
+    (b.growth?.viewsPerHour ?? -1) - (a.growth?.viewsPerHour ?? -1),
+  )[0];
+  const youtubeChannelCount = brief ? new Set(brief.videos.map((video) => video.channelId || video.channel)).size : 0;
   const run = () => void op.run(async () => {
     const query = topic.trim();
     if (!query) throw new Error('Choose a topic before starting deep research.');
@@ -65,6 +72,57 @@ export default function DeepResearch() {
     const priorMemory = researchMemory.find((entry) => normalizeResearchText(entry.topic) === normalizeResearchText(query));
     if (priorMemory) warnings.push(preferences.uiLanguage === 'fa' ? 'حافظه تحقیق محلی قبلی برای مقایسه بارگذاری شد؛ ادعاهای منابع ذخیره‌شده با نتایج فعلی بررسی می‌شوند.' : 'Previous local research memory was loaded for comparison; saved source claims may be checked against this run.');
     const cachedDossier = getTopicDossier(query);
+
+    let videos: YouTubeSampleVideo[] = [];
+    let fetchedFreshYouTube = false;
+    let videoCriteria = cachedDossier?.videoCriteria;
+    const linkedReport = linkedIdea?.reportId ? reports.find((report) => report.id === linkedIdea.reportId) : undefined;
+    const reusableReport = linkedReport && linkedReport.videos.length > 0 ? linkedReport : undefined;
+    if (reusableReport) {
+      videoCriteria = undefined;
+      videos = reusableReport.videos.map((video) => ({
+        id: video.id, title: video.title, description: video.description,
+        channel: video.channel, channelId: '', publishedAt: video.publishedAt,
+        thumbnailUrl: video.thumbnail, viewCount: video.viewCount ?? null,
+        likeCount: video.likeCount ?? null, channelSubscriberCount: null,
+        channelVideoCount: null, url: 'https://www.youtube.com/watch?v=' + video.id, growth: video.growth,
+      }));
+      warnings.push('Reused the YouTube report already linked to this idea; no additional YouTube quota was used.');
+    } else if (cachedDossier?.videos.length && cachedDossier.videoCriteria?.days === (preferences.defaultResearchDays ?? 30) && cachedDossier.videoCriteria.region === preferences.region && cachedDossier.videoCriteria.language === (preferences.languages[0] ?? '') && cachedDossier.videoCriteria.order === 'viewCount') {
+      videos = cachedDossier.videos;
+      warnings.push('Reused a recent matching YouTube sample from the local topic dossier; no additional YouTube quota was used.');
+    } else {
+      try {
+        const key = await getKey('youtube');
+        if (key) {
+          recordRuntimeStart('YouTube');
+          try {
+            const sample = await searchYouTubeSample(query, {
+              key,
+              charge: useScout.getState().charge,
+              onQuota: () => useScout.getState().commit((data) => ({ ...data, budget: { ...data.budget, exhausted: true } })),
+            }, 25, { days: preferences.defaultResearchDays ?? 30, region: preferences.region, language: preferences.languages[0] });
+            videos = sample.videos;
+            fetchedFreshYouTube = true;
+            videoCriteria = {
+              days: preferences.defaultResearchDays ?? 30,
+              region: preferences.region,
+              language: preferences.languages[0] ?? '',
+              order: 'viewCount',
+            };
+            recordRuntimeFinish('YouTube', sample.warning ? 'partial' : videos.length ? 'success' : 'partial');
+            if (sample.warning) warnings.push(sample.warning);
+          } catch (error) {
+            recordRuntimeFinish('YouTube', 'error', error instanceof Error ? error.message : String(error));
+            throw error;
+          }
+        } else {
+          warnings.push('YouTube view sample skipped: add a YouTube API key in Settings to include it.');
+        }
+      } catch (error) {
+        warnings.push(error instanceof Error ? error.message : 'YouTube sample was unavailable.');
+      }
+    }
     const cachedNews = (cachedDossier?.news ?? []).filter((item) => preferences.spaceNewsSources.includes(item.sourceId));
     let newsResult: Awaited<ReturnType<typeof fetchSpaceNews>>;
     if (cachedNews.length) {
@@ -115,56 +173,6 @@ export default function DeepResearch() {
       } catch (error) {
         recordRuntimeFinish('Wikimedia', 'error', error instanceof Error ? error.message : String(error));
         warnings.push(error instanceof Error ? error.message : 'Public-interest data was unavailable.');
-      }
-    }
-    let videos: YouTubeSampleVideo[] = [];
-    let fetchedFreshYouTube = false;
-    let videoCriteria = cachedDossier?.videoCriteria;
-    const linkedReport = linkedIdea?.reportId ? reports.find((report) => report.id === linkedIdea.reportId) : undefined;
-    const reusableReport = linkedReport && linkedReport.videos.length > 0 ? linkedReport : undefined;
-    if (reusableReport) {
-      videoCriteria = undefined;
-      videos = reusableReport.videos.map((video) => ({
-        id: video.id, title: video.title, description: video.description,
-        channel: video.channel, channelId: '', publishedAt: video.publishedAt,
-        thumbnailUrl: video.thumbnail, viewCount: video.viewCount ?? null,
-        likeCount: video.likeCount ?? null, channelSubscriberCount: null,
-        channelVideoCount: null, url: 'https://www.youtube.com/watch?v=' + video.id, growth: video.growth,
-      }));
-      warnings.push('Reused the YouTube report already linked to this idea; no additional YouTube quota was used.');
-    } else if (cachedDossier?.videos.length && cachedDossier.videoCriteria?.days === (preferences.defaultResearchDays ?? 30) && cachedDossier.videoCriteria.region === preferences.region && cachedDossier.videoCriteria.language === (preferences.languages[0] ?? '') && cachedDossier.videoCriteria.order === 'viewCount') {
-      videos = cachedDossier.videos;
-      warnings.push('Reused a recent matching YouTube sample from the local topic dossier; no additional YouTube quota was used.');
-    } else {
-      try {
-        const key = await getKey('youtube');
-        if (key) {
-          recordRuntimeStart('YouTube');
-          try {
-            const sample = await searchYouTubeSample(query, {
-              key,
-              charge: useScout.getState().charge,
-              onQuota: () => useScout.getState().commit((data) => ({ ...data, budget: { ...data.budget, exhausted: true } })),
-            }, 25, { days: preferences.defaultResearchDays ?? 30, region: preferences.region, language: preferences.languages[0] });
-            videos = sample.videos;
-            fetchedFreshYouTube = true;
-            videoCriteria = {
-              days: preferences.defaultResearchDays ?? 30,
-              region: preferences.region,
-              language: preferences.languages[0] ?? '',
-              order: 'viewCount',
-            };
-            recordRuntimeFinish('YouTube', sample.warning ? 'partial' : videos.length ? 'success' : 'partial');
-            if (sample.warning) warnings.push(sample.warning);
-          } catch (error) {
-            recordRuntimeFinish('YouTube', 'error', error instanceof Error ? error.message : String(error));
-            throw error;
-          }
-        } else {
-          warnings.push('YouTube view sample skipped: add a YouTube API key in Settings to include it.');
-        }
-      } catch (error) {
-        warnings.push(error instanceof Error ? error.message : 'YouTube sample was unavailable.');
       }
     }
     if (!selectedNews.length) {
@@ -550,13 +558,13 @@ export default function DeepResearch() {
   }, 'Research brief saved to Notes.');
   return (
     <Page title="Deep Research" eyebrow="3-STEP RESEARCH WORKSPACE" showBack subtitle="Choose a question, build one evidence-backed brief, then review the sections you need.">
-      <Txt muted>Step 1 · Choose the topic. Step 2 · Build the brief. Step 3 · Review the evidence, sources and production plan. Research begins only when you press the action.</Txt>
+      <Txt muted>Step 1 · Choose the topic. Step 2 · Sample YouTube first, then verify the strongest leads with independent web and publisher evidence. Step 3 · Review the findings and production plan.</Txt>
       {linkedIdea ? <Action secondary onPress={() => router.push({ pathname: '/detail', params: { idea: linkedIdea.id } })}>{'Research linked to: ' + linkedIdea.topic + ' · Open idea'}</Action> : null}
       <Action secondary onPress={() => router.push('/browser')}>Open internal web browser</Action>
       <Panel>
         <Heading>1 · Choose the research question</Heading>
         <Field label="What should this brief investigate?" value={topic} onChange={setTopic} placeholder="e.g. What JWST has found in exoplanet atmospheres" multiline />
-        <Txt muted>Uses selected publisher feeds and a clearly labelled Wikimedia attention proxy for the editorial engine. YouTube metadata is analyzed as a separate platform signal alongside publisher and web evidence; a single snapshot is not treated as growth.</Txt>
+        <Txt muted>YouTube is sampled first for audience-facing topics and video patterns. Independent web and publisher sources are then used to verify claims; repeat snapshots are required before reporting measured growth.</Txt>
         <Action busy={op.busy} disabled={!topic.trim()} onPress={run}>2 · Build research brief</Action>
       </Panel>
       {brief && (
@@ -564,8 +572,9 @@ export default function DeepResearch() {
           <Panel>
             <Heading>Research overview · {brief.topic}</Heading>
             <Text style={styles.badge}>Prepared {new Date(brief.createdAt).toLocaleString()}</Text>
-            <Txt muted>{brief.news.length} publisher reports · {brief.videos.length} YouTube sample videos · {brief.generatedIdeas.length} generated ideas · {brief.wiki ? 'Wikimedia context available' : 'No Wikimedia result'}.</Txt>
-            <Txt muted>Wikimedia pageviews indicate article attention, not YouTube demand. Treat generated angles as research candidates and verify claims against the linked primary sources.</Txt>
+            <Txt muted>{brief.videos.length} YouTube sample videos from {youtubeChannelCount} channels · {brief.news.length} publisher reports · {brief.webResults.length} web results · {brief.generatedIdeas.length} ideas.</Txt>
+            <Txt muted>{measuredYouTubeGrowth.length} videos have repeat-snapshot growth measurements{fastestYouTubeGrowth ? ' · fastest: ' + fastestYouTubeGrowth.title + ' (' + fastestYouTubeGrowth.growth!.viewsPerHour!.toFixed(1) + ' views/hour)' : ' · no growth rate is available yet; a single view-count snapshot is not growth'}.</Txt>
+            <Txt muted>Wikimedia pageviews indicate article attention, not YouTube demand. Treat generated angles as research candidates and verify factual claims against the linked primary sources.</Txt>
             {brief.warnings.length ? <Fold title="Coverage limits & warnings" summary={brief.warnings.length + ' item(s) to review'}>{brief.warnings.map((warning) => <Txt muted key={warning}>Limitation: {warning}</Txt>)}</Fold> : null}
           </Panel>
           <Fold title="3 · Recommended content ideas" summary={brief.generatedIdeas.length + ' evidence-backed ideas'}>          <Panel>

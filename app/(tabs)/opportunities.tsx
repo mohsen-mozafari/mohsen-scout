@@ -21,15 +21,15 @@ import {
   ScreenIntro,
 } from '@/components/ScoutUI';
 import { useScout } from '@/lib/store';
-import { statuses, uid, type Idea, type ResearchActivityEvent } from '@/lib/types';
+import { statuses, uid, type Idea, type ResearchInput } from '@/lib/types';
 import { getIdeaDisplayTitle, isIdeaDisplayable } from '@/lib/idea-research';
 import { createManualIdea } from '@/lib/engine';
-import { deduplicateDisplayIdeas, generateEditorialIdeas, IDEA_GENERATION_CATEGORIES, type IdeaGenerationCategory } from '@/lib/idea-generation';
+import { deduplicateDisplayIdeas, generateEditorialIdeas, selectIdeaGenerationVideos, IDEA_GENERATION_CATEGORIES, type IdeaGenerationCategory } from '@/lib/idea-generation';
 import { getTopicDossier } from '@/lib/topic-dossier';
-import { fetchSpaceNews, getCachedSpaceNews, SPACE_NICHES } from '@/lib/space';
+import { getCachedSpaceNews, SPACE_NICHES } from '@/lib/space';
 import { createSearchQuery, indexSearchText, matchesSearchIndex, normalizeSearchText } from '@/lib/search';
 import { buildResearchInterestProfile } from '@/lib/intelligence';
-import { buildResearchActivityFeedbackProfile, buildResearchActivityResults, buildResearchActivitySourceExclusions, explainResearchActivitySourceExclusion } from '@/lib/research-activity';
+import { buildResearchActivityFeedbackProfile, buildResearchActivitySourceExclusions, explainResearchActivitySourceExclusion } from '@/lib/research-activity';
 import { palette as p } from '@/lib/theme';
 import { getEditorialPriorityBand, EDITORIAL_PRIORITY_CONFIG, compareEditorialPriority, type EditorialPriorityBand } from '@/lib/editorial-priority';
 import { setSelectedIdeaId } from '@/lib/idea-selection';
@@ -102,6 +102,13 @@ const IdeaListItem = memo(function IdeaListItem({
           {item.concept
             ? <SourceText muted numberOfLines={3}>{item.concept}</SourceText>
             : <Txt muted>Concept missing — open the editor to complete this draft before requesting an AI opinion.</Txt>}
+          {item.engineGenerated ? (
+            <Txt muted>
+              {(fa ? 'شواهد پیوست: ' : 'Attached evidence: ') +
+                numberLabel(item.videoIds.length, fa) + (fa ? ' ویدئوی YouTube' : ' YouTube videos') +
+                ' · ' + numberLabel(item.evidenceSources?.length ?? 0, fa) + (fa ? ' منبع قابل‌ردیابی' : ' traceable sources')}
+            </Txt>
+          ) : null}
           {item.sourceName ? <View style={styles.row}><Txt muted>Source:</Txt><SourceText>{item.sourceName}</SourceText></View> : null}
           {item.decision ? <SourceText muted>{item.decision}</SourceText> : null}
         </View>
@@ -202,118 +209,58 @@ export default function Opportunities() {
 
   const generate = (requestedCategory?: IdeaGenerationCategory) => void op.run(async () => {
     const initial = useScout.getState().data;
-    const savedReport = initial.reports[0];
     const niche = SPACE_NICHES.find((item) => item.id === initial.preferences.selectedSpaceNiche);
     const topic = initial.preferences.selectedSpaceNiche === 'custom'
-      ? initial.preferences.customSpaceNiche.trim()
+      ? initial.preferences.customSpaceNiche.trim() || initial.preferences.lastInput?.topic.trim()
       : initial.preferences.selectedSpaceNiche === 'all'
-        ? initial.preferences.lastInput?.topic ?? savedReport?.input.topic ?? 'Space science and exploration'
+        ? initial.preferences.lastInput?.topic ?? initial.reports[0]?.input.topic ?? 'Space science and exploration'
         : niche?.topic ?? initial.preferences.lastInput?.topic ?? 'Space science and exploration';
     if (!topic) throw new Error('Choose a niche or enter a research topic before generating ideas.');
 
-    const savedInput = initial.preferences.lastInput;
-    const refreshAttempted = Boolean(savedInput);
-    let refreshedNews: Awaited<ReturnType<typeof fetchSpaceNews>> = {
-      items: [],
-      registry: initial.feedRegistry,
-      warnings: [],
+    const region = initial.preferences.region;
+    const languages = initial.preferences.languages.length ? [...initial.preferences.languages] : ['en'];
+    const refreshInput: ResearchInput = {
+      ...(initial.preferences.lastInput ?? {
+        topic,
+        region,
+        languages,
+        days: initial.preferences.defaultResearchDays ?? 7,
+        duration: 'any' as const,
+        category: '',
+        maxResults: 25,
+      }),
+      topic,
+      region,
+      languages,
     };
+    const previousIdeaIds = new Set(initial.ideas.map((idea) => idea.id));
 
-    // When a saved research input exists, the store owns the feed refresh and logs it.
-    // Avoid making a second, duplicate RSS request before that measured operation.
-    if (!savedInput) {
-      const feedStartedAt = Date.now();
-      recordRuntimeStart('Sources');
-      let feedError = '';
-      try {
-        refreshedNews = await fetchSpaceNews(initial.preferences.spaceNewsSources, fetch, true);
-        recordRuntimeFinish('Sources', refreshedNews.warnings.length ? 'partial' : 'success');
-      } catch (error) {
-        feedError = error instanceof Error ? error.message : String(error);
-        refreshedNews = {
-          items: [],
-          registry: initial.feedRegistry,
-          warnings: ['Publisher feed refresh failed: ' + feedError],
-        };
-        recordRuntimeFinish('Sources', 'error', feedError);
-      }
-      if (refreshedNews.registry.length) {
-        await useScout.getState().commit((data) => ({ ...data, feedRegistry: refreshedNews.registry }));
-      }
-      const completedAt = Date.now();
-      const feedSourceExclusions = buildResearchActivitySourceExclusions(initial.researchActivity);
-      const feedActivityResults = refreshedNews.items.map((item) => {
-        const exclusion = explainResearchActivitySourceExclusion(item.url, feedSourceExclusions);
-        return {
-          id: item.id,
-          title: item.title,
-          summary: item.summary,
-          sourceName: item.sourceName,
-          url: item.url,
-          publishedAt: item.publishedAt,
-          sourceAssessment: 'configured-feed' as const,
-          includedInAnalysis: !exclusion,
-          decisionReason: exclusion ??
-            'Fetched from a configured RSS feed and passed to the local evidence screen; relevance is filtered by the editorial engine and publisher claims are not independently verified.',
-        };
-      });
-      const feedEvent: ResearchActivityEvent = {
-        id: uid(),
-        engine: 'Publisher Feeds',
-        query: 'RSS feed refresh (no remote search query); enabled sources: ' +
-          initial.preferences.spaceNewsSources.join(', ') + '; local topic filter: ' + topic,
-        topic,
-        niche: initial.preferences.customSpaceNiche.trim() ||
-          (initial.preferences.selectedSpaceNiche !== 'all' ? initial.preferences.selectedSpaceNiche : topic),
-        startedAt: feedStartedAt,
-        completedAt,
-        durationMs: Math.max(0, completedAt - feedStartedAt),
-        status: refreshedNews.items.length
-          ? (refreshedNews.warnings.length ? 'partial' : 'success')
-          : (feedError ? 'error' : refreshedNews.warnings.length ? 'partial' : 'empty'),
-        resultCount: refreshedNews.items.length,
-        analyzedCount: feedActivityResults.filter((item) => item.includedInAnalysis).length,
-        results: buildResearchActivityResults(topic, feedActivityResults),
-        warnings: refreshedNews.warnings.slice(0, 12),
-        ...(feedError ? { error: feedError.slice(0, 700) } : {}),
-        ...(savedReport ? { reportId: savedReport.id } : {}),
-      };
-      await useScout.getState().recordResearchActivity(feedEvent);
+    // Always use the full research pipeline. This path starts with YouTube and
+    // no longer falls back to a news-only refresh on a first-run installation.
+    const refreshedReport = await useScout.getState().research(
+      refreshInput,
+      'manual',
+      true,
+      { ...(requestedCategory ? { category: requestedCategory } : {}), limit: 10 },
+    );
+    if (refreshedReport) {
+      const updated = useScout.getState().data;
+      const added = updated.ideas.filter((idea) => idea.engineGenerated && !previousIdeaIds.has(idea.id));
+      const warnings = refreshedReport.warnings;
+      setGenerationMessage(initial.preferences.uiLanguage === 'fa'
+        ? (added.length
+          ? added.length + ' ایدهٔ تازه پس از نمونه‌گیری YouTube و بررسی شواهد مستقل ساخته شد؛ ' + refreshedReport.videos.length + ' ویدئو در گزارش ثبت شد.'
+          : 'نمونه YouTube و منابع مستقل به‌روز شدند، اما زاویه متمایز دیگری با شواهد کافی پیدا نشد؛ ایده تکراری ساخته نشد.')
+          + (warnings.length ? ' بعضی منابع با محدودیت یا نسخه ذخیره‌شده استفاده شدند.' : '')
+        : (added.length
+          ? added.length + ' new ideas were generated after YouTube sampling and independent evidence review; ' + refreshedReport.videos.length + ' videos were recorded.'
+          : 'YouTube and independent sources were refreshed, but no distinct angle met the evidence threshold; no duplicate idea was created.')
+          + (warnings.length ? ' Some sources reported limitations or used retained results.' : ''));
+      return;
     }
 
-    const current = useScout.getState().data;
-    const previousIdeaIds = new Set(current.ideas.map((idea) => idea.id));
-    if (savedInput) {
-      const refreshInput = {
-        ...savedInput,
-        topic,
-        region: current.preferences.region,
-        languages: [...current.preferences.languages],
-      };
-      const refreshedReport = await useScout.getState().research(
-        refreshInput,
-        'manual',
-        true,
-        { ...(requestedCategory ? { category: requestedCategory } : {}), limit: 10 },
-      );
-      if (refreshedReport) {
-        const updated = useScout.getState().data;
-        const added = updated.ideas.filter((idea) => idea.engineGenerated && !previousIdeaIds.has(idea.id));
-        const warnings = [...new Set([...refreshedNews.warnings, ...refreshedReport.warnings])];
-        setGenerationMessage(current.preferences.uiLanguage === 'fa'
-          ? (added.length
-            ? added.length + ' ایدهٔ تازه از شواهد مستقل وب و ناشران ساخته شد؛ نمونهٔ خام YouTube جداگانه به‌روز شد و ' + refreshedReport.videos.length + ' رکورد ویدئو دریافت شد.'
-            : 'نمونهٔ YouTube به‌روز شد، اما ایدهٔ متمایز دیگری با شواهد کافی پیدا نشد؛ پیشنهاد تکراری ساخته نشد.') +
-            (warnings.length ? ' بعضی منابع با نسخهٔ ذخیره‌شده جایگزین شدند.' : '')
-          : (added.length
-            ? added.length + ' new ideas were generated from independent web and publisher evidence; the raw YouTube sample was refreshed separately and ' + refreshedReport.videos.length + ' video records were received.'
-            : 'The YouTube sample was refreshed, but no distinct idea met the evidence threshold. Existing ideas were not recycled.') +
-            (warnings.length ? ' Some publishers used their last successful cached copy.' : ''));
-        return;
-      }
-    }
-
-    // If the fresh YouTube request cannot complete, fall back to the complete locally retained YouTube history.
+    // Keep an evidence-only fallback when a network/provider run cannot complete.
+    // It includes both retained YouTube observations and cached independent sources.
     const fallbackData = useScout.getState().data;
     const report = fallbackData.reports.find((item) =>
       normalizeSearchText(item.input.topic) === normalizeSearchText(topic),
@@ -321,7 +268,7 @@ export default function Opportunities() {
     const dossier = getTopicDossier(topic);
     const cachedNews = getCachedSpaceNews(fallbackData.feedRegistry, fallbackData.preferences.spaceNewsSources);
     const mergedNews = new Map(
-      [...(dossier?.news ?? []), ...cachedNews, ...refreshedNews.items].map((item) => [item.url, item]),
+      [...(dossier?.news ?? []), ...cachedNews].map((item) => [item.url, item]),
     );
     const sourceExclusions = buildResearchActivitySourceExclusions(fallbackData.researchActivity);
     const allNews = [...mergedNews.values()].filter((item) =>
@@ -337,26 +284,40 @@ export default function Opportunities() {
     const priorMemory = fallbackData.researchMemory.find((entry) =>
       normalizeSearchText(entry.topic) === normalizeSearchText(topic),
     );
+    const retainedVideoCandidates = [
+      ...(dossier?.videos ?? []).map((video) => ({
+        id: video.id, title: video.title, description: video.description, channel: video.channel,
+        publishedAt: video.publishedAt, viewCount: video.viewCount, likeCount: video.likeCount,
+        growth: video.growth, thumbnailUrl: video.thumbnailUrl,
+      })),
+      ...fallbackData.videos.map((video) => ({
+        id: video.id, title: video.title, description: video.description, channel: video.channel,
+        publishedAt: video.publishedAt, viewCount: video.viewCount, likeCount: video.likeCount,
+        growth: video.growth, thumbnailUrl: video.thumbnail,
+      })),
+    ];
+    const retainedVideos = selectIdeaGenerationVideos(topic, retainedVideoCandidates);
     recordRuntimeStart('Engine');
     let engineRecorded = false;
     try {
       const generated = generateEditorialIdeas({
         topic,
         news: allNews,
+        videos: retainedVideos,
         priorMemory,
         context: dossier?.wiki && !wikiExcluded ? [{
           title: dossier.wiki.articleTitle,
           summary: [dossier.wiki.summary, dossier.wiki.monthlyViews.length
             ? 'Monthly Wikipedia article pageviews: ' + dossier.wiki.monthlyViews.map((point) => point.month + '=' + point.views).join(', ')
-            : 'No monthly Wikimedia pageview observations were returned.'].filter(Boolean).join('\n'),
+            : 'No monthly Wikimedia pageview observations were returned.'].filter(Boolean).join('\\n'),
           sourceUrl: dossier.wiki.articleUrl,
           sourceName: 'Wikimedia Pageviews · attention proxy',
         }] : [],
         existingIdeas: fallbackData.ideas,
         feedback,
         ...(report ? { reportId: report.id } : {}),
-        region: fallbackData.preferences.region,
-        languages: fallbackData.preferences.languages,
+        region,
+        languages,
         language: fallbackData.preferences.uiLanguage ?? 'fa',
         ...(requestedCategory ? { category: requestedCategory } : {}),
         limit: 10,
@@ -364,17 +325,17 @@ export default function Opportunities() {
       if (!generated.length) {
         recordRuntimeFinish('Engine', 'partial');
         engineRecorded = true;
-        setGenerationMessage(current.preferences.uiLanguage === 'fa'
-          ? 'نمونهٔ ذخیره‌شده شاهد تازه یا زاویهٔ متمایزی برای یک ایدهٔ جدید ندارد. بدون شواهد کافی ایده ساخته نشد.'
-          : 'The retained sample has no new independent angle with enough evidence. The engine did not fabricate an idea.');
+        setGenerationMessage(fallbackData.preferences.uiLanguage === 'fa'
+          ? 'تحقیق تازه کامل نشد و نمونه‌های ذخیره‌شده نیز زاویه متمایزی با شواهد کافی نداشتند؛ ایده ساختگی تولید نشد.'
+          : 'Fresh research did not complete and retained samples contained no distinct, sufficiently supported angle. No fabricated idea was created.');
         return;
       }
       await useScout.getState().commit((data) => ({ ...data, ideas: [...generated, ...data.ideas] }));
       recordRuntimeFinish('Engine', 'success');
       engineRecorded = true;
-      setGenerationMessage(current.preferences.uiLanguage === 'fa'
-        ? generated.length + ' ایدهٔ تازه از شواهد ذخیره‌شده ساخته شد؛ ' + (refreshAttempted ? 'به‌روزرسانی تازهٔ YouTube کامل نشد و از نمونهٔ ذخیره‌شده استفاده شد.' : 'درخواستی برای YouTube ارسال نشد.')
-        : generated.length + ' new ideas were generated from retained local evidence. ' + (refreshAttempted ? 'The fresh YouTube request did not complete; the retained sample was used.' : 'No fresh YouTube request was made.'));
+      setGenerationMessage(fallbackData.preferences.uiLanguage === 'fa'
+        ? generated.length + ' ایده از شواهد ذخیره‌شده YouTube و منابع مستقل ساخته شد؛ اجرای تازه به‌دلیل محدودیت شبکه/ارائه‌دهنده کامل نشد.'
+        : generated.length + ' ideas were generated from retained YouTube and independent-source evidence; the fresh run did not complete because of a network/provider limitation.');
     } catch (error) {
       if (!engineRecorded) recordRuntimeFinish('Engine', 'error', error instanceof Error ? error.message : String(error));
       throw error;
