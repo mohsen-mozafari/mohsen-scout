@@ -52,6 +52,7 @@ void test('standard and advanced YouTube discovery share one research workspace'
   assert.match(standard, /AdvancedDiscoveryPanel/);
   assert.match(standard, /title="Advanced YouTube Discovery Mix"/);
   assert.match(advanced, /export function AdvancedDiscoveryPanel/);
+  assert.doesNotMatch(advanced, /import \{[^}]*\bPage\b/);
   assert.match(advanced, /router\.replace\(/);
   assert.match(advanced, /pathname: '\/youtube'/);
   assert.match(detail, /mode: 'advanced'/);

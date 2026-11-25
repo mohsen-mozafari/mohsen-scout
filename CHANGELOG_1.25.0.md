@@ -16,6 +16,10 @@ Base: workflow 12 source commit `3506284eb339b92e1979b4f8802f7f451b9ac2f2`
 - Expanded static regression coverage for unified routing, Persian UI, accessibility, detail folding and release metadata.
 - Bumped Android app version to 1.25.0 / versionCode 46 and aligned the signed ARM64 APK workflow with the new artifact, package/version/ABI/certificate checks and checksum.
 
+## CI correction
+
+- Removed an unused legacy page-shell import from the now-embeddable advanced sampler; the regression suite now guards against reintroducing that import. The workflow file path filter is aligned with the repository's actual workflow filename.
+
 ## Validation boundary
 
 GitHub Actions runs the Node regression suite, TypeScript/source lint, CSS lint, Expo dependency validation, Android prebuild, R8/signing checks, a signed ARM64 APK build, package/version/ABI/certificate verification and artifact/checksum preparation. Green CI validates those automated gates; physical-device visual inspection is not represented as passed unless separately performed.
