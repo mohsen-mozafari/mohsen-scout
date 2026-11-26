@@ -152,7 +152,7 @@ void test('knowledge graph adds emerging topic concepts and evidence-backed co-o
     {
       ...news[0],
       id: 'news-2',
-      sourceId: 'esa',
+      sourceId: 'esa-space',
       sourceName: 'ESA',
       title: 'MOCK: ESA JWST exoplanet atmosphere calibration report',
       summary: 'MOCK: Independent spectroscopy analysis and instrument calibration are discussed.',
