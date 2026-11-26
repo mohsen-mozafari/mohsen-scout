@@ -189,8 +189,8 @@ void test('library and notes screens avoid broad subscriptions and repeated line
   const library = source('app/(tabs)/library.tsx');
   const notes = source('app/(tabs)/notes.tsx');
   const backup = source('lib/backup.ts');
-  assert.match(library, /state\.data\.links/);
-  assert.match(library, /state\.data\.videos/);
+  assert.match(library, /(?:s|state)\.data\.links/);
+  assert.match(library, /(?:s|state)\.data\.videos/);
   assert.doesNotMatch(library, /const data = useScout\(/);
   assert.match(library, /new Map\(videos\.map/);
   assert.match(library, /videosById\.get\(item\.id\)/);
