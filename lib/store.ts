@@ -19,7 +19,7 @@ import { getKey } from './vault';
 import { localDateKey, nextBudget, nextOpenRouterUsage, searchYouTube, type YouTubeSampleVideo, type YouTubeQuotaKind, type YouTubeQuotaOrigin } from './api';
 import { buildInternalResearch } from './engine';
 import { reviewResearchHypotheses } from './hypothesis-engine';
-import { runResearchAgentSerialized, withResearchProviderQueue } from './research-agent';
+import { getConfiguredResearchProviderCount, runResearchAgentSerialized, withResearchProviderQueue } from './research-agent';
 import { createResearchMemoryEntry, mergeResearchMemoryEntries } from './research-memory';
 import { enrichResearchEvidence, fetchWebResearch } from './web-research';
 import { reviewIdeasAutomatically } from './ai-review';
@@ -30,7 +30,13 @@ import { buildResearchInterestProfile, normalizeResearchText, type ResearchFeedb
 import { recordRuntimeFinish, recordRuntimeStart } from './runtime-metrics';
 import { readPendingResearch, getPendingResearch, savePendingResearch, updatePendingResearch, clearPendingResearch } from './pending-research';
 import { captureYouTubeSnapshots } from './youtube-growth';
-import { availableResearchRunSlots, MAX_CONCURRENT_RESEARCH_RUNS } from './research-concurrency';
+import {
+  acquireManualResearchLease,
+  availableResearchRunSlots,
+  isManualResearchActive,
+  mapWithConcurrency,
+  MAX_CONCURRENT_RESEARCH_RUNS,
+} from './research-concurrency';
 import { appendResearchActivity, buildResearchActivityFeedbackProfile, buildResearchActivityResults, buildResearchActivitySourceExclusions, explainResearchActivitySourceExclusion, updateResearchActivityEvent, updateResearchActivityFeedback } from './research-activity';
 import { MAX_DEEP_RESEARCH_EVIDENCE, MAX_DEEP_RESEARCH_QUERIES, MAX_DEEP_RESEARCH_RESULTS_PER_QUERY, MAX_DEEP_RESEARCH_ROUNDS, planResearchRound, researchQueriesPerRound } from './research-orchestrator';
 type State = {
@@ -215,6 +221,7 @@ export const useScout = create<State>((set, get) => ({
   },
   research: async (input, origin = 'manual', forceRefresh = false, ideaOptions, taskId) => {
     if (!get().ready || get().activeResearchRuns >= MAX_CONCURRENT_RESEARCH_RUNS) return undefined;
+    const releaseManualLease = origin === 'manual' ? acquireManualResearchLease() : undefined;
     const runId = taskId ?? uid();
     set((state) => ({ activeResearchRuns: state.activeResearchRuns + 1, busy: true, error: '', progress: 'Starting independent source collection…' }));
     const initialData = get().data;
@@ -467,161 +474,183 @@ export const useScout = create<State>((set, get) => ({
           const collected = new Map<string, (typeof webItems)[number]>((savedCheckpoint?.evidence ?? []).map((item) => [item.url, { ...item, publishedAt: item.publishedAt ?? undefined }] as const));
           const queryWarnings: string[] = [];
           let latestAiDossier: ResearchDossier | undefined = savedCheckpoint?.researchDossier;
-          const queries = collected.size
+          const queries: string[] = collected.size
             ? (latestAiDossier?.nextQueries.map((item) => item.query).filter((query) => !asked.has(normalizeResearchText(query))) ?? [])
             : [topic];
-          let hydrationRemaining = Math.max(0, 6 - collected.size);
+          let hydrationRemaining = Math.max(0, 6 - [...collected.values()].filter((item) => Boolean(item.sourceText && item.sourceText.length >= 300)).length);
           let latestFallbackReview: ReturnType<typeof reviewResearchHypotheses> | undefined;
-          let modelAgentEnabled = true;
-
-          // One seed search plus up to three evidence-driven rounds. The configured
-          // language model proposes falsifiable hypotheses, classifies evidence, seeks
-          // counterevidence and chooses the next search. A transparent local planner is
-          // used only when no configured model is available.
-          let queryCursor = 0;
-          const executedQueries: string[] = [...savedQueries];
-          researchRounds: for (let round = 0; round <= MAX_DEEP_RESEARCH_ROUNDS; round++) {
-            if (collected.size >= MAX_DEEP_RESEARCH_EVIDENCE) break;
-            const querySlots = researchQueriesPerRound(round);
-            for (let slot = 0; slot < querySlots; slot += 1) {
-              if (collected.size >= MAX_DEEP_RESEARCH_EVIDENCE) break researchRounds;
-              const evidenceBeforeRound = collected.size;
-              const query = queries[queryCursor++];
-              if (!query) break researchRounds;
-              const normalizedQuery = normalizeResearchText(query);
-              if (asked.has(normalizedQuery)) continue;
-              asked.add(normalizedQuery);
-              executedQueries.push(query);
-              set({ progress: round === 0
-              ? 'Searching independent web and news sources…'
-              : 'Testing hypotheses and searching for counterevidence (' + (round + 1) + '/' + (MAX_DEEP_RESEARCH_ROUNDS + 1) + ')…' });
-            try {
-              const result = await fetchWebResearch(query, {
-                apiKey: webKey ?? undefined,
-                limit: MAX_DEEP_RESEARCH_RESULTS_PER_QUERY,
-                days: normalizedInput.days,
-              });
-              queryWarnings.push(...result.warnings);
-              const split = splitSourcesByFeedback(result.items);
-              for (const item of split.included) {
-                if (!collected.has(item.url) && collected.size < MAX_DEEP_RESEARCH_EVIDENCE) collected.set(item.url, item);
-              }
-
-              if (modelAgentEnabled && collected.size) {
-                if (youtubeTaskPromise) await youtubeTaskPromise;
-                const youtubeSignals: YouTubeSampleVideo[] = researchVideos.map((video) => ({
-                  id: video.id, title: video.title, description: video.description,
-                  channel: video.channel, channelId: video.channelId ?? '',
-                  publishedAt: video.publishedAt, thumbnailUrl: video.thumbnail,
-                  viewCount: video.viewCount ?? null, likeCount: video.likeCount ?? null,
-                  channelSubscriberCount: null, channelVideoCount: null,
-                  url: 'https://www.youtube.com/watch?v=' + video.id, growth: video.growth,
-                }));
-                if (webKey && collected.size && hydrationRemaining > 0) {
-                  const hydration = await enrichResearchEvidence([...collected.values()], webKey, hydrationRemaining);
-                  hydrationRemaining = Math.max(0, hydrationRemaining - hydration.enrichedCount);
-                  collected.clear();
-                  for (const item of hydration.items) collected.set(item.url, item);
-                  queryWarnings.push(...hydration.warnings);
-                  if (hydration.enrichedCount) queryWarnings.push(hydration.enrichedCount + ' original publisher pages fetched for local quote verification.');
-                }
-                const currentResearchMemory = get().data.researchMemory.find(
-                  (entry) => normalizeResearchText(entry.topic) === normalizeResearchText(topic),
-                );
-                const agent = await runResearchAgentSerialized({
-                  topic,
-                  researchNiche,
-                  evidence: [...collected.values()],
-                  youtubeSignals,
-                  preferences: initialPreferences,
-                  previous: latestAiDossier ?? currentResearchMemory?.researchDossier,
-                  alreadyAsked: [...asked],
-                  beforeProviderRequest: async (config) => {
-                    if (config.provider !== 'openrouter') return;
-                    const preferences = get().data.preferences;
-                    const usage = nextOpenRouterUsage(
-                      preferences.openRouterUsageDay,
-                      preferences.openRouterRequestsToday,
-                      localDateKey(),
-                      preferences.openRouterDailyLimit ?? 50,
-                    );
-                    await get().commit((data) => ({
-                      ...data,
-                      preferences: { ...data.preferences, ...usage },
-                    }));
-                  },
-                });
-                queryWarnings.push(...agent.warnings);
-                if (agent.dossier) {
-                  latestAiDossier = agent.dossier;
-                } else if (agent.attempts.length === 0) {
-                  // No configured model keys: do not repeat empty provider discovery on every round.
-                  modelAgentEnabled = false;
-                }
-              }
-
-              // If a configured model produced a dossier, follow its explicit next
-              // research directions. Otherwise fall back to the conservative local planner.
-              if (!latestAiDossier) {
-                latestFallbackReview = reviewResearchHypotheses(
-                  topic,
-                  [...collected.values()].map((item) => ({
-                    id: item.id,
-                    title: item.title,
-                    summary: item.summary,
-                    url: item.url,
-                    sourceName: item.sourceName,
-                    ...(item.publishedAt ? { publishedAt: item.publishedAt } : {}),
-                  })),
-                  [...asked],
-                  3,
-                );
-              }
-
-              await updatePendingResearch(runId, {
-                stage: 'sources-reviewed',
-                ...(latestAiDossier ? { researchDossier: latestAiDossier } : {}),
-                evidence: [...collected.values()].slice(0, 48).map((item) => ({
-                  id: item.id, title: item.title, summary: item.summary, url: item.url,
-                  sourceName: item.sourceName, publishedAt: item.publishedAt ?? null, category: item.category,
-                })),
-                queryHistory: executedQueries.slice(-40),
-              });
-              const newEvidenceCount = collected.size - evidenceBeforeRound;
-              if (round < MAX_DEEP_RESEARCH_ROUNDS && newEvidenceCount > 0 && collected.size < MAX_DEEP_RESEARCH_EVIDENCE) {
-                const nextDirections = latestAiDossier?.nextQueries ?? (latestFallbackReview?.nextDirections ?? []).map((item) => ({
-                  query: item.query,
-                  purpose: 'independent-confirmation' as const,
-                  hypothesisId: '',
-                  priority: 3,
-                  reason: item.reason,
-                }));
-                const plan = planResearchRound({
-                  round: round + 1,
-                  queriesAttempted: asked.size,
-                  evidenceCount: collected.size,
-                  previousRoundNewEvidenceCount: newEvidenceCount,
-                  nextQueries: nextDirections,
-                  alreadyAsked: [...asked],
-                });
-                for (const planned of plan.queries) {
-                  const key = normalizeResearchText(planned.query);
-                  if (!key || asked.has(key) || queries.some((item) => normalizeResearchText(item) === key)) continue;
-                  if (queries.length >= MAX_DEEP_RESEARCH_QUERIES) break;
-                  queries.push(planned.query);
-                }
-              }
-              if (newEvidenceCount === 0 && round > 0 && slot === querySlots - 1) break researchRounds;
-              if (round < MAX_DEEP_RESEARCH_ROUNDS && queryCursor >= queries.length) {
-                // The agent found no defensible new direction; do not manufacture more queries.
-                break researchRounds;
-              }
-            } catch (error) {
-              const message = error instanceof Error ? error.message : 'Firecrawl request failed.';
-              queryWarnings.push('Research round ' + (round + 1) + ': ' + message);
-              if (round === 0) break researchRounds;
-            }
+          const configuredProviders = await getConfiguredResearchProviderCount(initialPreferences);
+          let modelAgentEnabled = configuredProviders >= 2;
+          if (!modelAgentEnabled) {
+            queryWarnings.push('Research preflight: two distinct AI providers are not configured. Model-based conclusions are disabled; the local report remains exploratory.');
           }
+
+          let queryCursor = 0;
+          let attemptedQueries = savedQueries.length;
+          const executedQueries: string[] = [...savedQueries];
+          const startingRound = collected.size ? 1 : 0;
+          researchRounds: for (let round = startingRound; round <= MAX_DEEP_RESEARCH_ROUNDS; round += 1) {
+            if (collected.size >= MAX_DEEP_RESEARCH_EVIDENCE || attemptedQueries >= MAX_DEEP_RESEARCH_QUERIES) break;
+            const querySlots = Math.min(researchQueriesPerRound(round), MAX_DEEP_RESEARCH_QUERIES - attemptedQueries);
+            const batch: string[] = [];
+            while (batch.length < querySlots && queryCursor < queries.length) {
+              const query = queries[queryCursor++];
+              if (!query) continue;
+              const key = normalizeResearchText(query);
+              if (!key || asked.has(key)) continue;
+              asked.add(key);
+              executedQueries.push(query);
+              attemptedQueries += 1;
+              batch.push(query);
+            }
+            if (!batch.length) break;
+            set({ progress: round === 0
+              ? 'Searching independent web and news sources…'
+              : 'Testing hypotheses with up to two parallel searches (' + round + '/' + MAX_DEEP_RESEARCH_ROUNDS + ')…' });
+            const evidenceBeforeRound = collected.size;
+            const searchResults = await mapWithConcurrency(batch, 2, async (query) => {
+              try {
+                const result = await fetchWebResearch(query, {
+                  apiKey: webKey ?? undefined,
+                  limit: MAX_DEEP_RESEARCH_RESULTS_PER_QUERY,
+                  days: normalizedInput.days,
+                });
+                return { query, result };
+              } catch (error) {
+                return { query, error: error instanceof Error ? error.message : 'Firecrawl request failed.' };
+              }
+            });
+            for (const result of searchResults) {
+              if ('error' in result) {
+                queryWarnings.push(result.query + ': ' + result.error);
+                continue;
+              }
+              queryWarnings.push(...result.result.warnings);
+              const split = splitSourcesByFeedback(result.result.items);
+              for (const item of split.included) {
+                if (!collected.has(item.url) && collected.size < MAX_DEEP_RESEARCH_EVIDENCE) {
+                  collected.set(item.url, item);
+                }
+              }
+            }
+
+            if (modelAgentEnabled && collected.size) {
+              if (youtubeTaskPromise) await youtubeTaskPromise;
+              const youtubeSignals: YouTubeSampleVideo[] = researchVideos.map((video) => ({
+                id: video.id, title: video.title, description: video.description,
+                channel: video.channel, channelId: video.channelId ?? '',
+                publishedAt: video.publishedAt, thumbnailUrl: video.thumbnail,
+                viewCount: video.viewCount ?? null, likeCount: video.likeCount ?? null,
+                channelSubscriberCount: null, channelVideoCount: null,
+                url: 'https://www.youtube.com/watch?v=' + video.id, growth: video.growth,
+              }));
+              if (webKey && hydrationRemaining > 0) {
+                const hydration = await enrichResearchEvidence([...collected.values()], webKey, hydrationRemaining);
+                hydrationRemaining = Math.max(0, hydrationRemaining - hydration.enrichedCount);
+                collected.clear();
+                for (const item of hydration.items) collected.set(item.url, item);
+                queryWarnings.push(...hydration.warnings);
+                if (hydration.enrichedCount) {
+                  queryWarnings.push(hydration.enrichedCount + ' original publisher pages fetched for local quote verification.');
+                }
+              }
+              const currentResearchMemory = get().data.researchMemory.find(
+                (entry) => normalizeResearchText(entry.topic) === normalizeResearchText(topic),
+              );
+              recordRuntimeStart('AI');
+              const agent = await runResearchAgentSerialized({
+                topic,
+                researchNiche,
+                evidence: [...collected.values()],
+                youtubeSignals,
+                preferences: initialPreferences,
+                previous: latestAiDossier ?? currentResearchMemory?.researchDossier,
+                alreadyAsked: [...asked],
+                beforeProviderRequest: async (config) => {
+                  if (config.provider !== 'openrouter') return;
+                  const preferences = get().data.preferences;
+                  const usage = nextOpenRouterUsage(
+                    preferences.openRouterUsageDay,
+                    preferences.openRouterRequestsToday,
+                    localDateKey(),
+                    preferences.openRouterDailyLimit ?? 50,
+                  );
+                  await get().commit((data) => ({
+                    ...data,
+                    preferences: { ...data.preferences, ...usage },
+                  }));
+                },
+              }, origin === 'manual' ? 'manual' : 'automatic');
+              queryWarnings.push(...agent.warnings);
+              recordRuntimeFinish('AI', agent.dossier ? 'success' : 'partial', agent.warnings.join(' ').slice(0, 220));
+              if (agent.dossier) {
+                latestAiDossier = agent.dossier;
+              } else if (agent.attempts.length === 0) {
+                // The preflight failed or no provider was configured; do not retry model setup each round.
+                modelAgentEnabled = false;
+              }
+            }
+
+            if (!latestAiDossier) {
+              latestFallbackReview = reviewResearchHypotheses(
+                topic,
+                [...collected.values()].map((item) => ({
+                  id: item.id,
+                  title: item.title,
+                  summary: item.summary,
+                  url: item.url,
+                  sourceName: item.sourceName,
+                  ...(item.publishedAt ? { publishedAt: item.publishedAt } : {}),
+                })),
+                [...asked],
+                3,
+              );
+            }
+
+            await updatePendingResearch(runId, {
+              stage: 'sources-reviewed',
+              ...(latestAiDossier ? { researchDossier: latestAiDossier } : {}),
+              evidence: [...collected.values()].slice(0, 48).map((item) => ({
+                id: item.id, title: item.title, summary: item.summary, url: item.url,
+                sourceName: item.sourceName, publishedAt: item.publishedAt ?? null, category: item.category,
+              })),
+              queryHistory: executedQueries.slice(-40),
+            });
+
+            const newEvidenceCount = collected.size - evidenceBeforeRound;
+            if (newEvidenceCount <= 0) {
+              queryWarnings.push('Adaptive discovery stopped because the latest search batch added no new independent source URLs.');
+              break researchRounds;
+            }
+            if (round >= MAX_DEEP_RESEARCH_ROUNDS || collected.size >= MAX_DEEP_RESEARCH_EVIDENCE ||
+                attemptedQueries >= MAX_DEEP_RESEARCH_QUERIES) break;
+            const nextDirections = latestAiDossier?.nextQueries ?? (latestFallbackReview?.nextDirections ?? []).map((item) => ({
+              query: item.query,
+              purpose: 'independent-confirmation' as const,
+              hypothesisId: '',
+              priority: 3,
+              reason: item.reason,
+            }));
+            const plan = planResearchRound({
+              round: round + 1,
+              queriesAttempted: attemptedQueries,
+              evidenceCount: collected.size,
+              previousRoundNewEvidenceCount: newEvidenceCount,
+              nextQueries: nextDirections,
+              alreadyAsked: [...asked],
+            });
+            let addedDirection = false;
+            for (const planned of plan.queries) {
+              const key = normalizeResearchText(planned.query);
+              if (!key || asked.has(key) || queries.some((item) => normalizeResearchText(item) === key)) continue;
+              if (queries.length >= MAX_DEEP_RESEARCH_QUERIES) break;
+              queries.push(planned.query);
+              addedDirection = true;
+            }
+            if (!addedDirection) {
+              if (plan.stopReason) queryWarnings.push(plan.stopReason);
+              break researchRounds;
+            }
           }
 
           webSearchQueries = executedQueries;
@@ -822,35 +851,8 @@ export const useScout = create<State>((set, get) => ({
         language: currentData.preferences.uiLanguage ?? 'fa',
       });
 
-      if (webResearchDossier || engineNews.length || researchVideos.length) {
-        set({ progress: 'Deep Research is independently cross-checking the completed internal analysis…' });
-        try {
-          const finalSignals: YouTubeSampleVideo[] = researchVideos.slice(0, 25).map((video) => ({
-            id: video.id, title: video.title, description: video.description, channel: video.channel,
-            channelId: video.channelId ?? '', publishedAt: video.publishedAt, thumbnailUrl: video.thumbnail,
-            viewCount: video.viewCount ?? null, likeCount: video.likeCount ?? null,
-            channelSubscriberCount: null, channelVideoCount: null,
-            url: 'https://www.youtube.com/watch?v=' + video.id, growth: video.growth,
-          }));
-          const finalEye = await runResearchAgentSerialized({
-            topic, researchNiche, evidence: webItems, youtubeSignals: finalSignals,
-            preferences: initialPreferences, previous: webResearchDossier ?? priorMemory?.researchDossier,
-            alreadyAsked: webSearchQueries,
-            internalEngineFindings: {
-              summary: internalAnalysis.summary,
-              keyFindings: internalAnalysis.evidence.map((item) => item.detail),
-              gaps: internalAnalysis.intelligence.gaps,
-              verificationQuestions: internalAnalysis.verificationQuestions,
-              potentialContradictions: internalAnalysis.intelligence.potentialContradictions,
-            },
-          });
-          warnings.push(...finalEye.warnings);
-          if (finalEye.dossier) webResearchDossier = finalEye.dossier;
-        } catch {
-          warnings.push('The final Deep Research second-eye review was unavailable; local findings and YouTube evidence remain retained.');
-        }
-      }
-
+      // The batch-level dossier has already passed independent cross-provider review.
+      // Re-running the same provider pair here added latency without introducing new source evidence.
       const report: Report = {
         input: normalizedInput,
         videos: researchVideos,
@@ -1000,7 +1002,7 @@ export const useScout = create<State>((set, get) => ({
               preferences: { ...data.preferences, ...usage },
             }));
           },
-        }));
+        }), origin === 'manual' ? 'manual' : 'automatic');
         if (review.opinions.length || review.warnings.length) {
           await get().commit((data) => ({
             ...data,
@@ -1072,6 +1074,7 @@ export const useScout = create<State>((set, get) => ({
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       return undefined;
     } finally {
+      releaseManualLease?.();
       set((state) => {
         const activeResearchRuns = Math.max(0, state.activeResearchRuns - 1);
         return { activeResearchRuns, busy: activeResearchRuns > 0, progress: activeResearchRuns ? state.progress : '' };
