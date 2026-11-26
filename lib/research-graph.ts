@@ -187,6 +187,7 @@ export function buildResearchGraphModel(input: BuildResearchGraphInput): Researc
           ' · ' + number(concept.mentionCount) + ' ' + text('mentions', 'ذکر'),
         detail: [
           text('Evidence records: ', 'رکوردهای شاهد: ') + concept.evidenceIds.join(', '),
+          text('Contributing publisher IDs: ', 'شناسه ناشران مشارکت‌کننده: ') + concept.sourceIds.join(', '),
           text('These are recurring words in the retrieved sample, not verified entities or causal claims.', 'این‌ها واژه‌های پرتکرار در نمونه دریافت‌شده‌اند، نه موجودیت تأییدشده یا ادعای علّی.'),
           ...input.analysis.conceptRelations
             .filter((relation) => relation.fromConceptId === concept.id || relation.toConceptId === concept.id)
@@ -366,7 +367,11 @@ export function buildResearchGraphModel(input: BuildResearchGraphInput): Researc
 
   for (const concept of input.analysis.emergentConcepts) {
     for (const story of input.news) {
-      if (concept.evidenceIds.includes(story.url) || concept.evidenceIds.includes(story.id)) {
+      if (
+        concept.evidenceIds.includes(story.url) ||
+        concept.evidenceIds.includes(story.id) ||
+        Boolean(story.sourceId && concept.sourceIds.includes(story.sourceId))
+      ) {
         addEdge('source-' + story.id, 'concept-' + concept.id, text('contains recurring term', 'دارای واژه پرتکرار'));
       }
     }
