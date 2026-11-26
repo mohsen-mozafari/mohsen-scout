@@ -32,6 +32,7 @@ import { readPendingResearch, getPendingResearch, savePendingResearch, updatePen
 import { captureYouTubeSnapshots } from './youtube-growth';
 import {
   acquireManualResearchLease,
+  availableAutonomousResearchRunSlots,
   availableResearchRunSlots,
   mapWithConcurrency,
   MAX_CONCURRENT_RESEARCH_RUNS,
@@ -156,7 +157,7 @@ export const useScout = create<State>((set, get) => ({
       const excluded = new Set(options?.excludeIds ?? []);
       const candidates = pending.filter((item) => !completedIds.has(item.id) && !excluded.has(item.id) &&
         (options?.maxAgeMs === undefined || Date.now() - item.savedAt <= options.maxAgeMs))
-        .slice(0, availableResearchRunSlots(get().activeResearchRuns));
+        .slice(0, availableAutonomousResearchRunSlots(get().activeResearchRuns));
       if (!candidates.length) return;
       set({ progress: 'Resuming interrupted research tasks from this device…' });
       const outcomes = await Promise.all(candidates.map((item) => get().research(item.input, 'automatic', true, undefined, item.id)));
