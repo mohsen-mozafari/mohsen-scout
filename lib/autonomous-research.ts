@@ -13,7 +13,7 @@ import {
   selectedAutonomousNicheTopic,
   AUTONOMOUS_YOUTUBE_DISCOVERY_INTERVAL_MS,
 } from './autonomous-policy';
-import { MAX_CONCURRENT_RESEARCH_RUNS } from './research-concurrency';
+import { isManualResearchActive, MAX_CONCURRENT_RESEARCH_RUNS } from './research-concurrency';
 import {
   enqueueAutonomousCandidates,
   loadAutonomousQueue,
@@ -255,12 +255,12 @@ async function discoverFreshTopics(): Promise<void> {
 
 async function processNextJob(): Promise<boolean> {
   const initial = useScout.getState();
-  if (!initial.ready || initial.activeResearchRuns >= MAX_CONCURRENT_RESEARCH_RUNS) return false;
+  if (isManualResearchActive() || !initial.ready || initial.activeResearchRuns >= MAX_CONCURRENT_RESEARCH_RUNS) return false;
   const job = await claimNextAutonomousJob();
   if (!job) return false;
 
   const current = useScout.getState();
-  if (!current.ready || current.activeResearchRuns >= MAX_CONCURRENT_RESEARCH_RUNS) {
+  if (isManualResearchActive() || !current.ready || current.activeResearchRuns >= MAX_CONCURRENT_RESEARCH_RUNS) {
     await updateAutonomousQueue((queue) => updateAutonomousJob(queue, job.id, {
       status: 'queued', startedAt: undefined, retryAt: undefined,
     }));
@@ -290,15 +290,16 @@ async function processNextJob(): Promise<boolean> {
 }
 
 export async function runAutonomousResearchCycle(maxJobs = 1): Promise<number> {
-  if (tickInProgress) return 0;
+  if (tickInProgress || isManualResearchActive()) return 0;
   tickInProgress = true;
   let processedCount = 0;
   try {
     const state = useScout.getState();
     const preferences = state.data.preferences;
-    if (!state.ready || preferences.paused) return 0;
+    if (!state.ready || preferences.paused || isManualResearchActive()) return 0;
 
-    // Refresh current evidence before resuming interrupted work.
+    // Refresh current evidence before resuming interrupted work. A new manual
+    // lease is checked again before claiming any queued autonomous research.
     await discoverFreshTopics();
     const pending = await readPendingResearch();
     const analyzedIds = new Set(useScout.getState().data.reports.filter((report) => report.analyzed).map((report) => report.id));
