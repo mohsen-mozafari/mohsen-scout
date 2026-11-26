@@ -3,7 +3,7 @@ import type { InternalResearchResult } from './engine';
 import type { SpaceNewsItem, WikiSignal } from './space';
 import { matchesResearchTerms } from './intelligence';
 
-export type ResearchGraphGroupId = 'sources' | 'youtube' | 'context' | 'evidence' | 'entities' | 'findings' | 'angles' | 'ideas';
+export type ResearchGraphGroupId = 'sources' | 'youtube' | 'context' | 'evidence' | 'entities' | 'concepts' | 'findings' | 'angles' | 'ideas';
 
 export type ResearchGraphItem = {
   id: string;
@@ -19,7 +19,7 @@ export type ResearchGraphGroup = {
   items: ResearchGraphItem[];
 };
 
-export type ResearchGraphNodeType = 'topic' | 'publisher' | 'news' | 'youtube' | 'context' | 'evidence' | 'entity' | 'finding' | 'idea';
+export type ResearchGraphNodeType = 'topic' | 'publisher' | 'news' | 'youtube' | 'context' | 'evidence' | 'entity' | 'concept' | 'finding' | 'idea';
 export type ResearchGraphNode = ResearchGraphItem & { type: ResearchGraphNodeType; groupId?: ResearchGraphGroupId };
 export type ResearchGraphEdge = { id: string; source: string; target: string; relation: string };
 export type ResearchGraphModel = { topic: string; summary: string; groups: ResearchGraphGroup[]; nodes: ResearchGraphNode[]; edges: ResearchGraphEdge[] };
@@ -175,6 +175,32 @@ export function buildResearchGraphModel(input: BuildResearchGraphInput): Researc
     });
   }
 
+  if (input.analysis.emergentConcepts.length) {
+    groups.push({
+      id: 'concepts',
+      title: text('Emerging evidence concepts', 'مفاهیم نوظهور در شواهد'),
+      items: input.analysis.emergentConcepts.map((concept) => ({
+        id: 'concept-' + concept.id,
+        title: concept.term,
+        meta: number(concept.evidenceIds.length) + ' ' + text('evidence documents', 'سند شاهد') +
+          ' · ' + number(concept.sourceCount) + ' ' + text('source IDs', 'شناسه منبع') +
+          ' · ' + number(concept.mentionCount) + ' ' + text('mentions', 'ذکر'),
+        detail: [
+          text('Evidence records: ', 'رکوردهای شاهد: ') + concept.evidenceIds.join(', '),
+          text('These are recurring words in the retrieved sample, not verified entities or causal claims.', 'این‌ها واژه‌های پرتکرار در نمونه دریافت‌شده‌اند، نه موجودیت تأییدشده یا ادعای علّی.'),
+          ...input.analysis.conceptRelations
+            .filter((relation) => relation.fromConceptId === concept.id || relation.toConceptId === concept.id)
+            .map((relation) => {
+              const otherId = relation.fromConceptId === concept.id ? relation.toConceptId : relation.fromConceptId;
+              const other = input.analysis.emergentConcepts.find((item) => item.id === otherId);
+              return text('Co-occurs with: ', 'هم‌رخداد با: ') + (other?.term ?? otherId) +
+                ' · ' + number(relation.cooccurrenceCount) + ' ' + text('shared documents', 'سند مشترک');
+            }),
+        ].join('\\n'),
+      })),
+    });
+  }
+
   const quality = input.analysis.intelligence.sourceQuality;
   const confidence = input.analysis.intelligence.confidence;
   const findings: ResearchGraphItem[] = [
@@ -284,7 +310,8 @@ export function buildResearchGraphModel(input: BuildResearchGraphInput): Researc
           : group.id === 'context' ? 'context'
             : group.id === 'evidence' ? 'evidence'
               : group.id === 'entities' ? 'entity'
-                : group.id === 'angles' || group.id === 'ideas' ? 'idea' : 'finding',
+                : group.id === 'concepts' ? 'concept'
+                  : group.id === 'angles' || group.id === 'ideas' ? 'idea' : 'finding',
       groupId: group.id,
     }))),
   ];
@@ -334,6 +361,21 @@ export function buildResearchGraphModel(input: BuildResearchGraphInput): Researc
       'entity-' + relation.fromEntityId,
       'entity-' + relation.toEntityId,
       text('co-mentioned in ' + relation.evidenceCount + ' evidence record(s)', 'هم‌ذکر در ' + relation.evidenceCount + ' رکورد شاهد'),
+    );
+  }
+
+  for (const concept of input.analysis.emergentConcepts) {
+    for (const story of input.news) {
+      if (concept.evidenceIds.includes(story.url) || concept.evidenceIds.includes(story.id)) {
+        addEdge('source-' + story.id, 'concept-' + concept.id, text('contains recurring term', 'دارای واژه پرتکرار'));
+      }
+    }
+  }
+  for (const relation of input.analysis.conceptRelations) {
+    addEdge(
+      'concept-' + relation.fromConceptId,
+      'concept-' + relation.toConceptId,
+      text('co-occurs across ' + relation.cooccurrenceCount + ' evidence documents', 'هم‌رخداد در ' + relation.cooccurrenceCount + ' سند شاهد'),
     );
   }
 
