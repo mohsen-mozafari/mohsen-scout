@@ -3,7 +3,9 @@ import type { ResearchInput } from './types';
 import { uid } from './types';
 import { normalizeResearchText } from './intelligence';
 
-const KEY = 'mohsen-scout.autonomous-research-queue.v1';
+const KEY = 'mohsen-scout.autonomous-research-queue.v2';
+const LEGACY_KEY = 'mohsen-scout.autonomous-research-queue.v1';
+export const AUTONOMOUS_QUEUE_VERSION = 2;
 export const AUTONOMOUS_QUEUE_LIMIT = 250;
 export const AUTONOMOUS_QUEUE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
 export const AUTONOMOUS_SEEN_LIMIT = 5000;
@@ -30,7 +32,7 @@ export type AutonomousResearchJob = {
   recoveredFromInterruption?: boolean;
 };
 export type AutonomousResearchQueue = {
-  version: 1;
+  version: 2;
   jobs: AutonomousResearchJob[];
   seenKeys: { key: string; seenAt: number }[];
   lastNicheSeedAt: number;
@@ -42,7 +44,7 @@ export type AutonomousResearchCandidate = Omit<AutonomousResearchJob,
   'id' | 'discoveredAt' | 'attempts' | 'status'>;
 
 export function emptyAutonomousQueue(): AutonomousResearchQueue {
-  return { version: 1, jobs: [], seenKeys: [], lastNicheSeedAt: 0, lastYouTubeDiscoveryAt: 0 };
+  return { version: AUTONOMOUS_QUEUE_VERSION, jobs: [], seenKeys: [], lastNicheSeedAt: 0, lastYouTubeDiscoveryAt: 0 };
 }
 
 function validInput(value: unknown): value is ResearchInput {
@@ -74,20 +76,73 @@ function sourceKey(candidate: Pick<AutonomousResearchCandidate, 'source' | 'sour
   return candidate.source + ':' + identity;
 }
 
+
+function isFreshDiscovery(job: AutonomousResearchJob, now: number): boolean {
+  if (job.recoveredFromInterruption || job.status === 'failed') return false;
+  const age = now - job.discoveredAt;
+  if (!Number.isFinite(age) || age < -60 * 60 * 1000 || age > AUTONOMOUS_QUEUE_MAX_AGE_MS) return false;
+  if (!job.publishedAt) return true;
+  const published = Date.parse(job.publishedAt);
+  return Number.isFinite(published) && published <= now + 60 * 60 * 1000 && now - published <= 7 * 24 * 60 * 60 * 1000;
+}
+function compareJobs(a: AutonomousResearchJob, b: AutonomousResearchJob, now: number): number {
+  const freshA = isFreshDiscovery(a, now), freshB = isFreshDiscovery(b, now);
+  if (freshA !== freshB) return freshA ? -1 : 1;
+  if (freshA) {
+    const aDate = a.publishedAt ? Date.parse(a.publishedAt) || 0 : 0;
+    const bDate = b.publishedAt ? Date.parse(b.publishedAt) || 0 : 0;
+    return b.priority - a.priority || bDate - aDate || b.discoveredAt - a.discoveredAt;
+  }
+  return (a.retryAt ?? 0) - (b.retryAt ?? 0) || b.priority - a.priority || a.attempts - b.attempts;
+}
+let queueWrites: Promise<unknown> = Promise.resolve();
+function serializeQueue<T>(operation: () => Promise<T>): Promise<T> {
+  const next = queueWrites.then(operation, operation);
+  queueWrites = next.then(() => undefined, () => undefined);
+  return next;
+}
+let queueLoaded = false;
+async function readStoredQueue(): Promise<AutonomousResearchQueue> {
+  const current = await AsyncStorage.getItem(KEY);
+  let value: unknown;
+  if (current) {
+    try { value = JSON.parse(current); } catch { /* fall through to legacy */ }
+  }
+  if (value === undefined) {
+    const legacy = await AsyncStorage.getItem(LEGACY_KEY);
+    if (legacy) {
+      try { value = JSON.parse(legacy); } catch { /* invalid queue becomes empty */ }
+    }
+  }
+  const queue = value === undefined
+    ? emptyAutonomousQueue()
+    : normalizeAutonomousQueue(value, Date.now(), !queueLoaded);
+  queueLoaded = true;
+  return queue;
+}
+async function persistQueue(queue: AutonomousResearchQueue): Promise<void> {
+  await AsyncStorage.setItem(KEY, JSON.stringify(normalizeAutonomousQueue(queue, Date.now(), false)));
+  await AsyncStorage.removeItem(LEGACY_KEY);
+  queueLoaded = true;
+}
+
 export function normalizeAutonomousQueue(
   value: unknown,
   now = Date.now(),
+  recoverRunning = true,
 ): AutonomousResearchQueue {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return emptyAutonomousQueue();
   const item = value as Record<string, unknown>;
   const rawJobs = Array.isArray(item.jobs) ? item.jobs.filter(validJob) : [];
   const jobs = rawJobs
-    .map((job) => job.status === 'running'
-      ? { ...job, status: 'queued' as const, recoveredFromInterruption: true, priority: Math.max(180, job.priority) }
+    .map((job) => recoverRunning && job.status === 'running'
+      ? { ...job, status: 'queued' as const, recoveredFromInterruption: true, priority: job.priority }
       : job.status === 'failed'
-        ? { ...job, recoveredFromInterruption: true, priority: Math.max(160, job.priority) }
+        ? { ...job, recoveredFromInterruption: true, priority: job.priority }
         : job)
-    .filter((job) => job.status === 'completed' || job.recoveredFromInterruption === true || now - job.discoveredAt <= AUTONOMOUS_QUEUE_MAX_AGE_MS);
+    .filter((job) => job.status === 'completed' || job.recoveredFromInterruption === true ||
+      (now - job.discoveredAt >= -60 * 60 * 1000 && now - job.discoveredAt <= AUTONOMOUS_QUEUE_MAX_AGE_MS));
+  const uniqueJobs = jobs.filter((job, index, all) => all.findIndex((candidate) => candidate.id === job.id) === index);
   const seenKeys = Array.isArray(item.seenKeys)
     ? item.seenKeys.flatMap((entry) => {
       if (!entry || typeof entry !== 'object') return [];
@@ -98,10 +153,10 @@ export function normalizeAutonomousQueue(
     }).slice(-AUTONOMOUS_SEEN_LIMIT)
     : [];
   return {
-    version: 1,
+    version: AUTONOMOUS_QUEUE_VERSION,
     jobs: [
-      ...jobs.filter((job) => job.status !== 'completed').slice(0, AUTONOMOUS_QUEUE_LIMIT),
-      ...jobs.filter((job) => job.status === 'completed').slice(-100),
+      ...uniqueJobs.filter((job) => job.status !== 'completed').slice(0, AUTONOMOUS_QUEUE_LIMIT),
+      ...uniqueJobs.filter((job) => job.status === 'completed').slice(-100),
     ],
     seenKeys,
     lastNicheSeedAt: typeof item.lastNicheSeedAt === 'number' ? item.lastNicheSeedAt : 0,
@@ -110,21 +165,23 @@ export function normalizeAutonomousQueue(
   };
 }
 
-export async function loadAutonomousQueue(): Promise<AutonomousResearchQueue> {
-  try {
-    const raw = await AsyncStorage.getItem(KEY);
-    if (!raw) return emptyAutonomousQueue();
-    const normalized = normalizeAutonomousQueue(JSON.parse(raw));
-    await saveAutonomousQueue(normalized);
-    return normalized;
-  } catch {
-    return emptyAutonomousQueue();
-  }
+export function loadAutonomousQueue(): Promise<AutonomousResearchQueue> {
+  return serializeQueue(async () => {
+    const current = await readStoredQueue();
+    await persistQueue(current);
+    return current;
+  });
 }
-
-export async function saveAutonomousQueue(queue: AutonomousResearchQueue): Promise<void> {
-  const normalized = normalizeAutonomousQueue(queue);
-  await AsyncStorage.setItem(KEY, JSON.stringify(normalized));
+export function saveAutonomousQueue(queue: AutonomousResearchQueue): Promise<void> {
+  return serializeQueue(() => persistQueue(queue));
+}
+export function updateAutonomousQueue(change: (current: AutonomousResearchQueue) => AutonomousResearchQueue): Promise<AutonomousResearchQueue> {
+  return serializeQueue(async () => {
+    const current = await readStoredQueue();
+    const next = normalizeAutonomousQueue(change(current));
+    await persistQueue(next);
+    return next;
+  });
 }
 
 export function enqueueAutonomousCandidates(
@@ -133,44 +190,37 @@ export function enqueueAutonomousCandidates(
   now = Date.now(),
 ): AutonomousResearchQueue {
   const seen = new Set(queue.seenKeys.map((item) => item.key));
-  const topicKeys = new Set(queue.jobs
-    .filter((item) => item.status !== 'completed' && item.status !== 'failed')
-    .map((item) => normalizeResearchText(item.topic)));
   const jobs = [...queue.jobs];
   const seenKeys = [...queue.seenKeys];
   for (const candidate of candidates) {
     const topic = candidate.topic.trim().replace(/\s+/g, ' ').slice(0, 180);
-    const key = sourceKey({ ...candidate, topic });
     const topicKey = normalizeResearchText(topic);
-    if (!topicKey || seen.has(key) || topicKeys.has(topicKey)) continue;
-    const job: AutonomousResearchJob = {
-      ...candidate,
-      topic,
-      id: uid(),
-      discoveredAt: now,
-      attempts: 0,
-      status: 'queued',
-      ...(candidate.publishedAt ? { publishedAt: candidate.publishedAt } : {}),
-    };
-    jobs.push(job);
+    if (!topicKey) continue;
+    const key = sourceKey({ ...candidate, topic });
+    const existingIndex = jobs.findIndex((item) => item.status !== 'completed' && normalizeResearchText(item.topic) === topicKey);
+    if (existingIndex >= 0) {
+      const existing = jobs[existingIndex]!;
+      if (existing.status !== 'running' && (existing.recoveredFromInterruption || existing.status === 'failed' || !isFreshDiscovery(existing, now))) {
+        jobs[existingIndex] = { ...existing, ...candidate, topic, id: existing.id, discoveredAt: now, attempts: 0, status: 'queued',
+          startedAt: undefined, completedAt: undefined, retryAt: undefined, lastError: undefined, recoveredFromInterruption: false };
+        seen.add(key);
+        seenKeys.push({ key, seenAt: now });
+      }
+      continue;
+    }
+    if (seen.has(key)) continue;
+    jobs.push({ ...candidate, topic, id: uid(), discoveredAt: now, attempts: 0, status: 'queued' });
     seen.add(key);
-    topicKeys.add(topicKey);
     seenKeys.push({ key, seenAt: now });
   }
+  const retained = jobs.filter((job) => job.status === 'completed' || job.recoveredFromInterruption === true ||
+      (now - job.discoveredAt >= -60 * 60 * 1000 && now - job.discoveredAt <= AUTONOMOUS_QUEUE_MAX_AGE_MS))
+    .sort((a, b) => compareJobs(a, b, now))
+    .filter((job, index, all) => all.findIndex((candidate) => candidate.id === job.id) === index);
   return {
     ...queue,
-    jobs: jobs
-      .filter((job) => job.status === 'completed' || job.recoveredFromInterruption === true || now - job.discoveredAt <= AUTONOMOUS_QUEUE_MAX_AGE_MS)
-      .sort((a, b) => {
-        if (a.status === 'completed' && b.status !== 'completed') return 1;
-        if (b.status === 'completed' && a.status !== 'completed') return -1;
-        const recovered = Number(Boolean(b.recoveredFromInterruption)) - Number(Boolean(a.recoveredFromInterruption));
-        if (recovered) return recovered;
-        const aDate = a.publishedAt ? Date.parse(a.publishedAt) || 0 : 0;
-        const bDate = b.publishedAt ? Date.parse(b.publishedAt) || 0 : 0;
-        return b.priority - a.priority || bDate - aDate || b.discoveredAt - a.discoveredAt;
-      })
-      .slice(0, AUTONOMOUS_QUEUE_LIMIT + 100),
+    jobs: [...retained.filter((job) => job.status !== 'completed').slice(0, AUTONOMOUS_QUEUE_LIMIT),
+      ...retained.filter((job) => job.status === 'completed').slice(-100)],
     seenKeys: seenKeys.slice(-AUTONOMOUS_SEEN_LIMIT),
   };
 }
@@ -193,12 +243,20 @@ export function nextAutonomousJob(
 ): AutonomousResearchJob | undefined {
   return queue.jobs
     .filter((job) => (job.status === 'queued' || job.status === 'failed') && (!job.retryAt || job.retryAt <= now))
-    .filter((job) => job.recoveredFromInterruption === true || now - job.discoveredAt <= AUTONOMOUS_QUEUE_MAX_AGE_MS)
-    .sort((a, b) => {
-      const recovered = Number(Boolean(b.recoveredFromInterruption)) - Number(Boolean(a.recoveredFromInterruption));
-      if (recovered) return recovered;
-      const aDate = a.publishedAt ? Date.parse(a.publishedAt) || 0 : 0;
-      const bDate = b.publishedAt ? Date.parse(b.publishedAt) || 0 : 0;
-      return b.priority - a.priority || bDate - aDate || b.discoveredAt - a.discoveredAt;
-    })[0];
+    .filter((job) => job.recoveredFromInterruption === true ||
+      (now - job.discoveredAt >= -60 * 60 * 1000 && now - job.discoveredAt <= AUTONOMOUS_QUEUE_MAX_AGE_MS))
+    .sort((a, b) => compareJobs(a, b, now))[0];
+}
+
+/** Atomically claim one job before networking to prevent duplicate autonomous starts. */
+export function claimNextAutonomousJob(now = Date.now()): Promise<AutonomousResearchJob | undefined> {
+  return serializeQueue(async () => {
+    const current = await readStoredQueue();
+    const next = nextAutonomousJob(current, now);
+    if (!next) return undefined;
+    const claimed: AutonomousResearchJob = { ...next, status: 'running', startedAt: now, attempts: next.attempts + 1,
+      retryAt: undefined, lastError: undefined, recoveredFromInterruption: false };
+    await persistQueue({ ...current, jobs: current.jobs.map((job) => job.id === next.id ? claimed : job) });
+    return claimed;
+  });
 }

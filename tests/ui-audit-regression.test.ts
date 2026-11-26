@@ -117,13 +117,13 @@ void test('shared video rows use the validated external-link handler', () => {
   assert.doesNotMatch(videoRow, /Linking\.openURL/);
 });
 
-void test('release metadata and workflow agree on version 1.27.0', () => {
+void test('release metadata and workflow agree on version 1.28.0', () => {
   const config = source('app.config.ts');
   const workflow = source('.github/workflows/android-apk-v1.24.0-full-audit.yml');
-  assert.match(config, /version: '1\.27\.0'/);
-  assert.match(config, /versionCode: 48/);
-  assert.match(workflow, /versionCode='48'/);
-  assert.match(workflow, /1\.27\.0/);
+  assert.match(config, /version: '1\.28\.0'/);
+  assert.match(config, /versionCode: 49/);
+  assert.match(workflow, /versionCode='49'/);
+  assert.match(workflow, /1\.28\.0/);
   assert.match(workflow, /android-apk-v1\.24\.0-full-audit\.yml/);
 });
 
@@ -200,4 +200,44 @@ void test('library and notes screens avoid broad subscriptions and repeated line
   assert.match(notes, /useMemo\(\(\) => notes/);
   assert.match(notes, /new Set\(ideas\.map/);
   assert.match(notes, /ideaIds\.has\(item\.ideaId\)/);
+});
+
+
+void test('legacy fixed-interval background task is retired and configured scheduler is sole schedule owner', () => {
+  const root = source('app/_layout.tsx');
+  const legacy = source('lib/autonomous-background-task.ts');
+  const scheduler = source('lib/scheduler.ts');
+  assert.match(root, /unregisterLegacyAutonomousResearchBackgroundTask/);
+  assert.doesNotMatch(root, /registerAutonomousResearchBackgroundTask/);
+  assert.doesNotMatch(legacy, /defineTask|registerTaskAsync/);
+  assert.match(legacy, /unregisterTaskAsync/);
+  assert.match(scheduler, /prefs\.schedule === 'Manual'/);
+  assert.match(scheduler, /prefs\.paused/);
+  assert.match(scheduler, /unregisterTaskAsync/);
+});
+
+void test('YouTube, publisher, web and Wikimedia collection run concurrently while the research model still awaits YouTube', () => {
+  const store = source('lib/store.ts');
+  assert.match(store, /Promise\.all\(\[youtubeTaskPromise, feedTask\(\), webTask\(\), wikiTask\(\)\]\)/);
+  assert.match(store, /if \(youtubeTaskPromise\) await youtubeTaskPromise/);
+  assert.match(store, /youtubeSignals: youtubeSignals/);
+  assert.match(store, /youtubeSignals: finalSignals/);
+});
+
+void test('autonomous queue is versioned and persists claims through serialized queue updates', () => {
+  const queue = source('lib/autonomous-queue.ts');
+  assert.match(queue, /AUTONOMOUS_QUEUE_VERSION = 2/);
+  assert.match(queue, /LEGACY_KEY/);
+  assert.match(queue, /updateAutonomousQueue/);
+  assert.match(queue, /claimNextAutonomousJob/);
+  assert.match(queue, /serializeQueue/);
+});
+
+void test('pending recovery is versioned and bounded and saves durable completion markers', () => {
+  const pending = source('lib/pending-research.ts');
+  const store = source('lib/store.ts');
+  assert.match(pending, /MAX_PENDING_RESEARCH_TASKS = 250/);
+  assert.match(pending, /version: 2/);
+  assert.match(store, /stage: 'ideas-saved'/);
+  assert.match(store, /analyzedReportIds/);
 });

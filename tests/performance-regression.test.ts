@@ -122,3 +122,42 @@ void test('adaptive Deep Research uses the configured two-query fan-out and reta
   assert.equal(attempted, MAX_DEEP_RESEARCH_QUERIES);
   assert.ok(attempted <= MAX_DEEP_RESEARCH_QUERIES);
 });
+
+
+void test('one video retains over 10,000 snapshots across more than 40 days with measured continuity', () => {
+  const base = Date.parse('2026-01-01T00:00:00.000Z');
+  const history: YouTubeSnapshot[] = [];
+  for (let index = 0; index < 10_050; index += 1) {
+    history.push({
+      id: 'long-video:' + index,
+      videoId: 'long-video',
+      channel: 'long-channel',
+      capturedAt: base + index * 6 * 60 * 1000,
+      viewCount: 100_000 + index * 12,
+      likeCount: null,
+      commentCount: null,
+    });
+  }
+  const capturedAt = base + 42 * DAY_MS;
+  const sample: Video = {
+    id: 'long-video',
+    title: 'Synthetic long-retention fixture',
+    description: 'Regression fixture only; not a live YouTube observation.',
+    channel: 'long-channel',
+    thumbnail: '',
+    publishedAt: new Date(base).toISOString(),
+    fetchedAt: capturedAt,
+    query: 'long retention fixture',
+    viewCount: 100_000 + 10_050 * 12,
+    likeCount: null,
+    commentCount: null,
+  };
+  const result = captureYouTubeSnapshots([sample], history, capturedAt);
+  assert.equal(result.history.length, 10_051);
+  assert.equal(result.snapshots.length, 1);
+  assert.equal(result.videos[0]?.growth?.snapshotCount, 10_051);
+  assert.equal(result.videos[0]?.growth?.status, 'measured');
+  assert.ok((result.videos[0]?.growth?.viewsPerDay ?? 0) > 0);
+  assert.ok(result.history.some((item) => item.id === 'long-video:0'));
+  assert.ok(result.history.some((item) => item.id === 'long-video:10049'));
+});

@@ -17,11 +17,12 @@ import { MAX_CONCURRENT_RESEARCH_RUNS } from './research-concurrency';
 import {
   enqueueAutonomousCandidates,
   loadAutonomousQueue,
-  nextAutonomousJob,
-  saveAutonomousQueue,
+  claimNextAutonomousJob,
   updateAutonomousJob,
+  updateAutonomousQueue,
   type AutonomousResearchCandidate,
 } from './autonomous-queue';
+import { clearPendingResearch, readPendingResearch } from './pending-research';
 import type { Video } from './types';
 
 const INITIAL_FOREGROUND_IDLE_MS = 4_000;
@@ -119,8 +120,7 @@ async function discoverYouTubeTopics(): Promise<void> {
 
   // Persist before networking. A failed run is moved to a short, bounded retry
   // window below; successful discovery keeps the six-hour cadence.
-  queue = { ...queue, lastYouTubeDiscoveryAt: now };
-  await saveAutonomousQueue(queue);
+  await updateAutonomousQueue((current) => ({ ...current, lastYouTubeDiscoveryAt: now }));
 
   const input = baseInput(preferences);
   const startedAt = Date.now();
@@ -176,9 +176,7 @@ async function discoverYouTubeTopics(): Promise<void> {
           for (const video of persisted) videosById.set(video.id, video);
           const candidates = buildYouTubeCandidates(persisted, preferences, Date.now(), discoveryTopic);
           candidateCount += candidates.length;
-          queue = await loadAutonomousQueue();
-          queue = enqueueAutonomousCandidates(queue, candidates, Date.now());
-          await saveAutonomousQueue(queue);
+          await updateAutonomousQueue((current) => enqueueAutonomousCandidates(current, candidates, Date.now()));
         } catch (error) {
           warnings.push(discoveryTopic + ': ' + (error instanceof Error ? error.message : 'YouTube discovery failed.'));
           if (error instanceof Error && /quota|allowance|budget/i.test(error.message)) break;
@@ -196,12 +194,11 @@ async function discoverYouTubeTopics(): Promise<void> {
     const retryDelay = missingKey ? 60 * 60 * 1000 : /quota|allowance|budget/i.test(warning)
       ? AUTONOMOUS_YOUTUBE_DISCOVERY_INTERVAL_MS
       : 15 * 60 * 1000;
-    queue = await loadAutonomousQueue();
-    await saveAutonomousQueue({
-      ...queue,
+    await updateAutonomousQueue((current) => ({
+      ...current,
       // Preserve six-hour successful cadence while retrying recoverable failures sooner.
       lastYouTubeDiscoveryAt: now - AUTONOMOUS_YOUTUBE_DISCOVERY_INTERVAL_MS + retryDelay,
-    });
+    }));
   }
   await useScout.getState().recordResearchActivity({
     id: uid(),
@@ -223,77 +220,72 @@ async function discoverYouTubeTopics(): Promise<void> {
 }
 
 async function discoverFreshTopics(): Promise<void> {
-  const state = useScout.getState();
-  const preferences = state.data.preferences;
+  const preferences = useScout.getState().data.preferences;
   const now = Date.now();
-  await discoverYouTubeTopics();
-  let queue = await loadAutonomousQueue();
-  try {
-    const result = await fetchSpaceNews(preferences.spaceNewsSources);
-    if (result.registry.length) {
-      await state.commit((data) => ({ ...data, feedRegistry: result.registry }));
+
+  const publisherDiscovery = async () => {
+    try {
+      const result = await fetchSpaceNews(preferences.spaceNewsSources);
+      if (result.registry.length) {
+        await useScout.getState().commit((data) => ({ ...data, feedRegistry: result.registry }));
+      }
+      const candidates = buildPublisherCandidates(result.items, preferences, Date.now());
+      await updateAutonomousQueue((current) => enqueueAutonomousCandidates(current, candidates, Date.now()));
+    } catch {
+      // Keep the last successful registry and persisted discoveries.
     }
-    queue = enqueueAutonomousCandidates(queue, buildPublisherCandidates(result.items, preferences, now), now);
-  } catch {
-    // Keep the last successful feed registry and the already persisted queue.
-  }
-  if (now - queue.lastNicheSeedAt >= NICHE_YOUTUBE_DISCOVERY_INTERVAL_MS) {
-    const topic = selectedNicheTopic(preferences);
-    if (topic) {
+  };
+
+  const nicheSeed = async () => {
+    await updateAutonomousQueue((current) => {
+      if (now - current.lastNicheSeedAt < NICHE_YOUTUBE_DISCOVERY_INTERVAL_MS) return current;
+      const topic = selectedNicheTopic(preferences);
+      if (!topic) return current;
       const seed: AutonomousResearchCandidate = {
-        topic,
-        input: { ...baseInput(preferences), topic },
-        source: 'niche-seed',
+        topic, input: { ...baseInput(preferences), topic }, source: 'niche-seed',
         sourceId: 'niche:' + (preferences.selectedSpaceNiche || topic) + ':' + Math.floor(now / NICHE_YOUTUBE_DISCOVERY_INTERVAL_MS),
         priority: -10,
       };
-      queue = enqueueAutonomousCandidates(queue, [seed], now);
-      queue = { ...queue, lastNicheSeedAt: now };
-    }
-  }
-  await saveAutonomousQueue(queue);
+      return { ...enqueueAutonomousCandidates(current, [seed], now), lastNicheSeedAt: now };
+    });
+  };
+
+  await Promise.all([discoverYouTubeTopics(), publisherDiscovery(), nicheSeed()]);
 }
 
 async function processNextJob(): Promise<boolean> {
-  const state = useScout.getState();
-  if (!state.ready || state.activeResearchRuns >= MAX_CONCURRENT_RESEARCH_RUNS) return false;
-  let queue = await loadAutonomousQueue();
-  const job = nextAutonomousJob(queue);
+  const initial = useScout.getState();
+  if (!initial.ready || initial.activeResearchRuns >= MAX_CONCURRENT_RESEARCH_RUNS) return false;
+  const job = await claimNextAutonomousJob();
   if (!job) return false;
-  queue = updateAutonomousJob(queue, job.id, {
-    status: 'running',
-    startedAt: Date.now(),
-    attempts: job.attempts + 1,
-    lastError: undefined,
-  });
-  await saveAutonomousQueue(queue);
+
   const current = useScout.getState();
+  if (!current.ready || current.activeResearchRuns >= MAX_CONCURRENT_RESEARCH_RUNS) {
+    await updateAutonomousQueue((queue) => updateAutonomousJob(queue, job.id, {
+      status: 'queued', startedAt: undefined, retryAt: undefined,
+    }));
+    return false;
+  }
+
   const report = await current.research(job.input, 'automatic', true, undefined, job.id);
-  queue = await loadAutonomousQueue();
   if (report) {
-    queue = updateAutonomousJob(queue, job.id, {
-      status: 'completed',
-      completedAt: Date.now(),
-      lastError: undefined,
+    const candidates = buildYouTubeCandidates(report.videos, useScout.getState().data.preferences, Date.now(), job.topic);
+    await updateAutonomousQueue((queue) => {
+      const completed = updateAutonomousJob(queue, job.id, {
+        status: 'completed', completedAt: Date.now(), lastError: undefined,
+      });
+      return enqueueAutonomousCandidates(completed, candidates);
     });
-    const candidates = buildYouTubeCandidates(
-      report.videos,
-      useScout.getState().data.preferences,
-      Date.now(),
-      job.topic,
-    );
-    queue = enqueueAutonomousCandidates(queue, candidates);
+    await clearPendingResearch(job.id);
   } else {
-    const failedAttempts = job.attempts + 1;
+    const failedAttempts = job.attempts;
     const retryDelay = Math.min(6 * 60 * 60 * 1000, 15 * 60 * 1000 * 2 ** Math.min(5, failedAttempts - 1));
-    queue = updateAutonomousJob(queue, job.id, {
-      // Failed items remain retryable indefinitely with capped exponential backoff.
+    await updateAutonomousQueue((queue) => updateAutonomousJob(queue, job.id, {
       status: failedAttempts >= 8 ? 'failed' : 'queued',
       retryAt: Date.now() + retryDelay,
       lastError: useScout.getState().error.slice(0, 300) || 'Research did not produce a completed report.',
-    });
+    }));
   }
-  await saveAutonomousQueue(queue);
   return Boolean(report);
 }
 
@@ -306,8 +298,18 @@ export async function runAutonomousResearchCycle(maxJobs = 1): Promise<number> {
     const preferences = state.data.preferences;
     if (!state.ready || preferences.paused) return 0;
 
-    // Source precedence is intentional: fresh YouTube discovery is always first.
+    // Refresh current evidence before resuming interrupted work.
     await discoverFreshTopics();
+    const pending = await readPendingResearch();
+    const analyzedIds = new Set(useScout.getState().data.reports.filter((report) => report.analyzed).map((report) => report.id));
+    const completed = pending.filter((item) => item.stage === 'ideas-saved' || Boolean(item.reportId && analyzedIds.has(item.reportId)));
+    if (completed.length) {
+      await updateAutonomousQueue((current) => completed.reduce(
+        (next, item) => updateAutonomousJob(next, item.id, { status: 'completed', completedAt: Date.now(), lastError: undefined }),
+        current,
+      ));
+      await Promise.all(completed.map((item) => clearPendingResearch(item.id)));
+    }
     const maximum = Math.max(1, Math.min(2, Math.floor(maxJobs) || 1));
     while (processedCount < maximum && useScout.getState().activeResearchRuns < MAX_CONCURRENT_RESEARCH_RUNS) {
       if (!(await processNextJob())) break;

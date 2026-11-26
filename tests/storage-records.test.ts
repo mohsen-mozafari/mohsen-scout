@@ -2,6 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   diffRecordCollection,
+  getRecordDiffIndexMetrics,
+  chunkRecordWriteBatches,
   recordExpiresAt,
   recordIdFor,
   recordTable,
@@ -44,4 +46,25 @@ void test('YouTube reports, videos and snapshots receive the indefinite-retentio
   assert.equal(recordExpiresAt('youtubeSnapshots', { capturedAt: fetchedAt }), NO_EXPIRY);
   assert.equal(recordExpiresAt('reports', { createdAt: fetchedAt }), NO_EXPIRY);
   assert.equal(recordExpiresAt('ideas', { createdAt: fetchedAt }), null);
+});
+
+
+void test('immutable record indexes are reused and SQL batches stay below SQLite bind parameter limits', () => {
+  const previous = Array.from({ length: 1200 }, (_, index) => ({ id: 'video-' + index, fetchedAt: index }));
+  const next = [...previous, { id: 'video-new', fetchedAt: 1201 }];
+  const before = getRecordDiffIndexMetrics();
+  const first = diffRecordCollection('videos', next, previous);
+  const afterFirst = getRecordDiffIndexMetrics();
+  const second = diffRecordCollection('videos', next, previous);
+  const afterSecond = getRecordDiffIndexMetrics();
+  assert.equal(first.upserts.length, 1);
+  assert.equal(second.upserts.length, 1);
+  assert.ok(afterSecond.hits >= afterFirst.hits + 2);
+  assert.equal(afterFirst.builds, before.builds + 2);
+  for (const domain of ['videos', 'notes'] as const) {
+    const batches = chunkRecordWriteBatches(domain, Array.from({ length: 1050 }, (_, index) => index));
+    const bindsPerRow = domain === 'videos' ? 5 : 4;
+    assert.equal(batches.flat().length, 1050);
+    assert.ok(batches.every((batch) => batch.length * bindsPerRow <= 900));
+  }
 });

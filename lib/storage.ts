@@ -2,7 +2,7 @@ import * as SQLite from 'expo-sqlite';
 import { defaults, purgeExpired, type LocalData } from './types';
 import { validateLocal, validateLocalEntry, validateLocalRecord } from './validation';
 import { changedLocalDataEntries } from './storage-diff';
-import { diffRecordCollection, isRecordDomain, recordIdFor, recordTable, recordUpdatedAt, recordExpiresAt, RECORD_DOMAINS, emptyRecordCounts, type RecordDomain, type StorageHealth, NO_EXPIRY } from './storage-records';
+import { diffRecordCollection, chunkRecordWriteBatches, isRecordDomain, recordIdFor, recordTable, recordUpdatedAt, recordExpiresAt, RECORD_DOMAINS, emptyRecordCounts, type RecordDomain, type StorageHealth, NO_EXPIRY } from './storage-records';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -29,15 +29,21 @@ async function migrateLegacyDomains(connection: SQLite.SQLiteDatabase): Promise<
         const raw: unknown = JSON.parse(row.value);
         if (!Array.isArray(raw)) throw new Error('Legacy ' + row.key + ' data is not a valid collection; migration was rolled back.');
         const collection = validateLocalEntry(row.key, raw) as unknown[];
-        for (const item of collection) {
-          const id = recordIdFor(row.key, item);
-          const updatedAt = recordUpdatedAt(row.key, item);
-          const payload = JSON.stringify(item);
+        const records = collection.map((item) => ({
+          id: recordIdFor(row.key, item),
+          updatedAt: recordUpdatedAt(row.key, item),
+          expiresAt: recordExpiresAt(row.key, item) ?? NO_EXPIRY,
+          payload: JSON.stringify(item),
+        }));
+        for (const batch of chunkRecordWriteBatches(row.key, records)) {
           if (table === 'youtube') {
-            const expiresAt = recordExpiresAt(row.key, item) ?? NO_EXPIRY;
-            await tx.runAsync('INSERT OR REPLACE INTO youtube_records (domain,id,updated_at,expires_at,payload) VALUES (?,?,?,?,?)', row.key, id, updatedAt, expiresAt, payload);
+            const placeholders = batch.map(() => '(?,?,?,?,?)').join(',');
+            const parameters = batch.flatMap((item) => [row.key, item.id, item.updatedAt, item.expiresAt, item.payload]);
+            await tx.runAsync('INSERT OR REPLACE INTO youtube_records (domain,id,updated_at,expires_at,payload) VALUES ' + placeholders, ...parameters);
           } else {
-            await tx.runAsync('INSERT OR REPLACE INTO personal_records (domain,id,updated_at,payload) VALUES (?,?,?,?)', row.key, id, updatedAt, payload);
+            const placeholders = batch.map(() => '(?,?,?,?)').join(',');
+            const parameters = batch.flatMap((item) => [row.key, item.id, item.updatedAt, item.payload]);
+            await tx.runAsync('INSERT OR REPLACE INTO personal_records (domain,id,updated_at,payload) VALUES ' + placeholders, ...parameters);
           }
         }
         await tx.runAsync('DELETE FROM ' + table + ' WHERE key=?', row.key);
@@ -177,8 +183,7 @@ export async function writeData(
         expiresAt: recordExpiresAt(domain, value) ?? NO_EXPIRY,
         payload: JSON.stringify(value),
       }));
-      for (let offset = 0; offset < records.length; offset += 100) {
-        const batch = records.slice(offset, offset + 100);
+      for (const batch of chunkRecordWriteBatches(domain, records)) {
         if (table === 'youtube_records') {
           const placeholders = batch.map(() => '(?,?,?,?,?)').join(',');
           const parameters = batch.flatMap(({ id, updatedAt, expiresAt, payload }) =>

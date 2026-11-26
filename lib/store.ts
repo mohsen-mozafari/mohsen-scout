@@ -144,13 +144,18 @@ export const useScout = create<State>((set, get) => ({
     try {
       const pending = await readPendingResearch();
       if (!pending.length || !get().ready) return;
+      const analyzedReportIds = new Set(get().data.reports.filter((report) => report.analyzed).map((report) => report.id));
+      const completed = pending.filter((item) => item.stage === 'ideas-saved' || Boolean(item.reportId && analyzedReportIds.has(item.reportId)));
+      if (completed.length) await Promise.all(completed.map((item) => clearPendingResearch(item.id)));
+      const completedIds = new Set(completed.map((item) => item.id));
       const excluded = new Set(options?.excludeIds ?? []);
-      const candidates = pending.filter((item) => !excluded.has(item.id) &&
+      const candidates = pending.filter((item) => !completedIds.has(item.id) && !excluded.has(item.id) &&
         (options?.maxAgeMs === undefined || Date.now() - item.savedAt <= options.maxAgeMs))
         .slice(0, availableResearchRunSlots(get().activeResearchRuns));
       if (!candidates.length) return;
       set({ progress: 'Resuming interrupted research tasks from this device…' });
-      await Promise.all(candidates.map((item) => get().research(item.input, 'automatic', true, undefined, item.id)));
+      const outcomes = await Promise.all(candidates.map((item) => get().research(item.input, 'automatic', true, undefined, item.id)));
+      await Promise.all(outcomes.flatMap((report, index) => report ? [clearPendingResearch(candidates[index]!.id)] : []));
     } catch {
       set({ error: 'One or more interrupted research tasks could not resume. Their local checkpoints were retained.' });
     } finally {
@@ -755,12 +760,11 @@ export const useScout = create<State>((set, get) => ({
         }
       };
 
-      // YouTube is the discovery-first source. Complete its bounded official API
-      // sample before fetching publisher, web and Wikimedia context.
+      // Collect bounded YouTube and independent publisher, web and Wikimedia
+      // evidence concurrently. Model prompts still await the same run's YouTube sample.
       youtubeTaskPromise = youtubeTask();
-      await youtubeTaskPromise;
       recordRuntimeStart('Sources');
-      await Promise.all([feedTask(), webTask(), wikiTask()]);
+      await Promise.all([youtubeTaskPromise, feedTask(), webTask(), wikiTask()]);
       const independentSourcesReady = publisherNews.length > 0 || webItems.length > 0;
       recordRuntimeFinish('Sources', independentSourcesReady ? 'success' : 'partial', independentSourcesReady ? undefined : 'No independent publisher/web evidence was returned.');
       if (!publisherNews.length) warnings.push('No selected publisher-feed items are currently available.');
@@ -1055,7 +1059,9 @@ export const useScout = create<State>((set, get) => ({
         });
       }
 
-      await clearPendingResearch(runId);
+      // Keep autonomous checkpoints until the durable queue records completion.
+      if (taskId) await updatePendingResearch(runId, { stage: 'ideas-saved' });
+      else await clearPendingResearch(runId);
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       return get().data.reports.find((item) => item.id === report.id) ?? report;
     } catch (error) {

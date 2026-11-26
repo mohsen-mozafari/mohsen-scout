@@ -67,27 +67,68 @@ export function recordExpiresAt(domain: RecordDomain, _value: unknown): number |
   return null;
 }
 
+type DomainIndex = Map<string, unknown>;
+const recordIndexCache = new WeakMap<readonly unknown[], Map<RecordDomain, DomainIndex>>();
+const indexMetrics = { builds: 0, hits: 0 };
+
+function indexedRecords(domain: RecordDomain, collection: readonly unknown[]): DomainIndex {
+  let byDomain = recordIndexCache.get(collection);
+  const cached = byDomain?.get(domain);
+  if (cached) {
+    indexMetrics.hits += 1;
+    return cached;
+  }
+  const index: DomainIndex = new Map();
+  for (const item of collection) {
+    const id = recordIdFor(domain, item);
+    if (index.has(id)) throw new Error('Duplicate ' + domain + ' identifier: ' + id);
+    index.set(id, item);
+  }
+  if (!byDomain) {
+    byDomain = new Map();
+    recordIndexCache.set(collection, byDomain);
+  }
+  byDomain.set(domain, index);
+  indexMetrics.builds += 1;
+  return index;
+}
+
+/** Test-visible counters confirm immutable collection indexes are reused. */
+export function getRecordDiffIndexMetrics(): Readonly<typeof indexMetrics> {
+  return { ...indexMetrics };
+}
+
+/** Keep each multi-row SQL statement below SQLite's conservative bind-parameter ceiling. */
+export function chunkRecordWriteBatches<T>(
+  domain: RecordDomain,
+  records: readonly T[],
+  maxBindParameters = 900,
+): T[][] {
+  const bindsPerRecord = recordTable(domain) === 'youtube_records' ? 5 : 4;
+  const batchSize = Math.max(1, Math.floor(maxBindParameters / bindsPerRecord));
+  const batches: T[][] = [];
+  for (let offset = 0; offset < records.length; offset += batchSize) {
+    batches.push(records.slice(offset, offset + batchSize));
+  }
+  return batches;
+}
+
 export function diffRecordCollection(
   domain: RecordDomain,
   next: readonly unknown[],
   previous?: readonly unknown[],
 ): RecordCollectionDelta {
-  const previousById = new Map<string, unknown>();
-  for (const item of previous ?? []) {
-    const id = recordIdFor(domain, item);
-    if (previousById.has(id)) throw new Error('Duplicate ' + domain + ' identifier: ' + id);
-    previousById.set(id, item);
+  const nextById = indexedRecords(domain, next);
+  if (previous === undefined) {
+    return { replaceAll: true, upserts: [...nextById].map(([id, value]) => ({ id, value })), deleteIds: [] };
   }
-  const nextIds = new Set<string>();
+  const previousById = indexedRecords(domain, previous);
   const upserts: RecordUpsert[] = [];
-  for (const item of next) {
-    const id = recordIdFor(domain, item);
-    if (nextIds.has(id)) throw new Error('Duplicate ' + domain + ' identifier: ' + id);
-    nextIds.add(id);
-    if (!previousById.has(id) || previousById.get(id) !== item) upserts.push({ id, value: item });
+  for (const [id, value] of nextById) {
+    if (!previousById.has(id) || previousById.get(id) !== value) upserts.push({ id, value });
   }
-  const deleteIds = [...previousById.keys()].filter((id) => !nextIds.has(id));
-  return { replaceAll: previous === undefined, upserts, deleteIds };
+  const deleteIds = [...previousById.keys()].filter((id) => !nextById.has(id));
+  return { replaceAll: false, upserts, deleteIds };
 }
 
 export function emptyRecordCounts(): RecordCounts {

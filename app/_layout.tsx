@@ -28,7 +28,7 @@ import { useScout } from '@/lib/store';
 // Importing the scheduler registers its native task at module load.
 import { configureSchedule } from '@/lib/scheduler';
 import { startAutonomousResearch } from '@/lib/autonomous-research';
-import { registerAutonomousResearchBackgroundTask } from '@/lib/autonomous-background-task';
+import { unregisterLegacyAutonomousResearchBackgroundTask } from '@/lib/autonomous-background-task';
 import { palette } from '@/lib/theme';
 import { purgeExpired } from '@/lib/types';
 import { registerServiceWorker } from '@/lib/registerServiceWorker';
@@ -108,8 +108,8 @@ export default function RootLayout() {
     const syncSchedule = () => {
       const state = useScout.getState();
       if (state.ready) {
+        void unregisterLegacyAutonomousResearchBackgroundTask();
         void configureSchedule(state.data.preferences).catch(() => {});
-        void registerAutonomousResearchBackgroundTask();
       }
     };
     const syncAutonomous = () => {
