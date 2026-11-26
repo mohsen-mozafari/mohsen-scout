@@ -13,6 +13,11 @@
 - Fall back to explicitly provisional local discovery when independent-review prerequisites are unavailable.
 - Preserve verified-quote, provenance and low-confidence safeguards.
 
+## Internal intelligence
+- Discover recurring topic-adjacent terms from the actual matched evidence rather than relying only on the fixed entity alias list.
+- Build co-occurrence links only when concepts appear together across multiple evidence documents.
+- Display the bounded concept-discovery findings and add concept/relation counts to engine self-evaluation.
+
 ## User experience and telemetry
 - Publish a quick internal evidence brief before adaptive deep research finishes.
 - Show when the brief is preliminary and being updated by deeper verification.
