@@ -23,6 +23,10 @@
 - Show when the brief is preliminary and being updated by deeper verification.
 - Record last and average duration for each research stage and display the latest stage timings.
 
+## Dependency alignment
+- Align Expo SDK 58 and the six out-of-date Expo modules with the versions required by Expo Doctor.
+- The Android CI workflow regenerates the SDK-aligned lockfile before installing dependencies.
+
 ## Verification and release
 - Add regression tests for manual priority, autonomous pause leases, bounded concurrency, Firecrawl request coalescing/cache isolation and runtime duration metrics.
 - Build signed Android ARM64 APK with versionCode 50 and release tag v1.29.0.
