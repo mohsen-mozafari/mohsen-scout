@@ -15,6 +15,10 @@ import {
   buildResearchEntityRelations,
   type ResearchEntityCandidate,
   type ResearchEntityRelation,
+  extractEmergentResearchConcepts,
+  buildEmergentConceptRelations,
+  type EmergentResearchConcept,
+  type EmergentConceptRelation,
 } from './intelligence';
 
 export const limitations =
@@ -65,6 +69,8 @@ export type InternalResearchResult = {
   topic: string;
   entityCandidates: ResearchEntityCandidate[];
   entityRelations: ResearchEntityRelation[];
+  emergentConcepts: EmergentResearchConcept[];
+  conceptRelations: EmergentConceptRelation[];
   summary: string;
   evidence: InternalEngineEvidence[];
   angles: InternalEngineAngle[];
@@ -223,6 +229,8 @@ export function buildInternalResearch(input: InternalResearchInput): InternalRes
   ];
   const entityCandidates = extractResearchEntityCandidates(entityDocuments);
   const entityRelations = buildResearchEntityRelations(entityCandidates);
+  const emergentConcepts = extractEmergentResearchConcepts(entityDocuments, topic, 2, 10);
+  const conceptRelations = buildEmergentConceptRelations(emergentConcepts, 2);
   const channelCount = new Set(videos.map((video) => video.channel)).size;
   const views = videos.map((video) => video.viewCount).filter((value): value is number => value != null);
   const likes = videos.map((video) => video.likeCount).filter((value): value is number => value != null);
@@ -239,6 +247,27 @@ export function buildInternalResearch(input: InternalResearchInput): InternalRes
     .sort((a, b) => (b.growth?.viewsPerHour ?? -1) - (a.growth?.viewsPerHour ?? -1))[0];
 
   const evidence: InternalEngineEvidence[] = [];
+  if (emergentConcepts.length) {
+    const conceptSummary = emergentConcepts.slice(0, 8).map((item) =>
+      item.term + ' (' + item.evidenceIds.length + ' evidence documents, ' + item.mentionCount + ' mentions)',
+    ).join(' · ');
+    const relationSummary = conceptRelations.slice(0, 5).map((item) => {
+      const left = emergentConcepts.find((concept) => concept.id === item.fromConceptId)?.term ?? 'concept';
+      const right = emergentConcepts.find((concept) => concept.id === item.toConceptId)?.term ?? 'concept';
+      return left + ' ↔ ' + right + ' (' + item.cooccurrenceCount + ' shared documents)';
+    }).join(' · ');
+    evidence.push({
+      id: 'emergent-concepts',
+      label: text('Recurring concepts in retrieved evidence', 'مفاهیم پرتکرار در شواهد دریافت‌شده'),
+      detail: fa
+        ? 'مفاهیم خارج از عبارت اصلی که در چند سند تکرار شده‌اند: ' + conceptSummary +
+          (relationSummary ? '. هم‌رخدادی‌های چندسندی: ' + relationSummary : '') +
+          '. این‌ها الگوهای متنی در نمونه فعلی‌اند، نه رابطه علّی یا اثبات معنایی.'
+        : 'Recurring terms beyond the requested topic phrase: ' + conceptSummary +
+          (relationSummary ? '. Multi-document co-occurrences: ' + relationSummary : '') +
+          '. These are patterns in the current text sample, not causal or semantic proof.',
+    });
+  }
   if (news.length) {
     const newest = matchedNews.map((entry) => entry.item).sort((a, b) =>
       (b.publishedAt ? Date.parse(b.publishedAt) : 0) -
@@ -585,7 +614,7 @@ export function buildInternalResearch(input: InternalResearchInput): InternalRes
       'سناریوی مشروط سوم: اگر جهت سری زمانی عوض شود، نباید الگوی فعلی را به آینده تعمیم داد.',
     ].slice(0, trend.scenarios.length) : trend.scenarios,
   };
-  return { topic, entityCandidates, entityRelations, summary, evidence, angles, verificationQuestions, limitations: limitationsList, intelligence };
+  return { topic, entityCandidates, entityRelations, emergentConcepts, conceptRelations, summary, evidence, angles, verificationQuestions, limitations: limitationsList, intelligence };
 }
 export function buildIdeas(_report: Report, _language: 'fa' | 'en' = 'en'): Idea[] {
   // This legacy helper receives only a Report, which has raw YouTube records but no
