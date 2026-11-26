@@ -143,7 +143,7 @@ void test('research graph retains publisher nodes while excluding the YouTube re
 
 
 void test('knowledge graph adds emerging topic concepts and evidence-backed co-occurrence edges', () => {
-  const multiNews = [
+  const multiNews: SpaceNewsItem[] = [
     {
       ...news[0],
       title: 'MOCK: NASA James Webb Space Telescope observes an exoplanet atmosphere through spectroscopy',
