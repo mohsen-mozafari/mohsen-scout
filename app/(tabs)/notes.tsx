@@ -28,9 +28,9 @@ export default function Notes() {
         ),
     )
     .sort((a, b) => b.updatedAt - a.updatedAt);
-  if (!ready) return <Page title="Notes" showBack><Txt muted>Loading your saved pages…</Txt></Page>;
+  if (!ready) return <Page safeAreaTop={false} title="Notes" showBack><Txt muted>Loading your saved pages…</Txt></Page>;
   return (
-    <Page scroll={false}>
+    <Page safeAreaTop={false} scroll={false}>
       <FlatList
         data={filtered}
         keyExtractor={(n) => n.id}

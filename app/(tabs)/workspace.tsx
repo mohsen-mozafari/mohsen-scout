@@ -1,14 +1,17 @@
 import { useState } from 'react';
-import { View, Text, Pressable } from 'react-native';
+import { View, Text, Pressable, Platform, StatusBar } from 'react-native';
 import { Archive, BookMarked, NotebookPen } from 'lucide-react-native';
 import { palette as p } from '@/lib/theme';
 import { useScout } from '@/lib/store';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Library from './library';
 import Notes from './notes';
 import ResearchArchive from '@/components/ResearchArchive';
 
 type Section = 'research' | 'library' | 'notes';
 export default function Workspace() {
+  const insets = useSafeAreaInsets();
+  const safeTop = Math.max(insets.top, Platform.OS === 'android' ? StatusBar.currentHeight ?? 24 : 0);
   const language = useScout((state) => state.data.preferences.uiLanguage ?? 'fa');
   const [section, setSection] = useState<Section>('research');
   const fa = language === 'fa';
@@ -19,7 +22,7 @@ export default function Workspace() {
   ];
   return (
     <View style={{ flex: 1, backgroundColor: p.background }}>
-      <View style={{ paddingHorizontal: 18, paddingTop: 12, paddingBottom: 9 }}>
+      <View style={{ paddingHorizontal: 18, paddingTop: safeTop + 8, paddingBottom: 9 }}>
         <View style={{ flexDirection: fa ? 'row-reverse' : 'row', gap: 7, backgroundColor: p.surface, borderWidth: 1, borderColor: p.border, padding: 5, borderRadius: 17 }}>
           {tabs.map(({ id, label, icon: Icon }) => {
             const selected = section === id;

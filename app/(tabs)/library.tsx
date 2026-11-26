@@ -92,9 +92,9 @@ export default function Library() {
       setUrl('');
       setTitle('');
     }, 'Link saved.');
-  if (!ready) return <Page title="Library" showBack><Txt muted>Loading your saved links…</Txt></Page>;
+  if (!ready) return <Page safeAreaTop={false} title="Library" showBack><Txt muted>Loading your saved links…</Txt></Page>;
   return (
-    <Page scroll={false}>
+    <Page safeAreaTop={false} scroll={false}>
       <FlatList
         data={filtered}
         keyExtractor={(l) => l.id}

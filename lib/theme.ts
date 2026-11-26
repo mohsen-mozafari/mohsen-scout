@@ -1,6 +1,6 @@
 export const palette = {
-  background: '#07111F', surface: '#0C1929', surfaceAlt: '#11243A', raised: '#172D46',
-  input: '#0A192B', nav: '#081321', border: '#2A415B', borderSoft: '#1D3249',
+  background: '#000000', surface: '#0C1929', surfaceAlt: '#11243A', raised: '#172D46',
+  input: '#0A192B', nav: '#000000', border: '#2A415B', borderSoft: '#1D3249',
   text: '#F2F7FF', muted: '#B7C6D8', placeholder: '#8EA1B8',
   accent: '#76B9FF', accentStrong: '#8BC7FF',
   accentSoft: 'rgba(118, 185, 255, 0.16)', accentLine: 'rgba(118, 185, 255, 0.40)',

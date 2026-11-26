@@ -11,6 +11,7 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
+  StatusBar,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -338,14 +339,18 @@ export const styles = StyleSheet.create({
   },
 });
 
-export function AppHeader({ showBack = false }: { showBack?: boolean }) {
+export function AppHeader({ showBack = false, safeArea = true }: { showBack?: boolean; safeArea?: boolean }) {
+  const insets = useSafeAreaInsets();
+  const topInset = safeArea
+    ? Math.max(insets.top, Platform.OS === 'android' ? StatusBar.currentHeight ?? 24 : 0)
+    : 0;
   const pathname = usePathname();
   const language = useScout((s) => s.data.preferences.uiLanguage ?? 'fa');
   const canGoBack = showBack;
   const settingsLabel = translateText('Settings', language);
   const onSettings = isSettingsRoute(pathname);
   return (
-    <View style={styles.brandBar}>
+    <View style={[styles.brandBar, { paddingTop: topInset + 4 }]}>
       <View style={styles.brandLockup}>
         {canGoBack ? (
           <Pressable
@@ -541,6 +546,7 @@ export function Page({
   subtitle,
   scroll = true,
   showBack = false,
+  safeAreaTop = true,
 }: {
   children: ReactNode;
   title?: string;
@@ -548,13 +554,13 @@ export function Page({
   subtitle?: string;
   scroll?: boolean;
   showBack?: boolean;
+  safeAreaTop?: boolean;
 }) {
   const error = useScout((s) => s.error);
   const language = useScout((s) => s.data.preferences.uiLanguage ?? 'fa');
-  const insets = useSafeAreaInsets();
   const content = (
     <>
-      <AppHeader showBack={showBack} />
+      <AppHeader showBack={showBack} safeArea={safeAreaTop} />
       {title ? <PageHeading title={title} eyebrow={eyebrow} subtitle={subtitle} /> : null}
       {error ? (
         <PageError
@@ -571,7 +577,7 @@ export function Page({
   );
   return (
     <KeyboardAvoidingView
-      style={[styles.page, { direction: language === 'fa' ? 'rtl' : 'ltr', paddingTop: Math.max(6, insets.top) }]}
+      style={[styles.page, { direction: language === 'fa' ? 'rtl' : 'ltr' }]}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       {scroll ? (
@@ -584,7 +590,7 @@ export function Page({
         </ScrollView>
       ) : (
         <View style={{ flex: 1 }}>
-          <AppHeader showBack={showBack} />
+          <AppHeader showBack={showBack} safeArea={safeAreaTop} />
           {error ? (
             <PageError
               message={error}
@@ -889,11 +895,13 @@ export function Fold({
   summary,
   children,
   defaultExpanded = false,
+  onExpandedChange,
 }: {
   title: string;
   summary?: string;
   children: ReactNode;
   defaultExpanded?: boolean;
+  onExpandedChange?: (expanded: boolean) => void;
 }) {
   const [expanded, setExpanded] = useState(defaultExpanded);
   const language = useScout((s) => s.data.preferences.uiLanguage ?? 'fa');
@@ -904,7 +912,7 @@ export function Fold({
   return (
     <View style={styles.fold}>
       <Pressable
-        onPress={() => { void Haptics.selectionAsync(); setExpanded((current) => !current); }}
+        onPress={() => { void Haptics.selectionAsync(); const next = !expanded; setExpanded(next); onExpandedChange?.(next); }}
         accessibilityRole="button"
         accessibilityLabel={summary ? translatedTitle + '. ' + translatedSummary : translatedTitle}
         accessibilityHint={translateText(expanded ? 'Collapse section' : 'Expand section', language)}

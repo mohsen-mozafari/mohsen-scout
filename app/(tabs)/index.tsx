@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, Pressable } from 'react-native';
+import { View, Text, Pressable, InteractionManager } from 'react-native';
 
-import { router } from 'expo-router';
 import {
   Page, Panel, Heading, Txt, Action, Fold, styles, ErrorBox,
   BadgeText, MetricCard,
@@ -260,6 +259,7 @@ function DiscoveryDashboardReady() {
   const feedRegistry = useScout((state) => state.data.feedRegistry);
   const runtimeMetrics = useRuntimeMetrics();
   const [healthExpanded, setHealthExpanded] = useState(false);
+  const [analysisExpanded, setAnalysisExpanded] = useState(false);
   const completedOperations = runtimeMetrics.succeeded + runtimeMetrics.partial + runtimeMetrics.failed;
   const sessionSuccessRate = completedOperations
     ? Math.round(runtimeMetrics.succeeded * 100 / completedOperations)
@@ -300,9 +300,9 @@ function DiscoveryDashboardReady() {
     [reports, storedVideos],
   );
   useEffect(() => {
-    if (!latestReportId) return;
+    if (!analysisExpanded || !latestReportId) return;
     let active = true;
-    const timer = setTimeout(() => {
+    const task = InteractionManager.runAfterInteractions(() => {
       if (!active) return;
       const report = useScout.getState().data.reports.find((item) => item.id === latestReportId);
       if (!report) return;
@@ -334,12 +334,12 @@ function DiscoveryDashboardReady() {
           ? 'تحلیل محلی آخرین جست‌وجو کامل نشد؛ گزارش و ویدئوهای ذخیره‌شده همچنان در دسترس‌اند.'
           : 'The latest local analysis could not be completed. The saved report and videos remain available.']);
       }
-    }, 160);
+    });
     return () => {
       active = false;
-      clearTimeout(timer);
+      task.cancel();
     };
-  }, [latestReportId, engineNews, engineVideoEvidence, preferences.uiLanguage, fa]);
+  }, [analysisExpanded, latestReportId, engineNews, engineVideoEvidence, preferences.uiLanguage, fa]);
 
   const latestReportAnalysis = reportAnalysisState?.id === latestReportId
     ? reportAnalysisState.result
@@ -364,17 +364,7 @@ function DiscoveryDashboardReady() {
         : 'Enter a focused topic and inspect real YouTube results, evidence quality and sample limits.'}
     >
       <View style={{ gap: 15 }}>
-        <Panel>
-          <Heading>{fa ? 'خلاصه وضعیت پژوهش' : 'Research at a glance'}</Heading>
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-            <MetricCard label={fa ? 'گزارش ذخیره‌شده اخیر' : 'LATEST SAVED REPORT'} value={latestReport ? 1 : 0} />
-            <MetricCard label={fa ? 'ایده‌های فعال' : 'ACTIVE IDEAS'} value={ideaLinkage.active} />
-            <MetricCard label={fa ? 'ویدئوهای معتبر' : 'RETAINED VIDEOS'} value={engineVideoEvidence.length} />
-            <MetricCard label={fa ? 'خوراک‌های خبری' : 'NEWS FEEDS'} value={feedHealth.registered} />
-          </View>
-          <Txt muted>{fa ? 'این نما فقط داده‌های ذخیره‌شده و وضعیت ثبت‌شده روی همین دستگاه را خلاصه می‌کند. جزئیات تحلیل و سلامت اجرا در بخش‌های پایین‌تر قرار دارد.' : 'This overview summarizes data saved and measured on this device. Detailed analysis and operational health are available below.'}</Txt>
-        </Panel>
-        <Fold title={fa ? 'تحلیل تفصیلی و نظر دوم' : 'Detailed analysis and second opinion'} summary={fa ? 'نمودار، تحلیل داخلی و نقد مستقل مدل' : 'Chart, internal analysis and independent model review'}>
+        <Fold title={fa ? 'تحلیل تفصیلی و نظر دوم' : 'Detailed analysis and second opinion'} summary={fa ? 'نمودار، تحلیل داخلی و نقد مستقل مدل' : 'Chart, internal analysis and independent model review'} onExpandedChange={setAnalysisExpanded}>
         <ResearchOverviewChart
           analysis={chartAnalysis}
           ideas={ideas}
@@ -386,13 +376,6 @@ function DiscoveryDashboardReady() {
         />
         </Fold>
         {warnings.map((warning) => <Txt muted key={warning}>{warning}</Txt>)}
-
-        <Panel>
-          <Heading>{fa ? 'فضای پژوهش یکپارچه' : 'Unified research workspace'}</Heading>
-          <Txt muted>{fa ? 'برای کشف موضوع، تحقیق عمیق و ساخت ایده‌های مستند به تب اکتشاف برو.' : 'Use Discover for topic discovery, deep research and evidence-linked idea generation.'}</Txt>
-          <Action onPress={() => router.push('/discover')}>{fa ? 'رفتن به اکتشاف و تحقیق' : 'Open Discover & Research'}</Action>
-        </Panel>
-
 
         <Pressable onPress={() => setHealthExpanded((current) => !current)} accessibilityRole="button" accessibilityState={{ expanded: healthExpanded }}>
           <Panel>
