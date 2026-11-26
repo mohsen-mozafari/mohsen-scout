@@ -19,7 +19,8 @@ import { generateEditorialIdeas } from '@/lib/idea-generation';
 import { buildPublisherIntelligence, type PublisherIntelligence } from '@/lib/news-intelligence';
 import { createResearchMemoryEntry } from '@/lib/research-memory';
 import { getConfiguredResearchProviderCount, runResearchAgentSerialized } from '@/lib/research-agent';
-import { mapWithConcurrency } from '@/lib/research-concurrency';
+import { mapWithConcurrency, withManualResearchLease } from '@/lib/research-concurrency';
+import { useRuntimeMetrics } from '@/lib/runtime-metrics';
 import { assessResearchEvidenceCoverage, MAX_DEEP_RESEARCH_RESULTS_PER_QUERY, MAX_DEEP_RESEARCH_ROUNDS, mergeIndependentResearchEvidence, planResearchRound } from '@/lib/research-orchestrator';
 import { recordRuntimeFinish, recordRuntimeStart } from '@/lib/runtime-metrics';
 import { openExternalUrl } from '@/lib/external-links';
@@ -60,6 +61,12 @@ export default function DeepResearch() {
   const [topic, setTopic] = useState(typeof params.topic === 'string' ? params.topic : '');
   const [brief, setBrief] = useState<Brief>();
   const op = useOperation();
+  const runtimeMetrics = useRuntimeMetrics();
+  const runtimeDurationSummary = (['YouTube', 'Sources', 'Wikimedia', 'Engine', 'AI'] as const)
+    .map((stage) => stage + ': ' + (runtimeMetrics.modules[stage].lastDurationMs
+      ? (runtimeMetrics.modules[stage].lastDurationMs / 1000).toFixed(1) + 's'
+      : '—'))
+    .join(' · ');
   const nicheId = typeof params.niche === 'string' ? params.niche : preferences.selectedSpaceNiche;
   const niche = SPACE_NICHES.find((item) => item.id === nicheId);
   const measuredYouTubeGrowth = brief?.videos.filter((video) =>
@@ -69,7 +76,7 @@ export default function DeepResearch() {
     (b.growth?.viewsPerHour ?? -1) - (a.growth?.viewsPerHour ?? -1),
   )[0];
   const youtubeChannelCount = brief ? new Set(brief.videos.map((video) => video.channelId || video.channel)).size : 0;
-  const run = () => void op.run(async () => {
+  const run = () => void op.run(() => withManualResearchLease(async () => {
     const query = topic.trim();
     if (!query) throw new Error('Choose a topic before starting deep research.');
     const warnings: string[] = [];
@@ -559,7 +566,7 @@ export default function DeepResearch() {
       recordRuntimeFinish('Engine', 'error', error instanceof Error ? error.message : String(error));
       throw error;
     }
-  }, 'Source-backed research brief prepared.');
+  }), 'Source-backed research brief prepared.');
   const saveToNotes = () => void op.run(async () => {
     if (!brief) throw new Error('Generate a research brief first.');
     const fa = preferences.uiLanguage === 'fa';
@@ -614,6 +621,7 @@ export default function DeepResearch() {
               ? <Txt muted>The internal engine result is available now. Independent source searches and any eligible cross-provider review will update this report when complete.</Txt>
               : null}
             <Txt muted>{brief.videos.length} YouTube sample videos from {youtubeChannelCount} channels · {brief.news.length} publisher reports · {brief.webResults.length} web results · {brief.generatedIdeas.length} ideas.</Txt>
+            <Txt muted>Latest stage durations · {runtimeDurationSummary}</Txt>
             <Txt muted>{measuredYouTubeGrowth.length} videos have repeat-snapshot growth measurements{fastestYouTubeGrowth ? ' · fastest: ' + fastestYouTubeGrowth.title + ' (' + fastestYouTubeGrowth.growth!.viewsPerHour!.toFixed(1) + ' views/hour)' : ' · no growth rate is available yet; a single view-count snapshot is not growth'}.</Txt>
             <Txt muted>Wikimedia pageviews indicate article attention, not YouTube demand. Treat generated angles as research candidates and verify factual claims against the linked primary sources.</Txt>
             {brief.warnings.length ? <Fold title="Coverage limits & warnings" summary={brief.warnings.length + ' item(s) to review'}>{brief.warnings.map((warning) => <Txt muted key={warning}>Limitation: {warning}</Txt>)}</Fold> : null}
