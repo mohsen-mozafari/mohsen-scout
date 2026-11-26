@@ -103,6 +103,11 @@ export function availableResearchRunSlots(activeRuns: number): number {
   return Math.max(0, MAX_CONCURRENT_RESEARCH_RUNS - Math.max(0, Math.floor(activeRuns)));
 }
 
+/** Always reserve one of the two research slots for an interactive/manual run. */
+export function availableAutonomousResearchRunSlots(activeRuns: number): number {
+  return Math.max(0, availableResearchRunSlots(activeRuns) - 1);
+}
+
 export function canStartResearchRun(activeRuns: number): boolean {
   return availableResearchRunSlots(activeRuns) > 0;
 }
