@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, Pressable, InteractionManager } from 'react-native';
+import { View, Text, Pressable } from 'react-native';
 
 import {
   Page, Panel, Heading, Txt, Action, Fold, styles, ErrorBox,
@@ -300,44 +300,47 @@ function DiscoveryDashboardReady() {
     [reports, storedVideos],
   );
   useEffect(() => {
-    if (!analysisExpanded || !latestReportId) return;
     let active = true;
-    const task = InteractionManager.runAfterInteractions(() => {
-      if (!active) return;
-      const report = useScout.getState().data.reports.find((item) => item.id === latestReportId);
-      if (!report) return;
-      try {
-        const currentNews = engineNews.map((item) => ({
-          title: item.title,
-          summary: item.summary,
-          sourceName: item.sourceName,
-          sourceUrl: item.url,
-          publishedAt: item.publishedAt,
-          sourceId: item.sourceId,
-        }));
-        const currentData = useScout.getState().data;
-        const reportWiki = getTopicDossier(report.input.topic)?.wiki;
-        const priorMemory = currentData.researchMemory.find((entry) => normalizeResearchText(entry.topic) === normalizeResearchText(report.input.topic));
-        const result = buildInternalResearch({
-          topic: report.input.topic,
-          news: currentNews,
-          feedback: buildResearchInterestProfile(currentData.ideas),
-          priorMemory,
-          language: preferences.uiLanguage ?? 'fa',
-          ...(reportWiki ? { wiki: reportWiki } : {}),
-          videos: engineVideoEvidence,
-          videoWindowDays: report.input.days,
-        });
-        if (active) setReportAnalysisState({ id: report.id, result });
-      } catch {
-        if (active) setWarnings([fa
-          ? 'تحلیل محلی آخرین جست‌وجو کامل نشد؛ گزارش و ویدئوهای ذخیره‌شده همچنان در دسترس‌اند.'
-          : 'The latest local analysis could not be completed. The saved report and videos remain available.']);
-      }
-    });
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    if (analysisExpanded && latestReportId) {
+      // Let the Fold animation and current UI interactions settle before CPU-heavy analysis.
+      timer = setTimeout(() => {
+        if (!active) return;
+        const report = useScout.getState().data.reports.find((item) => item.id === latestReportId);
+        if (!report) return;
+        try {
+          const currentNews = engineNews.map((item) => ({
+            title: item.title,
+            summary: item.summary,
+            sourceName: item.sourceName,
+            sourceUrl: item.url,
+            publishedAt: item.publishedAt,
+            sourceId: item.sourceId,
+          }));
+          const currentData = useScout.getState().data;
+          const reportWiki = getTopicDossier(report.input.topic)?.wiki;
+          const priorMemory = currentData.researchMemory.find((entry) => normalizeResearchText(entry.topic) === normalizeResearchText(report.input.topic));
+          const result = buildInternalResearch({
+            topic: report.input.topic,
+            news: currentNews,
+            feedback: buildResearchInterestProfile(currentData.ideas),
+            priorMemory,
+            language: preferences.uiLanguage ?? 'fa',
+            ...(reportWiki ? { wiki: reportWiki } : {}),
+            videos: engineVideoEvidence,
+            videoWindowDays: report.input.days,
+          });
+          if (active) setReportAnalysisState({ id: report.id, result });
+        } catch {
+          if (active) setWarnings([fa
+            ? 'تحلیل محلی آخرین جست‌وجو کامل نشد؛ گزارش و ویدئوهای ذخیره‌شده همچنان در دسترس‌اند.'
+            : 'The latest local analysis could not be completed. The saved report and videos remain available.']);
+        }
+      }, 240);
+    }
     return () => {
       active = false;
-      task.cancel();
+      if (timer) clearTimeout(timer);
     };
   }, [analysisExpanded, latestReportId, engineNews, engineVideoEvidence, preferences.uiLanguage, fa]);
 
