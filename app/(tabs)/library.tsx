@@ -28,7 +28,7 @@ import { openExternalUrl } from '@/lib/external-links';
 import { shareText } from '@/lib/transfer';
 import { MediaPreview } from '@/components/MediaPreview';
 export default function Library() {
-  const links = useScout((s) => s.links);
+  const links = useScout((s) => s.data.links);
   const videos = useScout((s) => s.data.videos);
   const videosById = useMemo(() => new Map(videos.map((video) => [video.id, video] as const)), [videos]);
   const ready = useScout((s) => s.ready);
