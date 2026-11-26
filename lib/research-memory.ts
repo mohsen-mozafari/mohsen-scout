@@ -175,3 +175,19 @@ export function createResearchMemoryEntry(input: {
       : {}),
   };
 }
+
+
+/**
+ * Merge a topic snapshot into the durable research archive.
+ * Topic identity is normalized, but distinct topics are never evicted by an
+ * arbitrary in-memory cap. SQLite and the active index may optimize access;
+ * the user's completed research remains retained.
+ */
+export function mergeResearchMemoryEntries(
+  existing: readonly ResearchMemoryEntry[],
+  incoming: ResearchMemoryEntry,
+): ResearchMemoryEntry[] {
+  const key = normalizeResearchText(incoming.topic);
+  const next = existing.filter((entry) => normalizeResearchText(entry.topic) !== key);
+  return [incoming, ...next];
+}

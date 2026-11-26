@@ -20,7 +20,7 @@ import { localDateKey, nextBudget, nextOpenRouterUsage, searchYouTube, type YouT
 import { buildInternalResearch } from './engine';
 import { reviewResearchHypotheses } from './hypothesis-engine';
 import { runResearchAgentSerialized, withResearchProviderQueue } from './research-agent';
-import { createResearchMemoryEntry } from './research-memory';
+import { createResearchMemoryEntry, mergeResearchMemoryEntries } from './research-memory';
 import { enrichResearchEvidence, fetchWebResearch } from './web-research';
 import { reviewIdeasAutomatically } from './ai-review';
 import { generateEditorialIdeas, type IdeaGenerationCategory } from './idea-generation';
@@ -32,7 +32,7 @@ import { readPendingResearch, getPendingResearch, savePendingResearch, updatePen
 import { captureYouTubeSnapshots } from './youtube-growth';
 import { availableResearchRunSlots, MAX_CONCURRENT_RESEARCH_RUNS } from './research-concurrency';
 import { appendResearchActivity, buildResearchActivityFeedbackProfile, buildResearchActivityResults, buildResearchActivitySourceExclusions, explainResearchActivitySourceExclusion, updateResearchActivityEvent, updateResearchActivityFeedback } from './research-activity';
-import { MAX_DEEP_RESEARCH_EVIDENCE, MAX_DEEP_RESEARCH_QUERIES, MAX_DEEP_RESEARCH_RESULTS_PER_QUERY, MAX_DEEP_RESEARCH_ROUNDS, planResearchRound } from './research-orchestrator';
+import { MAX_DEEP_RESEARCH_EVIDENCE, MAX_DEEP_RESEARCH_QUERIES, MAX_DEEP_RESEARCH_RESULTS_PER_QUERY, MAX_DEEP_RESEARCH_ROUNDS, planResearchRound, researchQueriesPerRound } from './research-orchestrator';
 type State = {
   data: LocalData;
   ready: boolean;
@@ -201,7 +201,7 @@ export const useScout = create<State>((set, get) => ({
       await get().commit((data) => ({
         ...data,
         videos: [...new Map([...data.videos, ...enriched].map((video) => [video.id, video])).values()],
-        youtubeSnapshots: [...batch.snapshots, ...data.youtubeSnapshots],
+        youtubeSnapshots: batch.history,
       }));
     });
     snapshotWriteQueue = action.then(() => undefined, () => undefined);
@@ -473,15 +473,21 @@ export const useScout = create<State>((set, get) => ({
           // language model proposes falsifiable hypotheses, classifies evidence, seeks
           // counterevidence and chooses the next search. A transparent local planner is
           // used only when no configured model is available.
-          for (let round = 0; round <= MAX_DEEP_RESEARCH_ROUNDS; round++) {
+          let queryCursor = 0;
+          const executedQueries: string[] = [...savedQueries];
+          researchRounds: for (let round = 0; round <= MAX_DEEP_RESEARCH_ROUNDS; round++) {
             if (collected.size >= MAX_DEEP_RESEARCH_EVIDENCE) break;
-            const evidenceBeforeRound = collected.size;
-            const query = queries[round];
-            if (!query) break;
-            const normalizedQuery = normalizeResearchText(query);
-            if (asked.has(normalizedQuery)) continue;
-            asked.add(normalizedQuery);
-            set({ progress: round === 0
+            const querySlots = researchQueriesPerRound(round);
+            for (let slot = 0; slot < querySlots; slot += 1) {
+              if (collected.size >= MAX_DEEP_RESEARCH_EVIDENCE) break researchRounds;
+              const evidenceBeforeRound = collected.size;
+              const query = queries[queryCursor++];
+              if (!query) break researchRounds;
+              const normalizedQuery = normalizeResearchText(query);
+              if (asked.has(normalizedQuery)) continue;
+              asked.add(normalizedQuery);
+              executedQueries.push(query);
+              set({ progress: round === 0
               ? 'Searching independent web and news sources…'
               : 'Testing hypotheses and searching for counterevidence (' + (round + 1) + '/' + (MAX_DEEP_RESEARCH_ROUNDS + 1) + ')…' });
             try {
@@ -574,7 +580,7 @@ export const useScout = create<State>((set, get) => ({
                   id: item.id, title: item.title, summary: item.summary, url: item.url,
                   sourceName: item.sourceName, publishedAt: item.publishedAt ?? null, category: item.category,
                 })),
-                queryHistory: [...asked].slice(-40),
+                queryHistory: executedQueries.slice(-40),
               });
               const newEvidenceCount = collected.size - evidenceBeforeRound;
               if (round < MAX_DEEP_RESEARCH_ROUNDS && newEvidenceCount > 0 && collected.size < MAX_DEEP_RESEARCH_EVIDENCE) {
@@ -600,19 +606,20 @@ export const useScout = create<State>((set, get) => ({
                   queries.push(planned.query);
                 }
               }
-              if (newEvidenceCount === 0 && round > 0) break;
-              if (round < MAX_DEEP_RESEARCH_ROUNDS && queries.length === round + 1) {
+              if (newEvidenceCount === 0 && round > 0 && slot === querySlots - 1) break researchRounds;
+              if (round < MAX_DEEP_RESEARCH_ROUNDS && queryCursor >= queries.length) {
                 // The agent found no defensible new direction; do not manufacture more queries.
-                break;
+                break researchRounds;
               }
             } catch (error) {
               const message = error instanceof Error ? error.message : 'Firecrawl request failed.';
               queryWarnings.push('Research round ' + (round + 1) + ': ' + message);
-              if (round === 0) break;
+              if (round === 0) break researchRounds;
             }
           }
+          }
 
-          webSearchQueries = [...queries];
+          webSearchQueries = executedQueries;
           webResearchDossier = latestAiDossier;
           webItems = [...collected.values()];
           warnings.push(...queryWarnings);
@@ -943,10 +950,7 @@ export const useScout = create<State>((set, get) => ({
         ideas: mergeGeneratedIdeas(data.ideas, generatedIdeas),
         videos: [...new Map([...data.videos, ...researchVideos].map((video) => [video.id, video])).values()],
         researchMemory: memoryEntry
-          ? [
-              memoryEntry,
-              ...data.researchMemory.filter((entry) => normalizeResearchText(entry.topic) !== normalizeResearchText(topic)),
-            ].slice(0, 40)
+          ? mergeResearchMemoryEntries(data.researchMemory, memoryEntry)
           : data.researchMemory,
         preferences: { ...data.preferences, lastInput: normalizedInput },
       }));
@@ -962,11 +966,15 @@ export const useScout = create<State>((set, get) => ({
           'Independent second-opinion review after local analysis: ' + generatedIdeas.slice(0, 8).map((idea) => idea.topic).join(' ; '),
           researchReportId,
         );
+        const videosById = new Map(get().data.videos.map((video) => [video.id, video] as const));
         const review = await withResearchProviderQueue(() => reviewIdeasAutomatically(generatedIdeas, get().data.preferences, {
           language: get().data.preferences.uiLanguage ?? 'fa',
           youtubeSignalsByIdeaId: Object.fromEntries(generatedIdeas.map((idea) => [
             idea.id,
-            get().data.videos.filter((video) => idea.videoIds.includes(video.id)).slice(0, 25).map((video) => ({
+            idea.videoIds.flatMap((videoId) => {
+              const video = videosById.get(videoId);
+              return video ? [video] : [];
+            }).slice(0, 25).map((video) => ({
               id: video.id, title: video.title, description: video.description, channel: video.channel,
               channelId: video.channelId ?? '', publishedAt: video.publishedAt, thumbnailUrl: video.thumbnail,
               viewCount: video.viewCount ?? null, likeCount: video.likeCount ?? null,

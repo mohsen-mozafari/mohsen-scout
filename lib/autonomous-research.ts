@@ -24,6 +24,7 @@ import {
 } from './autonomous-queue';
 import type { Video } from './types';
 
+const INITIAL_FOREGROUND_IDLE_MS = 4_000;
 const FOREGROUND_IDLE_MS = 20_000;
 const DISCOVERY_AGE_MS = 3 * 24 * 60 * 60 * 1000;
 const AUTONOMOUS_QUEUE_MAX_AGE_MS = DISCOVERY_AGE_MS;
@@ -339,7 +340,11 @@ async function tick(): Promise<void> {
 export function startAutonomousResearch(): () => void {
   if (timer) clearTimeout(timer);
   active = true;
-  void tick();
+  // Let the first screen paint and accept input before starting network discovery
+  // and snapshot persistence. Foreground autonomy remains continuous afterwards.
+  timer = setTimeout(() => {
+    if (active) void tick();
+  }, INITIAL_FOREGROUND_IDLE_MS);
   return () => stopAutonomousResearch();
 }
 

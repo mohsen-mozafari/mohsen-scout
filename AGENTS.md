@@ -17,7 +17,7 @@ Never remove, bypass, silently omit or replace this connection with RSS-only or 
 
 - Analyze YouTube-originated title, description, channel, publication time, video ID, thumbnail reference, public view/like/comment statistics and channel statistics locally.
 - Calculate and use snapshot-derived view deltas, views/hour, views/day, channel baselines and outlier ratios. These are intentional first-party product features.
-- Preserve YouTube reports, videos, snapshots, growth history and their local relationships indefinitely until the user removes the app data or explicitly deletes them. There is no automatic 29-day expiry, 10,000-snapshot cap or automatic deletion of old snapshots.
+- Preserve YouTube reports, videos, snapshots, growth history and their local relationships indefinitely until the user removes the app data or explicitly deletes them. There is no automatic 29-day expiry, 10,000-snapshot cap or automatic deletion of old snapshots. Research-memory topics are also durable: never evict topics using an arbitrary 40-entry cap.
 - Existing SQLite `youtube_records` rows must migrate to a no-expiry marker; newly written YouTube records must also have no expiry. App boot and foreground maintenance must not delete retained YouTube metadata.
 - Keep raw YouTube metadata in the separate local YouTube SQLite domain. Preserve the existing personal/YouTube storage boundary. Current backup/export behavior remains separately governed by its explicit schema; do not silently add credentials or API metadata to personal exports.
 - A bounded API response is still a sample, not a complete census of YouTube. Report actual sample size, missing fields and measurement intervals; never fabricate unavailable observations or promise views/virality.
@@ -53,7 +53,9 @@ Never remove, bypass, silently omit or replace this connection with RSS-only or 
 ## Architecture and persistence
 
 - `app/` routes; shared UI in `components/`; types/state/API/persistence/retention/backup in `lib/`; explicit platform adapters remain separate.
-- SQLite personal and YouTube tables stay separate. Store commits are serialized and native writes are transactional. Persisted input and backup schemas remain validated.
+- SQLite personal and YouTube tables stay separate. Store commits are serialized and native writes are transactional. Batch related record writes inside the same transaction to reduce bridge round-trips. Persisted input and backup schemas remain validated.
+- YouTube growth history uses an immutable-collection index and incremental updates for newly appended snapshots. Rebuild from the full history only when an uncached history collection is first encountered; never truncate raw history to optimize it.
+- Large archive hydration must periodically yield to the event loop. Durable research-memory topics are not subject to a fixed count eviction cap; any hot index is only a cache over the full SQLite archive.
 - Pending tasks and autonomous-discovery queue entries must be versioned, validated, bounded in queue size and independently keyed. A crash in one task must not erase another task's recovery record.
 - YouTube raw metadata and snapshots have no automatic retention sweep. Queue entries that are no longer useful may be deprioritized/removed as queue work, but this must never delete completed reports, videos, snapshots, memory or ideas.
 - Preserve user-owned preferences, notes, bookmarks, ideas, research activity, quota ledgers, provider order, backup compatibility and current app identity unless the feature explicitly requires a schema migration with tests.
@@ -62,6 +64,8 @@ Never remove, bypass, silently omit or replace this connection with RSS-only or 
 
 After changes, run `npm test`, `npm run lint`, `npm run lint:css`, and `npx expo-doctor`. Build the signed Android ARM64 APK through the repository's release workflow. Keep tests for:
 - YouTube data reaching the internal engine, first research model and independent reviewer;
+- incremental growth indexing beyond 10,000 retained snapshots and batch SQLite writes without data loss;
+- durable research memory retaining more than 40 distinct topics;
 - measured YouTube growth and snapshot continuity beyond 29 days and beyond 10,000 entries;
 - local storage and interrupted-task recovery;
 - fresh-topic priority over stale backlog;

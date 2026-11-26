@@ -117,13 +117,13 @@ void test('shared video rows use the validated external-link handler', () => {
   assert.doesNotMatch(videoRow, /Linking\.openURL/);
 });
 
-void test('release metadata and workflow agree on version 1.26.0', () => {
+void test('release metadata and workflow agree on version 1.27.0', () => {
   const config = source('app.config.ts');
   const workflow = source('.github/workflows/android-apk-v1.24.0-full-audit.yml');
-  assert.match(config, /version: '1\.26\.0'/);
-  assert.match(config, /versionCode: 47/);
-  assert.match(workflow, /versionCode='47'/);
-  assert.match(workflow, /1\.26\.0/);
+  assert.match(config, /version: '1\.27\.0'/);
+  assert.match(config, /versionCode: 48/);
+  assert.match(workflow, /versionCode='48'/);
+  assert.match(workflow, /1\.27\.0/);
   assert.match(workflow, /android-apk-v1\.24\.0-full-audit\.yml/);
 });
 

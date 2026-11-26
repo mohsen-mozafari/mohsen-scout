@@ -1,4 +1,4 @@
-name: Build MOHSEN SCOUT APK v1.26.0 · Complete UI/UX audit and research workspace
+name: Build MOHSEN SCOUT APK v1.27.0 · Complete UI/UX audit and research workspace
 
 on:
   workflow_dispatch:
@@ -20,7 +20,7 @@ on:
       - 'public/icons/**'
       - 'README_FA.md'
       - 'AGENTS.md'
-      - 'CHANGELOG_1.26.0.md'
+      - 'CHANGELOG_1.27.0.md'
 
 # Isolated deep-research candidate build. Default to read-only; only publishing receives write access.
 # Unified autonomous Deep Research and editorial opportunity build.
@@ -30,7 +30,7 @@ permissions:
 concurrency:
   # Do not let a stuck older build block the newest candidate. The release job
   # separately verifies that its commit is still the branch head before publishing.
-  group: mohsenscout-v1.26.0-${{ github.sha }}
+  group: mohsenscout-v1.27.0-${{ github.sha }}
   cancel-in-progress: false
 
 jobs:
@@ -57,6 +57,16 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+
+      - name: Cache Gradle dependencies
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', 'gradle.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
@@ -128,7 +138,7 @@ jobs:
           set -euo pipefail
           APK="android/app/build/outputs/apk/release/app-release.apk"
           BADGING="$("$ANDROID_HOME/build-tools/37.0.0/aapt" dump badging "$APK")"
-          echo "$BADGING" | grep -F "package: name='me.bilt.mohsenscout' versionCode='47' versionName='1.26.0'"
+          echo "$BADGING" | grep -F "package: name='me.bilt.mohsenscout' versionCode='48' versionName='1.27.0'"
           echo "$BADGING" | grep -F "native-code: 'arm64-v8a'"
           CERT_SHA="$("$ANDROID_HOME/build-tools/37.0.0/apksigner" verify --print-certs "$APK" | awk -F': ' '/certificate SHA-256 digest:/ {print tolower($NF); exit}')"
           EXPECTED_CERT_SHA="8e951f99da896948aa6af5fae37a6ae870c4263bde99ce942d3ef5fb507364de"
@@ -142,7 +152,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist
-          APK_NAME="MOHSEN-SCOUT-1.26.0-arm64.apk"
+          APK_NAME="MOHSEN-SCOUT-1.27.0-arm64.apk"
           APK="dist/$APK_NAME"
           cp android/app/build/outputs/apk/release/app-release.apk "$APK"
           sha256sum "$APK" > dist/SHA256SUMS.txt
@@ -154,7 +164,7 @@ jobs:
         with:
           name: mohsen-scout-release-apk
           path: |
-            dist/MOHSEN-SCOUT-1.26.0-arm64.apk
+            dist/MOHSEN-SCOUT-1.27.0-arm64.apk
             dist/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 1
@@ -197,8 +207,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          TAG="v1.26.0"
-          ASSET="MOHSEN-SCOUT-1.26.0-arm64.apk"
+          TAG="v1.27.0"
+          ASSET="MOHSEN-SCOUT-1.27.0-arm64.apk"
           APK="dist/$ASSET"
           CHECKSUMS="dist/SHA256SUMS.txt"
 
@@ -207,7 +217,7 @@ jobs:
           else
             gh release create "$TAG" "$APK" "$CHECKSUMS" \
               --repo "$GITHUB_REPOSITORY" \
-              --title "MOHSEN SCOUT v1.26.0" \
+              --title "MOHSEN SCOUT v1.27.0" \
               --notes "Signed Android ARM64 release. SHA256 is included in SHA256SUMS.txt." \
               --target "$GITHUB_SHA"
           fi

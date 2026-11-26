@@ -12,6 +12,12 @@ export const MAX_DEEP_RESEARCH_QUERIES_PER_ROUND = 2;
 export const MAX_DEEP_RESEARCH_EVIDENCE = 48;
 export const MAX_DEEP_RESEARCH_RESULTS_PER_QUERY = 4;
 
+/** The seed search establishes context; adaptive rounds use the full configured query fan-out. */
+export function researchQueriesPerRound(round: number): number {
+  if (!Number.isFinite(round) || round < 0) return 0;
+  return Math.floor(round) === 0 ? 1 : MAX_DEEP_RESEARCH_QUERIES_PER_ROUND;
+}
+
 export type ResearchRoundPlan = {
   queries: ResearchDossierQuery[];
   stopReason: string;

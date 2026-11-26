@@ -105,10 +105,16 @@ export async function readData(): Promise<LocalData> {
   const recordQuery =
     'SELECT domain,id,updated_at,payload FROM personal_records ' +
     'UNION ALL SELECT domain,id,updated_at,payload FROM youtube_records ORDER BY updated_at DESC';
+  let loadedRecordCount = 0;
   for await (const row of connection.getEachAsync<StoredRecordRow>(recordQuery)) {
     if (!isRecordDomain(row.domain)) continue;
     const value: unknown = JSON.parse(row.payload);
     (data[row.domain] as unknown[]).push(value);
+    loadedRecordCount += 1;
+    // Yield periodically so large archive hydration does not starve the UI event loop.
+    if (loadedRecordCount % 250 === 0) {
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    }
   }
   for (const domain of RECORD_DOMAINS) {
     (persisted as Record<string, unknown>)[domain] = data[domain];
@@ -152,15 +158,47 @@ export async function writeData(
     for (const [domain, delta] of recordDeltas) {
       const table = recordTable(domain);
       if (delta.replaceAll) await tx.runAsync('DELETE FROM ' + table + ' WHERE domain=?', domain);
-      for (const id of delta.deleteIds) await tx.runAsync('DELETE FROM ' + table + ' WHERE domain=? AND id=?', domain, id);
-      for (const { id, value } of validatedRecords.get(domain) ?? []) {
-        const updatedAt = recordUpdatedAt(domain, value);
-        const payload = JSON.stringify(value);
+
+      // Batch deletes and upserts inside the same exclusive transaction. This
+      // reduces bridge round-trips without weakening atomicity or changing retention.
+      for (let offset = 0; offset < delta.deleteIds.length; offset += 400) {
+        const ids = delta.deleteIds.slice(offset, offset + 400);
+        const placeholders = ids.map(() => '?').join(',');
+        await tx.runAsync(
+          'DELETE FROM ' + table + ' WHERE domain=? AND id IN (' + placeholders + ')',
+          domain,
+          ...ids,
+        );
+      }
+
+      const records = (validatedRecords.get(domain) ?? []).map(({ id, value }) => ({
+        id,
+        updatedAt: recordUpdatedAt(domain, value),
+        expiresAt: recordExpiresAt(domain, value) ?? NO_EXPIRY,
+        payload: JSON.stringify(value),
+      }));
+      for (let offset = 0; offset < records.length; offset += 100) {
+        const batch = records.slice(offset, offset + 100);
         if (table === 'youtube_records') {
-          const expiresAt = recordExpiresAt(domain, value) ?? NO_EXPIRY;
-          await tx.runAsync('INSERT OR REPLACE INTO youtube_records (domain,id,updated_at,expires_at,payload) VALUES (?,?,?,?,?)', domain, id, updatedAt, expiresAt, payload);
+          const placeholders = batch.map(() => '(?,?,?,?,?)').join(',');
+          const parameters = batch.flatMap(({ id, updatedAt, expiresAt, payload }) =>
+            [domain, id, updatedAt, expiresAt, payload],
+          );
+          await tx.runAsync(
+            'INSERT INTO youtube_records (domain,id,updated_at,expires_at,payload) VALUES ' + placeholders +
+              ' ON CONFLICT(domain,id) DO UPDATE SET updated_at=excluded.updated_at,expires_at=excluded.expires_at,payload=excluded.payload',
+            ...parameters,
+          );
         } else {
-          await tx.runAsync('INSERT OR REPLACE INTO personal_records (domain,id,updated_at,payload) VALUES (?,?,?,?)', domain, id, updatedAt, payload);
+          const placeholders = batch.map(() => '(?,?,?,?)').join(',');
+          const parameters = batch.flatMap(({ id, updatedAt, payload }) =>
+            [domain, id, updatedAt, payload],
+          );
+          await tx.runAsync(
+            'INSERT INTO personal_records (domain,id,updated_at,payload) VALUES ' + placeholders +
+              ' ON CONFLICT(domain,id) DO UPDATE SET updated_at=excluded.updated_at,payload=excluded.payload',
+            ...parameters,
+          );
         }
       }
     }
