@@ -13,7 +13,7 @@ import {
   selectedAutonomousNicheTopic,
   AUTONOMOUS_YOUTUBE_DISCOVERY_INTERVAL_MS,
 } from './autonomous-policy';
-import { availableAutonomousResearchRunSlots, isManualResearchActive, MAX_CONCURRENT_RESEARCH_RUNS } from './research-concurrency';
+import { availableAutonomousResearchRunSlots, isManualResearchActive } from './research-concurrency';
 import {
   enqueueAutonomousCandidates,
   loadAutonomousQueue,
@@ -316,7 +316,7 @@ export async function runAutonomousResearchCycle(maxJobs = 1): Promise<number> {
       if (!(await processNextJob())) break;
       processedCount += 1;
     }
-    if (!processedCount && useScout.getState().activeResearchRuns < MAX_CONCURRENT_RESEARCH_RUNS) {
+    if (!processedCount && availableAutonomousResearchRunSlots(useScout.getState().activeResearchRuns) > 0) {
       const recoveryQueue = await loadAutonomousQueue();
       await useScout.getState().resumePendingResearch({
         maxAgeMs: AUTONOMOUS_QUEUE_MAX_AGE_MS,
