@@ -14,7 +14,7 @@
 - Preserve verified-quote, provenance and low-confidence safeguards.
 
 ## Internal intelligence
-- Discover emerging, recurring topic-adjacent concepts from actual matched evidence rather than relying only on the fixed entity alias list.
+- Discover emerging concepts: recurring topic-adjacent terms from actual matched evidence, beyond the fixed entity alias list.
 - Build co-occurrence links only when concepts appear together across multiple evidence documents.
 - Display the bounded concept-discovery findings and add concept/relation counts to engine self-evaluation.
 
