@@ -268,7 +268,7 @@ export function restorePersonalData(current: LocalData, restored: LocalData): Lo
     }),
   };
 }
-export function personalLinks(data: LocalData) {
+export function personalLinks(data: Pick<LocalData, 'links'>) {
   return data.links
     .map(
       (l) => `${l.manualTitle || l.topic || 'Saved video'}\n${l.url}${l.note ? `\n${l.note}` : ''}`,

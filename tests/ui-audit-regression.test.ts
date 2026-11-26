@@ -181,3 +181,21 @@ void test('three-section workspace and page headers respect Android status-bar s
   assert.match(library, /safeAreaTop=\{false\}/);
   assert.match(notes, /safeAreaTop=\{false\}/);
 });
+
+
+void test('library and notes screens avoid broad subscriptions and repeated linear lookups', () => {
+  const library = source('app/(tabs)/library.tsx');
+  const notes = source('app/(tabs)/notes.tsx');
+  const backup = source('lib/backup.ts');
+  assert.match(library, /state\.data\.links/);
+  assert.match(library, /state\.data\.videos/);
+  assert.doesNotMatch(library, /const data = useScout\(/);
+  assert.match(library, /new Map\(videos\.map/);
+  assert.match(library, /videosById\.get\(item\.id\)/);
+  assert.match(library, /useMemo\(\(\) => links/);
+  assert.match(library, /personalLinks\(\{ links \}\)/);
+  assert.match(backup, /personalLinks\(data: Pick<LocalData, 'links'>\)/);
+  assert.match(notes, /useMemo\(\(\) => notes/);
+  assert.match(notes, /new Set\(ideas\.map/);
+  assert.match(notes, /ideaIds\.has\(item\.ideaId\)/);
+});

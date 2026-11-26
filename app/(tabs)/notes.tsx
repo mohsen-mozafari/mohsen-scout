@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Text, View, FlatList } from 'react-native';
 import { Button } from 'heroui-native';
 import { router } from 'expo-router';
@@ -17,7 +17,7 @@ export default function Notes() {
   const [search, setSearch] = useState('');
   const [folder, setFolder] = useState('All');
   const [tag, setTag] = useState('All tags');
-  const filtered = notes
+  const filtered = useMemo(() => notes
     .filter(
       (n) =>
         (folder === 'All' || n.folder === folder) &&
@@ -27,7 +27,10 @@ export default function Notes() {
           search,
         ),
     )
-    .sort((a, b) => b.updatedAt - a.updatedAt);
+    .sort((a, b) => b.updatedAt - a.updatedAt), [notes, folder, tag, search]);
+  const ideaIds = useMemo(() => new Set(ideas.map((idea) => idea.id)), [ideas]);
+  const folders = useMemo(() => ['All', ...new Set(notes.map((note) => note.folder).filter(Boolean))], [notes]);
+  const tags = useMemo(() => ['All tags', ...new Set(notes.flatMap((note) => note.tags))], [notes]);
   if (!ready) return <Page safeAreaTop={false} title="Notes" showBack><Txt muted>Loading your saved pages…</Txt></Page>;
   return (
     <Page safeAreaTop={false} scroll={false}>
@@ -48,13 +51,13 @@ export default function Notes() {
               <Field label="Search pages" value={search} onChange={setSearch} placeholder="Search titles, notes and tags" />
               <Choices
                 label="Folders"
-                options={['All', ...new Set(notes.map((note) => note.folder).filter(Boolean))]}
+                options={folders}
                 selected={[folder]}
                 onChange={(values) => setFolder(values[0])}
               />
               <Choices
                 label="Tags"
-                options={['All tags', ...new Set(notes.flatMap((note) => note.tags))]}
+                options={tags}
                 selected={[tag]}
                 onChange={(values) => setTag(values[0])}
               />
@@ -84,7 +87,7 @@ export default function Notes() {
               </View>
               <ArrowUpRight size={18} color={p.purple} />
             </Button>
-            {item.ideaId && ideas.some((idea) => idea.id === item.ideaId) ? (
+            {item.ideaId && ideaIds.has(item.ideaId) ? (
               <Action secondary onPress={() => router.push({ pathname: '/detail', params: { idea: item.ideaId! } })}>
                 {language === 'fa' ? 'بازکردن ایدهٔ متصل' : 'Open linked idea'}
               </Action>

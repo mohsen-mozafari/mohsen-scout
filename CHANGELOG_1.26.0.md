@@ -23,3 +23,5 @@
 
 - CI runs the Node regression suite, source lint/type checks, CSS lint, Expo dependency checks, Android prebuild, WorkManager R8 rule verification, signed ARM64 APK build, package/version/ABI checks, certificate fingerprint validation and release-download checksum verification.
 - These checks do not substitute for physical-device visual inspection, TalkBack testing or on-device frame-time profiling. Those must be reported separately rather than implied by a successful CI build.
+
+- Further reduced scrolling/search overhead in Library and Notes: narrow state subscriptions, memoized filters, constant-time YouTube metadata lookups and indexed linked-idea checks. Export, search, folder/tag filters, edit and delete actions remain intact.

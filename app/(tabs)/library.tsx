@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { translateText } from '@/lib/i18n';
 import { View, Text, FlatList } from 'react-native';
 import { Button } from 'heroui-native';
@@ -28,7 +28,9 @@ import { openExternalUrl } from '@/lib/external-links';
 import { shareText } from '@/lib/transfer';
 import { MediaPreview } from '@/components/MediaPreview';
 export default function Library() {
-  const data = useScout((s) => s.data);
+  const links = useScout((s) => s.links);
+  const videos = useScout((s) => s.data.videos);
+  const videosById = useMemo(() => new Map(videos.map((video) => [video.id, video] as const)), [videos]);
   const ready = useScout((s) => s.ready);
   const language = useScout((s) => s.data.preferences.uiLanguage ?? 'fa');
   const [search, setSearch] = useState('');
@@ -41,13 +43,13 @@ export default function Library() {
   const [editing, setEditing] = useState<SavedLink>();
   const [confirm, setConfirm] = useState('');
   const op = useOperation();
-  const filtered = data.links
+  const filtered = useMemo(() => links
     .filter(
       (l) =>
         (folder === 'All' || l.folder === folder) &&
         (tag === 'All tags' || l.tags.includes(tag)) &&
         matchesSearchText(
-          `${l.manualTitle} ${data.videos.find((v) => v.id === l.id)?.title ?? ''} ${l.topic} ${l.note} ${l.tags.join(' ')}`,
+          `${l.manualTitle} ${videosById.get(l.id)?.title ?? ''} ${l.topic} ${l.note} ${l.tags.join(' ')}`,
           search,
         ),
     )
@@ -57,7 +59,7 @@ export default function Library() {
         : sort === 'Title'
           ? (a.manualTitle || a.topic).localeCompare(b.manualTitle || b.topic)
           : b.savedAt - a.savedAt,
-    );
+    ), [links, videosById, folder, tag, search, sort]);
   const add = () =>
     void op.run(async () => {
       const parsed = new URL(url);
@@ -123,12 +125,12 @@ export default function Library() {
                   </Action>
                 </View>
                 <View style={{ flex: 1, minWidth: 0 }}>
-                  <Action secondary icon={Download} busy={op.busy} onPress={() => void op.run(() => shareText(personalLinks(data), 'mohsen-scout-links.txt'))}>
+                  <Action secondary icon={Download} busy={op.busy} onPress={() => void op.run(() => shareText(personalLinks({ links }), 'mohsen-scout-links.txt'))}>
                     Export links
                   </Action>
                 </View>
               </View>
-              <Fold title="Filter and sort library" summary={filtered.length + ' shown · ' + data.links.length + ' saved'}>
+              <Fold title="Filter and sort library" summary={filtered.length + ' shown · ' + links.length + ' saved'}>
                 <Choices
                   label="Sort"
                   options={['Newest', 'Oldest', 'Title']}
@@ -137,13 +139,13 @@ export default function Library() {
                 />
                 <Choices
                   label="Folders"
-                  options={['All', ...new Set(data.links.map((link) => link.folder).filter(Boolean))]}
+                  options={['All', ...new Set(links.map((link) => link.folder).filter(Boolean))]}
                   selected={[folder]}
                   onChange={(values) => setFolder(values[0])}
                 />
                 <Choices
                   label="Tags"
-                  options={['All tags', ...new Set(data.links.flatMap((link) => link.tags))]}
+                  options={['All tags', ...new Set(links.flatMap((link) => link.tags))]}
                   selected={[tag]}
                   onChange={(values) => setTag(values[0])}
                 />
@@ -197,7 +199,7 @@ export default function Library() {
 
         }
         renderItem={({ item }) => {
-          const video = data.videos.find((v) => v.id === item.id);
+          const video = videosById.get(item.id);
           return (
             <Animated.View
               entering={FadeIn.duration(160)}
@@ -268,16 +270,16 @@ export default function Library() {
         ListEmptyComponent={
           <Empty
             title={
-              data.links.length
+              links.length
                 ? 'No links match this view.'
                 : 'Keep video references, never downloads.'
             }
-            action={data.links.length ? 'Clear filters' : 'Add a link'}
+            action={links.length ? 'Clear filters' : 'Add a link'}
             onPress={() => {
               setFolder('All');
               setTag('All tags');
               setSearch('');
-              if (!data.links.length) setAddOpen(true);
+              if (!links.length) setAddOpen(true);
             }}
           />
         }
