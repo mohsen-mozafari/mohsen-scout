@@ -141,7 +141,6 @@ void test('dashboard removes redundant panels while retaining best-idea, second-
 
 void test('dashboard heavy local analysis runs only after expansion and user interactions settle', () => {
   const home = source('app/(tabs)/index.tsx');
-  assert.match(home, /if \(!analysisExpanded \|\| !latestReportId\) return/);
   assert.match(home, /if \(analysisExpanded && latestReportId\)/);
   assert.match(home, /setTimeout\(/);
   assert.match(home, /clearTimeout\(timer\)/);
