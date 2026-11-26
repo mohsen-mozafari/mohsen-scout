@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
   acquireManualResearchLease,
+  availableAutonomousResearchRunSlots,
   isManualResearchActive,
   mapWithConcurrency,
   runWithResearchPriorityQueue,
@@ -92,4 +93,10 @@ void test('runtime telemetry captures deterministic last and average stage durat
   assert.equal(after.totalDurationMs, before.totalDurationMs + 450);
   assert.equal(after.completedDurationCount, before.completedDurationCount + 1);
   assert.equal(after.averageDurationMs, Math.round(after.totalDurationMs / after.completedDurationCount));
+});
+
+void test('autonomous work always leaves one of two research slots available for manual requests', () => {
+  assert.equal(availableAutonomousResearchRunSlots(0), 1);
+  assert.equal(availableAutonomousResearchRunSlots(1), 0);
+  assert.equal(availableAutonomousResearchRunSlots(2), 0);
 });
