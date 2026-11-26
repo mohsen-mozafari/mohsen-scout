@@ -4,7 +4,9 @@ import {
   type SecondOpinionProviderConfig,
 } from './ai-gateway';
 import { getKey } from './vault';
-import type { ResearchDossier, SecondOpinionProvider } from './types';
+import { assessEvidenceProvenance } from './research-provenance';
+import { runWithResearchPriorityQueue, type ResearchPriority } from './research-concurrency';
+import type { Preferences, ResearchDossier, SecondOpinionProvider } from './types';
 import {
   applyIndependentResearchReview,
   buildIndependentReviewPrompt,
@@ -16,12 +18,28 @@ import {
 } from './research-agent-core';
 export type { ResearchAgentInput } from './research-agent-core';
 
-let providerQueue: Promise<unknown> = Promise.resolve();
+export function withResearchProviderQueue<T>(
+  work: () => Promise<T>,
+  priority: ResearchPriority = 'manual',
+): Promise<T> {
+  return runWithResearchPriorityQueue(work, priority);
+}
 
-export function withResearchProviderQueue<T>(work: () => Promise<T>): Promise<T> {
-  const action = providerQueue.then(work, work);
-  providerQueue = action.then(() => undefined, () => undefined);
-  return action;
+/** Counts genuinely configured cross-provider reviewers without exposing stored keys. */
+export async function getConfiguredResearchProviderCount(preferences: Preferences): Promise<number> {
+  const order = preferences.secondOpinionOrder?.length
+    ? preferences.secondOpinionOrder
+    : (['gemini', 'xai', 'cloudflare'] as SecondOpinionProvider[]);
+  const configured = new Set<SecondOpinionProvider>();
+  for (const provider of new Set(order)) {
+    if (provider === 'openrouter') continue;
+    const key = await getKey(provider).catch(() => undefined);
+    const model = preferences.secondOpinionModels?.[provider]?.trim();
+    if (!key || !model) continue;
+    if (provider === 'cloudflare' && !(await getKey('cloudflare-account-id').catch(() => undefined))) continue;
+    configured.add(provider);
+  }
+  return configured.size;
 }
 
 export type ResearchAgentOutcome = {
@@ -64,6 +82,28 @@ export async function runResearchAgent(input: ResearchAgentInput): Promise<Resea
     return {
       attempts: [],
       warnings: [...warnings, 'No configured research AI provider was available; the local evidence-only fallback remains active. Add a provider key in Settings to enable semantic hypothesis review.'],
+    };
+  }
+
+  // Do not spend model tokens on a dossier that cannot pass independent review.
+  // Original text is mandatory: search snippets and headlines are contextual leads only.
+  const distinctProviders = new Set(configs.map((config) => config.provider));
+  const fullTextEvidence = input.evidence.filter((item) => Boolean(item.sourceText && item.sourceText.length >= 300));
+  const provenance = assessEvidenceProvenance(fullTextEvidence);
+  const preflightFailures: string[] = [];
+  if (distinctProviders.size < 2) {
+    preflightFailures.push('At least two distinct configured AI providers are required for cross-provider review.');
+  }
+  if (fullTextEvidence.length < 2) {
+    preflightFailures.push('At least two fetched original source texts are required; headlines and snippets are not claim-level evidence.');
+  }
+  if (provenance.publisherFamilyCount < 2) {
+    preflightFailures.push('Original text must come from at least two independent publisher families before model review starts.');
+  }
+  if (preflightFailures.length) {
+    return {
+      attempts: [],
+      warnings: [...warnings, ...preflightFailures, 'The model researcher was not started. Local analysis remains exploratory and unverified.'],
     };
   }
 
@@ -149,6 +189,9 @@ export async function runResearchAgent(input: ResearchAgentInput): Promise<Resea
 
 
 /** Runs a complete first-model + independent-review pair without provider interleaving. */
-export function runResearchAgentSerialized(input: ResearchAgentInput): Promise<ResearchAgentOutcome> {
-  return withResearchProviderQueue(() => runResearchAgent(input));
+export function runResearchAgentSerialized(
+  input: ResearchAgentInput,
+  priority: ResearchPriority = 'manual',
+): Promise<ResearchAgentOutcome> {
+  return withResearchProviderQueue(() => runResearchAgent(input), priority);
 }
