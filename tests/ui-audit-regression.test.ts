@@ -117,14 +117,17 @@ void test('shared video rows use the validated external-link handler', () => {
   assert.doesNotMatch(videoRow, /Linking\.openURL/);
 });
 
-void test('release metadata and workflow agree on version 1.28.0', () => {
+void test('release metadata and workflow agree on version 1.29.0', () => {
   const config = source('app.config.ts');
   const workflow = source('.github/workflows/android-apk-v1.24.0-full-audit.yml');
-  assert.match(config, /version: '1\.28\.0'/);
-  assert.match(config, /versionCode: 49/);
-  assert.match(workflow, /versionCode='49'/);
-  assert.match(workflow, /1\.28\.0/);
+  const changelog = source('CHANGELOG_1.29.0.md');
+  assert.match(config, /version: '1\.29\.0'/);
+  assert.match(config, /versionCode: 50/);
+  assert.match(workflow, /versionCode='50'/);
+  assert.match(workflow, /versionName='1\.29\.0'/);
+  assert.match(workflow, /1\.29\.0/);
   assert.match(workflow, /android-apk-v1\.24\.0-full-audit\.yml/);
+  assert.match(changelog, /Emerging concepts|emerging concepts/);
 });
 
 
@@ -216,12 +219,16 @@ void test('legacy fixed-interval background task is retired and configured sched
   assert.match(scheduler, /unregisterTaskAsync/);
 });
 
-void test('YouTube, publisher, web and Wikimedia collection run concurrently while the research model still awaits YouTube', () => {
+void test('publisher, YouTube, web and Wikimedia collection run concurrently and adaptive searches are batched', () => {
   const store = source('lib/store.ts');
+  const deepResearch = source('app/deep-research.tsx');
   assert.match(store, /Promise\.all\(\[youtubeTaskPromise, feedTask\(\), webTask\(\), wikiTask\(\)\]\)/);
   assert.match(store, /if \(youtubeTaskPromise\) await youtubeTaskPromise/);
   assert.match(store, /youtubeSignals,/);
-  assert.match(store, /youtubeSignals: finalSignals/);
+  assert.match(store, /mapWithConcurrency\(batch, 2,/);
+  assert.match(store, /runResearchAgentSerialized\(/);
+  assert.doesNotMatch(store, /youtubeSignals: finalSignals/);
+  assert.match(deepResearch, /mapWithConcurrency\(plan\.queries, 2,/);
 });
 
 void test('autonomous queue is versioned and persists claims through serialized queue updates', () => {
