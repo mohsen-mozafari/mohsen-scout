@@ -231,18 +231,13 @@ export function buildInternalResearch(input: InternalResearchInput): InternalRes
   ];
   const entityCandidates = extractResearchEntityCandidates(entityDocuments);
   const entityRelations = buildResearchEntityRelations(entityCandidates);
-  const conceptDocuments = [
-    ...matchedNews.map((entry) => ({
-      id: entry.item.sourceUrl || 'news:' + entry.index,
-      text: entry.item.title + ' ' + entry.item.summary,
-      sourceId: entry.item.sourceId,
-    })),
-    ...rankedVideos.map((entry) => ({
-      id: 'youtube:' + entry.video.id,
-      text: entry.video.title + ' ' + (entry.video.description ?? ''),
-      sourceId: 'youtube:' + (entry.video.channel || entry.video.id),
-    })),
-  ];
+  // Dynamic concepts are derived only from directly matched independent publisher records.
+  // YouTube platform metadata remains a separate signal family and cannot corroborate publisher claims.
+  const conceptDocuments = matchedNews.map((entry) => ({
+    id: entry.item.sourceUrl || 'news:' + entry.index,
+    text: entry.item.title + ' ' + entry.item.summary,
+    sourceId: entry.item.sourceId,
+  }));
   const emergentConcepts = extractEmergentResearchConcepts(conceptDocuments, topic, 2, 10);
   const conceptRelations = buildEmergentConceptRelations(emergentConcepts, 2);
   const channelCount = new Set(videos.map((video) => video.channel)).size;
