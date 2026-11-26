@@ -370,7 +370,8 @@ export function buildResearchGraphModel(input: BuildResearchGraphInput): Researc
       if (
         concept.evidenceIds.includes(story.url) ||
         concept.evidenceIds.includes(story.id) ||
-        Boolean(story.sourceId && concept.sourceIds.includes(story.sourceId))
+        Boolean(story.sourceId && concept.sourceIds.includes(story.sourceId)) ||
+        matchesResearchTerms(story.title + ' ' + story.summary, [concept.term])
       ) {
         addEdge('source-' + story.id, 'concept-' + concept.id, text('contains recurring term', 'دارای واژه پرتکرار'));
       }
