@@ -18,7 +18,8 @@ import { getTopicDossier, rememberTopicDossier } from '@/lib/topic-dossier';
 import { generateEditorialIdeas } from '@/lib/idea-generation';
 import { buildPublisherIntelligence, type PublisherIntelligence } from '@/lib/news-intelligence';
 import { createResearchMemoryEntry } from '@/lib/research-memory';
-import { runResearchAgentSerialized } from '@/lib/research-agent';
+import { getConfiguredResearchProviderCount, runResearchAgentSerialized } from '@/lib/research-agent';
+import { mapWithConcurrency } from '@/lib/research-concurrency';
 import { assessResearchEvidenceCoverage, MAX_DEEP_RESEARCH_RESULTS_PER_QUERY, MAX_DEEP_RESEARCH_ROUNDS, mergeIndependentResearchEvidence, planResearchRound } from '@/lib/research-orchestrator';
 import { recordRuntimeFinish, recordRuntimeStart } from '@/lib/runtime-metrics';
 import { openExternalUrl } from '@/lib/external-links';
@@ -44,6 +45,8 @@ type Brief = {
   researchDossier?: ResearchDossier;
   publisherIntelligence?: PublisherIntelligence;
   generatedIdeas: Idea[];
+  /** True while the quick evidence report is visible and deeper verification continues. */
+  quickReport?: boolean;
 };
 
 export default function DeepResearch() {
@@ -70,6 +73,10 @@ export default function DeepResearch() {
     const query = topic.trim();
     if (!query) throw new Error('Choose a topic before starting deep research.');
     const warnings: string[] = [];
+    const configuredReviewerCount = await getConfiguredResearchProviderCount(preferences);
+    if (configuredReviewerCount < 2) {
+      warnings.push('Research preflight: configure two distinct AI providers for independent review. The quick report will still be prepared, but model-backed claims remain unverified.');
+    }
     const priorMemory = researchMemory.find((entry) => normalizeResearchText(entry.topic) === normalizeResearchText(query));
     if (priorMemory) warnings.push(preferences.uiLanguage === 'fa' ? 'حافظه تحقیق محلی قبلی برای مقایسه بارگذاری شد؛ ادعاهای منابع ذخیره‌شده با نتایج فعلی بررسی می‌شوند.' : 'Previous local research memory was loaded for comparison; saved source claims may be checked against this run.');
     const cachedDossier = getTopicDossier(query);
@@ -232,6 +239,23 @@ export default function DeepResearch() {
       priorMemory,
       language: preferences.uiLanguage ?? 'fa',
     });
+    // Publish a useful local result before waiting for adaptive web searches and cross-provider review.
+    setBrief({
+      topic: query,
+      createdAt: Date.now(),
+      quickReport: false,
+      news: selectedNews,
+      webResults,
+      wiki,
+      videos,
+      warnings: [...warnings],
+      ...outline,
+      scriptDraft: [],
+      internalAnalysis,
+      publisherIntelligence,
+      generatedIdeas: [],
+      quickReport: true,
+    });
     // Run a bounded, source-led research loop. The model proposes falsifiable
     // questions; Firecrawl retrieves new evidence; the model then re-evaluates it.
     // YouTube API metadata is deliberately excluded from this external review.
@@ -264,6 +288,7 @@ export default function DeepResearch() {
     let researchDossier: ResearchDossier | undefined;
     try {
       recordRuntimeStart('AI');
+      recordRuntimeStart('AI');
       let outcome = await runResearchAgentSerialized({
         topic: query,
         researchNiche: niche?.topic ?? (nicheId === 'custom' ? preferences.customSpaceNiche : query),
@@ -281,6 +306,7 @@ export default function DeepResearch() {
         alreadyAsked,
       });
       warnings.push(...outcome.warnings);
+      recordRuntimeFinish('AI', outcome.dossier ? 'success' : 'partial', outcome.warnings.join(' ').slice(0, 220));
       if (outcome.dossier) researchDossier = outcome.dossier;
       // Adaptive evidence-led discovery: bounded by rounds, searches and evidence size.
       // Failed searches are marked attempted too, so one failing query cannot loop forever.
@@ -300,24 +326,31 @@ export default function DeepResearch() {
           break;
         }
         const beforeCount = researchEvidence.length;
-        for (const plannedQuery of plan.queries) {
-          alreadyAsked.push(plannedQuery.query);
+        const queryResults = await mapWithConcurrency(plan.queries, 2, async (plannedQuery) => {
           try {
             const result = await fetchWebResearch(plannedQuery.query, {
               apiKey: firecrawlKey ?? undefined,
               limit: MAX_DEEP_RESEARCH_RESULTS_PER_QUERY,
               days: preferences.defaultResearchDays,
             });
-            warnings.push(...result.warnings);
-            const mergedEvidence = mergeIndependentResearchEvidence(researchEvidence, result.items);
-            researchEvidence.splice(0, researchEvidence.length, ...mergedEvidence.items);
-            const mergedWeb = mergeIndependentResearchEvidence(webResults, mergedEvidence.addedItems);
-            webResults.splice(0, webResults.length, ...mergedWeb.items);
-            if (mergedEvidence.rejectedCount) {
-              warnings.push('Some follow-up results were excluded because their URL was invalid, duplicated, or outside the independent-web evidence boundary.');
-            }
+            return { plannedQuery, result };
           } catch (error) {
-            warnings.push('Follow-up research search failed: ' + (error instanceof Error ? error.message : 'Search unavailable.'));
+            return { plannedQuery, error: error instanceof Error ? error.message : 'Search unavailable.' };
+          }
+        });
+        for (const item of queryResults) {
+          alreadyAsked.push(item.plannedQuery.query);
+          if ('error' in item) {
+            warnings.push('Follow-up research search failed: ' + item.error);
+            continue;
+          }
+          warnings.push(...item.result.warnings);
+          const mergedEvidence = mergeIndependentResearchEvidence(researchEvidence, item.result.items);
+          researchEvidence.splice(0, researchEvidence.length, ...mergedEvidence.items);
+          const mergedWeb = mergeIndependentResearchEvidence(webResults, mergedEvidence.addedItems);
+          webResults.splice(0, webResults.length, ...mergedWeb.items);
+          if (mergedEvidence.rejectedCount) {
+            warnings.push('Some follow-up results were excluded because their URL was invalid, duplicated, or outside the independent-web evidence boundary.');
           }
         }
         const newEvidenceCount = researchEvidence.length - beforeCount;
@@ -326,6 +359,7 @@ export default function DeepResearch() {
           researchStopReason = 'Research stopped because the latest focused searches added no new independent source URLs.';
           break;
         }
+        recordRuntimeStart('AI');
         const nextOutcome = await runResearchAgentSerialized({
           topic: query,
           researchNiche: niche?.topic ?? (nicheId === 'custom' ? preferences.customSpaceNiche : query),
@@ -343,6 +377,7 @@ export default function DeepResearch() {
           alreadyAsked,
         });
         warnings.push(...nextOutcome.warnings);
+        recordRuntimeFinish('AI', nextOutcome.dossier ? 'success' : 'partial', nextOutcome.warnings.join(' ').slice(0, 220));
         if (!nextOutcome.dossier) {
           researchStopReason = 'New evidence was collected, but the configured AI reviewer could not validate the next research state.';
           break;
@@ -573,7 +608,12 @@ export default function DeepResearch() {
         <>
           <Panel>
             <Heading>Research overview · {brief.topic}</Heading>
-            <Text style={styles.badge}>Prepared {new Date(brief.createdAt).toLocaleString()}</Text>
+            <Text style={styles.badge}>{brief.quickReport && op.busy
+              ? 'Quick evidence report · deeper verification in progress'
+              : 'Prepared ' + new Date(brief.createdAt).toLocaleString()}</Text>
+            {brief.quickReport && op.busy
+              ? <Txt muted>The internal engine result is available now. Independent source searches and any eligible cross-provider review will update this report when complete.</Txt>
+              : null}
             <Txt muted>{brief.videos.length} YouTube sample videos from {youtubeChannelCount} channels · {brief.news.length} publisher reports · {brief.webResults.length} web results · {brief.generatedIdeas.length} ideas.</Txt>
             <Txt muted>{measuredYouTubeGrowth.length} videos have repeat-snapshot growth measurements{fastestYouTubeGrowth ? ' · fastest: ' + fastestYouTubeGrowth.title + ' (' + fastestYouTubeGrowth.growth!.viewsPerHour!.toFixed(1) + ' views/hour)' : ' · no growth rate is available yet; a single view-count snapshot is not growth'}.</Txt>
             <Txt muted>Wikimedia pageviews indicate article attention, not YouTube demand. Treat generated angles as research candidates and verify factual claims against the linked primary sources.</Txt>
