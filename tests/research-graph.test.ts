@@ -140,3 +140,50 @@ void test('research graph retains publisher nodes while excluding the YouTube re
   assert.equal(model.groups.some((group) => group.id === 'youtube'), false);
   assert.ok(model.edges.length < 5000, 'cross-source edge growth must stay bounded');
 });
+
+
+void test('knowledge graph adds emerging topic concepts and evidence-backed co-occurrence edges', () => {
+  const multiNews = [
+    ...news,
+    {
+      ...news[0],
+      id: 'news-2',
+      sourceId: 'esa',
+      sourceName: 'ESA',
+      title: 'MOCK: ESA JWST exoplanet atmosphere calibration report',
+      summary: 'MOCK: Independent spectroscopy analysis and instrument calibration are discussed.',
+      url: 'https://esa.int/mock-exoplanet-calibration',
+    },
+  ];
+  const analysis = buildInternalResearch({
+    topic: 'JWST exoplanet atmosphere',
+    news: multiNews.map((item) => ({
+      title: item.title,
+      summary: item.summary,
+      sourceName: item.sourceName,
+      sourceUrl: item.url,
+      publishedAt: item.publishedAt,
+      sourceId: item.sourceId,
+    })),
+    language: 'en',
+  });
+  const model = buildResearchGraphModel({
+    topic: 'JWST exoplanet atmosphere',
+    news: multiNews,
+    videos: [],
+    analysis,
+    language: 'en',
+  });
+  const conceptGroup = model.groups.find((group) => group.id === 'concepts');
+  assert.ok(conceptGroup?.items.some((item) => item.title === 'spectroscopy'));
+  assert.ok(conceptGroup?.items.some((item) => item.title === 'calibration'));
+  assert.ok(model.nodes.some((node) => node.type === 'concept'));
+  assert.ok(model.edges.some((edge) =>
+    edge.source === 'concept-concept:spectroscopy' &&
+    edge.target === 'concept-concept:calibration' &&
+    edge.relation.includes('co-occurs across 2'),
+  ));
+  assert.ok(model.edges.some((edge) =>
+    edge.source === 'source-news-2' && edge.target === 'concept-concept:calibration',
+  ));
+});
