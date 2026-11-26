@@ -253,7 +253,7 @@ export async function fetchWebResearch(
   query: string,
   options: WebResearchOptions = {},
 ): Promise<WebResearchResult> {
-  const cleanQuery = query.trim().replace(/\\s+/g, ' ').slice(0, 220);
+  const cleanQuery = query.trim().replace(/\s+/g, ' ').slice(0, 220);
   if (!cleanQuery) throw new Error('Enter a research topic before searching the web.');
   const limit = Number.isFinite(options.limit) ? Math.max(1, Math.min(8, Math.floor(options.limit!))) : 6;
   const days = Number.isFinite(options.days) ? Math.max(0, Math.floor(options.days!)) : 0;
