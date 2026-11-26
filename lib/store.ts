@@ -33,7 +33,7 @@ import { captureYouTubeSnapshots } from './youtube-growth';
 import {
   acquireManualResearchLease,
   availableAutonomousResearchRunSlots,
-  availableResearchRunSlots,
+  isManualResearchActive,
   mapWithConcurrency,
   MAX_CONCURRENT_RESEARCH_RUNS,
 } from './research-concurrency';
@@ -145,11 +145,11 @@ export const useScout = create<State>((set, get) => ({
     }
   },
   resumePendingResearch: async (options) => {
-    if (resumePendingResearchInProgress || !get().ready || availableResearchRunSlots(get().activeResearchRuns) <= 0) return;
+    if (resumePendingResearchInProgress || isManualResearchActive() || !get().ready || availableAutonomousResearchRunSlots(get().activeResearchRuns) <= 0) return;
     resumePendingResearchInProgress = true;
     try {
       const pending = await readPendingResearch();
-      if (!pending.length || !get().ready) return;
+      if (!pending.length || !get().ready || isManualResearchActive()) return;
       const analyzedReportIds = new Set(get().data.reports.filter((report) => report.analyzed).map((report) => report.id));
       const completed = pending.filter((item) => item.stage === 'ideas-saved' || Boolean(item.reportId && analyzedReportIds.has(item.reportId)));
       if (completed.length) await Promise.all(completed.map((item) => clearPendingResearch(item.id)));
@@ -158,7 +158,7 @@ export const useScout = create<State>((set, get) => ({
       const candidates = pending.filter((item) => !completedIds.has(item.id) && !excluded.has(item.id) &&
         (options?.maxAgeMs === undefined || Date.now() - item.savedAt <= options.maxAgeMs))
         .slice(0, availableAutonomousResearchRunSlots(get().activeResearchRuns));
-      if (!candidates.length) return;
+      if (!candidates.length || isManualResearchActive()) return;
       set({ progress: 'Resuming interrupted research tasks from this device…' });
       const outcomes = await Promise.all(candidates.map((item) => get().research(item.input, 'automatic', true, undefined, item.id)));
       await Promise.all(outcomes.flatMap((report, index) => report ? [clearPendingResearch(candidates[index]!.id)] : []));
