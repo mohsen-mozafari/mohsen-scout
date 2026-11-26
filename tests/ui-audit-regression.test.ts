@@ -123,7 +123,7 @@ void test('release metadata and workflow agree on version 1.26.0', () => {
   assert.match(config, /version: '1\.26\.0'/);
   assert.match(config, /versionCode: 47/);
   assert.match(workflow, /versionCode='47'/);
-  assert.match(workflow, /1\.25\.0/);
+  assert.match(workflow, /1\.26\.0/);
   assert.match(workflow, /android-apk-v1\.24\.0-full-audit\.yml/);
 });
 
