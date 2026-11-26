@@ -328,6 +328,8 @@ void test('emergent research concepts require repeated evidence and exclude the 
   assert.ok(concepts.some((item) => item.term === 'calibration'));
   assert.ok(concepts.every((item) => item.term !== 'mars' && item.term !== 'methane'));
   assert.ok(concepts.every((item) => item.evidenceIds.length >= 2));
+  assert.ok(concepts.find((item) => item.term === 'calibration')?.sourceIds.includes('publisher-a'));
+  assert.ok(concepts.find((item) => item.term === 'calibration')?.sourceIds.includes('publisher-b'));
 });
 
 void test('emergent concept graph only links concepts that co-occur across enough evidence records', () => {
