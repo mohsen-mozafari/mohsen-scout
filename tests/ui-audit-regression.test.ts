@@ -167,6 +167,7 @@ void test('application uses pure-black AMOLED canvas without changing accent pal
   assert.match(theme, /nav: '#000000'/);
   assert.match(theme, /accent: '#76B9FF'/);
   assert.match(config, /backgroundColor: '#000000'/);
+  assert.match(config, /\['expo-splash-screen', \{ backgroundColor: '#000000' \}\]/);
 });
 
 void test('three-section workspace and page headers respect Android status-bar safe area', () => {

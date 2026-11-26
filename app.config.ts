@@ -53,7 +53,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       'expo-sharing',
       'expo-background-task',
       'expo-notifications',
-      'expo-splash-screen',
+      ['expo-splash-screen', { backgroundColor: '#000000' }],
       'expo-status-bar',
       './plugins/with-workmanager-proguard',
       ...nativePlugins,
