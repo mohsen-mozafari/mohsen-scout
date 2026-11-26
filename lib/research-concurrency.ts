@@ -30,6 +30,15 @@ export function isManualResearchActive(): boolean {
   return manualResearchLeases > 0;
 }
 
+export async function withManualResearchLease<T>(work: () => Promise<T>): Promise<T> {
+  const release = acquireManualResearchLease();
+  try {
+    return await work();
+  } finally {
+    release();
+  }
+}
+
 /**
  * Serializes model-provider work while allowing queued manual requests to pass
  * autonomous work. An in-flight request is never interrupted.
