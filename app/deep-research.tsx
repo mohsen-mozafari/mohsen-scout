@@ -11,6 +11,7 @@ import { getKey } from '@/lib/vault';
 import { enrichResearchEvidence, fetchWebResearch, type WebResearchItem } from '@/lib/web-research';
 import { assessEvidenceProvenance } from '@/lib/research-provenance';
 import { buildInternalResearch, rankNewsForTopic, type InternalResearchResult } from '@/lib/engine';
+import { reviewResearchHypotheses } from '@/lib/hypothesis-engine';
 import { buildResearchInterestProfile, normalizeResearchText } from '@/lib/intelligence';
 import { MediaPreview } from '@/components/MediaPreview';
 import { ResearchOverviewChart } from '@/components/ResearchOverviewChart';
@@ -292,6 +293,8 @@ export default function DeepResearch() {
     }
     const alreadyAsked: string[] = [];
     let researchDossier: ResearchDossier | undefined;
+    let fallbackReview: ReturnType<typeof reviewResearchHypotheses> | undefined;
+    let modelReviewEnabled = configuredReviewerCount >= 2;
     try {
       recordRuntimeStart('AI');
       let outcome = await runResearchAgentSerialized({
@@ -312,7 +315,16 @@ export default function DeepResearch() {
       });
       warnings.push(...outcome.warnings);
       recordRuntimeFinish('AI', outcome.dossier ? 'success' : 'partial', outcome.warnings.join(' ').slice(0, 220));
-      if (outcome.dossier) researchDossier = outcome.dossier;
+      if (outcome.dossier) {
+        researchDossier = outcome.dossier;
+      } else {
+        modelReviewEnabled = false;
+        fallbackReview = reviewResearchHypotheses(query, researchEvidence.map((item) => ({
+          id: item.id, title: item.title, summary: item.summary, url: item.url, sourceName: item.sourceName,
+          ...(item.publishedAt ? { publishedAt: item.publishedAt } : {}),
+        })), alreadyAsked, 3);
+        warnings.push('Local fallback discovery is active. Hypotheses remain provisional because independent model review was not available.');
+      }
       // Adaptive evidence-led discovery: bounded by rounds, searches and evidence size.
       // Failed searches are marked attempted too, so one failing query cannot loop forever.
       let previousRoundNewEvidenceCount: number | undefined;
@@ -323,7 +335,9 @@ export default function DeepResearch() {
           queriesAttempted: alreadyAsked.length,
           evidenceCount: researchEvidence.length,
           previousRoundNewEvidenceCount,
-          nextQueries: researchDossier?.nextQueries ?? [],
+          nextQueries: researchDossier?.nextQueries ?? (fallbackReview?.nextDirections ?? []).map((item) => ({
+            query: item.query, purpose: 'independent-confirmation' as const, hypothesisId: '', priority: 3, reason: item.reason,
+          })),
           alreadyAsked,
         });
         if (!plan.queries.length) {
@@ -364,30 +378,47 @@ export default function DeepResearch() {
           researchStopReason = 'Research stopped because the latest focused searches added no new independent source URLs.';
           break;
         }
-        recordRuntimeStart('AI');
-        const nextOutcome = await runResearchAgentSerialized({
-          topic: query,
-          researchNiche: niche?.topic ?? (nicheId === 'custom' ? preferences.customSpaceNiche : query),
-          internalEngineFindings: {
-            summary: internalAnalysis.summary,
-            keyFindings: internalAnalysis.evidence.map((item) => item.detail),
-            gaps: internalAnalysis.intelligence.gaps,
-            verificationQuestions: internalAnalysis.verificationQuestions,
-            potentialContradictions: internalAnalysis.intelligence.potentialContradictions,
-          },
-          evidence: researchEvidence,
-          youtubeSignals: videos,
-          preferences,
-          previous: researchDossier,
-          alreadyAsked,
-        });
-        warnings.push(...nextOutcome.warnings);
-        recordRuntimeFinish('AI', nextOutcome.dossier ? 'success' : 'partial', nextOutcome.warnings.join(' ').slice(0, 220));
-        if (!nextOutcome.dossier) {
-          researchStopReason = 'New evidence was collected, but the configured AI reviewer could not validate the next research state.';
+        if (modelReviewEnabled) {
+          recordRuntimeStart('AI');
+          const nextOutcome = await runResearchAgentSerialized({
+            topic: query,
+            researchNiche: niche?.topic ?? (nicheId === 'custom' ? preferences.customSpaceNiche : query),
+            internalEngineFindings: {
+              summary: internalAnalysis.summary,
+              keyFindings: internalAnalysis.evidence.map((item) => item.detail),
+              gaps: internalAnalysis.intelligence.gaps,
+              verificationQuestions: internalAnalysis.verificationQuestions,
+              potentialContradictions: internalAnalysis.intelligence.potentialContradictions,
+            },
+            evidence: researchEvidence,
+            youtubeSignals: videos,
+            preferences,
+            previous: researchDossier,
+            alreadyAsked,
+          });
+          warnings.push(...nextOutcome.warnings);
+          recordRuntimeFinish('AI', nextOutcome.dossier ? 'success' : 'partial', nextOutcome.warnings.join(' ').slice(0, 220));
+          if (nextOutcome.dossier) {
+            researchDossier = nextOutcome.dossier;
+          } else {
+            modelReviewEnabled = false;
+            fallbackReview = reviewResearchHypotheses(query, researchEvidence.map((item) => ({
+              id: item.id, title: item.title, summary: item.summary, url: item.url, sourceName: item.sourceName,
+              ...(item.publishedAt ? { publishedAt: item.publishedAt } : {}),
+            })), alreadyAsked, 3);
+            warnings.push('The configured independent reviewer is unavailable. Further discovery will use the local exploratory planner; no claim is model-validated.');
+          }
+        } else {
+          fallbackReview = reviewResearchHypotheses(query, researchEvidence.map((item) => ({
+            id: item.id, title: item.title, summary: item.summary, url: item.url, sourceName: item.sourceName,
+            ...(item.publishedAt ? { publishedAt: item.publishedAt } : {}),
+          })), alreadyAsked, 3);
+        }
+        if (!researchDossier && !fallbackReview?.nextDirections.length) {
+          researchStopReason = 'No new defensible local or model-led research direction was available.';
           break;
         }
-        researchDossier = nextOutcome.dossier;
+
       }
       if (!researchStopReason && researchDossier) {
         researchStopReason = 'The adaptive research round limit was reached; unresolved questions remain recorded for a later manual review.';
