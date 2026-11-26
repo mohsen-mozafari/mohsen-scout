@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, Pressable } from 'react-native';
+import { router } from 'expo-router';
 
 import {
   Page, Panel, Heading, Txt, Action, Fold, styles, ErrorBox,
@@ -367,8 +368,23 @@ function DiscoveryDashboardReady() {
         : 'Enter a focused topic and inspect real YouTube results, evidence quality and sample limits.'}
     >
       <View style={{ gap: 15 }}>
+        {bestIdea ? (
+          <Panel variant="hero">
+            <BadgeText>{fa ? 'ایدهٔ برتر' : 'FEATURED IDEA'}</BadgeText>
+            <Heading>{bestIdea.topic}</Heading>
+            <Txt muted>{(bestIdea.engineScoreReason?.split(';')[0] || bestIdea.concept).slice(0, 180)}</Txt>
+            <View style={styles.rowBetween}>
+              <Txt muted>{fa ? 'اولویت تحریری' : 'Editorial priority'}</Txt>
+              <BadgeText>{typeof bestIdea.engineScore === 'number' ? bestIdea.engineScore + '/100' : (fa ? 'بدون امتیاز' : 'Unscored')}</BadgeText>
+            </View>
+            <Action secondary onPress={() => router.push({ pathname: '/detail', params: { idea: bestIdea.id } })}>
+              {fa ? 'بازکردن پرونده ایده' : 'Open idea details'}
+            </Action>
+          </Panel>
+        ) : null}
         <Fold title={fa ? 'تحلیل تفصیلی و نظر دوم' : 'Detailed analysis and second opinion'} summary={fa ? 'نمودار، تحلیل داخلی و نقد مستقل مدل' : 'Chart, internal analysis and independent model review'} onExpandedChange={setAnalysisExpanded}>
         <ResearchOverviewChart
+          showFeaturedIdea={false}
           analysis={chartAnalysis}
           ideas={ideas}
           topic={chartTopic}

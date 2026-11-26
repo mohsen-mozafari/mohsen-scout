@@ -131,6 +131,8 @@ void test('release metadata and workflow agree on version 1.26.0', () => {
 void test('dashboard removes redundant panels while retaining best-idea, second-opinion and session-health areas', () => {
   const home = source('app/(tabs)/index.tsx');
   assert.doesNotMatch(home, /Research at a glance|Unified research workspace|خلاصه وضعیت پژوهش|فضای پژوهش یکپارچه/);
+  assert.match(home, /FEATURED IDEA|ایدهٔ برتر/);
+  assert.match(home, /showFeaturedIdea=\{false\}/);
   assert.match(home, /ResearchOverviewChart/);
   assert.match(home, /EngineAIReview/);
   assert.match(home, /SESSION HEALTH|سلامت نشست/);

@@ -15,12 +15,14 @@ export const ResearchOverviewChart = memo(function ResearchOverviewChart({
   topic,
   language,
   secondOpinion,
+  showFeaturedIdea = true,
 }: {
   analysis?: InternalResearchResult;
   ideas: readonly Idea[];
   topic: string;
   language: 'fa' | 'en';
   secondOpinion?: ReactNode;
+  showFeaturedIdea?: boolean;
 }) {
   const fa = language === 'fa';
   const label = (english: string, persian: string) => fa ? persian : english;
@@ -39,6 +41,8 @@ export const ResearchOverviewChart = memo(function ResearchOverviewChart({
 
   return (
     <Panel variant="hero">
+      {showFeaturedIdea ? (
+        <>
       <View style={{ gap: 4 }}>
         <BadgeText>{label('CURRENT EDITORIAL PRIORITY', 'اولویت تحریری فعلی')}</BadgeText>
         <Text style={{ color: p.text, fontSize: 17, fontWeight: '800' }}>{label('Highest-priority active idea', 'ایدهٔ فعال با بالاترین اولویت')}</Text>
@@ -63,6 +67,9 @@ export const ResearchOverviewChart = memo(function ResearchOverviewChart({
       ) : (
         <Txt muted>{label('No active idea has an editorial score yet. Run a research pass with independent evidence to create a ranked idea.', 'هنوز ایدهٔ فعالی امتیاز تحریری ندارد. برای ساخت رتبه‌بندی، تحقیق با شواهد مستقل اجرا کن.')}</Txt>
       )}
+
+        </>
+      ) : null}
 
       <View style={{ gap: 8, borderRadius: 11, backgroundColor: p.surface, borderWidth: 1, borderColor: p.border, padding: 11 }}>
         <Text style={{ color: p.text, fontSize: 11, fontWeight: '800' }}>{label('EDITORIAL PRIORITY DISTRIBUTION', 'توزیع اولویت تحریری')}</Text>

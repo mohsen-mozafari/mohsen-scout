@@ -25,3 +25,5 @@
 - These checks do not substitute for physical-device visual inspection, TalkBack testing or on-device frame-time profiling. Those must be reported separately rather than implied by a successful CI build.
 
 - Further reduced scrolling/search overhead in Library and Notes: narrow state subscriptions, memoized filters, constant-time YouTube metadata lookups and indexed linked-idea checks. Export, search, folder/tag filters, edit and delete actions remain intact.
+
+- Kept the featured idea visible on the home screen as a compact standalone card while leaving the detailed evidence distribution and second-opinion review inside the expandable analysis section.
