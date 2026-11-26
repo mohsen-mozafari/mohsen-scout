@@ -46,6 +46,22 @@ const RESEARCH_ENTITY_ALIASES: readonly {
 
 export type ResearchEntityDocument = { id: string; text: string; sourceId?: string };
 
+export type EmergentResearchConcept = {
+  id: string;
+  term: string;
+  mentionCount: number;
+  evidenceIds: string[];
+  sourceCount: number;
+};
+
+export type EmergentConceptRelation = {
+  id: string;
+  fromConceptId: string;
+  toConceptId: string;
+  evidenceIds: string[];
+  cooccurrenceCount: number;
+};
+
 export function extractResearchEntityCandidates(
   documents: readonly ResearchEntityDocument[],
 ): ResearchEntityCandidate[] {
@@ -218,6 +234,84 @@ export function tokenizeResearchText(value: string): string[] {
   }
   // A caller may sort or mutate its returned list; do not expose the cached array.
   return [...tokens];
+}
+
+/**
+ * Extracts recurring non-topic terms from the actual evidence set. Counts are
+ * document-based, not corpus-wide claims; callers must label the bounded sample.
+ */
+export function extractEmergentResearchConcepts(
+  documents: readonly ResearchEntityDocument[],
+  topic: string,
+  minimumDocumentCount = 2,
+  limit = 10,
+): EmergentResearchConcept[] {
+  const topicTerms = new Set(tokenizeResearchText(topic).filter((term) => term.length > 2));
+  const aggregates = new Map<string, {
+    mentionCount: number;
+    evidenceIds: Set<string>;
+    sourceIds: Set<string>;
+  }>();
+  for (const document of documents) {
+    const counts = new Map<string, number>();
+    for (const term of tokenizeResearchText(document.text)) {
+      if (term.length < 3 || STOP_WORDS.has(term) || topicTerms.has(term) || term.startsWith('__concept_')) continue;
+      counts.set(term, (counts.get(term) ?? 0) + 1);
+    }
+    for (const [term, count] of counts) {
+      const aggregate = aggregates.get(term) ?? {
+        mentionCount: 0,
+        evidenceIds: new Set<string>(),
+        sourceIds: new Set<string>(),
+      };
+      aggregate.mentionCount += count;
+      aggregate.evidenceIds.add(document.id);
+      aggregate.sourceIds.add(document.sourceId?.trim() || document.id);
+      aggregates.set(term, aggregate);
+    }
+  }
+  const minimum = Math.max(1, Math.floor(minimumDocumentCount) || 1);
+  const maximum = Math.max(0, Math.min(30, Math.floor(limit) || 0));
+  return [...aggregates.entries()]
+    .filter(([, item]) => item.evidenceIds.size >= minimum)
+    .map(([term, item]) => ({
+      id: 'concept:' + term.replace(/[^\\p{L}\\p{N}]+/gu, '-').slice(0, 90),
+      term,
+      mentionCount: item.mentionCount,
+      evidenceIds: [...item.evidenceIds].sort(),
+      sourceCount: item.sourceIds.size,
+    }))
+    .sort((a, b) =>
+      b.evidenceIds.length - a.evidenceIds.length ||
+      b.sourceCount - a.sourceCount ||
+      b.mentionCount - a.mentionCount ||
+      a.term.localeCompare(b.term),
+    )
+    .slice(0, maximum);
+}
+
+/** Links recurring concepts only when they co-occur in multiple retrieved documents. */
+export function buildEmergentConceptRelations(
+  concepts: readonly EmergentResearchConcept[],
+  minimumSharedDocuments = 2,
+): EmergentConceptRelation[] {
+  const relations: EmergentConceptRelation[] = [];
+  const evidenceSets = concepts.map((concept) => new Set(concept.evidenceIds));
+  const minimum = Math.max(1, Math.floor(minimumSharedDocuments) || 1);
+  for (let left = 0; left < concepts.length; left += 1) {
+    for (let right = left + 1; right < concepts.length; right += 1) {
+      const evidenceIds = concepts[left]!.evidenceIds.filter((id) => evidenceSets[right]!.has(id));
+      if (evidenceIds.length < minimum) continue;
+      relations.push({
+        id: 'concept-cooccurrence:' + concepts[left]!.id + ':' + concepts[right]!.id,
+        fromConceptId: concepts[left]!.id,
+        toConceptId: concepts[right]!.id,
+        evidenceIds,
+        cooccurrenceCount: evidenceIds.length,
+      });
+    }
+  }
+  return relations.sort((a, b) => b.cooccurrenceCount - a.cooccurrenceCount || a.id.localeCompare(b.id));
 }
 
 function conceptIndexes(value: string): number[] {
