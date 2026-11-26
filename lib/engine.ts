@@ -237,6 +237,7 @@ export function buildInternalResearch(input: InternalResearchInput): InternalRes
     id: entry.item.sourceUrl || 'news:' + entry.index,
     text: entry.item.title + ' ' + entry.item.summary,
     sourceId: entry.item.sourceId,
+    sourceIds: entry.item.sourceIds,
   }));
   const emergentConcepts = extractEmergentResearchConcepts(conceptDocuments, topic, 2, 10);
   const conceptRelations = buildEmergentConceptRelations(emergentConcepts, 2);
