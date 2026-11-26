@@ -275,7 +275,7 @@ export function extractEmergentResearchConcepts(
   return [...aggregates.entries()]
     .filter(([, item]) => item.evidenceIds.size >= minimum)
     .map(([term, item]) => ({
-      id: 'concept:' + term.replace(/[^\\p{L}\\p{N}]+/gu, '-').slice(0, 90),
+      id: 'concept:' + term.replace(/[^a-z0-9\u0600-\u06ff]+/gi, '-').slice(0, 90),
       term,
       mentionCount: item.mentionCount,
       evidenceIds: [...item.evidenceIds].sort(),
