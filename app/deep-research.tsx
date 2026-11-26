@@ -21,9 +21,8 @@ import { buildPublisherIntelligence, type PublisherIntelligence } from '@/lib/ne
 import { createResearchMemoryEntry } from '@/lib/research-memory';
 import { getConfiguredResearchProviderCount, runResearchAgentSerialized } from '@/lib/research-agent';
 import { mapWithConcurrency, withManualResearchLease } from '@/lib/research-concurrency';
-import { useRuntimeMetrics } from '@/lib/runtime-metrics';
 import { assessResearchEvidenceCoverage, MAX_DEEP_RESEARCH_RESULTS_PER_QUERY, MAX_DEEP_RESEARCH_ROUNDS, mergeIndependentResearchEvidence, planResearchRound } from '@/lib/research-orchestrator';
-import { recordRuntimeFinish, recordRuntimeStart } from '@/lib/runtime-metrics';
+import { recordRuntimeFinish, recordRuntimeStart, useRuntimeMetrics } from '@/lib/runtime-metrics';
 import { openExternalUrl } from '@/lib/external-links';
 import { searchYouTubeSample, type YouTubeSampleVideo } from '@/lib/api';
 import {
@@ -444,7 +443,6 @@ export default function DeepResearch() {
       if (evidenceCoverage.undatedCount > 0) {
         warnings.push(evidenceCoverage.undatedCount + ' independent web result(s) have no usable publication date; freshness remains uncertain.');
       }
-      recordRuntimeFinish('AI', researchDossier ? 'success' : 'partial');
     } catch (error) {
       recordRuntimeFinish('AI', 'error', error instanceof Error ? error.message : String(error));
       warnings.push('Model-backed deep research could not complete; the local source analysis remains available.');
