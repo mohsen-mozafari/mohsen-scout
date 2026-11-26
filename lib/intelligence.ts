@@ -51,6 +51,7 @@ export type EmergentResearchConcept = {
   term: string;
   mentionCount: number;
   evidenceIds: string[];
+  sourceIds: string[];
   sourceCount: number;
 };
 
@@ -279,6 +280,7 @@ export function extractEmergentResearchConcepts(
       term,
       mentionCount: item.mentionCount,
       evidenceIds: [...item.evidenceIds].sort(),
+      sourceIds: [...item.sourceIds].sort(),
       sourceCount: item.sourceIds.size,
     }))
     .sort((a, b) =>
