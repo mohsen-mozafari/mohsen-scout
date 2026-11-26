@@ -117,12 +117,66 @@ void test('shared video rows use the validated external-link handler', () => {
   assert.doesNotMatch(videoRow, /Linking\.openURL/);
 });
 
-void test('release metadata and workflow agree on version 1.25.0', () => {
+void test('release metadata and workflow agree on version 1.26.0', () => {
   const config = source('app.config.ts');
   const workflow = source('.github/workflows/android-apk-v1.24.0-full-audit.yml');
-  assert.match(config, /version: '1\.25\.0'/);
-  assert.match(config, /versionCode: 46/);
-  assert.match(workflow, /versionCode='46'/);
+  assert.match(config, /version: '1\.26\.0'/);
+  assert.match(config, /versionCode: 47/);
+  assert.match(workflow, /versionCode='47'/);
   assert.match(workflow, /1\.25\.0/);
   assert.match(workflow, /android-apk-v1\.24\.0-full-audit\.yml/);
+});
+
+
+void test('dashboard removes redundant panels while retaining best-idea, second-opinion and session-health areas', () => {
+  const home = source('app/(tabs)/index.tsx');
+  assert.doesNotMatch(home, /Research at a glance|Unified research workspace|خلاصه وضعیت پژوهش|فضای پژوهش یکپارچه/);
+  assert.match(home, /ResearchOverviewChart/);
+  assert.match(home, /EngineAIReview/);
+  assert.match(home, /SESSION HEALTH|سلامت نشست/);
+  assert.match(home, /selectDashboardFeaturedIdeas/);
+});
+
+void test('dashboard heavy local analysis runs only after expansion and user interactions settle', () => {
+  const home = source('app/(tabs)/index.tsx');
+  assert.match(home, /if \(!analysisExpanded \|\| !latestReportId\) return/);
+  assert.match(home, /InteractionManager\.runAfterInteractions/);
+  assert.match(home, /onExpandedChange=\{setAnalysisExpanded\}/);
+  assert.match(home, /task\.cancel\(\)/);
+});
+
+void test('research archive virtualizes rows and subscribes only to displayed data domains', () => {
+  const archive = source('components/ResearchArchive.tsx');
+  assert.match(archive, /<FlatList/);
+  assert.doesNotMatch(archive, /<ScrollView/);
+  assert.match(archive, /initialNumToRender=\{8\}/);
+  assert.match(archive, /windowSize=\{5\}/);
+  assert.match(archive, /state\.data\.reports/);
+  assert.match(archive, /state\.data\.ideas/);
+  assert.match(archive, /state\.data\.links/);
+  assert.match(archive, /state\.data\.notes/);
+  assert.doesNotMatch(archive, /const data = useScout\(/);
+});
+
+void test('application uses pure-black AMOLED canvas without changing accent palette', () => {
+  const theme = source('lib/theme.ts');
+  const config = source('app.config.ts');
+  assert.match(theme, /background: '#000000'/);
+  assert.match(theme, /nav: '#000000'/);
+  assert.match(theme, /accent: '#76B9FF'/);
+  assert.match(config, /backgroundColor: '#000000'/);
+});
+
+void test('three-section workspace and page headers respect Android status-bar safe area', () => {
+  const workspace = source('app/(tabs)/workspace.tsx');
+  const ui = source('components/ScoutUI.tsx');
+  const archive = source('components/ResearchArchive.tsx');
+  const library = source('app/(tabs)/library.tsx');
+  const notes = source('app/(tabs)/notes.tsx');
+  assert.match(workspace, /StatusBar\.currentHeight/);
+  assert.match(workspace, /paddingTop: safeTop \+ 8/);
+  assert.match(ui, /StatusBar\.currentHeight/);
+  assert.match(archive, /<AppHeader safeArea=\{false\}/);
+  assert.match(library, /safeAreaTop=\{false\}/);
+  assert.match(notes, /safeAreaTop=\{false\}/);
 });
