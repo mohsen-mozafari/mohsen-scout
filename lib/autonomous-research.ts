@@ -13,7 +13,7 @@ import {
   selectedAutonomousNicheTopic,
   AUTONOMOUS_YOUTUBE_DISCOVERY_INTERVAL_MS,
 } from './autonomous-policy';
-import { isManualResearchActive, MAX_CONCURRENT_RESEARCH_RUNS } from './research-concurrency';
+import { availableAutonomousResearchRunSlots, isManualResearchActive, MAX_CONCURRENT_RESEARCH_RUNS } from './research-concurrency';
 import {
   enqueueAutonomousCandidates,
   loadAutonomousQueue,
@@ -255,12 +255,12 @@ async function discoverFreshTopics(): Promise<void> {
 
 async function processNextJob(): Promise<boolean> {
   const initial = useScout.getState();
-  if (isManualResearchActive() || !initial.ready || initial.activeResearchRuns >= MAX_CONCURRENT_RESEARCH_RUNS) return false;
+  if (isManualResearchActive() || !initial.ready || availableAutonomousResearchRunSlots(initial.activeResearchRuns) <= 0) return false;
   const job = await claimNextAutonomousJob();
   if (!job) return false;
 
   const current = useScout.getState();
-  if (isManualResearchActive() || !current.ready || current.activeResearchRuns >= MAX_CONCURRENT_RESEARCH_RUNS) {
+  if (isManualResearchActive() || !current.ready || availableAutonomousResearchRunSlots(current.activeResearchRuns) <= 0) {
     await updateAutonomousQueue((queue) => updateAutonomousJob(queue, job.id, {
       status: 'queued', startedAt: undefined, retryAt: undefined,
     }));
@@ -312,7 +312,7 @@ export async function runAutonomousResearchCycle(maxJobs = 1): Promise<number> {
       await Promise.all(completed.map((item) => clearPendingResearch(item.id)));
     }
     const maximum = Math.max(1, Math.min(2, Math.floor(maxJobs) || 1));
-    while (processedCount < maximum && useScout.getState().activeResearchRuns < MAX_CONCURRENT_RESEARCH_RUNS) {
+    while (processedCount < maximum && availableAutonomousResearchRunSlots(useScout.getState().activeResearchRuns) > 0) {
       if (!(await processNextJob())) break;
       processedCount += 1;
     }
