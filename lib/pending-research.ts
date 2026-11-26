@@ -41,7 +41,8 @@ function valid(value: unknown): value is PendingResearch {
     Boolean(input && typeof input.topic === 'string' && input.topic.trim() &&
       Array.isArray(input.languages) && input.languages.length > 0) &&
     typeof item.savedAt === 'number' && Number.isFinite(item.savedAt) && item.savedAt >= 0 &&
-    (item.stage === undefined || ['queued', 'youtube-saved', 'sources-reviewed', 'ideas-saved'].includes(String(item.stage))) &&
+    (item.stage === undefined || (typeof item.stage === 'string' &&
+      ['queued', 'youtube-saved', 'sources-reviewed', 'ideas-saved'].some((stage) => stage === item.stage))) &&
     (item.evidence === undefined || (Array.isArray(item.evidence) && item.evidence.length <= 48 && item.evidence.every((entry) =>
       Boolean(entry && typeof entry.id === 'string' && typeof entry.title === 'string' && typeof entry.summary === 'string' && typeof entry.url === 'string' && typeof entry.sourceName === 'string')))) &&
     (item.queryHistory === undefined || (Array.isArray(item.queryHistory) && item.queryHistory.length <= 40 && item.queryHistory.every((query) => typeof query === 'string')));

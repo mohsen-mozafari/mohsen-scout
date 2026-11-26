@@ -25,24 +25,25 @@ async function migrateLegacyDomains(connection: SQLite.SQLiteDatabase): Promise<
       const rows = await tx.getAllAsync<LegacyRow>('SELECT key,value FROM ' + table);
       const legacyDomains = new Set(LEGACY_DOMAINS[table]);
       for (const row of rows) {
-        if (!isRecordDomain(row.key) || !legacyDomains.has(row.key)) continue;
+        const domain = isRecordDomain(row.key) ? row.key : undefined;
+        if (!domain || !legacyDomains.has(domain)) continue;
         const raw: unknown = JSON.parse(row.value);
-        if (!Array.isArray(raw)) throw new Error('Legacy ' + row.key + ' data is not a valid collection; migration was rolled back.');
-        const collection = validateLocalEntry(row.key, raw) as unknown[];
+        if (!Array.isArray(raw)) throw new Error('Legacy ' + domain + ' data is not a valid collection; migration was rolled back.');
+        const collection = validateLocalEntry(domain, raw) as unknown[];
         const records = collection.map((item) => ({
-          id: recordIdFor(row.key, item),
-          updatedAt: recordUpdatedAt(row.key, item),
-          expiresAt: recordExpiresAt(row.key, item) ?? NO_EXPIRY,
+          id: recordIdFor(domain, item),
+          updatedAt: recordUpdatedAt(domain, item),
+          expiresAt: recordExpiresAt(domain, item) ?? NO_EXPIRY,
           payload: JSON.stringify(item),
         }));
-        for (const batch of chunkRecordWriteBatches(row.key, records)) {
+        for (const batch of chunkRecordWriteBatches(domain, records)) {
           if (table === 'youtube') {
             const placeholders = batch.map(() => '(?,?,?,?,?)').join(',');
-            const parameters = batch.flatMap((item) => [row.key, item.id, item.updatedAt, item.expiresAt, item.payload]);
+            const parameters = batch.flatMap((item) => [domain, item.id, item.updatedAt, item.expiresAt, item.payload]);
             await tx.runAsync('INSERT OR REPLACE INTO youtube_records (domain,id,updated_at,expires_at,payload) VALUES ' + placeholders, ...parameters);
           } else {
             const placeholders = batch.map(() => '(?,?,?,?)').join(',');
-            const parameters = batch.flatMap((item) => [row.key, item.id, item.updatedAt, item.payload]);
+            const parameters = batch.flatMap((item) => [domain, item.id, item.updatedAt, item.payload]);
             await tx.runAsync('INSERT OR REPLACE INTO personal_records (domain,id,updated_at,payload) VALUES ' + placeholders, ...parameters);
           }
         }
