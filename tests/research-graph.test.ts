@@ -183,8 +183,8 @@ void test('knowledge graph adds emerging topic concepts and evidence-backed co-o
   assert.ok(conceptGroup?.items.some((item) => item.title === 'calibration'));
   assert.ok(model.nodes.some((node) => node.type === 'concept'));
   assert.ok(model.edges.some((edge) =>
-    edge.source === 'concept-concept:spectroscopy' &&
-    edge.target === 'concept-concept:calibration' &&
+    ((edge.source === 'concept-concept:spectroscopy' && edge.target === 'concept-concept:calibration') ||
+      (edge.source === 'concept-concept:calibration' && edge.target === 'concept-concept:spectroscopy')) &&
     edge.relation.includes('co-occurs across 2'),
   ));
   assert.ok(model.edges.some((edge) =>
