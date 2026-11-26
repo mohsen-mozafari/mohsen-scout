@@ -580,6 +580,8 @@ export function buildInternalResearch(input: InternalResearchInput): InternalRes
     contradictionWarningCount: potentialContradictions.length,
     entityCandidateCount: entityCandidates.length,
     coMentionRelationCount: entityRelations.length,
+    emergentConceptCount: emergentConcepts.length,
+    conceptRelationCount: conceptRelations.length,
     processingMs: Math.max(0, Date.now() - startedAt),
     limitations: [...gaps],
   };
