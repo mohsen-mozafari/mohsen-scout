@@ -7,6 +7,7 @@ import {
   runWithResearchPriorityQueue,
 } from '../lib/research-concurrency';
 import { fetchWebResearch } from '../lib/web-research';
+import { getRuntimeMetrics, recordRuntimeFinish, recordRuntimeStart } from '../lib/runtime-metrics';
 
 void test('manual research lease pauses autonomous work and releases exactly once', () => {
   assert.equal(isManualResearchActive(), false);
@@ -80,4 +81,15 @@ void test('Firecrawl search deduplicates concurrent identical requests and cache
   assert.equal(second.items[0]?.title, 'NASA source report');
   assert.equal(cached.items[0]?.title, 'NASA source report');
   assert.ok(cached.items[0]?.sourceText);
+});
+
+void test('runtime telemetry captures deterministic last and average stage durations', () => {
+  const before = getRuntimeMetrics().modules.AI;
+  recordRuntimeStart('AI', 1000);
+  recordRuntimeFinish('AI', 'success', '', 1450);
+  const after = getRuntimeMetrics().modules.AI;
+  assert.equal(after.lastDurationMs, 450);
+  assert.equal(after.totalDurationMs, before.totalDurationMs + 450);
+  assert.equal(after.completedDurationCount, before.completedDurationCount + 1);
+  assert.equal(after.averageDurationMs, Math.round(after.totalDurationMs / after.completedDurationCount));
 });
