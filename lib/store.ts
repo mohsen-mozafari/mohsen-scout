@@ -33,7 +33,6 @@ import { captureYouTubeSnapshots } from './youtube-growth';
 import {
   acquireManualResearchLease,
   availableResearchRunSlots,
-  isManualResearchActive,
   mapWithConcurrency,
   MAX_CONCURRENT_RESEARCH_RUNS,
 } from './research-concurrency';
@@ -585,8 +584,8 @@ export const useScout = create<State>((set, get) => ({
               recordRuntimeFinish('AI', agent.dossier ? 'success' : 'partial', agent.warnings.join(' ').slice(0, 220));
               if (agent.dossier) {
                 latestAiDossier = agent.dossier;
-              } else if (agent.attempts.length === 0) {
-                // The preflight failed or no provider was configured; do not retry model setup each round.
+              } else {
+                // Do not retry a failed or preflight-blocked model pair for every later search batch.
                 modelAgentEnabled = false;
               }
             }
