@@ -44,7 +44,7 @@ const RESEARCH_ENTITY_ALIASES: readonly {
   { name: 'Saturn', kind: 'celestial-body', aliases: ['Saturn', 'زحل'] },
 ];
 
-export type ResearchEntityDocument = { id: string; text: string; sourceId?: string };
+export type ResearchEntityDocument = { id: string; text: string; sourceId?: string; sourceIds?: string[] };
 
 export type EmergentResearchConcept = {
   id: string;
@@ -267,7 +267,13 @@ export function extractEmergentResearchConcepts(
       };
       aggregate.mentionCount += count;
       aggregate.evidenceIds.add(document.id);
-      aggregate.sourceIds.add(document.sourceId?.trim() || document.id);
+      const documentSourceIds = document.sourceIds?.length
+        ? document.sourceIds
+        : [document.sourceId?.trim() || document.id];
+      for (const sourceId of documentSourceIds) {
+        const normalizedSourceId = sourceId.trim();
+        if (normalizedSourceId) aggregate.sourceIds.add(normalizedSourceId);
+      }
       aggregates.set(term, aggregate);
     }
   }
