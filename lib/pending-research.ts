@@ -53,8 +53,12 @@ async function readRaw(): Promise<PendingResearch[]> {
     try {
       const parsed: unknown = JSON.parse(raw);
       if (Array.isArray(parsed)) {
-        const upgraded = parsed.filter(valid).map((item) => ({ ...item, version: 2 as const }));
-        await AsyncStorage.setItem(KEY, JSON.stringify(upgraded));
+        const upgraded = parsed.filter(valid).slice(0, MAX_PENDING_RESEARCH_TASKS)
+          .map((item) => ({ ...item, version: 2 as const }));
+        const needsRewrite = parsed.length !== upgraded.length || parsed.some((item) =>
+          !item || typeof item !== 'object' || Array.isArray(item) || (item as Record<string, unknown>).version !== 2,
+        );
+        if (needsRewrite) await AsyncStorage.setItem(KEY, JSON.stringify(upgraded));
         return upgraded;
       }
     } catch {

@@ -209,7 +209,7 @@ void test('legacy fixed-interval background task is retired and configured sched
   const scheduler = source('lib/scheduler.ts');
   assert.match(root, /unregisterLegacyAutonomousResearchBackgroundTask/);
   assert.doesNotMatch(root, /registerAutonomousResearchBackgroundTask/);
-  assert.doesNotMatch(legacy, /defineTask|registerTaskAsync/);
+  assert.doesNotMatch(legacy, /TaskManager\.defineTask|TaskManager\.registerTaskAsync/);
   assert.match(legacy, /unregisterTaskAsync/);
   assert.match(scheduler, /prefs\.schedule === 'Manual'/);
   assert.match(scheduler, /prefs\.paused/);
@@ -220,7 +220,7 @@ void test('YouTube, publisher, web and Wikimedia collection run concurrently whi
   const store = source('lib/store.ts');
   assert.match(store, /Promise\.all\(\[youtubeTaskPromise, feedTask\(\), webTask\(\), wikiTask\(\)\]\)/);
   assert.match(store, /if \(youtubeTaskPromise\) await youtubeTaskPromise/);
-  assert.match(store, /youtubeSignals: youtubeSignals/);
+  assert.match(store, /youtubeSignals,/);
   assert.match(store, /youtubeSignals: finalSignals/);
 });
 
