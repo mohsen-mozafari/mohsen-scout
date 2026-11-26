@@ -98,8 +98,8 @@ export const ResearchOverviewChart = memo(function ResearchOverviewChart({
         )}</Txt>
         {audit ? (
           <Txt muted>{label(
-            'Engine inputs: ' + number(audit.inputNewsCount) + ' publisher records → ' + number(audit.uniqueNewsCount) + ' unique, ' + number(audit.topicMatchedNewsCount) + ' topic matches · Wikimedia: ' + number(audit.wikimediaMonthlyObservations) + ' monthly observations · YouTube: ' + number(audit.youtubeSampleCount) + ' raw records received (kept separate; not scored).',
-            'ورودی موتور: ' + number(audit.inputNewsCount) + ' خبر دریافتی ← ' + number(audit.uniqueNewsCount) + ' خبر یکتا، ' + number(audit.topicMatchedNewsCount) + ' هم‌موضوع · ویکی‌مدیا: ' + number(audit.wikimediaMonthlyObservations) + ' مشاهدهٔ ماهانه · YouTube: ' + number(audit.youtubeSampleCount) + ' رکورد خام دریافت‌شده (جدا نگه داشته می‌شود و امتیاز نمی‌گیرد).',
+            'Engine inputs: ' + number(audit.inputNewsCount) + ' publisher records → ' + number(audit.uniqueNewsCount) + ' unique, ' + number(audit.topicMatchedNewsCount) + ' topic matches · Wikimedia: ' + number(audit.wikimediaMonthlyObservations) + ' monthly observations · YouTube: ' + number(audit.youtubeSampleCount) + ' raw records received (kept separate; not scored) · recurring concepts: ' + number(audit.emergentConceptCount) + ' · multi-document concept links: ' + number(audit.conceptRelationCount) + '.',
+            'ورودی موتور: ' + number(audit.inputNewsCount) + ' خبر دریافتی ← ' + number(audit.uniqueNewsCount) + ' خبر یکتا، ' + number(audit.topicMatchedNewsCount) + ' هم‌موضوع · ویکی‌مدیا: ' + number(audit.wikimediaMonthlyObservations) + ' مشاهدهٔ ماهانه · YouTube: ' + number(audit.youtubeSampleCount) + ' رکورد خام دریافت‌شده (جدا نگه داشته می‌شود و امتیاز نمی‌گیرد) · مفهوم‌های پرتکرار: ' + number(audit.emergentConceptCount) + ' · پیوندهای چندسندی مفاهیم: ' + number(audit.conceptRelationCount) + '.',
           )}</Txt>
         ) : <Txt muted>{label('Source counts appear after a completed analysis.', 'شمارنده‌های منابع پس از تکمیل تحلیل نمایش داده می‌شوند.')}</Txt>}
         {youtubeEvidence ? <Txt muted>{youtubeEvidence.detail}</Txt> : null}
