@@ -243,7 +243,6 @@ export default function DeepResearch() {
     setBrief({
       topic: query,
       createdAt: Date.now(),
-      quickReport: false,
       news: selectedNews,
       webResults,
       wiki,
@@ -287,7 +286,6 @@ export default function DeepResearch() {
     const alreadyAsked: string[] = [];
     let researchDossier: ResearchDossier | undefined;
     try {
-      recordRuntimeStart('AI');
       recordRuntimeStart('AI');
       let outcome = await runResearchAgentSerialized({
         topic: query,
@@ -527,6 +525,7 @@ export default function DeepResearch() {
     setBrief({
       topic: query,
       createdAt: Date.now(),
+      quickReport: false,
       news: selectedNews,
       webResults,
       wiki,
