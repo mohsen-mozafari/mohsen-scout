@@ -24,6 +24,47 @@ export type WebResearchOptions = {
   fetcher?: typeof fetch;
 };
 
+type WebSearchCacheEntry = { expiresAt: number; value: WebResearchResult };
+const WEB_SEARCH_CACHE_TTL_MS = 3 * 60 * 1000;
+const WEB_SEARCH_CACHE_LIMIT = 64;
+const webSearchCache = new Map<string, WebSearchCacheEntry>();
+const webSearchInflight = new Map<string, Promise<WebResearchResult>>();
+const fetcherIdentities = new WeakMap<typeof fetch, number>();
+let nextFetcherIdentity = 1;
+
+function fetcherIdentity(fetcher: typeof fetch): number {
+  const existing = fetcherIdentities.get(fetcher);
+  if (existing) return existing;
+  const identity = nextFetcherIdentity++;
+  fetcherIdentities.set(fetcher, identity);
+  return identity;
+}
+
+function keyFingerprint(value: string | undefined): string {
+  if (!value) return 'anonymous';
+  // Ephemeral non-cryptographic fingerprint: the API key itself is never retained in the cache key.
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36);
+}
+
+function cloneWebResearchResult(value: WebResearchResult): WebResearchResult {
+  return {
+    query: value.query,
+    warnings: [...value.warnings],
+    items: value.items.map((item) => ({ ...item })),
+  };
+}
+
+/** Clear the ephemeral query cache (also useful for deterministic test isolation). */
+export function clearWebResearchCache(): void {
+  webSearchCache.clear();
+  webSearchInflight.clear();
+}
+
 function cleanSourceText(value: unknown, maxLength: number): string {
   if (typeof value !== 'string') return '';
   return value
@@ -148,7 +189,7 @@ function timeFilter(days?: number): string | undefined {
  * is subject to per-IP daily caps. Markdown source text is requested only when
  * the user has configured a personal Firecrawl key.
  */
-export async function fetchWebResearch(
+async function fetchWebResearchUncached(
   query: string,
   options: WebResearchOptions = {},
 ): Promise<WebResearchResult> {
@@ -205,6 +246,52 @@ export async function fetchWebResearch(
     throw error instanceof Error ? error : new Error('Firecrawl web search failed.');
   } finally {
     clearTimeout(timeout);
+  }
+}
+
+export async function fetchWebResearch(
+  query: string,
+  options: WebResearchOptions = {},
+): Promise<WebResearchResult> {
+  const cleanQuery = query.trim().replace(/\\s+/g, ' ').slice(0, 220);
+  if (!cleanQuery) throw new Error('Enter a research topic before searching the web.');
+  const limit = Number.isFinite(options.limit) ? Math.max(1, Math.min(8, Math.floor(options.limit!))) : 6;
+  const days = Number.isFinite(options.days) ? Math.max(0, Math.floor(options.days!)) : 0;
+  const includeContent = options.includeContent ?? Boolean(options.apiKey?.trim());
+  const fetcher = options.fetcher ?? fetch;
+  const cacheKey = [
+    fetcherIdentity(fetcher),
+    cleanQuery.toLocaleLowerCase(),
+    limit,
+    days,
+    includeContent ? 'content' : 'snippets',
+    keyFingerprint(options.apiKey?.trim()),
+  ].join('|');
+  const cached = webSearchCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) {
+    webSearchCache.delete(cacheKey);
+    webSearchCache.set(cacheKey, cached);
+    return cloneWebResearchResult(cached.value);
+  }
+  if (cached) webSearchCache.delete(cacheKey);
+  const inflight = webSearchInflight.get(cacheKey);
+  if (inflight) return cloneWebResearchResult(await inflight);
+
+  const request = fetchWebResearchUncached(cleanQuery, { ...options, limit, days, includeContent });
+  webSearchInflight.set(cacheKey, request);
+  try {
+    const result = await request;
+    if (result.items.length) {
+      webSearchCache.set(cacheKey, { expiresAt: Date.now() + WEB_SEARCH_CACHE_TTL_MS, value: cloneWebResearchResult(result) });
+      while (webSearchCache.size > WEB_SEARCH_CACHE_LIMIT) {
+        const oldest = webSearchCache.keys().next().value;
+        if (oldest === undefined) break;
+        webSearchCache.delete(oldest);
+      }
+    }
+    return cloneWebResearchResult(result);
+  } finally {
+    if (webSearchInflight.get(cacheKey) === request) webSearchInflight.delete(cacheKey);
   }
 }
 
