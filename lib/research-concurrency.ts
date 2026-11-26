@@ -84,7 +84,7 @@ export async function mapWithConcurrency<T, R>(
 ): Promise<R[]> {
   if (!values.length) return [];
   const limit = Math.max(1, Math.min(values.length, Math.floor(maximumConcurrency) || 1));
-  const results = new Array<R>(values.length);
+  const results: R[] = [];
   let cursor = 0;
   const worker = async (): Promise<void> => {
     while (true) {
