@@ -543,7 +543,8 @@ export const useScout = create<State>((set, get) => ({
                 publishedAt: video.publishedAt, thumbnailUrl: video.thumbnail,
                 viewCount: video.viewCount ?? null, likeCount: video.likeCount ?? null,
                 commentCount: video.commentCount ?? null,
-                channelSubscriberCount: null, channelVideoCount: null,
+                channelSubscriberCount: video.channelSubscriberCount ?? null,
+                channelVideoCount: video.channelVideoCount ?? null,
                 url: 'https://www.youtube.com/watch?v=' + video.id, growth: video.growth,
               }));
               if (webKey && hydrationRemaining > 0) {
@@ -979,11 +980,13 @@ export const useScout = create<State>((set, get) => ({
             idea.videoIds.flatMap((videoId) => {
               const video = videosById.get(videoId);
               return video ? [video] : [];
-            })).map((video) => ({
+            }).map((video) => ({
               id: video.id, title: video.title, description: video.description, channel: video.channel,
               channelId: video.channelId ?? '', publishedAt: video.publishedAt, thumbnailUrl: video.thumbnail,
               viewCount: video.viewCount ?? null, likeCount: video.likeCount ?? null,
-              channelSubscriberCount: null, channelVideoCount: null,
+              commentCount: video.commentCount ?? null,
+              channelSubscriberCount: video.channelSubscriberCount ?? null,
+              channelVideoCount: video.channelVideoCount ?? null,
               url: 'https://www.youtube.com/watch?v=' + video.id, growth: video.growth,
             })),
           ])),
