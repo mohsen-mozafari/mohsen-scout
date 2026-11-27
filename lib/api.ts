@@ -567,15 +567,48 @@ export async function testOpenRouter(key: string) {
   if (!z.object({ data: z.object({}).passthrough() }).safeParse(raw).success)
     throw new ApiError('OpenRouter returned an invalid response.', 'invalid');
 }
-export function opinionPrompt(topic: string, concept: string, decision: string, language: 'fa' | 'en' = 'en') {
+export function opinionPrompt(
+  topic: string,
+  concept: string,
+  decision: string,
+  language: 'fa' | 'en' = 'en',
+  youtubeSignals: readonly YouTubeSampleVideo[] = [],
+) {
   const cleanTopic = topic.trim();
   const cleanConcept = concept.trim();
   if (!cleanTopic || cleanTopic.toLowerCase() === 'untitled idea' || !cleanConcept)
     throw new ApiError('Complete the idea title and video concept before requesting an AI second opinion.', 'input');
   const instruction = language === 'fa'
-    ? 'به زبان فارسی روان و طبیعی پاسخ بده. نظر دوم باید کوتاه، کاربردی و دقیق باشد. داده یا آمار یوتیوب در اختیار تو نیست. تقاضا، رقابت، روند، امتیاز، احتمال یا درصد ساختگی ارائه نکن. قضاوت شخصی را از اطلاعاتی که کاربر داده جدا کن و در صورت ناکافی بودن اطلاعات صریحاً بگو. قبل از پاسخ نهایی، بی‌صدا چهار بررسی انجام بده: ارزیابی اولیه وضوح و اصالت ایده؛ نقد مخالف برای یافتن فرض‌های پنهان، ابهام‌ها و ضعف‌ها؛ بازبینی نتیجه با توجه به همان نقد؛ و انتخاب عملی‌ترین گام بعدی. زنجیره استدلال خصوصی را نمایش نده. خروجی نهایی را در بخش‌های «جمع‌بندی»، «نقاط قوت»، «ابهام‌ها و ریسک‌ها»، «روش راستی‌آزمایی» و «گام بعدی» تنظیم کن. فقط درباره موضوع، مفهوم پیشنهادی و تصمیم شخصی ارسال‌شده نظر بده.'
-    : 'Give a concise English second opinion. No YouTube API data or performance statistics are provided. Do not invent demand, competition, trends, scores, probabilities, or percentages. Separate user-provided information from subjective judgment and explicitly state insufficient evidence whenever support is not adequate. Before answering, silently perform four quality passes: assess clarity and originality; challenge hidden assumptions, ambiguity and weak points; revise the assessment in light of that critique; and select the most useful next action. Do not reveal private reasoning. Return only the final result under: Verdict, Strengths, Unknowns and Risks, Validation Steps, and Next Action. Assess only the supplied topic, concept and personal decision.';
-  return `${instruction} Topic: ${cleanTopic.slice(0, 300)}. Proposed concept: ${cleanConcept.slice(0, 1200)}. Personal decision: ${decision.trim().slice(0, 600) || 'No personal decision supplied yet.'}. Do not request, infer or analyze YouTube API data, external research or performance statistics.`;
+    ? 'به زبان فارسی روان و طبیعی پاسخ بده. نظر دوم باید کوتاه، کاربردی و دقیق باشد. نمونه کامل YouTube، عنوان و توضیح ویدئوها، کانال‌ها، تاریخ انتشار، آمار عمومی و رشد اندازه‌گیری‌شده در داده ورودی آمده است و باید برای ارزیابی روند پلتفرمی و زاویه محتوا استفاده شود. آن‌ها را نقل‌قول ناشر مستقل یا اثبات ادعای علمی/خبری نامرتبط جا نزن. تقاضا، رقابت، روند، امتیاز، احتمال یا درصد ساختگی ارائه نکن؛ رشد اندازه‌گیری‌شده را از پیش‌بینی جدا کن. قضاوت شخصی را از داده واقعی جدا کن و در صورت ناکافی بودن اطلاعات صریحاً بگو. قبل از پاسخ نهایی، وضوح و اصالت ایده، فرض‌های پنهان، ابهام‌ها، ضعف‌ها و عملی‌ترین گام بعدی را بررسی کن. زنجیره استدلال خصوصی را نمایش نده. خروجی نهایی را در بخش‌های «جمع‌بندی»، «نقاط قوت»، «ابهام‌ها و ریسک‌ها»، «روش راستی‌آزمایی» و «گام بعدی» تنظیم کن.'
+    : 'Give a concise English second opinion. The complete supplied YouTube sample, video titles and descriptions, channels, publication dates, public statistics and measured growth are part of the input and must inform platform-trend and content-angle assessment. Never present YouTube observations as independent publisher citations or proof of unrelated scientific/news claims. Do not invent demand, competition, scores, probabilities or percentages; distinguish measured growth from forecasts. Separate supplied data from subjective judgment and state when evidence is insufficient. Assess clarity, originality, hidden assumptions, ambiguity, weaknesses and the most useful next action. Do not reveal private reasoning. Return only the final result under: Verdict, Strengths, Unknowns and Risks, Validation Steps, and Next Action.';
+  const youtubePlatformSignals = youtubeSignals.map((video) => ({
+    videoId: video.id,
+    title: video.title,
+    description: video.description,
+    channel: video.channel,
+    publishedAt: video.publishedAt,
+    viewCount: video.viewCount,
+    likeCount: video.likeCount,
+    commentCount: video.commentCount ?? null,
+    channelSubscriberCount: video.channelSubscriberCount,
+    channelVideoCount: video.channelVideoCount,
+    growth: video.growth ? {
+      snapshotCount: video.growth.snapshotCount,
+      deltaViews: video.growth.deltaViews,
+      viewsPerHour: video.growth.viewsPerHour,
+      viewsPerDay: video.growth.viewsPerDay,
+      channelBaselineViewsPerDay: video.growth.channelBaselineViewsPerDay,
+      channelOutlierRatio: video.growth.channelOutlierRatio,
+      measuredAt: video.growth.measuredAt,
+      status: video.growth.status,
+    } : null,
+  }));
+  return instruction + '\n\n' + JSON.stringify({
+    topic: cleanTopic.slice(0, 300),
+    proposedConcept: cleanConcept.slice(0, 1200),
+    personalDecision: decision.trim().slice(0, 600) || 'No personal decision supplied yet.',
+    youtubePlatformSignals,
+  });
 }
 export type YouTubeSampleVideo = {
   id: string;
