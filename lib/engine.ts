@@ -654,11 +654,13 @@ export type IdeaAnalysisSection = {
  */
 export function buildIdeaAnalysis(
   idea: Idea,
-  relatedVideos: readonly Pick<
-    YouTubeSampleVideo,
-    'id' | 'title' | 'channel' | 'publishedAt' | 'viewCount' | 'likeCount' |
-    'commentCount' | 'channelSubscriberCount' | 'channelVideoCount' | 'growth'
-  >[],
+  relatedVideos: readonly (
+    Pick<YouTubeSampleVideo, 'id' | 'title' | 'channel' | 'publishedAt'> &
+    Partial<Pick<
+      YouTubeSampleVideo,
+      'viewCount' | 'likeCount' | 'commentCount' | 'channelSubscriberCount' | 'channelVideoCount' | 'growth'
+    >>
+  )[],
   language: 'fa' | 'en' = 'en',
 ): IdeaAnalysisSection[] {
   const fa = language === 'fa';
