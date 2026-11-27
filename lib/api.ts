@@ -1111,9 +1111,10 @@ export type InternalEngineReviewInput = {
   discrepancies?: readonly string[];
   recommendation?: { topic: string; concept: string };
   language?: 'fa' | 'en';
+  youtubeSignals?: readonly YouTubeSampleVideo[];
 };
 
-/** Privacy-bounded critique of processed local-engine output only. */
+/** Critique of processed local-engine output plus the complete YouTube platform sample. */
 export function internalEngineReviewPrompt(input: InternalEngineReviewInput): string {
   const fa = input.language === 'fa';
   const evidence = input.evidence.slice(0, 24).map((item, index) =>
@@ -1124,6 +1125,20 @@ export function internalEngineReviewPrompt(input: InternalEngineReviewInput): st
   const level = fa
     ? input.confidence.level === 'high' ? 'زیاد' : input.confidence.level === 'moderate' ? 'متوسط' : 'کم'
     : input.confidence.level;
+  const youtubePlatformSignals = (input.youtubeSignals ?? []).map((video) => ({
+    videoId: video.id, title: video.title, description: video.description,
+    channel: video.channel, publishedAt: video.publishedAt,
+    viewCount: video.viewCount, likeCount: video.likeCount,
+    commentCount: video.commentCount ?? null,
+    channelSubscriberCount: video.channelSubscriberCount, channelVideoCount: video.channelVideoCount,
+    growth: video.growth ? {
+      snapshotCount: video.growth.snapshotCount, deltaViews: video.growth.deltaViews,
+      viewsPerHour: video.growth.viewsPerHour, viewsPerDay: video.growth.viewsPerDay,
+      channelBaselineViewsPerDay: video.growth.channelBaselineViewsPerDay,
+      channelOutlierRatio: video.growth.channelOutlierRatio,
+      measuredAt: video.growth.measuredAt, status: video.growth.status,
+    } : null,
+  }));
   const payload = [
     (fa ? 'موضوع: ' : 'Topic: ') + input.topic.trim().slice(0, 180),
     ...(input.recommendation?.topic.trim() && input.recommendation.concept.trim()
@@ -1133,14 +1148,16 @@ export function internalEngineReviewPrompt(input: InternalEngineReviewInput): st
       : []),
     (fa ? 'خلاصه موتور داخلی: ' : 'Local engine summary: ') + input.summary.trim().slice(0, 1200),
     (fa ? 'شواهد بررسی‌شده:\n' : 'Processed evidence signals:\n') + (evidence.join('\n') || (fa ? 'شاهدی ارائه نشده است.' : 'No evidence signals supplied.')),
+    (fa ? 'سیگنال‌های کامل پلتفرمی YouTube:\n' : 'Complete YouTube platform signals:\n') +
+      (youtubePlatformSignals.length ? JSON.stringify(youtubePlatformSignals) : (fa ? 'نمونه‌ای ارائه نشده است.' : 'No YouTube sample supplied.')),
     (fa ? 'میزان اطمینان: ' : 'Local confidence: ') + level + ' — ' + input.confidence.reason.slice(0, 400),
     (fa ? 'مواردی که هنوز روشن نیستند:\n' : 'Research gaps:\n') + (gaps.join('\n') || (fa ? 'گزارشی ثبت نشده است.' : 'Not reported.')),
     (fa ? 'اختلاف‌های احتمالی منابع:\n' : 'Potential discrepancies:\n') + (discrepancies.join('\n') || (fa ? 'موردی ثبت نشده است.' : 'Not reported.')),
   ].join('\n\n');
   const instruction = fa
-    ? 'این بازبینی برای کمک به تصمیم‌گیری سازنده محتواست، نه نوشتن گزارش رسمی. فقط موضوع، خلاصه و شاخص‌های پردازش‌شده را می‌بینی؛ عنوان خام خبر و ویدئو، پیوندها و آمار تک‌تک موارد عمداً در اختیار تو نیستند. وانمود نکن منبعی را دیده‌ای که به تو داده نشده است. ایده را مستقل نقد کن و صرفاً حرف موتور داخلی را تأیید نکن. اول یکی از این سه تصمیم را انتخاب کن: «توسعه ایده»، «جمع‌آوری شواهد بیشتر» یا «تغییر زاویه». بعد حداکثر دو نکته مفید، یک ایراد مهم یا احتمال سوگیری نمونه، یک اقدام مشخص برای بررسی و مهم‌ترین داده مفقود را بگو. فقط وقتی درباره احتمال موفقیت صحبت کن که داده تاریخی کافی و واقعاً قابل مقایسه وجود داشته باشد؛ در غیر این صورت روشن بگو با اطلاعات فعلی نمی‌توان درصد قابل اتکایی داد. هیچ عدد، منبع یا رابطه علت‌ومعلولی نساز. بازدید خام را معادل تقاضا یا رشد نگیر. واقعیت، برداشت و چیزهایی را که هنوز نمی‌دانیم از هم جدا کن. با فارسی طبیعی، ساده و حرفه‌ای بنویس؛ جمله کوتاه باشد و خواننده مجبور نشود متن را دوباره بخواند. از لحن اداری، عبارت‌های ترجمه‌ای و اصطلاحات تخصصی بی‌توضیح دوری کن. فقط این بخش‌ها را بنویس: «تصمیم»، «یافته‌های مفید»، «نقد مخالف»، «اقدام بعدی»، «داده‌های مفقود»؛ هر بخش حداکثر دو جمله.'
-    : 'This is a decision review for a creator, not a general news digest. You receive only the editorial topic and aggregate local-engine indicators; raw headlines, video titles, descriptions, links and per-item statistics are intentionally excluded. Do not pretend to have seen individual sources or videos. Independently critique the proposed idea rather than endorsing the local engine. First choose exactly one action: Develop the concept, Gather more evidence, or Reframe the topic. Assess clarity, originality, production feasibility and assumptions about audience fit. Estimate a success-probability range only if the supplied evidence includes enough comparable historical outcomes and meaningful performance context; label it as conditional and state its assumptions. Otherwise say explicitly that no reliable percentage can be calculated from the available evidence and name the missing data. Never invent a number to fill the gap. Justify the decision using the supplied counts, never an invented score. Then give at most two useful findings, one important counterargument or sampling bias, one specific manual search or verification action, and the most important missing data. Separate facts, inferences and unknowns. Raw views are not growth, demand or future performance; do not infer growth rates, market competition or virality. Never invent sources, metrics, demand or causal links. Be concise and avoid generic explanations of YouTube or news feeds. Write in natural, clear language with short, direct sentences that a creator can understand on the first read; avoid stiff report language, translation-like phrasing and unexplained jargon. Return only these sections: Decision, Useful Findings, Adversarial Check, Next Action, Missing Data; no more than two sentences per section.';
-  return (instruction + '\n\n' + payload).slice(0, 10500);
+    ? 'این بازبینی برای کمک به تصمیم‌گیری سازنده محتواست، نه نوشتن گزارش رسمی. خلاصه موتور و نمونه کامل سیگنال‌های پلتفرمی YouTube در داده ورودی آمده‌اند. عنوان، توضیح، کانال، تاریخ، آمار عمومی و رشد اندازه‌گیری‌شده YouTube را برای ارزیابی روند و زاویه محتوا تحلیل کن، اما آن‌ها را استناد مستقل ناشر یا اثبات ادعاهای علمی/خبری تلقی نکن.' ایده را مستقل نقد کن و صرفاً حرف موتور داخلی را تأیید نکن. اول یکی از این سه تصمیم را انتخاب کن: «توسعه ایده»، «جمع‌آوری شواهد بیشتر» یا «تغییر زاویه». بعد حداکثر دو نکته مفید، یک ایراد مهم یا احتمال سوگیری نمونه، یک اقدام مشخص برای بررسی و مهم‌ترین داده مفقود را بگو. فقط وقتی درباره احتمال موفقیت صحبت کن که داده تاریخی کافی و واقعاً قابل مقایسه وجود داشته باشد؛ در غیر این صورت روشن بگو با اطلاعات فعلی نمی‌توان درصد قابل اتکایی داد. هیچ عدد، منبع یا رابطه علت‌ومعلولی نساز. بازدید خام را معادل تقاضا یا رشد نگیر. واقعیت، برداشت و چیزهایی را که هنوز نمی‌دانیم از هم جدا کن. با فارسی طبیعی، ساده و حرفه‌ای بنویس؛ جمله کوتاه باشد و خواننده مجبور نشود متن را دوباره بخواند. از لحن اداری، عبارت‌های ترجمه‌ای و اصطلاحات تخصصی بی‌توضیح دوری کن. فقط این بخش‌ها را بنویس: «تصمیم»، «یافته‌های مفید»، «نقد مخالف»، «اقدام بعدی»، «داده‌های مفقود»؛ هر بخش حداکثر دو جمله.'
+    : 'This is a decision review for a creator, not a general news digest. You receive the processed local-engine output and the complete supplied YouTube sample. Analyze video titles, descriptions, channels, dates, public statistics and measured growth for platform-trend and content-angle assessment; never present them as independent publisher citations or proof of unrelated scientific/news claims.' Independently critique the proposed idea rather than endorsing the local engine. First choose exactly one action: Develop the concept, Gather more evidence, or Reframe the topic. Assess clarity, originality, production feasibility and assumptions about audience fit. Estimate a success-probability range only if the supplied evidence includes enough comparable historical outcomes and meaningful performance context; label it as conditional and state its assumptions. Otherwise say explicitly that no reliable percentage can be calculated from the available evidence and name the missing data. Never invent a number to fill the gap. Justify the decision using the supplied counts, never an invented score. Then give at most two useful findings, one important counterargument or sampling bias, one specific manual search or verification action, and the most important missing data. Separate facts, inferences and unknowns. Raw views are not growth, demand or future performance; do not infer growth rates, market competition or virality. Never invent sources, metrics, demand or causal links. Be concise and avoid generic explanations of YouTube or news feeds. Write in natural, clear language with short, direct sentences that a creator can understand on the first read; avoid stiff report language, translation-like phrasing and unexplained jargon. Return only these sections: Decision, Useful Findings, Adversarial Check, Next Action, Missing Data; no more than two sentences per section.';
+  return instruction + '\n\n' + payload;
 }
 
 /** Stable YYYY-MM-DD key for the device's local calendar day; independent of locale formatting. */
