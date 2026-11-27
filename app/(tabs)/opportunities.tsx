@@ -1,5 +1,5 @@
 import { memo, useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, InteractionManager, View, Text, Pressable, type ListRenderItemInfo } from 'react-native';
+import { ActivityIndicator, View, Text, Pressable } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { router } from 'expo-router';
 import { Button } from 'heroui-native';
@@ -147,16 +147,15 @@ export default function Opportunities() {
 
   useEffect(() => {
     let active = true;
-    setIdeasPreparing(true);
-    const task = InteractionManager.runAfterInteractions(() => {
+    const task = setTimeout(() => {
       const prepared = deduplicateDisplayIdeas(ideas.filter(isIdeaDisplayable));
       if (!active) return;
       setDisplayableIdeas(prepared);
       setIdeasPreparing(false);
-    });
+    }, 0);
     return () => {
       active = false;
-      task.cancel();
+      clearTimeout(task);
     };
   }, [ideas]);
   const fa = preferences.uiLanguage === 'fa';
@@ -221,7 +220,7 @@ export default function Opportunities() {
   const featuredIdea = topOpportunities[0];
   const remainingIdeas = useMemo(() => sortedFiltered.filter((idea) => !topOpportunityIds.has(idea.id)), [sortedFiltered, topOpportunityIds]);
   const uiLanguage = preferences.uiLanguage ?? 'fa';
-  const renderIdea = useCallback(({ item }: ListRenderItemInfo<Idea>) => (
+  const renderIdea = useCallback(({ item }: { item: Idea }) => (
     <IdeaListItem item={item} fa={fa} language={uiLanguage} />
   ), [fa, uiLanguage]);
   const getIdeaType = useCallback((item: Idea) => item.engineGenerated ? 'generated' : 'personal', []);
