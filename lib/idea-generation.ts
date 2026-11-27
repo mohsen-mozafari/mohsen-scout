@@ -574,7 +574,8 @@ export function generateEditorialIdeas(input: GenerateEditorialIdeasInput): Idea
 
   const topicTokens = new Set(tokenizeResearchText(topic));
   const termStats = new Map<string, { documents: number; frequency: number; sourceKinds: Set<string>; sourceGroups: Set<string> }>();
-  // Anchors are derived only from independent publisher, web/encyclopedia context and saved publisher history.
+  // Every topic-relevant document family, including YouTube videos, contributes to
+  // idea-anchor discovery. Origin labels remain separate for citation and verification.
   const topicRelevantDocuments = documents.filter((document) => scoreResearchText(topic, document.title, document.text) > 0);
   // A single isolated record is not enough to justify an automated editorial idea.
   if (topicRelevantDocuments.length < 2) return [];
@@ -704,12 +705,16 @@ export function generateEditorialIdeas(input: GenerateEditorialIdeasInput): Idea
   const fallback = tokenizeResearchText(topic).filter((term) => term.length > 2).slice(0, 4);
   const usableAnchors = anchors.length ? anchors : (fallback.length ? fallback : [topic]);
   const datedCount = topicRelevantDocuments.filter((item) => item.publishedAt && Number.isFinite(Date.parse(item.publishedAt))).length;
-  const mode: 'news' | 'context' | 'history' | 'research' | 'topic' | 'mixed' =
-    topicRelevantNews.length && relevantIndependentContext.length ? 'mixed'
-      : topicRelevantNews.length ? 'news'
-        : topicRelevantResearch.length ? 'research'
-          : topicRelevantHistory.length ? 'history'
-            : relevantIndependentContext.length ? 'context' : 'topic';
+  const hasYouTubeEvidence = topicRelevantVideos.length > 0 || relevantYouTubeContext.length > 0;
+  const hasOtherEvidence = topicRelevantNews.length > 0 || topicRelevantResearch.length > 0 ||
+    topicRelevantHistory.length > 0 || relevantIndependentContext.length > 0;
+  const mode: 'news' | 'youtube' | 'context' | 'history' | 'research' | 'topic' | 'mixed' =
+    hasYouTubeEvidence && hasOtherEvidence ? 'mixed'
+      : hasYouTubeEvidence ? 'youtube'
+        : topicRelevantNews.length ? 'news'
+          : topicRelevantResearch.length ? 'research'
+            : topicRelevantHistory.length ? 'history'
+              : relevantIndependentContext.length ? 'context' : 'topic';
   const definitions: IdeaGenerationCategory[] = [
     'Explainer',
     'Evidence audit',
