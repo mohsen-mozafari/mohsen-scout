@@ -484,6 +484,7 @@ export async function searchYouTube(input: ResearchInput, options: YouTubeOption
         const stats = counts.get(video.id);
         video.viewCount = stats?.viewCount && /^\d+$/.test(stats.viewCount) ? Number(stats.viewCount) : null;
         video.likeCount = stats?.likeCount && /^\d+$/.test(stats.likeCount) ? Number(stats.likeCount) : null;
+        video.commentCount = stats?.commentCount && /^\d+$/.test(stats.commentCount) ? Number(stats.commentCount) : null;
       }
     } catch {
       warnings.push('Video titles and dates were retrieved, but raw view/like counts could not be loaded. Sorting falls back to available fields.');
@@ -552,6 +553,7 @@ export type YouTubeSampleVideo = {
   thumbnailUrl: string;
   viewCount: number | null;
   likeCount: number | null;
+  commentCount?: number | null;
   channelSubscriberCount: number | null;
   channelVideoCount: number | null;
   url: string;
@@ -956,7 +958,7 @@ export type StructuredSecondOpinion = z.infer<typeof structuredSecondOpinionSche
 
 /**
  * The explicitly invoked second-opinion model receives the topic, candidate concept,
- * bounded independent evidence and bounded YouTube platform signals. It never receives
+ * bounded independent evidence and the complete current-idea YouTube platform sample. It never receives
  * credentials, private notes, aggregate engine scores or the local ranking decision.
  */
 export function structuredSecondOpinionPrompt(
@@ -980,10 +982,10 @@ export function structuredSecondOpinionPrompt(
   const instruction = language === 'fa'
     ? 'موضوع و ایده را با اتکا به منابع مستقل و سیگنال‌های پلتفرمی YouTube که همراه درخواست آمده‌اند، نقادانه بررسی کن. منابع ممکن است ناقص یا قدیمی باشند؛ ادعای باز کردن یا راستی‌آزمایی صفحه‌ای را نکن. نمونه ویدئوها، عنوان، کانال، آمار عمومی و رشد اندازه‌گیری‌شده YouTube را برای کشف روند و زاویه محتوا تحلیل کن، اما آن‌ها را استناد ناشر مستقل یا اثبات ادعای علمی/خبری تلقی نکن. رشد اندازه‌گیری‌شده را از پیش‌بینی جدا کن و هیچ تضمین بازدید نساز. منابع مستقل و قضاوت شخصی را از هم جدا کن و در صورت ناکافی بودن شواهد صریحاً بگو. با زبان طبیعی و روان و بدون اصطلاح تخصصی نامفهوم بنویس. فقط JSON معتبر و بدون Markdown با کلیدهای decision (develop, gather_more_evidence یا reframe)، strengths (حداکثر ۳)، risks (حداکثر ۳)، missingData (حداکثر ۳)، validationSteps (حداکثر ۳) و nextAction برگردان.'
     : 'Critically assess this idea using the independent sources and YouTube platform observations supplied here. Sources may be incomplete or stale; do not claim to have opened or verified them. Analyze YouTube sample videos, titles, channels, public statistics and measured growth for platform trends and content angles, but never present them as independent publisher citations or proof of scientific/news claims. Distinguish measured growth from forecasts and do not promise views or virality. Write in natural, clear language and avoid unexplained technical jargon. Return only valid JSON: decision (develop, gather_more_evidence, reframe), strengths (max 3), risks (max 3), missingData (max 3), validationSteps (max 3), nextAction.';
-  const youtubePlatformSignals = youtubeSignals.slice(0, 18).map((video) => ({
-    videoId: video.id, title: video.title.slice(0, 180), description: video.description.slice(0, 360),
-    channel: video.channel.slice(0, 100), publishedAt: video.publishedAt,
-    viewCount: video.viewCount, likeCount: video.likeCount,
+  const youtubePlatformSignals = youtubeSignals.map((video) => ({
+    videoId: video.id, title: video.title, description: video.description,
+    channel: video.channel, publishedAt: video.publishedAt,
+    viewCount: video.viewCount, likeCount: video.likeCount, commentCount: video.commentCount ?? null,
     channelSubscriberCount: video.channelSubscriberCount, channelVideoCount: video.channelVideoCount,
     growth: video.growth ? {
       snapshotCount: video.growth.snapshotCount, deltaViews: video.growth.deltaViews,
@@ -992,7 +994,7 @@ export function structuredSecondOpinionPrompt(
       channelOutlierRatio: video.growth.channelOutlierRatio, status: video.growth.status,
     } : null,
   }));
-  return (instruction + '\n\n' + JSON.stringify({ topic: cleanTopic, candidateConcept: cleanConcept, independentSources, youtubePlatformSignals })).slice(0, 8500);
+  return instruction + '\n\n' + JSON.stringify({ topic: cleanTopic, candidateConcept: cleanConcept, independentSources, youtubePlatformSignals });
 }
 export function parseStructuredSecondOpinion(content: string): StructuredSecondOpinion {
   const cleaned = content.trim()
