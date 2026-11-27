@@ -649,16 +649,35 @@ export type IdeaAnalysisSection = {
 
 /**
  * A local editorial checklist from a saved Idea and already-linked local video
- * references. It performs no network, storage or AI calls and does not infer
- * demand, competition, growth or performance.
+ * references. It performs no network, storage or AI calls. It reports already
+ * measured YouTube platform statistics without forecasting future performance.
  */
 export function buildIdeaAnalysis(
   idea: Idea,
-  _relatedVideos: readonly Pick<YouTubeSampleVideo, 'id' | 'title' | 'channel' | 'publishedAt'>[],
+  relatedVideos: readonly Pick<
+    YouTubeSampleVideo,
+    'id' | 'title' | 'channel' | 'publishedAt' | 'viewCount' | 'likeCount' |
+    'commentCount' | 'channelSubscriberCount' | 'channelVideoCount' | 'growth'
+  >[],
   language: 'fa' | 'en' = 'en',
 ): IdeaAnalysisSection[] {
   const fa = language === 'fa';
   const concept = idea.concept.trim();
+  const channelCount = new Set(relatedVideos.map((video) => video.channel).filter(Boolean)).size;
+  const videosWithViews = relatedVideos.filter((video) => video.viewCount != null).length;
+  const videosWithLikes = relatedVideos.filter((video) => video.likeCount != null).length;
+  const videosWithComments = relatedVideos.filter((video) => video.commentCount != null).length;
+  const measuredGrowthVideos = relatedVideos.filter((video) => video.growth?.status === 'measured').length;
+  const channelsWithSubscriberCounts = new Set(
+    relatedVideos.filter((video) => video.channelSubscriberCount != null).map((video) => video.channel),
+  ).size;
+  const youtubeBody = relatedVideos.length
+    ? (fa
+      ? relatedVideos.length + ' ویدئوی مرتبط از ' + channelCount + ' کانال به کشف و اولویت این ایده کمک کرده‌اند. آمار عمومی بازدید برای ' + videosWithViews + '، پسند برای ' + videosWithLikes + ' و نظر برای ' + videosWithComments + ' ویدئو در دسترس است؛ ' + measuredGrowthVideos + ' ویدئو سابقه snapshot کافی برای رشد اندازه‌گیری‌شده دارند. آمار تعداد مشترکان برای ' + channelsWithSubscriberCounts + ' کانال در دسترس است. این‌ها مشاهدات نمونه پلتفرم‌اند، نه پیش‌بینی بازدید آینده.'
+      : relatedVideos.length + ' relevant videos from ' + channelCount + ' channels informed this idea’s discovery and priority. Public view counts are available for ' + videosWithViews + ', likes for ' + videosWithLikes + ', and comments for ' + videosWithComments + ' videos; ' + measuredGrowthVideos + ' videos have enough snapshots for measured growth. Subscriber counts are available for ' + channelsWithSubscriberCounts + ' channels. These are platform-sample observations, not forecasts of future views.')
+    : (fa
+      ? 'هنوز ویدئوی YouTube به این ایده پیوند نشده است؛ بنابراین از شاخص YouTube برای این ایده نتیجه‌گیری نمی‌شود.'
+      : 'No YouTube videos are linked to this idea yet, so no YouTube platform metric is inferred for it.');
   const sources = (idea.evidenceSources ?? []).slice(0, 8);
   const sourceItems = sources.map((source) => source.sourceName + ' · ' + source.title);
   const gaps: string[] = [];
@@ -705,6 +724,7 @@ export function buildIdeaAnalysis(
     : (fa ? 'برای این ایده هنوز توضیح محتوایی ثبت نشده است.' : 'No editorial concept is saved for this idea yet.');
   return [
     { id: 'core-framing', title: fa ? 'هسته ایده و زاویه فعلی' : 'Core idea and current angle', body: framing },
+    { id: 'youtube-platform-signals', title: fa ? 'نقش داده‌های YouTube در این ایده' : 'YouTube platform signals used for this idea', body: youtubeBody },
     { id: 'evidence-review', title: fa ? 'منابع مستقل پیوندشده' : 'Linked independent sources', body: evidenceBody, ...(sourceItems.length ? { items: sourceItems } : {}) },
     { id: 'research-gaps', title: fa ? 'چه چیزهایی هنوز ثابت نشده‌اند؟' : 'What remains unproven?', body: gaps.length ? gaps.map((gap) => '• ' + gap).join('\n') : (fa ? 'خلأ آشکار دیگری در داده‌های منبع ثبت‌شده دیده نشد؛ این به معنی راستی‌آزمایی کامل نیست.' : 'No additional gap was identified in the saved source data; this does not mean the idea is fully verified.') },
     { id: 'next-actions', title: fa ? 'اقدام‌های پیشنهادی برای پیشبرد ایده' : 'Practical next steps', body: nextSteps.join('\n') },
