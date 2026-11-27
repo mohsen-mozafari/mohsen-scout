@@ -27,6 +27,8 @@ import { registerColorTokens } from '@/lib/registerColorTokens';
 import { useScout } from '@/lib/store';
 // Importing the scheduler registers its native task at module load.
 import { configureSchedule } from '@/lib/scheduler';
+import { startAutonomousResearch } from '@/lib/autonomous-research';
+import { unregisterLegacyAutonomousResearchBackgroundTask } from '@/lib/autonomous-background-task';
 import { palette } from '@/lib/theme';
 import { purgeExpired } from '@/lib/types';
 import { registerServiceWorker } from '@/lib/registerServiceWorker';
@@ -102,30 +104,59 @@ export default function RootLayout() {
   }, []);
 
   useEffect(() => {
+    let stopAutonomous: (() => void) | undefined;
     const syncSchedule = () => {
       const state = useScout.getState();
-      if (state.ready) void configureSchedule(state.data.preferences).catch(() => {});
+      if (state.ready) {
+        void unregisterLegacyAutonomousResearchBackgroundTask();
+        void configureSchedule(state.data.preferences).catch(() => {});
+      }
+    };
+    const syncAutonomous = () => {
+      stopAutonomous?.();
+      stopAutonomous = undefined;
+      const state = useScout.getState();
+      const preferences = state.data.preferences;
+      if (state.ready && AppState.currentState === 'active' &&
+          !preferences.paused) {
+        stopAutonomous = startAutonomousResearch();
+      }
     };
     const unsubscribe = useScout.subscribe((state, previous) => {
-      if (state.ready && previous.ready &&
-        state.data.preferences.lastInput !== previous.data.preferences.lastInput &&
-        state.data.preferences.schedule !== 'Manual' && !state.data.preferences.paused) {
+      if (!state.ready) return;
+      if (!previous.ready ||
+          state.data.preferences.lastInput !== previous.data.preferences.lastInput ||
+          state.data.preferences.schedule !== previous.data.preferences.schedule ||
+          state.data.preferences.paused !== previous.data.preferences.paused ||
+          state.data.preferences.selectedSpaceNiche !== previous.data.preferences.selectedSpaceNiche ||
+          state.data.preferences.customSpaceNiche !== previous.data.preferences.customSpaceNiche) {
         syncSchedule();
+        syncAutonomous();
       }
     });
-    void useScout.getState().boot().then(syncSchedule);
     const sweep = () => {
       const state = useScout.getState();
       if (state.ready) void state.commit(purgeExpired).catch(() => {});
     };
     const listener = AppState.addEventListener('change', (state) => {
-      if (state === 'active') sweep();
+      if (state === 'active') {
+        sweep();
+        syncAutonomous();
+      } else {
+        stopAutonomous?.();
+        stopAutonomous = undefined;
+      }
+    });
+    void useScout.getState().boot().then(() => {
+      syncSchedule();
+      syncAutonomous();
     });
     const timer = setInterval(sweep, 60 * 60000);
     return () => {
       unsubscribe();
       listener.remove();
       clearInterval(timer);
+      stopAutonomous?.();
     };
   }, []);
 
@@ -166,6 +197,7 @@ export default function RootLayout() {
           <Stack.Screen name="trend-intelligence" options={{ title: 'Trend Intelligence' }} />
           <Stack.Screen name="search-demand" options={{ title: 'Search Demand' }} />
           <Stack.Screen name="deep-research" options={{ title: 'Deep Research' }} />
+          <Stack.Screen name="research-activity" options={{ title: 'Research Activity' }} />
         </Stack>
         <InstallPrompt />
       </HeroUINativeProvider>

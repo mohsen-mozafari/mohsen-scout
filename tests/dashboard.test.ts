@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { getOpinion, selectFreeModel } from '../lib/api';
 import {
-  ENGINE_VIDEO_EVIDENCE_CAP,
   chooseBestIdea,
   collectEngineVideoEvidence,
   engineReviewCacheKey,
@@ -13,7 +12,7 @@ import {
   runSingleFlight,
   selectDashboardVideos,
 } from '../lib/dashboard';
-import { RETENTION_MS, type Idea, type Opinion, type Video } from '../lib/types';
+import { type Idea, type Opinion, type Video } from '../lib/types';
 
 const now = Date.UTC(2026, 10, 17, 12, 0, 0);
 
@@ -50,25 +49,6 @@ function video(id: string, title: string, viewCount: number | null, fetchedAt = 
   };
 }
 
-type SavedVideoWithStats = Video & {
-  channelId?: string | null;
-  channelTitle?: string | null;
-  channelSubscriberCount?: number | null;
-  subscriberCount?: number | null;
-  channelVideoCount?: number | null;
-  commentCount?: number | null;
-  url?: string | null;
-};
-
-function videoWithStats(
-  id: string,
-  title: string,
-  fetchedAt: number,
-  overrides: Partial<SavedVideoWithStats> = {},
-): SavedVideoWithStats {
-  return { ...video(id, title, 100, fetchedAt), ...overrides };
-}
-
 void test('dashboard chooses the strongest active idea and excludes archived, rejected and completed items', () => {
   const completed = idea('completed', 'Strong Opportunity', { status: 'Completed Research' });
   const rejected = idea('rejected', 'Strong Opportunity', { status: 'Rejected Ideas' });
@@ -80,37 +60,27 @@ void test('dashboard chooses the strongest active idea and excludes archived, re
   assert.deepEqual(rankDashboardIdeas([completed, rejected, archived]).map((item) => item.id), []);
 });
 
-void test('dashboard featured priorities use the same scored, active, displayable ranking as the Ideas page', () => {
-  const best = idea('best', 'Strong Opportunity', {
-    engineGenerated: true, engineScore: 96, topic: 'A high-potential topic',
+void test('dashboard featured idea uses the same active scored priority pool as the Ideas page', () => {
+  const top = idea('global-top', 'Strong Opportunity', {
+    engineGenerated: true, engineScore: 94,
   });
-  const duplicate = idea('duplicate', 'Strong Opportunity', {
-    engineGenerated: true, engineScore: 93, topic: 'A high-potential topic',
+  const next = idea('next', 'Promising', {
+    engineGenerated: true, engineScore: 82,
   });
-  const runnerUp = idea('runner-up', 'Promising', {
-    engineGenerated: true, engineScore: 81,
-  });
-  const unscored = idea('unscored', 'Strong Opportunity', { engineGenerated: true });
+  const unscored = idea('unscored', 'Uncertain', { engineGenerated: true });
   const archived = idea('archived-high', 'Strong Opportunity', {
     engineGenerated: true, engineScore: 100, archived: true,
   });
   const completed = idea('completed-high', 'Strong Opportunity', {
     engineGenerated: true, engineScore: 99, status: 'Completed Research',
   });
-  const rejected = idea('rejected-high', 'Strong Opportunity', {
-    engineGenerated: true, engineScore: 98, status: 'Rejected Ideas',
-  });
   const placeholder = idea('placeholder', 'Uncertain', {
-    engineGenerated: true, engineScore: 97, topic: 'Untitled Idea', concept: '',
+    topic: 'Untitled Idea', concept: '', engineGenerated: true, engineScore: 98,
   });
 
-  assert.deepEqual(
-    selectDashboardFeaturedIdeas(
-      [unscored, duplicate, archived, completed, rejected, placeholder, runnerUp, best],
-      5,
-    ).map((item) => item.id),
-    ['best', 'runner-up'],
-  );
+  assert.deepEqual(selectDashboardFeaturedIdeas(
+    [next, unscored, archived, completed, placeholder, top], 5,
+  ).map((item) => item.id), ['global-top', 'next']);
 });
 
 void test('dashboard selects source-linked radar ideas without a report ID', () => {
@@ -132,18 +102,18 @@ void test('dashboard selects source-linked radar ideas without a report ID', () 
   assert.deepEqual(selectDashboardIdeas([manual], { topic: 'Mars' }), []);
 });
 
-void test('internal engine evidence merges retained report and global videos, deduplicates, expires and caps input', () => {
+void test('internal engine evidence merges all retained report and global videos, deduplicates and caps input', () => {
   const olderCopy = video('shared', 'Older title', 10, now - 2_000);
   const newestCopy = video('shared', 'Newest title', 25, now - 1_000);
   const reportOnly = video('report-only', 'Report-only sample', 100, now - 3_000);
-  const expired = video('expired', 'Expired metadata', 999, now - RETENTION_MS - 1);
+  const historical = video('historical', 'Historical metadata', 999, now - 120 * 86400000);
   const future = video('future', 'Future fetched record', 999, now + 1);
   const collected = collectEngineVideoEvidence(
-    [{ videos: [olderCopy, reportOnly, expired] }],
-    [newestCopy, expired, future],
+    [{ videos: [olderCopy, reportOnly, historical] }],
+    [newestCopy, historical, future],
     now,
   );
-  assert.deepEqual(collected.map((item) => item.id), ['shared', 'report-only']);
+  assert.deepEqual(collected.map((item) => item.id), ['shared', 'report-only', 'historical']);
   assert.equal(collected[0].title, 'Newest title');
   assert.equal(collected[0].viewCount, 25);
   const many = Array.from({ length: 320 }, (_, index) =>
@@ -151,60 +121,6 @@ void test('internal engine evidence merges retained report and global videos, de
   );
   assert.equal(collectEngineVideoEvidence([], many, now).length, 300);
   assert.equal(collectEngineVideoEvidence([], many, now, 10).length, 10);
-});
-
-void test('engine evidence mapping preserves channel stats, metrics, bucket, url and description', () => {
-  assert.equal(ENGINE_VIDEO_EVIDENCE_CAP, 300);
-  const rich = videoWithStats('rich', 'JWST observation report', now - 1, {
-    channelId: 'UC123',
-    channelTitle: 'Space Lab',
-    channelSubscriberCount: 500000,
-    subscriberCount: 500000,
-    channelVideoCount: 340,
-    commentCount: 12,
-    url: 'https://youtube.com/watch?v=rich0000000',
-    viewCount: 4200,
-    likeCount: 130,
-    description: 'A JWST observation description.',
-    publishedAt: '2026-11-16T12:00:00Z',
-    query: 'JWST observation',
-  });
-  const collected = collectEngineVideoEvidence([{ videos: [rich] }], [], now);
-  assert.equal(collected.length, 1);
-  const [item] = collected;
-  assert.equal(item.channelId, 'UC123');
-  assert.equal(item.channelTitle, 'Space Lab');
-  assert.equal(item.channelSubscriberCount, 500000);
-  assert.equal(item.subscriberCount, 500000);
-  assert.equal(item.channelVideoCount, 340);
-  assert.equal(item.commentCount, 12);
-  assert.equal(item.url, 'https://youtube.com/watch?v=rich0000000');
-  assert.equal(item.query, 'JWST observation');
-  assert.equal(item.viewCount, 4200);
-  assert.equal(item.likeCount, 130);
-  assert.equal(item.description, 'A JWST observation description.');
-  assert.equal(item.publishedAt, '2026-11-16T12:00:00Z');
-  assert.equal(item.fetchedAt, now - 1);
-});
-
-void test('topic pre-ranking retains the most relevant recent evidence inside the 300-item cap', () => {
-  // The relevant item is intentionally the OLDEST fetched record: only relevance
-  // pre-ranking (not arbitrary recency) can keep it inside the bounded list.
-  const relevant = videoWithStats('relevant', 'JWST deep field observation', now - 1000, {
-    description: 'JWST deep field image analysis of an early galaxy.',
-  });
-  const unrelated = Array.from({ length: 310 }, (_, index) => videoWithStats(
-    'other-' + index,
-    'Unrelated cooking recipe number ' + index,
-    now - index,
-    { description: 'A cooking recipe with flour and sugar, variant ' + index + '.' },
-  ));
-  const ranked = collectEngineVideoEvidence([], [...unrelated, relevant], now, 300, {
-    topic: 'JWST deep field',
-  });
-  assert.equal(ranked.length, 300);
-  assert.equal(ranked[0].id, 'relevant');
-  assert.ok(ranked.every((item) => item.id !== 'other-300'));
 });
 
 void test('dashboard video feed filters strictly to the selected niche and sorts by raw views', () => {
@@ -218,10 +134,10 @@ void test('dashboard video feed filters strictly to the selected niche and sorts
   assert.deepEqual(result.map((item) => item.id), ['relevant-high', 'relevant-low', 'relevant-no-count']);
 });
 
-void test('dashboard video feed omits expired metadata and returns empty for missing evidence', () => {
+void test('dashboard video feed retains historical metadata and returns empty for missing evidence', () => {
   const fresh = video('fresh', 'JWST observation', 100);
-  const expired = video('expired', 'JWST old observation', 5000, now - RETENTION_MS - 1);
-  assert.deepEqual(selectDashboardVideos([expired, fresh], 'JWST', ['JWST'], now, 5).map((item) => item.id), ['fresh']);
+  const historical = video('historical', 'JWST old observation', 5000, now - 120 * 86400000);
+  assert.deepEqual(selectDashboardVideos([historical, fresh], 'JWST', ['JWST'], now, 5).map((item) => item.id), ['historical', 'fresh']);
   assert.deepEqual(selectDashboardVideos([fresh], 'Mars', ['Mars'], now, 5), []);
   assert.deepEqual(selectDashboardVideos([], 'JWST', ['JWST'], now, 5), []);
 });

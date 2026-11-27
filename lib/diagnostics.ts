@@ -1,4 +1,4 @@
-import { defaults, purgeExpired, RETENTION_MS, type ResearchInput, type Video } from './types';
+import { defaults, purgeExpired, type ResearchInput, type Video } from './types';
 import { exportBackup, importBackup, personalLinks, restorePersonalData } from './backup';
 import { moveNoteBlock } from './utils';
 import { validateLocal } from './validation';
@@ -16,7 +16,7 @@ import {
   opinionPrompt,
   type Fetcher,
 } from './api';
-import { buildIdeas } from './engine';
+import { buildIdeas, createManualIdea } from './engine';
 import { scheduleChecks } from '../tests/schedule.cases';
 export type TestResult = { name: string; passed: boolean; detail?: string };
 
@@ -60,8 +60,19 @@ const throws = (fn: () => unknown) => {
   }
   throw new Error('Expected rejection');
 };
-const mock = (body: unknown, status = 200) =>
-  new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
+const mockResponse = (body: unknown, status = 200, headers: Record<string, string> = {}): Response => ({
+  ok: status >= 200 && status < 300,
+  status,
+  headers: { get: (name: string) => headers[name.toLowerCase()] ?? headers[name] ?? null } as unknown as Headers,
+  json: async () => body,
+} as unknown as Response);
+const mock = (body: unknown, status = 200) => mockResponse(body, status);
+const mockText = (text: string, status = 200, headers: Record<string, string> = {}): Response => ({
+  ok: status >= 200 && status < 300,
+  status,
+  headers: { get: (name: string) => headers[name.toLowerCase()] ?? headers[name] ?? null } as unknown as Headers,
+  json: async () => { throw new SyntaxError('Invalid synthetic JSON: ' + text.slice(0, 40)); },
+} as unknown as Response);
 const fetcher =
   (fn: (url: URL) => Response | Promise<Response>): Fetcher =>
   async (url) =>
@@ -106,7 +117,7 @@ export async function runDiagnostics(): Promise<TestResult[]> {
     createdAt: now,
     analyzed: false,
   };
-  const idea = buildIdeas(report)[0];
+  const idea = createManualIdea(input.topic, 'A user-authored concept used only for storage regression coverage.', '', 'Iran', ['en']);
   const savedLink = {
     id: video.id,
     url: `https://www.youtube.com/watch?v=${video.id}`,
@@ -119,15 +130,15 @@ export async function runDiagnostics(): Promise<TestResult[]> {
   };
   const cases: Array<[string, () => void | Promise<void>]> = [
     [
-      'Retention removes expired report refs, keeps saved links',
+      'YouTube metadata remains retained beyond 29 days; saved links remain separate',
       () => {
         const data = defaults();
         data.links = [savedLink];
-        data.videos = [{ ...video, fetchedAt: now - RETENTION_MS }];
-        data.reports = [{ ...report, createdAt: now - RETENTION_MS }];
+        data.videos = [{ ...video, fetchedAt: now - 120 * 86400000 }];
+        data.reports = [{ ...report, createdAt: now - 120 * 86400000 }];
         data.ideas = [{ ...idea, reportId: report.id, videoIds: [video.id, 'unsaved'] }];
         const clean = purgeExpired(data, now);
-        check(clean.ideas[0].reportId === undefined);
+        check(clean.ideas[0].reportId === report.id);
         check(clean.ideas[0].videoIds.join() === video.id);
         check(clean.ideas[0].concept === idea.concept);
       },
@@ -142,11 +153,11 @@ export async function runDiagnostics(): Promise<TestResult[]> {
       },
     ],
     [
-      'Nested report videos obey their own expiry',
+      'Nested report videos remain retained indefinitely',
       () => {
         const data = defaults();
-        data.reports = [{ ...report, videos: [{ ...video, fetchedAt: now - RETENTION_MS }] }];
-        check(purgeExpired(data, now).reports[0].videos.length === 0);
+        data.reports = [{ ...report, videos: [{ ...video, fetchedAt: now - 120 * 86400000 }] }];
+        check(purgeExpired(data, now).reports[0].videos.length === 1);
       },
     ],
     [
@@ -224,7 +235,7 @@ export async function runDiagnostics(): Promise<TestResult[]> {
           async () => {
             calls++;
             return calls === 1
-              ? new Response('MOCK unavailable', { status: 503 })
+              ? mockText('MOCK unavailable', 503)
               : mock({ ok: true });
           },
           undefined,
@@ -245,10 +256,7 @@ export async function runDiagnostics(): Promise<TestResult[]> {
               {},
               async () => {
                 calls++;
-                return new Response('MOCK rate limit', {
-                  status: 429,
-                  headers: { 'Retry-After': '60' },
-                });
+                return mockText('MOCK rate limit', 429, { 'Retry-After': '60' });
               },
               undefined,
               15000,
@@ -274,11 +282,11 @@ export async function runDiagnostics(): Promise<TestResult[]> {
       },
     ],
     [
-      'Expire API metadata at 29 days',
+      'Retain API metadata beyond 29 days',
       () => {
         const data = defaults();
-        data.videos = [video, { ...video, fetchedAt: now - RETENTION_MS }];
-        check(purgeExpired(data, now).videos.length === 1);
+        data.videos = [video, { ...video, id: 'old-video', fetchedAt: now - 120 * 86400000 }];
+        check(purgeExpired(data, now).videos.length === 2);
       },
     ],
     [
@@ -635,12 +643,9 @@ export async function runDiagnostics(): Promise<TestResult[]> {
           createdAt: now,
           analyzed: false,
         });
-        check(ideas.length === 4);
-        check(ideas[0].assessment === 'Worth Exploring');
-        check(ideas.slice(1).every((idea) => idea.assessment === 'Uncertain'));
-        check(ideas.every((idea) => !JSON.stringify(idea).includes(video.title)));
-        check(ideas.every((idea) => !JSON.stringify(idea).includes(video.description)));
-        check(ideas[0].videoIds.includes(video.id));
+        check(ideas.length === 0);
+        check(!JSON.stringify(ideas).includes(video.title));
+        check(!JSON.stringify(ideas).includes(video.description));
       },
     ],
   ];
@@ -681,7 +686,7 @@ export async function runDiagnostics(): Promise<TestResult[]> {
       'MOCK unreadable successful JSON is rejected as an invalid response',
       async () => {
         await rejects(
-          () => requestJson('https://example.com/mock', {}, async () => new Response('not-json', { status: 200 })),
+          () => requestJson('https://example.com/mock', {}, async () => mockText('not-json', 200)),
           'invalid',
         );
       },

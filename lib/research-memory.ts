@@ -1,4 +1,4 @@
-import type { ResearchMemoryEntry, ResearchMemorySnapshot } from './types';
+import type { ResearchDossier, ResearchMemoryEntry, ResearchMemorySnapshot } from './types';
 import { canonicalizeResearchUrl, normalizeResearchText } from './intelligence';
 
 const MAX_RESEARCH_MEMORY_SOURCES = 120;
@@ -51,6 +51,7 @@ export function createResearchMemoryEntry(input: {
   previous?: ResearchMemoryEntry;
   now?: number;
   language?: 'fa' | 'en';
+  researchDossier?: ResearchDossier;
 }): ResearchMemoryEntry | undefined {
   const topic = input.topic.trim().replace(/\s+/g, ' ').slice(0, 180);
   if (!topic) return undefined;
@@ -91,12 +92,28 @@ export function createResearchMemoryEntry(input: {
       (Date.parse(b.publishedAt ?? '') || 0) - (Date.parse(a.publishedAt ?? '') || 0),
     )
     .slice(0, MAX_RESEARCH_MEMORY_SOURCES);
-  if (!sources.length) return undefined;
+  if (!sources.length && !input.researchDossier) return undefined;
 
-  const keyFindings = unique(input.analysis.evidence.filter((item) => item.id === 'publisher-news').map((item) => item.detail), 8, 2000);
-  const unresolvedQuestions = unique([...input.analysis.intelligence.gaps, ...input.analysis.verificationQuestions], 12, 500);
-  const contradictions = unique(input.analysis.intelligence.potentialContradictions, 8, 500);
-  const confidence = input.analysis.intelligence.confidence.level;
+  const keyFindings = unique([
+    ...input.analysis.evidence.filter((item) => item.id === 'publisher-news').map((item) => item.detail),
+    ...(input.researchDossier?.conclusion ? [input.researchDossier.conclusion] : []),
+    ...(input.researchDossier?.hypotheses ?? []).filter((item) => item.status === 'supported').map((item) => item.claim),
+  ], 8, 2000);
+  const unresolvedQuestions = unique([
+    ...input.analysis.intelligence.gaps,
+    ...input.analysis.verificationQuestions,
+    ...(input.researchDossier?.gaps ?? []),
+    ...(input.researchDossier?.nextQueries ?? []).map((item) => item.query),
+  ], 12, 500);
+  const contradictions = unique([
+    ...input.analysis.intelligence.potentialContradictions,
+    ...(input.researchDossier?.contradictions ?? []).map((item) => item.description),
+  ], 8, 500);
+  const confidenceRank = { low: 0, moderate: 1, high: 2 } as const;
+  const localConfidence = input.analysis.intelligence.confidence.level;
+  const confidence = input.researchDossier && confidenceRank[input.researchDossier.confidence] < confidenceRank[localConfidence]
+    ? input.researchDossier.confidence
+    : localConfidence;
   const previousByUrl = new Map((input.previous?.sources ?? []).map((item) => [
     canonicalizeResearchUrl(item.sourceUrl),
     normalizeResearchText(item.title) + '|' + (item.publishedAt ?? ''),
@@ -151,5 +168,26 @@ export function createResearchMemoryEntry(input: {
     ? oldHistory
     : [snapshot, ...oldHistory]
   ).slice(0, MAX_RESEARCH_MEMORY_HISTORY);
-  return { topic, updatedAt: now, sources, keyFindings, unresolvedQuestions, contradictions, confidence, history };
+  return {
+    topic, updatedAt: now, sources, keyFindings, unresolvedQuestions, contradictions, confidence, history,
+    ...(input.researchDossier ?? input.previous?.researchDossier
+      ? { researchDossier: input.researchDossier ?? input.previous?.researchDossier }
+      : {}),
+  };
+}
+
+
+/**
+ * Merge a topic snapshot into the durable research archive.
+ * Topic identity is normalized, but distinct topics are never evicted by an
+ * arbitrary in-memory cap. SQLite and the active index may optimize access;
+ * the user's completed research remains retained.
+ */
+export function mergeResearchMemoryEntries(
+  existing: readonly ResearchMemoryEntry[],
+  incoming: ResearchMemoryEntry,
+): ResearchMemoryEntry[] {
+  const key = normalizeResearchText(incoming.topic);
+  const next = existing.filter((entry) => normalizeResearchText(entry.topic) !== key);
+  return [incoming, ...next];
 }

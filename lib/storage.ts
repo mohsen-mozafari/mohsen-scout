@@ -1,19 +1,74 @@
 import * as SQLite from 'expo-sqlite';
 import { defaults, purgeExpired, type LocalData } from './types';
-import { validateLocal, validateLocalEntry } from './validation';
+import { validateLocal, validateLocalEntry, validateLocalRecord } from './validation';
 import { changedLocalDataEntries } from './storage-diff';
+import { diffRecordCollection, chunkRecordWriteBatches, isRecordDomain, recordIdFor, recordTable, recordUpdatedAt, recordExpiresAt, RECORD_DOMAINS, emptyRecordCounts, type RecordDomain, type StorageHealth, NO_EXPIRY } from './storage-records';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 let database: Promise<SQLite.SQLiteDatabase> | undefined;
+
+const LEGACY_DOMAINS: Record<'personal' | 'youtube', readonly RecordDomain[]> = {
+  personal: ['ideas', 'links', 'notes', 'opinions', 'researchMemory', 'researchActivity'],
+  youtube: ['reports', 'videos'],
+};
+
+type LegacyRow = { key: string; value: string };
+type StoredRecordRow = { domain: string; id: string; updated_at: number; payload: string };
+
+async function migrateLegacyDomains(connection: SQLite.SQLiteDatabase): Promise<void> {
+  const current = await connection.getFirstAsync<{ user_version: number }>('PRAGMA user_version');
+  if ((current?.user_version ?? 0) >= 2) return;
+  await connection.withExclusiveTransactionAsync(async (tx) => {
+    for (const table of ['personal', 'youtube'] as const) {
+      const rows = await tx.getAllAsync<LegacyRow>('SELECT key,value FROM ' + table);
+      const legacyDomains = new Set(LEGACY_DOMAINS[table]);
+      for (const row of rows) {
+        const domain = isRecordDomain(row.key) ? row.key : undefined;
+        if (!domain || !legacyDomains.has(domain)) continue;
+        const raw: unknown = JSON.parse(row.value);
+        if (!Array.isArray(raw)) throw new Error('Legacy ' + domain + ' data is not a valid collection; migration was rolled back.');
+        const collection = validateLocalEntry(domain, raw) as unknown[];
+        const records = collection.map((item) => ({
+          id: recordIdFor(domain, item),
+          updatedAt: recordUpdatedAt(domain, item),
+          expiresAt: recordExpiresAt(domain, item) ?? NO_EXPIRY,
+          payload: JSON.stringify(item),
+        }));
+        for (const batch of chunkRecordWriteBatches(domain, records)) {
+          if (table === 'youtube') {
+            const placeholders = batch.map(() => '(?,?,?,?,?)').join(',');
+            const parameters = batch.flatMap((item) => [domain, item.id, item.updatedAt, item.expiresAt, item.payload]);
+            await tx.runAsync('INSERT OR REPLACE INTO youtube_records (domain,id,updated_at,expires_at,payload) VALUES ' + placeholders, ...parameters);
+          } else {
+            const placeholders = batch.map(() => '(?,?,?,?)').join(',');
+            const parameters = batch.flatMap((item) => [domain, item.id, item.updatedAt, item.payload]);
+            await tx.runAsync('INSERT OR REPLACE INTO personal_records (domain,id,updated_at,payload) VALUES ' + placeholders, ...parameters);
+          }
+        }
+        await tx.runAsync('DELETE FROM ' + table + ' WHERE key=?', row.key);
+      }
+    }
+  });
+  await connection.execAsync('PRAGMA user_version=2');
+}
 async function db() {
   if (!database)
     database = SQLite.openDatabaseAsync('mohsen-scout.db')
       .then(async (value) => {
         await value.execAsync(
-          'PRAGMA journal_mode = WAL; CREATE TABLE IF NOT EXISTS personal (key TEXT PRIMARY KEY, value TEXT NOT NULL); CREATE TABLE IF NOT EXISTS youtube (key TEXT PRIMARY KEY, value TEXT NOT NULL);',
+          'PRAGMA journal_mode=WAL;' +
+          'CREATE TABLE IF NOT EXISTS personal (key TEXT PRIMARY KEY, value TEXT NOT NULL);' +
+          'CREATE TABLE IF NOT EXISTS youtube (key TEXT PRIMARY KEY, value TEXT NOT NULL);' +
+          'CREATE TABLE IF NOT EXISTS personal_records (domain TEXT NOT NULL,id TEXT NOT NULL,updated_at INTEGER NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(domain,id));' +
+          'CREATE TABLE IF NOT EXISTS youtube_records (domain TEXT NOT NULL,id TEXT NOT NULL,updated_at INTEGER NOT NULL,expires_at INTEGER NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(domain,id));' +
+          'CREATE INDEX IF NOT EXISTS personal_records_updated ON personal_records(domain,updated_at DESC);' +
+          'CREATE INDEX IF NOT EXISTS youtube_records_updated ON youtube_records(domain,updated_at DESC);' +
+          'CREATE INDEX IF NOT EXISTS youtube_records_expiry ON youtube_records(expires_at);',
         );
+        await value.runAsync("UPDATE youtube_records SET expires_at=? WHERE domain IN ('reports','videos','youtubeSnapshots')", NO_EXPIRY);
+        await migrateLegacyDomains(value);
         return value;
       })
       .catch((error: unknown) => {
@@ -24,22 +79,20 @@ async function db() {
 }
 export async function readData(): Promise<LocalData> {
   const connection = await db();
-  const rows = await connection.getAllAsync<{ key: string; value: string }>(
+  const rows = await connection.getAllAsync<LegacyRow>(
     'SELECT key,value FROM personal UNION ALL SELECT key,value FROM youtube',
   );
   const data = defaults();
   const persisted: Partial<Record<keyof LocalData, unknown>> = {};
   for (const row of rows) {
+    if (isRecordDomain(row.key)) continue;
     if (row.key === 'preferences') {
       const parsedPreferences: unknown = JSON.parse(row.value);
       if (!isRecord(parsedPreferences)) throw new Error('Stored preferences are not a valid object.');
       const savedPreferences = parsedPreferences;
       const migratedPreferences = { ...data.preferences, ...savedPreferences };
       if (!Object.prototype.hasOwnProperty.call(savedPreferences, 'hybridIntelligence') &&
-        migratedPreferences.schedule === 'Manual') {
-        migratedPreferences.schedule = 'Daily';
-      }
-      // Expand the original built-in five-feed list once, but preserve any custom source selection.
+        migratedPreferences.schedule === 'Manual') migratedPreferences.schedule = 'Daily';
       if (migratedPreferences.spaceNewsSourcesVersion !== 2) {
         const legacySources = ['nasa', 'jpl', 'cneos', 'esa-space', 'esa-science'];
         const savedSources = savedPreferences.spaceNewsSources;
@@ -56,29 +109,139 @@ export async function readData(): Promise<LocalData> {
       Object.assign(persisted, { [row.key]: value });
     }
   }
+  const recordQuery =
+    'SELECT domain,id,updated_at,payload FROM personal_records ' +
+    'UNION ALL SELECT domain,id,updated_at,payload FROM youtube_records ORDER BY updated_at DESC';
+  let loadedRecordCount = 0;
+  for await (const row of connection.getEachAsync<StoredRecordRow>(recordQuery)) {
+    if (!isRecordDomain(row.domain)) continue;
+    const value: unknown = JSON.parse(row.payload);
+    (data[row.domain] as unknown[]).push(value);
+    loadedRecordCount += 1;
+    // Yield periodically so large archive hydration does not starve the UI event loop.
+    if (loadedRecordCount % 250 === 0) {
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    }
+  }
+  for (const domain of RECORD_DOMAINS) {
+    (persisted as Record<string, unknown>)[domain] = data[domain];
+  }
   const purged = purgeExpired(data);
   const clean = validateLocal(purged);
   await writeData(purged, persisted);
   return clean;
 }
-export async function writeData(data: LocalData, previousData?: Partial<Record<keyof LocalData, unknown>>): Promise<void> {
+
+export async function writeData(
+  data: LocalData,
+  previousData?: Partial<Record<keyof LocalData, unknown>>,
+): Promise<void> {
   const changedEntries = changedLocalDataEntries(data, previousData);
   if (!changedEntries.length) return;
 
-  // Validate and serialize only domains changed by an immutable update. A small
-  // opinion save must not parse the complete, potentially large video database.
-  const validatedEntries = changedEntries.map(({ key, value }) => ({
-    key,
-    value: validateLocalEntry(key, value),
-  }));
+  const recordDeltas = new Map<RecordDomain, ReturnType<typeof diffRecordCollection>>();
+  const validatedRecords = new Map<RecordDomain, { id: string; value: unknown }[]>();
+  const scalarEntries: { key: keyof LocalData; value: unknown }[] = [];
+  for (const entry of changedEntries) {
+    const key = entry.key;
+    if (isRecordDomain(key)) {
+      const previousRecords = previousData?.[key] as unknown[] | undefined;
+      const delta = diffRecordCollection(key, entry.value as unknown[], previousRecords);
+      recordDeltas.set(key, delta);
+      validatedRecords.set(key, delta.upserts.map(({ id, value }) => ({
+        id,
+        value: validateLocalRecord(key, value),
+      })));
+    } else {
+      scalarEntries.push({ key, value: validateLocalEntry(key, entry.value) });
+    }
+  }
+  const hasRecordChanges = [...recordDeltas.values()].some((delta) =>
+    delta.replaceAll || delta.upserts.length > 0 || delta.deleteIds.length > 0,
+  );
+  if (!scalarEntries.length && !hasRecordChanges) return;
   const connection = await db();
   await connection.withExclusiveTransactionAsync(async (tx) => {
-    for (const { key, value } of validatedEntries) {
-      const table = key === 'videos' || key === 'reports' ? 'youtube' : 'personal';
-      await tx.runAsync(`INSERT OR REPLACE INTO ${table} (key,value) VALUES (?,?)`, key, JSON.stringify(value));
+    for (const [domain, delta] of recordDeltas) {
+      const table = recordTable(domain);
+      if (delta.replaceAll) await tx.runAsync('DELETE FROM ' + table + ' WHERE domain=?', domain);
+
+      // Batch deletes and upserts inside the same exclusive transaction. This
+      // reduces bridge round-trips without weakening atomicity or changing retention.
+      for (let offset = 0; offset < delta.deleteIds.length; offset += 400) {
+        const ids = delta.deleteIds.slice(offset, offset + 400);
+        const placeholders = ids.map(() => '?').join(',');
+        await tx.runAsync(
+          'DELETE FROM ' + table + ' WHERE domain=? AND id IN (' + placeholders + ')',
+          domain,
+          ...ids,
+        );
+      }
+
+      const records = (validatedRecords.get(domain) ?? []).map(({ id, value }) => ({
+        id,
+        updatedAt: recordUpdatedAt(domain, value),
+        expiresAt: recordExpiresAt(domain, value) ?? NO_EXPIRY,
+        payload: JSON.stringify(value),
+      }));
+      for (const batch of chunkRecordWriteBatches(domain, records)) {
+        if (table === 'youtube_records') {
+          const placeholders = batch.map(() => '(?,?,?,?,?)').join(',');
+          const parameters = batch.flatMap(({ id, updatedAt, expiresAt, payload }) =>
+            [domain, id, updatedAt, expiresAt, payload],
+          );
+          await tx.runAsync(
+            'INSERT INTO youtube_records (domain,id,updated_at,expires_at,payload) VALUES ' + placeholders +
+              ' ON CONFLICT(domain,id) DO UPDATE SET updated_at=excluded.updated_at,expires_at=excluded.expires_at,payload=excluded.payload',
+            ...parameters,
+          );
+        } else {
+          const placeholders = batch.map(() => '(?,?,?,?)').join(',');
+          const parameters = batch.flatMap(({ id, updatedAt, payload }) =>
+            [domain, id, updatedAt, payload],
+          );
+          await tx.runAsync(
+            'INSERT INTO personal_records (domain,id,updated_at,payload) VALUES ' + placeholders +
+              ' ON CONFLICT(domain,id) DO UPDATE SET updated_at=excluded.updated_at,payload=excluded.payload',
+            ...parameters,
+          );
+        }
+      }
+    }
+    for (const { key, value } of scalarEntries) {
+      await tx.runAsync('INSERT OR REPLACE INTO personal (key,value) VALUES (?,?)', key, JSON.stringify(value));
     }
   });
-  // SQLite's wal_autocheckpoint performs periodic maintenance. A TRUNCATE
-  // checkpoint after every small edit adds synchronous I/O and can contend
-  // with readers as the local research database grows.
+}
+
+export async function inspectStorageHealth(): Promise<StorageHealth> {
+  const connection = await db();
+  const [version, quickCheck, pageCount, pageSize, freePages, counts, range] = await Promise.all([
+    connection.getFirstAsync<{ user_version: number }>('PRAGMA user_version'),
+    connection.getFirstAsync<{ quick_check: string }>('PRAGMA quick_check'),
+    connection.getFirstAsync<{ page_count: number }>('PRAGMA page_count'),
+    connection.getFirstAsync<{ page_size: number }>('PRAGMA page_size'),
+    connection.getFirstAsync<{ freelist_count: number }>('PRAGMA freelist_count'),
+    connection.getAllAsync<{ domain: string; count: number }>(
+      'SELECT domain,COUNT(*) AS count FROM (SELECT domain FROM personal_records UNION ALL SELECT domain FROM youtube_records) GROUP BY domain',
+    ),
+    connection.getFirstAsync<{ oldest: number | null; newest: number | null }>(
+      'SELECT MIN(updated_at) AS oldest,MAX(updated_at) AS newest FROM personal_records',
+    ),
+  ]);
+  const recordCounts = emptyRecordCounts();
+  for (const row of counts) if (isRecordDomain(row.domain)) recordCounts[row.domain] = row.count;
+  const check = quickCheck?.quick_check ?? 'unavailable';
+  return {
+    backend: 'sqlite',
+    schemaVersion: version?.user_version ?? 0,
+    integrityCheck: check === 'ok' ? 'ok' : 'failed',
+    integrityDetail: check,
+    databaseBytes: (pageCount?.page_count ?? 0) * (pageSize?.page_size ?? 0),
+    pageCount: pageCount?.page_count ?? null,
+    freePages: freePages?.freelist_count ?? null,
+    recordCounts,
+    oldestPersonalRecordAt: range?.oldest ?? null,
+    newestPersonalRecordAt: range?.newest ?? null,
+  };
 }

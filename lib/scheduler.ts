@@ -4,7 +4,7 @@ import * as Notifications from 'expo-notifications';
 import { useScout } from './store';
 import { type Preferences } from './types';
 import { researchNotification } from './schedule';
-import { fetchSpaceNews } from './space';
+import { runAutonomousResearchCycle } from './autonomous-research';
 const TASK = 'mohsen-scout-research';
 if (!TaskManager.isTaskDefined(TASK))
   TaskManager.defineTask(TASK, async () => {
@@ -13,60 +13,42 @@ if (!TaskManager.isTaskDefined(TASK))
       if (!store.ready) await store.boot();
       if (!useScout.getState().ready) return BackgroundTask.BackgroundTaskResult.Failed;
       const prefs = useScout.getState().data.preferences;
-      if (prefs.paused || prefs.schedule === 'Manual' || !prefs.lastInput)
+      if (prefs.paused || prefs.schedule === 'Manual')
         return BackgroundTask.BackgroundTaskResult.Success;
-      // Refresh selected official publisher feeds during the same scheduled cycle.
-      // Feed failures must not prevent independent YouTube research from running,
-      // but the failure is now recorded instead of being silently swallowed.
-      let feedWarning = '';
-      try {
-        const feeds = await fetchSpaceNews(prefs.spaceNewsSources, fetch, true);
-        await useScout.getState().commit((data) => ({ ...data, feedRegistry: feeds.registry }));
-      } catch (error) {
-        const detail = error instanceof Error ? error.message : String(error);
-        feedWarning = ('Scheduled publisher-feed refresh failed; the last saved feeds were kept. ' + detail).slice(0, 240);
+      // This cycle resolves the selected niche itself, so a first-run install does
+      // not need a manual search before background research can begin.
+      const processed = await runAutonomousResearchCycle(1);
+      if (processed > 0) {
+        const permissions = await Notifications.getPermissionsAsync();
+        if (permissions.granted) await Notifications.scheduleNotificationAsync({
+          ...researchNotification,
+          content: {
+            ...researchNotification.content,
+            body: 'Your YouTube-first research cycle is ready. Open MOHSEN SCOUT to review the evidence and ideas.',
+          },
+        });
       }
-      const result = await useScout.getState().research(prefs.lastInput, 'automatic', true);
-      if (!result) return BackgroundTask.BackgroundTaskResult.Failed;
-      if (feedWarning) {
-        await useScout.getState().commit((data) => ({
-          ...data,
-          reports: data.reports.map((report) => report.id === result.id
-            ? { ...report, warnings: [...new Set([...report.warnings, feedWarning])] }
-            : report),
-        }));
-      }
-      const permissions = await Notifications.getPermissionsAsync();
-      if (permissions.granted) await Notifications.scheduleNotificationAsync({
-        ...researchNotification,
-        content: {
-          ...researchNotification.content,
-          body: feedWarning
-            ? 'Your scheduled research is ready; some publisher feeds could not be refreshed.'
-            : researchNotification.content.body,
-        },
-      });
       return BackgroundTask.BackgroundTaskResult.Success;
     } catch {
       return BackgroundTask.BackgroundTaskResult.Failed;
     }
   });
 export const scheduleNotice =
-  'Android chooses execution time; intervals are a minimum, not a guarantee. Force-stop and battery restrictions can prevent runs. Requires an installed native build.';
+  'Android WorkManager chooses the actual execution time; the selected interval is a minimum, not a guarantee. A network connection and suitable battery conditions are required. Doze, vendor battery restrictions and force-stop can delay or prevent runs. Scheduled cycles seed the selected niche and discover YouTube topics first; no manual search is required.';
 export async function configureSchedule(prefs: Preferences) {
   if (prefs.schedule === 'Manual' || prefs.paused) {
     if (await TaskManager.isTaskRegisteredAsync(TASK))
       await BackgroundTask.unregisterTaskAsync(TASK);
     return;
   }
-  if (!prefs.lastInput)
-    throw new Error('Run a manual search first so there is a topic to schedule.');
   if ((await BackgroundTask.getStatusAsync()) !== BackgroundTask.BackgroundTaskStatus.Available)
     throw new Error(
       'Background research is unavailable in this environment. Use a native Android build.',
     );
   const minutes =
-    prefs.schedule === 'Every 12 hours' ? 720 : prefs.schedule === 'Daily' ? 1440 : 10080;
+    prefs.schedule === 'Every 6 hours' ? 360 :
+    prefs.schedule === 'Every 12 hours' ? 720 :
+    prefs.schedule === 'Daily' ? 1440 : 10080;
   if (await TaskManager.isTaskRegisteredAsync(TASK)) await BackgroundTask.unregisterTaskAsync(TASK);
   await BackgroundTask.registerTaskAsync(TASK, { minimumInterval: minutes });
 }

@@ -1,7 +1,9 @@
 import { type ReactNode, useState } from 'react';
 import {
+  isolateMixedDirectionNode,
+  isolateMixedDirectionText,
   resolveNodeDirection,
-  resolveTextDirection,
+  resolveParagraphDirection,
   translateNode,
   translateText,
 } from '@/lib/i18n';
@@ -9,6 +11,7 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
+  StatusBar,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -51,13 +54,13 @@ export const styles = StyleSheet.create({
     paddingHorizontal: 18,
     paddingTop: 8,
     paddingBottom: 30,
-    gap: 13,
+    gap: 15,
     width: '100%',
     maxWidth: 720,
     alignSelf: 'center',
   },
   brandBar: {
-    minHeight: 52,
+    minHeight: 56,
     paddingHorizontal: 18,
     paddingBottom: 8,
     position: 'relative',
@@ -88,11 +91,12 @@ export const styles = StyleSheet.create({
   brandSubtitle: {
     color: p.muted,
     fontFamily: 'Inter_500Medium',
-    fontSize: 9,
-    letterSpacing: 1.1,
+    fontSize: 10,
+    letterSpacing: 0.9,
     marginTop: 2,
   },
-  intro: { gap: 7, paddingTop: 6, paddingBottom: 4 },
+  intro: { gap: 8, paddingTop: 8, paddingBottom: 5 },
+  introSubtitle: { color: p.muted, fontFamily: 'Inter_400Regular', fontSize: 13, lineHeight: 20, flexShrink: 1, minWidth: 0 },
   eyebrow: {
     color: p.muted,
     fontFamily: 'Inter_700Bold',
@@ -103,15 +107,15 @@ export const styles = StyleSheet.create({
   title: {
     color: p.text,
     fontFamily: 'Inter_700Bold',
-    fontSize: 27,
-    lineHeight: 33,
+    fontSize: 28,
+    lineHeight: 36,
     letterSpacing: -0.55,
   },
   heading: {
     color: p.text,
     fontFamily: 'Inter_700Bold',
-    fontSize: 14,
-    lineHeight: 20,
+    fontSize: 15,
+    lineHeight: 22,
     letterSpacing: -0.2,
     flexShrink: 1,
     minWidth: 0,
@@ -119,37 +123,37 @@ export const styles = StyleSheet.create({
   text: {
     color: p.text,
     fontFamily: 'Inter_400Regular',
-    fontSize: 13,
-    lineHeight: 19,
+    fontSize: 14,
+    lineHeight: 21,
     flexShrink: 1,
     minWidth: 0,
   },
   muted: {
     color: p.muted,
     fontFamily: 'Inter_400Regular',
-    fontSize: 12,
-    lineHeight: 18,
+    fontSize: 13,
+    lineHeight: 20,
     flexShrink: 1,
     minWidth: 0,
   },
   badge: {
     color: p.accent,
     fontFamily: 'Inter_700Bold',
-    fontSize: 10,
-    lineHeight: 15,
-    letterSpacing: 0.7,
+    fontSize: 11,
+    lineHeight: 16,
+    letterSpacing: 0.55,
   },
   panel: {
-    padding: 16,
-    borderRadius: 18,
+    padding: 17,
+    borderRadius: 19,
     backgroundColor: p.surface,
     borderColor: p.border,
     borderWidth: 1,
     gap: 12,
   },
   heroPanel: {
-    padding: 18,
-    borderRadius: 20,
+    padding: 20,
+    borderRadius: 22,
     borderWidth: 1,
     borderColor: p.accentLine,
     gap: 13,
@@ -158,16 +162,16 @@ export const styles = StyleSheet.create({
   },
   // eslint-disable-next-line react-native/no-unused-styles -- Shared list surface consumed by collection screens.
   listCard: {
-    padding: 14,
-    borderRadius: 14,
+    padding: 15,
+    borderRadius: 16,
     backgroundColor: p.surface,
     borderColor: p.border,
     borderWidth: 1,
     gap: 10,
   },
   softCard: {
-    padding: 13,
-    borderRadius: 13,
+    padding: 14,
+    borderRadius: 15,
     backgroundColor: p.surfaceAlt,
     borderColor: p.borderSoft,
     borderWidth: 1,
@@ -186,8 +190,8 @@ export const styles = StyleSheet.create({
     letterSpacing: 0.9,
   },
   action: {
-    minHeight: 46,
-    paddingHorizontal: 14,
+    minHeight: 48,
+    paddingHorizontal: 15,
     paddingVertical: 10,
     borderRadius: 12,
     flexDirection: 'row',
@@ -212,10 +216,10 @@ export const styles = StyleSheet.create({
   },
   actionPressed: { opacity: 0.82 },
   actionDisabled: { opacity: 0.42 },
-  actionLabel: { fontFamily: 'Inter_600SemiBold', fontSize: 13, lineHeight: 18, flexShrink: 1, minWidth: 0 },
+  actionLabel: { fontFamily: 'Inter_600SemiBold', fontSize: 14, lineHeight: 20, flexShrink: 1, minWidth: 0 },
   choice: {
-    minHeight: 36,
-    paddingHorizontal: 12,
+    minHeight: 40,
+    paddingHorizontal: 13,
     paddingVertical: 8,
     borderRadius: 10,
     borderWidth: 1,
@@ -227,7 +231,7 @@ export const styles = StyleSheet.create({
   },
   choiceSelected: { backgroundColor: p.accentSoft, borderColor: p.accent },
   choicePressed: { opacity: 0.75 },
-  choiceLabel: { fontFamily: 'Inter_600SemiBold', fontSize: 11, lineHeight: 16 },
+  choiceLabel: { fontFamily: 'Inter_600SemiBold', fontSize: 12, lineHeight: 18 },
   errorAction: {
     minHeight: 34,
     justifyContent: 'center',
@@ -237,7 +241,7 @@ export const styles = StyleSheet.create({
     backgroundColor: p.dangerLine,
   },
   errorActionText: { color: p.danger, fontFamily: 'Inter_700Bold', fontSize: 11 },
-  foldTrigger: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  foldTrigger: { minHeight: 52, flexDirection: 'row', alignItems: 'center', gap: 10 },
   foldIcon: {
     width: 30,
     height: 30,
@@ -246,7 +250,7 @@ export const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: 'transparent',
   },
-  foldLabel: { color: p.text, fontFamily: 'Inter_600SemiBold', fontSize: 14, lineHeight: 20 },
+  foldLabel: { color: p.text, fontFamily: 'Inter_600SemiBold', fontSize: 14, lineHeight: 21 },
   fold: {
     borderRadius: 0,
     backgroundColor: 'transparent',
@@ -258,8 +262,8 @@ export const styles = StyleSheet.create({
   },
   foldContent: { paddingHorizontal: 0, paddingBottom: 10, gap: 12 },
   fieldBox: {
-    minHeight: 48,
-    borderRadius: 12,
+    minHeight: 52,
+    borderRadius: 14,
     backgroundColor: p.input,
     borderColor: p.border,
     borderWidth: 1,
@@ -271,8 +275,8 @@ export const styles = StyleSheet.create({
     paddingVertical: 10,
     color: p.text,
     fontFamily: 'Inter_400Regular',
-    fontSize: 14,
-    lineHeight: 20,
+    fontSize: 15,
+    lineHeight: 22,
     textAlignVertical: 'center',
   },
   multilineText: { minHeight: 112, textAlignVertical: 'top', paddingTop: 12 },
@@ -280,23 +284,23 @@ export const styles = StyleSheet.create({
   metricLabel: {
     color: p.muted,
     fontFamily: 'Inter_700Bold',
-    fontSize: 9,
-    lineHeight: 14,
-    letterSpacing: 0.65,
+    fontSize: 10,
+    lineHeight: 15,
+    letterSpacing: 0.55,
   },
   metricCard: {
     flex: 1,
-    minWidth: 88,
-    padding: 11,
-    borderRadius: 12,
+    minWidth: 96,
+    padding: 12,
+    borderRadius: 14,
     borderWidth: 1,
     gap: 5,
   },
   shortcutCard: {
     width: '100%',
-    minHeight: 68,
-    padding: 12,
-    borderRadius: 12,
+    minHeight: 74,
+    padding: 13,
+    borderRadius: 14,
     borderWidth: 1,
     flexDirection: 'row',
     alignItems: 'center',
@@ -335,14 +339,18 @@ export const styles = StyleSheet.create({
   },
 });
 
-export function AppHeader({ showBack = false }: { showBack?: boolean }) {
+export function AppHeader({ showBack = false, safeArea = true }: { showBack?: boolean; safeArea?: boolean }) {
+  const insets = useSafeAreaInsets();
+  const topInset = safeArea
+    ? Math.max(insets.top, Platform.OS === 'android' ? StatusBar.currentHeight ?? 24 : 0)
+    : 0;
   const pathname = usePathname();
   const language = useScout((s) => s.data.preferences.uiLanguage ?? 'fa');
   const canGoBack = showBack;
   const settingsLabel = translateText('Settings', language);
   const onSettings = isSettingsRoute(pathname);
   return (
-    <View style={styles.brandBar}>
+    <View style={[styles.brandBar, { paddingTop: topInset + 4 }]}>
       <View style={styles.brandLockup}>
         {canGoBack ? (
           <Pressable
@@ -410,6 +418,7 @@ export function AppHeader({ showBack = false }: { showBack?: boolean }) {
 function PageHeading({
   title,
   eyebrow,
+  subtitle,
 }: {
   title: string;
   eyebrow?: string;
@@ -418,15 +427,22 @@ function PageHeading({
   const language = useScout((s) => s.data.preferences.uiLanguage ?? 'fa');
   const translatedTitle = translateText(title, language);
   const translatedEyebrow = eyebrow ? translateText(eyebrow, language) : 'WORKSPACE';
-  const direction = resolveTextDirection(translatedTitle);
+  const translatedSubtitle = subtitle ? translateText(subtitle, language) : '';
+  const direction = resolveParagraphDirection(translatedTitle, language);
+  const subtitleDirection = resolveParagraphDirection(translatedSubtitle, language);
   return (
     <View style={styles.intro}>
-      <Text style={[styles.eyebrow, { writingDirection: resolveTextDirection(translatedEyebrow) }]}>
+      <Text style={[styles.eyebrow, { writingDirection: resolveParagraphDirection(translatedEyebrow, language) }]}>
         {translatedEyebrow}
       </Text>
       <Text style={[styles.title, { writingDirection: direction, textAlign: direction === 'rtl' ? 'right' : 'left' }]}>
         {translatedTitle}
       </Text>
+      {translatedSubtitle ? (
+        <Text style={[styles.introSubtitle, { writingDirection: subtitleDirection, textAlign: subtitleDirection === 'rtl' ? 'right' : 'left' }]}>
+          {isolateMixedDirectionText(translatedSubtitle, subtitleDirection)}
+        </Text>
+      ) : null}
     </View>
   );
 }
@@ -434,6 +450,7 @@ function PageHeading({
 export function ScreenIntro({
   eyebrow,
   title,
+  subtitle,
   icon: Icon,
 }: {
   eyebrow: string;
@@ -444,7 +461,9 @@ export function ScreenIntro({
   const language = useScout((s) => s.data.preferences.uiLanguage ?? 'fa');
   const translatedTitle = translateText(title, language);
   const translatedEyebrow = translateText(eyebrow, language);
-  const direction = resolveTextDirection(translatedTitle);
+  const translatedSubtitle = subtitle ? translateText(subtitle, language) : '';
+  const direction = resolveParagraphDirection(translatedTitle, language);
+  const subtitleDirection = resolveParagraphDirection(translatedSubtitle, language);
   return (
     <View style={styles.intro}>
       {Icon ? (
@@ -452,8 +471,13 @@ export function ScreenIntro({
           <Icon color={p.purple} size={19} strokeWidth={1.9} />
         </View>
       ) : null}
-      <Text style={[styles.eyebrow, { writingDirection: resolveTextDirection(translatedEyebrow) }]}>{translatedEyebrow}</Text>
+      <Text style={[styles.eyebrow, { writingDirection: resolveParagraphDirection(translatedEyebrow, language) }]}>{translatedEyebrow}</Text>
       <Text style={[styles.title, { writingDirection: direction, textAlign: direction === 'rtl' ? 'right' : 'left' }]}>{translatedTitle}</Text>
+      {translatedSubtitle ? (
+        <Text style={[styles.introSubtitle, { writingDirection: subtitleDirection, textAlign: subtitleDirection === 'rtl' ? 'right' : 'left' }]}>
+          {isolateMixedDirectionText(translatedSubtitle, subtitleDirection)}
+        </Text>
+      ) : null}
     </View>
   );
 }
@@ -461,15 +485,17 @@ export function ScreenIntro({
 export function Txt({ children, muted = false }: { children: ReactNode; muted?: boolean }) {
   const language = useScout((s) => s.data.preferences.uiLanguage ?? 'fa');
   const content = translateNode(children, language);
-  const direction = resolveNodeDirection(content);
-  return <Text style={[muted ? styles.muted : styles.text, { writingDirection: direction, textAlign: direction === 'rtl' ? 'right' : 'left' }]}>{content}</Text>;
+  const direction = resolveNodeDirection(content, language);
+  const isolatedContent = isolateMixedDirectionNode(content, direction);
+  return <Text style={[muted ? styles.muted : styles.text, { writingDirection: direction, textAlign: direction === 'rtl' ? 'right' : 'left' }]}>{isolatedContent}</Text>;
 }
 
 export function Heading({ children }: { children: ReactNode }) {
   const language = useScout((s) => s.data.preferences.uiLanguage ?? 'fa');
   const content = translateNode(children, language);
-  const direction = resolveNodeDirection(content);
-  return <Text style={[styles.heading, { writingDirection: direction, textAlign: direction === 'rtl' ? 'right' : 'left' }]}>{content}</Text>;
+  const direction = resolveNodeDirection(content, language);
+  const isolatedContent = isolateMixedDirectionNode(content, direction);
+  return <Text style={[styles.heading, { writingDirection: direction, textAlign: direction === 'rtl' ? 'right' : 'left' }]}>{isolatedContent}</Text>;
 }
 
 export function SourceText({ children, muted = false, numberOfLines }: { children: ReactNode; muted?: boolean; numberOfLines?: number }) {
@@ -490,19 +516,21 @@ export function SourceTitle({ children }: { children: ReactNode }) {
 export function BadgeText({ children }: { children: string }) {
   const language = useScout((s) => s.data.preferences.uiLanguage ?? 'fa');
   const content = translateText(children, language);
-  const direction = resolveTextDirection(content);
-  return <Text style={[styles.badge, { writingDirection: direction, textAlign: direction === 'rtl' ? 'right' : 'left' }]}>{content}</Text>;
+  const direction = resolveParagraphDirection(content, language);
+  const isolatedContent = isolateMixedDirectionNode(content, direction);
+  return <Text style={[styles.badge, { writingDirection: direction, textAlign: direction === 'rtl' ? 'right' : 'left' }]}>{isolatedContent}</Text>;
 }
 
 function PageError({ message, onRetry }: { message: string; onRetry: () => void }) {
   const language = useScout((s) => s.data.preferences.uiLanguage ?? 'fa');
   const translatedMessage = translateText(message, language);
-  const direction = resolveTextDirection(translatedMessage);
+  const direction = resolveParagraphDirection(translatedMessage, language);
+  const isolatedMessage = isolateMixedDirectionText(translatedMessage, direction);
   return (
     <View style={styles.errorBox}>
       <View style={styles.row}>
         <AlertCircle size={19} color={p.danger} />
-        <Text style={[styles.text, { flex: 1, color: p.danger, writingDirection: direction, textAlign: direction === 'rtl' ? 'right' : 'left' }]}>{translatedMessage}</Text>
+        <Text style={[styles.text, { flex: 1, color: p.danger, writingDirection: direction, textAlign: direction === 'rtl' ? 'right' : 'left' }]}>{isolatedMessage}</Text>
       </View>
       <Pressable onPress={onRetry} accessibilityRole="button" style={styles.errorAction}>
         <Text style={styles.errorActionText}>Retry / dismiss</Text>
@@ -518,6 +546,7 @@ export function Page({
   subtitle,
   scroll = true,
   showBack = false,
+  safeAreaTop = true,
 }: {
   children: ReactNode;
   title?: string;
@@ -525,13 +554,13 @@ export function Page({
   subtitle?: string;
   scroll?: boolean;
   showBack?: boolean;
+  safeAreaTop?: boolean;
 }) {
   const error = useScout((s) => s.error);
   const language = useScout((s) => s.data.preferences.uiLanguage ?? 'fa');
-  const insets = useSafeAreaInsets();
   const content = (
     <>
-      <AppHeader showBack={showBack} />
+      <AppHeader showBack={showBack} safeArea={safeAreaTop} />
       {title ? <PageHeading title={title} eyebrow={eyebrow} subtitle={subtitle} /> : null}
       {error ? (
         <PageError
@@ -548,7 +577,7 @@ export function Page({
   );
   return (
     <KeyboardAvoidingView
-      style={[styles.page, { direction: language === 'fa' ? 'rtl' : 'ltr', paddingTop: Math.max(6, insets.top) }]}
+      style={[styles.page, { direction: language === 'fa' ? 'rtl' : 'ltr' }]}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       {scroll ? (
@@ -561,7 +590,7 @@ export function Page({
         </ScrollView>
       ) : (
         <View style={{ flex: 1 }}>
-          <AppHeader showBack={showBack} />
+          <AppHeader showBack={showBack} safeArea={safeAreaTop} />
           {error ? (
             <PageError
               message={error}
@@ -620,7 +649,8 @@ export function Action({
 }) {
   const language = useScout((s) => s.data.preferences.uiLanguage ?? 'fa');
   const label = translateText(children, language);
-  const direction = resolveTextDirection(label);
+  const direction = resolveParagraphDirection(label, language);
+  const isolatedLabel = isolateMixedDirectionText(label, direction);
   const foreground = secondary ? p.text : p.background;
   return (
     <Pressable
@@ -644,7 +674,7 @@ export function Action({
       ) : Icon ? (
         <Icon size={17} color={danger ? p.danger : foreground} strokeWidth={2} />
       ) : null}
-      <Text numberOfLines={2} style={[styles.actionLabel, { color: danger ? p.danger : foreground, writingDirection: direction, textAlign: Icon ? direction === 'rtl' ? 'right' : 'left' : 'center', flex: 1 }]}>{busy ? translateText('Working…', language) : label}</Text>
+      <Text numberOfLines={2} style={[styles.actionLabel, { color: danger ? p.danger : foreground, writingDirection: direction, textAlign: Icon ? direction === 'rtl' ? 'right' : 'left' : 'center', flex: 1 }]}>{busy ? isolateMixedDirectionText(translateText('Working…', language), direction) : isolatedLabel}</Text>
     </Pressable>
   );
 }
@@ -668,13 +698,14 @@ export function Field({
   const translatedLabel = translateText(label, language);
   const translatedPlaceholder = placeholder ? translateText(placeholder, language) : undefined;
   const seed = value.trim() || translatedPlaceholder?.trim() || translatedLabel;
-  const direction = seed ? resolveTextDirection(seed) : language === 'fa' ? 'rtl' : 'ltr';
-  const labelDirection = resolveTextDirection(translatedLabel);
+  const direction = seed ? resolveParagraphDirection(seed, language) : language === 'fa' ? 'rtl' : 'ltr';
+  const labelDirection = resolveParagraphDirection(translatedLabel, language);
   return (
     <View style={{ gap: 7, width: '100%' }}>
       <Text style={[styles.label, { textAlign: labelDirection === 'rtl' ? 'right' : 'left', writingDirection: labelDirection }]}>{translatedLabel}</Text>
       <View style={styles.fieldBox}>
         <TextInput
+          accessibilityLabel={translatedLabel}
           value={value}
           onChangeText={onChange}
           placeholder={translatedPlaceholder}
@@ -707,7 +738,7 @@ export function Choices<T extends string>({
 }) {
   const language = useScout((s) => s.data.preferences.uiLanguage ?? 'fa');
   const translatedLabel = label ? translateText(label, language) : '';
-  const direction = resolveTextDirection(translatedLabel);
+  const direction = resolveParagraphDirection(translatedLabel, language);
   return (
     <View style={{ gap: 9 }}>
       {label ? (
@@ -717,7 +748,8 @@ export function Choices<T extends string>({
         {options.map((option) => {
           const active = selected.includes(option);
           const title = translateText(option, language);
-          const itemDirection = resolveTextDirection(title);
+          const itemDirection = resolveParagraphDirection(title, language);
+          const itemLabel = isolateMixedDirectionText(title, itemDirection);
           return (
             <Pressable
               key={option}
@@ -730,6 +762,7 @@ export function Choices<T extends string>({
                 );
               }}
               accessibilityRole="button"
+              accessibilityLabel={title}
               accessibilityState={{ selected: active }}
               style={({ pressed }) => [
                 styles.choice,
@@ -738,7 +771,7 @@ export function Choices<T extends string>({
               ]}
             >
               {active ? <Check size={13} color={p.accent} strokeWidth={2.6} /> : null}
-              <Text style={[styles.choiceLabel, { color: active ? p.accentStrong : p.text, writingDirection: itemDirection, textAlign: itemDirection === 'rtl' ? 'right' : 'left' }]}>{title}</Text>
+              <Text style={[styles.choiceLabel, { color: active ? p.accentStrong : p.text, writingDirection: itemDirection, textAlign: itemDirection === 'rtl' ? 'right' : 'left' }]}>{itemLabel}</Text>
             </Pressable>
           );
         })}
@@ -762,11 +795,15 @@ export function MetricCard({
   const language = useScout((s) => s.data.preferences.uiLanguage ?? 'fa');
   const title = translateText(label, language);
   const description = hint ? translateText(hint, language) : '';
+  const titleDirection = resolveParagraphDirection(title, language);
+  const valueText = String(value);
+  const valueDirection = resolveParagraphDirection(valueText, language);
+  const descriptionDirection = resolveParagraphDirection(description, language);
   return (
     <View style={[styles.metricCard, { backgroundColor: colors.soft, borderColor: colors.line }]}>
-      <Text style={[styles.metricLabel, { color: colors.fill }]}>{title}</Text>
-      <Text style={styles.metricValue}>{value}</Text>
-      {description ? <Text style={styles.muted}>{description}</Text> : null}
+      <Text style={[styles.metricLabel, { color: colors.fill, writingDirection: titleDirection, textAlign: titleDirection === 'rtl' ? 'right' : 'left' }]}>{isolateMixedDirectionText(title, titleDirection)}</Text>
+      <Text style={[styles.metricValue, { writingDirection: valueDirection, textAlign: valueDirection === 'rtl' ? 'right' : 'left' }]}>{isolateMixedDirectionText(valueText, valueDirection)}</Text>
+      {description ? <Text style={[styles.muted, { writingDirection: descriptionDirection, textAlign: descriptionDirection === 'rtl' ? 'right' : 'left' }]}>{isolateMixedDirectionText(description, descriptionDirection)}</Text> : null}
     </View>
   );
 }
@@ -788,6 +825,8 @@ export function QuickAction({
   const language = useScout((s) => s.data.preferences.uiLanguage ?? 'fa');
   const name = translateText(title, language);
   const detail = translateText(description, language);
+  const nameDirection = resolveParagraphDirection(name, language);
+  const detailDirection = resolveParagraphDirection(detail, language);
   return (
     <Pressable
       onPress={() => { void Haptics.selectionAsync(); onPress(); }}
@@ -798,8 +837,8 @@ export function QuickAction({
         <Icon size={19} color={colors.fill} strokeWidth={1.9} />
       </View>
       <View style={{ gap: 3, flex: 1 }}>
-        <Text style={styles.heading}>{name}</Text>
-        <Text style={styles.muted}>{detail}</Text>
+        <Text style={[styles.heading, { writingDirection: nameDirection, textAlign: nameDirection === 'rtl' ? 'right' : 'left' }]}>{isolateMixedDirectionText(name, nameDirection)}</Text>
+        <Text style={[styles.muted, { writingDirection: detailDirection, textAlign: detailDirection === 'rtl' ? 'right' : 'left' }]}>{isolateMixedDirectionText(detail, detailDirection)}</Text>
       </View>
       <ArrowUpRight size={15} color={colors.fill} />
     </Pressable>
@@ -828,14 +867,25 @@ export function Empty({
   );
 }
 
-export function ErrorBox({ message, onRetry }: { message: string; onRetry: () => void }) {
+export function ErrorBox({
+  message,
+  onRetry,
+  onDismiss,
+}: {
+  message: string;
+  onRetry?: () => void;
+  onDismiss?: () => void;
+}) {
   return (
     <View style={styles.errorBox}>
       <View style={styles.row}>
         <AlertCircle size={18} color={p.danger} />
         <Txt>{message}</Txt>
       </View>
-      <Action danger secondary onPress={onRetry}>Retry / dismiss</Action>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+        {onRetry ? <Action danger secondary onPress={onRetry}>Retry</Action> : null}
+        {onDismiss ? <Action secondary onPress={onDismiss}>Dismiss</Action> : null}
+      </View>
     </View>
   );
 }
@@ -844,28 +894,35 @@ export function Fold({
   title,
   summary,
   children,
+  defaultExpanded = false,
+  onExpandedChange,
 }: {
   title: string;
   summary?: string;
   children: ReactNode;
+  defaultExpanded?: boolean;
+  onExpandedChange?: (expanded: boolean) => void;
 }) {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(defaultExpanded);
   const language = useScout((s) => s.data.preferences.uiLanguage ?? 'fa');
   const translatedTitle = translateText(title, language);
   const translatedSummary = summary ? translateText(summary, language) : '';
-  const direction = resolveTextDirection(translatedTitle);
+  const direction = resolveParagraphDirection(translatedTitle, language);
+  const summaryDirection = resolveParagraphDirection(translatedSummary, language);
   return (
     <View style={styles.fold}>
       <Pressable
-        onPress={() => { void Haptics.selectionAsync(); setExpanded((current) => !current); }}
+        onPress={() => { void Haptics.selectionAsync(); const next = !expanded; setExpanded(next); onExpandedChange?.(next); }}
         accessibilityRole="button"
+        accessibilityLabel={summary ? translatedTitle + '. ' + translatedSummary : translatedTitle}
+        accessibilityHint={translateText(expanded ? 'Collapse section' : 'Expand section', language)}
         accessibilityState={{ expanded }}
         style={({ pressed }) => [styles.foldTrigger, pressed ? { opacity: 0.72 } : null]}
       >
-        <Text style={[styles.foldLabel, { writingDirection: direction, textAlign: direction === 'rtl' ? 'right' : 'left', flex: 1 }]}>{translatedTitle}</Text>
+        <Text style={[styles.foldLabel, { writingDirection: direction, textAlign: direction === 'rtl' ? 'right' : 'left', flex: 1 }]}>{isolateMixedDirectionText(translatedTitle, direction)}</Text>
         {translatedSummary && !expanded ? (
           <View style={{ maxWidth: '46%', borderRadius: 999, borderWidth: 1, borderColor: p.border, backgroundColor: p.surfaceAlt, paddingHorizontal: 8, paddingVertical: 4 }}>
-            <Text numberOfLines={1} style={{ color: p.muted, fontFamily: 'Inter_600SemiBold', fontSize: 9, lineHeight: 13 }}>{translatedSummary}</Text>
+            <Text numberOfLines={1} style={{ color: p.muted, fontFamily: 'Inter_600SemiBold', fontSize: 9, lineHeight: 13, writingDirection: summaryDirection, textAlign: summaryDirection === 'rtl' ? 'right' : 'left' }}>{isolateMixedDirectionText(translatedSummary, summaryDirection)}</Text>
           </View>
         ) : null}
         <View style={styles.foldIcon}>

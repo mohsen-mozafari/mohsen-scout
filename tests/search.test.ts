@@ -1,6 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { matchesSearchText, normalizeSearchText } from '../lib/search';
+import {
+  createSearchQuery,
+  indexSearchText,
+  matchesSearchIndex,
+  matchesSearchText,
+  normalizeSearchText,
+} from '../lib/search';
 
 void test('Persian/Arabic letters and diacritics are normalized consistently', () => {
   assert.equal(normalizeSearchText('كِتاب يوتيوب'), 'کتاب یوتیوب');
@@ -25,4 +31,12 @@ void test('Every query token must exist; this is not substring or fuzzy matching
 
 void test('Empty search matches all records', () => {
   assert.equal(matchesSearchText('Any title', '   '), true);
+});
+
+
+void test('reusable search indexes preserve matching semantics without re-normalizing content', () => {
+  const index = indexSearchText('تحلیل‌داده درباره YouTube analytics');
+  assert.equal(matchesSearchIndex(index, createSearchQuery('داده ANALYTICS')), true);
+  assert.equal(matchesSearchIndex(index, createSearchQuery('analytics beginner')), false);
+  assert.equal(matchesSearchIndex(index, createSearchQuery('   ')), true);
 });

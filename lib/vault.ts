@@ -1,5 +1,5 @@
 import * as SecureStore from 'expo-secure-store';
-export type Credential = 'youtube' | 'openrouter';
+export type Credential = 'youtube' | 'openrouter' | 'gemini' | 'xai' | 'cloudflare' | 'cloudflare-account-id' | 'firecrawl';
 export const credentialPersistence = 'Encrypted on this device';
 export async function getKey(kind: Credential) {
   return SecureStore.getItemAsync(`mohsen-scout-${kind}`);

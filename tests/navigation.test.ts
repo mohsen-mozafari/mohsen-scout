@@ -10,6 +10,9 @@ void test('Settings is a root route, not a bottom tab, and remains reachable fro
   const rootLayout = readFileSync(resolve(root, 'app/_layout.tsx'), 'utf8');
   const dashboard = readFileSync(resolve(root, 'app/(tabs)/index.tsx'), 'utf8');
   const sharedUi = readFileSync(resolve(root, 'components/ScoutUI.tsx'), 'utf8');
+  const trendIntelligence = readFileSync(resolve(root, 'app/trend-intelligence.tsx'), 'utf8');
+  const workspace = readFileSync(resolve(root, 'app/(tabs)/workspace.tsx'), 'utf8');
+  const researchArchive = readFileSync(resolve(root, 'components/ResearchArchive.tsx'), 'utf8');
 
   assert.equal(SETTINGS_ROUTE, '/settings');
   assert.equal(isSettingsRoute('/settings'), true);
@@ -23,4 +26,10 @@ void test('Settings is a root route, not a bottom tab, and remains reachable fro
   assert.doesNotMatch(tabsLayout, /<Tabs\.Screen\s+name="settings"/);
   assert.doesNotMatch(dashboard, /SETTINGS_ROUTE|router\.(?:push|navigate)\(['"]\/settings/);
   assert.match(sharedUi, /router\.navigate\(SETTINGS_ROUTE\)/);
+  assert.match(trendIntelligence, /router\.push\(SETTINGS_ROUTE\)/);
+  assert.doesNotMatch(trendIntelligence, /\(tabs\)\/settings/);
+  assert.match(workspace, /accessibilityRole="tab"/);
+  assert.match(workspace, /<ResearchArchive \/>/);
+  assert.match(researchArchive, /params: \{ topic: report\.input\.topic, report: report\.id \}/);
+  assert.match(researchArchive, /deep-research/);
 });

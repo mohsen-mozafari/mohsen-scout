@@ -18,6 +18,8 @@ import {
   sortResearchVideos,
   extractResearchEntityCandidates,
   buildResearchEntityRelations,
+  extractEmergentResearchConcepts,
+  buildEmergentConceptRelations,
 } from '../lib/intelligence';
 
 void test('text normalization handles Persian Arabic character variants and zero-width marks', () => {
@@ -289,4 +291,58 @@ void test('tokenization uses a bounded reusable cache without exposing mutable c
   const first = tokenizeResearchText('JWST methane spectroscopy');
   first.push('caller-mutation');
   assert.deepEqual(tokenizeResearchText('JWST methane spectroscopy'), ['jwst', 'methane', 'spectroscopy']);
+});
+
+
+void test('entity extraction preserves provenance across a larger prepared corpus', () => {
+  const documents = Array.from({ length: 80 }, (_, index) => ({
+    id: 'entity-bulk-' + index,
+    sourceId: index % 2 ? 'nasa' : 'esa-space',
+    text: 'NASA and ESA describe Mars observations from the James Webb Space Telescope (JWST).',
+  }));
+  const entities = extractResearchEntityCandidates(documents);
+  const mars = entities.find((entity) => entity.name === 'Mars');
+  const jwst = entities.find((entity) => entity.name === 'JWST');
+  assert.ok(mars);
+  assert.ok(jwst);
+  assert.equal(mars.evidenceIds.length, documents.length);
+  assert.equal(jwst.evidenceIds.length, documents.length);
+  const relations = buildResearchEntityRelations(entities);
+  const nasa = entities.find((entity) => entity.name === 'NASA');
+  assert.ok(nasa);
+  const nasaMars = relations.find((relation) =>
+    (relation.fromEntityId === nasa.id && relation.toEntityId === mars.id) ||
+    (relation.fromEntityId === mars.id && relation.toEntityId === nasa.id),
+  );
+  assert.equal(nasaMars?.evidenceCount, documents.length);
+});
+
+
+void test('emergent research concepts require repeated evidence and exclude the requested topic words', () => {
+  const concepts = extractEmergentResearchConcepts([
+    { id: 'doc-1', sourceId: 'publisher-a', text: 'Mars methane spectroscopy instrument calibration detected methane signals.' },
+    { id: 'doc-2', sourceId: 'publisher-b', text: 'Mars methane measurements discuss spectroscopy and instrument calibration.' },
+    { id: 'doc-3', sourceId: 'publisher-c', text: 'Mars exploration budget timeline and launch schedule.' },
+  ], 'Mars methane', 2, 10);
+  assert.ok(concepts.some((item) => item.term === 'spectroscopy'));
+  assert.ok(concepts.some((item) => item.term === 'calibration'));
+  assert.ok(concepts.every((item) => item.term !== 'mars' && item.term !== 'methane'));
+  assert.ok(concepts.every((item) => item.evidenceIds.length >= 2));
+  assert.ok(concepts.find((item) => item.term === 'calibration')?.sourceIds.includes('publisher-a'));
+  assert.ok(concepts.find((item) => item.term === 'calibration')?.sourceIds.includes('publisher-b'));
+});
+
+void test('emergent concept graph only links concepts that co-occur across enough evidence records', () => {
+  const concepts = extractEmergentResearchConcepts([
+    { id: 'doc-1', text: 'Mars spectroscopy instrument calibration' },
+    { id: 'doc-2', text: 'Mars spectroscopy instrument calibration' },
+    { id: 'doc-3', text: 'Mars launch economics budget' },
+  ], 'Mars', 2, 10);
+  const relations = buildEmergentConceptRelations(concepts, 2);
+  assert.ok(relations.some((item) => {
+    const left = concepts.find((concept) => concept.id === item.fromConceptId)?.term;
+    const right = concepts.find((concept) => concept.id === item.toConceptId)?.term;
+    return new Set([left, right]).has('spectroscopy') && new Set([left, right]).has('instrument');
+  }));
+  assert.ok(relations.every((item) => item.evidenceIds.length >= 2));
 });

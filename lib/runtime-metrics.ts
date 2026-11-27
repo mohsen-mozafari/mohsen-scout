@@ -1,17 +1,19 @@
 import { useEffect, useState } from 'react';
 
 export type RuntimeModule = 'YouTube' | 'Sources' | 'Wikimedia' | 'Engine' | 'AI';
-/** `skipped` is additive: an optional feature that was intentionally not run is not a failure. */
-export type RuntimeOutcome = 'success' | 'partial' | 'error' | 'skipped';
+export type RuntimeOutcome = 'success' | 'partial' | 'error';
 
 type ModuleMetrics = {
   attempted: number;
   succeeded: number;
   partial: number;
   failed: number;
-  skipped: number;
   lastStartedAt: number;
   lastCompletedAt: number;
+  lastDurationMs: number;
+  totalDurationMs: number;
+  completedDurationCount: number;
+  averageDurationMs: number;
   lastError: string;
 };
 
@@ -21,7 +23,6 @@ export type RuntimeMetrics = {
   succeeded: number;
   partial: number;
   failed: number;
-  skipped: number;
   lastStartedAt: number;
   lastCompletedAt: number;
   lastSuccessAt: number;
@@ -33,9 +34,12 @@ const emptyModule = (): ModuleMetrics => ({
   succeeded: 0,
   partial: 0,
   failed: 0,
-  skipped: 0,
   lastStartedAt: 0,
   lastCompletedAt: 0,
+  lastDurationMs: 0,
+  totalDurationMs: 0,
+  completedDurationCount: 0,
+  averageDurationMs: 0,
   lastError: '',
 });
 
@@ -51,7 +55,6 @@ const createEmpty = (): RuntimeMetrics => ({
   succeeded: 0,
   partial: 0,
   failed: 0,
-  skipped: 0,
   lastStartedAt: 0,
   lastCompletedAt: 0,
   lastSuccessAt: 0,
@@ -60,6 +63,7 @@ const createEmpty = (): RuntimeMetrics => ({
 
 let snapshot = createEmpty();
 const listeners = new Set<() => void>();
+const activeStarts = new Map<RuntimeModule, number[]>();
 
 function publish(next: RuntimeMetrics) {
   snapshot = next;
@@ -107,6 +111,9 @@ export function runtimeErrorHint(message: string, language: 'fa' | 'en' = 'en'):
 /** Lightweight in-memory counters; they are never presented as lifetime/project-wide telemetry. */
 export function recordRuntimeStart(module: RuntimeModule, at = Date.now()): void {
   const current = snapshot.modules[module];
+  const starts = activeStarts.get(module) ?? [];
+  starts.push(at);
+  activeStarts.set(module, starts);
   publish({
     ...snapshot,
     modules: {
@@ -125,13 +132,23 @@ export function recordRuntimeFinish(
   at = Date.now(),
 ): void {
   const current = snapshot.modules[module];
+  const starts = activeStarts.get(module) ?? [];
+  const startedAt = starts.shift();
+  if (starts.length) activeStarts.set(module, starts);
+  else activeStarts.delete(module);
+  const duration = startedAt === undefined ? 0 : Math.max(0, at - startedAt);
+  const completedDurationCount = current.completedDurationCount + (startedAt === undefined ? 0 : 1);
+  const totalDurationMs = current.totalDurationMs + duration;
   const nextModule = {
     ...current,
     succeeded: current.succeeded + (outcome === 'success' ? 1 : 0),
     partial: current.partial + (outcome === 'partial' ? 1 : 0),
     failed: current.failed + (outcome === 'error' ? 1 : 0),
-    skipped: current.skipped + (outcome === 'skipped' ? 1 : 0),
     lastCompletedAt: at,
+    lastDurationMs: duration,
+    totalDurationMs,
+    completedDurationCount,
+    averageDurationMs: completedDurationCount ? Math.round(totalDurationMs / completedDurationCount) : 0,
     lastError: outcome === 'error' ? error.slice(0, 240) : current.lastError,
   };
   publish({
@@ -140,7 +157,6 @@ export function recordRuntimeFinish(
     succeeded: snapshot.succeeded + (outcome === 'success' ? 1 : 0),
     partial: snapshot.partial + (outcome === 'partial' ? 1 : 0),
     failed: snapshot.failed + (outcome === 'error' ? 1 : 0),
-    skipped: snapshot.skipped + (outcome === 'skipped' ? 1 : 0),
     lastCompletedAt: at,
     lastSuccessAt: outcome === 'success' ? at : snapshot.lastSuccessAt,
     lastError: outcome === 'error' ? error.slice(0, 240) : snapshot.lastError,

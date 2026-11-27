@@ -7,7 +7,6 @@ import { exportBackup, importBackup, personalLinks, restorePersonalData } from '
 import { moveNoteBlock } from '../lib/utils';
 import {
   defaults,
-  RETENTION_MS,
   purgeExpired,
   type Video,
   type Report,
@@ -36,6 +35,7 @@ import {
 } from '../lib/api';
 import { buildIdeas, buildInternalResearch, createManualIdea, rankNewsForTopic, topicRelevanceScore } from '../lib/engine';
 import { scoreEditorialOpportunity, sortResearchVideos } from '../lib/intelligence';
+import { captureYouTubeSnapshots } from '../lib/youtube-growth';
 import { EDITORIAL_PRIORITY_CONFIG, getEditorialPriorityBand } from '../lib/editorial-priority';
 import { rankDashboardIdeas } from '../lib/dashboard';
 import { translateText } from '../lib/i18n';
@@ -327,6 +327,98 @@ void test('YouTube likes cursor advances both discovery pools independently', as
   assert.ok(second.nextPageToken);
 });
 
+void test('YouTube Discovery Mix samples view-count, recent and relevance lanes and interleaves unique results', async () => {
+  const orders: string[] = [];
+  let charged = 0;
+  const makeVideo = (id: string) => ({
+    id: { videoId: id },
+    snippet: {
+      title: 'MOCK discovery video ' + id,
+      description: 'MOCK independent test fixture',
+      channelTitle: 'MOCK channel',
+      channelId: 'UCmockchannel',
+      publishedAt: '2026-11-10T12:00:00Z',
+      thumbnails: { high: { url: 'https://example.com/' + id + '.jpg' } },
+    },
+  });
+  const result = await searchYouTubeSample('Mars discoveries', {
+    key: 'MOCK_DISCOVERY_KEY',
+    charge: async (units) => { charged += units; },
+    fetcher: async (url) => {
+      const parsed = new URL(typeof url === 'string' ? url : url instanceof URL ? url.href : url.url);
+      if (parsed.pathname.endsWith('/search')) {
+        const order = parsed.searchParams.get('order') ?? '';
+        orders.push(order);
+        assert.equal(parsed.searchParams.get('maxResults'), '2');
+        const ids = order === 'viewCount'
+          ? ['dQw4w9WgXcQ', 'M7lc1UVf-VE']
+          : order === 'date'
+            ? ['VYOjWnS4cMY', 'M7lc1UVf-VE']
+            : ['3JZ_D3ELwOQ', 'dQw4w9WgXcQ'];
+        return response({
+          nextPageToken: order + '-next',
+          items: ids.map(makeVideo),
+        });
+      }
+      if (parsed.pathname.endsWith('/videos')) return response({ items: [] });
+      if (parsed.pathname.endsWith('/channels')) return response({ items: [] });
+      throw new Error('Unexpected endpoint: ' + parsed.pathname);
+    },
+  }, 6, { order: 'discovery', days: 0 });
+  assert.deepEqual(orders, ['viewCount', 'date', 'relevance']);
+  assert.deepEqual(result.videos.map((item) => item.id), [
+    'dQw4w9WgXcQ', 'VYOjWnS4cMY', '3JZ_D3ELwOQ', 'M7lc1UVf-VE',
+  ]);
+  assert.equal(charged, 5);
+  assert.match(result.nextPageToken ?? '', /^mohsen-scout-discovery-v1:/);
+  assert.match(result.warning, /no growth or market score/i);
+});
+
+void test('YouTube Discovery Mix advances each official search lane with its own page token', async () => {
+  const seen: { order: string; token: string }[] = [];
+  const makeVideo = (id: string) => ({
+    id: { videoId: id },
+    snippet: {
+      title: 'MOCK cursor discovery video',
+      description: '',
+      channelTitle: 'MOCK channel',
+      channelId: 'UCmockchannel',
+      publishedAt: '2026-11-10T12:00:00Z',
+      thumbnails: {},
+    },
+  });
+  const options = {
+    key: 'MOCK_DISCOVERY_CURSOR_KEY',
+    charge: async () => {},
+    fetcher: async (url: string | URL | Request) => {
+      const parsed = new URL(typeof url === 'string' ? url : url instanceof URL ? url.href : url.url);
+      if (parsed.pathname.endsWith('/search')) {
+        const order = parsed.searchParams.get('order') ?? '';
+        const token = parsed.searchParams.get('pageToken') ?? '';
+        seen.push({ order, token });
+        return response({
+          nextPageToken: token ? undefined : order + '-next',
+          items: [makeVideo(order === 'viewCount' ? 'dQw4w9WgXcQ' : order === 'date' ? 'M7lc1UVf-VE' : 'VYOjWnS4cMY')],
+        });
+      }
+      if (parsed.pathname.endsWith('/videos')) return response({ items: [] });
+      if (parsed.pathname.endsWith('/channels')) return response({ items: [] });
+      throw new Error('Unexpected endpoint: ' + parsed.pathname);
+    },
+  };
+  const first = await searchYouTubeSample('JWST', options, 9, { order: 'discovery', days: 0 });
+  assert.ok(first.nextPageToken);
+  await searchYouTubeSample('JWST', options, 9, { order: 'discovery', days: 0, pageToken: first.nextPageToken });
+  assert.deepEqual(seen, [
+    { order: 'viewCount', token: '' },
+    { order: 'date', token: '' },
+    { order: 'relevance', token: '' },
+    { order: 'viewCount', token: 'viewCount-next' },
+    { order: 'date', token: 'date-next' },
+    { order: 'relevance', token: 'relevance-next' },
+  ]);
+});
+
 void test('YouTube likes sample rejects a malformed versioned cursor before making requests', async () => {
   let calls = 0;
   await assert.rejects(
@@ -425,24 +517,20 @@ void test('Foundation: defaults belong to Mohsen and have no secrets', () => {
 void test('Storage: malformed persisted data is rejected', () => {
   assert.throws(() => validateLocal({ ...defaults(), notes: 'bad' }));
 });
-void test('Storage: API metadata expires at 29 days while personal notes and links remain', () => {
+void test('Storage: YouTube videos, reports and snapshots persist beyond the former 29-day boundary', () => {
   const d = defaults();
-  d.videos = [video, { ...video, id: 'old', fetchedAt: now - RETENTION_MS }];
-  d.links = [
-    {
-      id: 'old',
-      url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
-      manualTitle: 'My label',
-      topic: 'My topic',
-      note: 'My note',
-      folder: 'Ideas',
-      tags: ['personal'],
-      savedAt: 0,
-    },
-  ];
+  const old = now - 90 * 86400000;
+  d.videos = [{ ...video, id: 'old-retained', fetchedAt: old }];
+  d.reports = [{ ...regressionReport, id: 'old-report', createdAt: old, videos: [{ ...video, id: 'old-retained', fetchedAt: old }] }];
+  d.youtubeSnapshots = [{
+    id: 'snapshot-old', videoId: 'old-retained', channel: 'MOCK channel',
+    capturedAt: old, viewCount: 1000, likeCount: 20, commentCount: 1,
+  }];
   const clean = purgeExpired(d, now);
   assert.equal(clean.videos.length, 1);
-  assert.equal(clean.links[0].note, 'My note');
+  assert.equal(clean.reports.length, 1);
+  assert.equal(clean.reports[0]?.videos.length, 1);
+  assert.equal(clean.youtubeSnapshots.length, 1);
 });
 void test('Backup: round trip preserves personal data and strips all API metadata/opinions/schedules', () => {
   const d = defaults();
@@ -489,9 +577,53 @@ void test('Backup: round trip preserves personal data and strips all API metadat
   assert.equal(imported.preferences.hybridIntelligence, false);
   assert.equal(imported.researchMemory.length, 1);
   assert.equal(imported.researchMemory[0].sources[0].title, 'Exoplanet atmosphere observed at 40 km');
+  d.researchActivity = [{ id: 'unbacked', engine: 'YouTube Data API', query: 'sample', topic: 'topic', niche: 'niche', startedAt: now, status: 'success', resultCount: 1, analyzedCount: 0, results: [], warnings: [], reportId: 'temporary-report' }];
+  assert.equal(importBackup(exportBackup(d)).researchActivity[0].reportId, undefined);
   assert.deepEqual(imported.preferences.spaceNewsSources, defaults().preferences.spaceNewsSources);
   assert.equal(imported.preferences.spaceNewsSourcesVersion, 2);
 });
+void test('Backup preserves bounded research activity without exporting raw YouTube video metadata', () => {
+  const data = defaults();
+  data.videos = [{
+    id: 'raw-video-1',
+    title: 'RAW YOUTUBE VIDEO TITLE MUST NOT BE EXPORTED',
+    description: 'Temporary YouTube API metadata',
+    channel: 'Temporary channel',
+    thumbnail: 'https://img.example/raw-thumbnail.jpg',
+    publishedAt: new Date(1000).toISOString(),
+    fetchedAt: 1000,
+    query: 'exact temporary query',
+    viewCount: 12345,
+    likeCount: 678,
+  }];
+  data.researchActivity = [{
+    id: 'activity-1',
+    engine: 'YouTube Data API',
+    query: 'latest space telescope discoveries · recent · en',
+    topic: 'space telescope discoveries',
+    niche: 'astronomy',
+    startedAt: 1000,
+    completedAt: 2000,
+    durationMs: 1000,
+    status: 'success',
+    resultCount: 24,
+    analyzedCount: 0,
+    results: [],
+    warnings: [],
+    reportId: 'report-1',
+  }];
+  const raw = exportBackup(data);
+  assert(!raw.includes('RAW YOUTUBE VIDEO TITLE MUST NOT BE EXPORTED'));
+  const restored = importBackup(raw);
+  assert.equal(restored.researchActivity[0].query, data.researchActivity[0].query);
+  assert.equal(restored.researchActivity[0].reportId, undefined);
+  assert.equal(restored.videos.length, 0);
+
+  const legacy = JSON.parse(raw);
+  delete legacy.personal.researchActivity;
+  assert.deepEqual(importBackup(JSON.stringify(legacy)).researchActivity, []);
+});
+
 void test('Backup: malformed/oversized/wrong version files rejected before mutation', () => {
   assert.throws(() => importBackup('{'));
   assert.throws(() => importBackup(JSON.stringify({ app: 'MOHSEN SCOUT', version: 2 })));
@@ -609,17 +741,21 @@ void test('YouTube sample keeps relevance, high-view, recent and explainer bucke
   assert.equal(counts[input.topic + ' explained'] ?? 0, 0);
 });
 
-void test('YouTube MOCK: broad result buckets use one 50-result page each', async () => {
-  let calls = 0;
+void test('YouTube MOCK: extra pages stop at the 12-search safety cap and video statistics remain a separate request', async () => {
+  let searchCalls = 0;
+  let statisticsCalls = 0;
   const result = await searchYouTube(input, {
     key: 'MOCK_PAGE',
     charge: async () => {},
-    fetcher: fetcher(() => {
-      calls++;
+    fetcher: fetcher((url) => {
+      const pathname = new URL(url).pathname;
+      if (pathname.endsWith('/search')) searchCalls++;
+      else if (pathname.endsWith('/videos')) statisticsCalls++;
       return response({ nextPageToken: 'next', items: [mockItem('dQw4w9WgXcQ')] });
     }),
   });
-  assert.equal(calls, 5);
+  assert.equal(searchCalls, 12);
+  assert.equal(statisticsCalls, 1);
   assert.equal(result.videos.length, 1);
 });
 void test('YouTube MOCK: quota exhaustion stops without retries and invokes stop hook', async () => {
@@ -885,11 +1021,7 @@ void test('Analysis: ideas are cautious hypotheses, not performance scores', () 
     analyzed: false,
   };
   const ideas = buildIdeas(report);
-  assert.equal(ideas.length, 4);
-  assert.equal(ideas[0].assessment, 'Worth Exploring');
-  assert.deepEqual(ideas[0].videoIds, [video.id]);
-  assert.equal(ideas[0].imageUrl, video.thumbnail);
-  assert.equal(ideas[1].assessment, 'Uncertain');
+  assert.deepEqual(ideas, []);
   assert(!JSON.stringify(ideas).includes(video.title));
   assert(!JSON.stringify(ideas).includes(video.description));
   assert(!JSON.stringify(ideas).includes('score'));
@@ -904,7 +1036,7 @@ const regressionReport: Report = {
   createdAt: now,
   analyzed: false,
 };
-const regressionIdea = buildIdeas(regressionReport)[0];
+const regressionIdea = createManualIdea(input.topic, 'A user-authored concept used only for persistence regression tests.', '', 'Iran', ['en']);
 const regressionLink = {
   id: video.id,
   url: `https://www.youtube.com/watch?v=${video.id}`,
@@ -915,16 +1047,23 @@ const regressionLink = {
   tags: [],
   savedAt: now,
 };
-void test('Retention: expired reports lose references but personal bookmarked URLs remain', () => {
+void test('Retention: old YouTube metadata never expires and report links stay intact', () => {
   const data = defaults();
+  const old = now - 120 * 86400000;
   data.links = [regressionLink];
-  data.videos = [{ ...video, fetchedAt: now - RETENTION_MS }];
-  data.reports = [{ ...regressionReport, createdAt: now - RETENTION_MS }];
-  data.ideas = [{ ...regressionIdea, videoIds: [video.id, 'unsaved'] }];
+  data.videos = [{ ...video, fetchedAt: old }];
+  data.reports = [{ ...regressionReport, createdAt: old, videos: [{ ...video, fetchedAt: old }] }];
+  data.ideas = [{ ...regressionIdea, reportId: regressionReport.id, videoIds: [video.id] }];
+  data.youtubeSnapshots = [{
+    id: 'old-snapshot', videoId: video.id, channel: video.channel,
+    capturedAt: old, viewCount: 900, likeCount: 30, commentCount: 2,
+  }];
   const clean = purgeExpired(data, now);
-  assert.equal(clean.ideas[0].reportId, undefined);
-  assert.deepEqual(clean.ideas[0].videoIds, [video.id]);
-  assert.equal(clean.ideas[0].concept, regressionIdea.concept);
+  assert.equal(clean.videos.length, 1);
+  assert.equal(clean.reports.length, 1);
+  assert.equal(clean.ideas[0]?.reportId, regressionReport.id);
+  assert.deepEqual(clean.ideas[0]?.videoIds, [video.id]);
+  assert.equal(clean.youtubeSnapshots.length, 1);
 });
 void test('Retention: metadata clearing removes automated report and video references', () => {
   const data = defaults();
@@ -933,11 +1072,51 @@ void test('Retention: metadata clearing removes automated report and video refer
   assert.equal(clean.ideas[0].reportId, undefined);
   assert.deepEqual(clean.ideas[0].videoIds, []);
 });
-void test('Retention: nested video metadata expires independently of a current report', () => {
+void test('Retention: nested historical video metadata remains in its report', () => {
   const data = defaults();
-  data.reports = [{ ...regressionReport, videos: [{ ...video, fetchedAt: now - RETENTION_MS }] }];
-  assert.deepEqual(purgeExpired(data, now).reports[0].videos, []);
+  data.reports = [{ ...regressionReport, videos: [{ ...video, fetchedAt: now - 120 * 86400000 }] }];
+  assert.equal(purgeExpired(data, now).reports[0]?.videos.length, 1);
 });
+
+void test('Retention: historical YouTube reports and activity links remain indefinitely; orphan links are pruned', () => {
+  const data = defaults();
+  data.reports = [
+    {
+      ...regressionReport,
+      videos: [{ ...video, fetchedAt: now - 120 * 86400000 }],
+    },
+    {
+      ...regressionReport,
+      id: 'live-retention-report',
+      videos: [{ ...video, id: 'live-video', fetchedAt: now }],
+    },
+  ];
+  const activity = {
+    engine: 'YouTube Data API' as const,
+    query: 'recent topic sample',
+    topic: 'recent topic',
+    niche: 'astronomy',
+    startedAt: now - 1000,
+    completedAt: now,
+    durationMs: 1000,
+    status: 'success' as const,
+    resultCount: 12,
+    analyzedCount: 0,
+    results: [],
+    warnings: [],
+  };
+  data.researchActivity = [
+    { ...activity, id: 'expired-video-link', reportId: 'retention-report' },
+    { ...activity, id: 'live-video-link', reportId: 'live-retention-report' },
+    { ...activity, id: 'orphan-video-link', reportId: 'missing-report' },
+  ];
+  const clean = purgeExpired(data, now);
+  assert.equal(clean.reports.find((report) => report.id === 'retention-report')?.videos.length, 1);
+  assert.equal(clean.researchActivity.find((event) => event.id === 'expired-video-link')?.reportId, 'retention-report');
+  assert.equal(clean.researchActivity.find((event) => event.id === 'orphan-video-link')?.reportId, undefined);
+  assert.equal(clean.researchActivity.find((event) => event.id === 'live-video-link')?.reportId, 'live-retention-report');
+});
+
 void test('Restore: replaces personal data without resetting research/quota, disables scheduling', () => {
   const current = defaults();
   current.videos = [video];
@@ -1094,7 +1273,7 @@ void test('OpenRouter news translation parses and caches a Persian title and sum
   assert.equal(calls, 1);
 });
 
-void test('Internal research engine joins publisher, Wikimedia and YouTube evidence without a composite score', () => {
+void test('Internal research engine combines publisher, Wikimedia and YouTube platform observations', () => {
   const result = buildInternalResearch({
     topic: 'Exoplanet atmospheres',
     news: [
@@ -1133,8 +1312,9 @@ void test('Internal research engine joins publisher, Wikimedia and YouTube evide
   assert.ok(result.evidence.some((item) => item.id === 'publisher-news' && item.detail.includes('2 selected feed source(s)')));
   assert.ok(result.evidence.some((item) => item.id === 'wikimedia' && item.detail.includes('not search volume')));
   assert.ok(result.evidence.some((item) => item.id === 'youtube-sample' && item.detail.includes('1 returned video example')));
-  assert.ok(result.evidence.some((item) => item.id === 'youtube-sample' && item.detail.includes('median 1,000')));
-  assert.ok(result.evidence.some((item) => item.id === 'youtube-sample' && item.detail.includes('median 50')));
+  assert.equal(result.intelligence.selfEvaluation.youtubeSampleCount, 1);
+  assert.equal(result.intelligence.selfEvaluation.videoViewCountsAvailable, 1);
+  assert.match(JSON.stringify(result), /Exoplanet atmosphere discovery explained|MOCK science channel/);
   assert.equal(result.intelligence.sourceQuality.feedsRepresented, 2);
   assert.equal(result.intelligence.sourceQuality.independentPublishers, 1);
   assert.equal(result.intelligence.sourceQuality.duplicateStoriesMerged, 1);
@@ -1142,7 +1322,7 @@ void test('Internal research engine joins publisher, Wikimedia and YouTube evide
   assert(!JSON.stringify(result).toLowerCase().includes('viral score'));
 });
 
-void test('Internal engine keeps historical context while separating recent, all-time and future-dated YouTube matches', () => {
+void test('Internal engine evaluates YouTube metadata in recent and all-time sample metrics', () => {
   const fixedNow = Date.parse('2026-11-18T12:00:00.000Z');
   const result = buildInternalResearch({
     topic: 'Exoplanet atmospheres',
@@ -1171,6 +1351,7 @@ void test('Internal engine keeps historical context while separating recent, all
   assert.equal(audit.futureDatedVideoCount, 1);
   assert.equal(audit.excludedVideoCount, 2);
   assert.equal(audit.videoViewCountsAvailable, 2);
+  assert.ok(result.evidence.some((item) => item.id === 'youtube-sample' && item.detail.includes('returned video example')));
   const allTime = buildInternalResearch({
     topic: 'Exoplanet atmospheres', now: fixedNow, videoWindowDays: 0,
     videos: [
@@ -1179,11 +1360,12 @@ void test('Internal engine keeps historical context while separating recent, all
       { id: 'aqz-KE-bpKQ', title: 'Exoplanet atmosphere announced for the future', channel: 'Future Science', publishedAt: '2026-12-01T09:00:00.000Z', viewCount: 12000, likeCount: 500 },
     ],
   }).intelligence.selfEvaluation;
+  assert.equal(allTime.youtubeSampleCount, 3);
   assert.equal(allTime.recentVideoCandidateCount, 2);
   assert.equal(allTime.recentMatchedVideoCount, 2);
   assert.equal(allTime.outsideVideoWindowCount, 1);
   assert.ok(result.evidence.some((item) => item.id === 'retrieved-news-headlines' && item.detail.includes('Artemis')), 'unmatched publisher records remain visible in the contextual evidence audit');
-  assert.ok(result.evidence.some((item) => item.id === 'youtube-sample' && item.detail.includes('9,000')));
+  assert.ok(result.evidence.some((item) => item.id === 'youtube-sample' && item.detail.includes('returned video example')));
 });
 
 void test('Topic relevance ranks a direct publisher match above unrelated feed context', () => {
@@ -1248,7 +1430,7 @@ void test('Second Opinion prompt follows the selected UI language', () => {
   assert.match(englishPrompt, /concise English second opinion/);
 });
 
-void test('generated research ideas use the selected UI language', () => {
+void test('legacy report helper does not derive ideas from raw YouTube samples', () => {
   const report: Report = {
     id: 'language-idea-test',
     input: { ...input, topic: 'James Webb discoveries' },
@@ -1259,8 +1441,7 @@ void test('generated research ideas use the selected UI language', () => {
     analyzed: false,
   };
   const persianIdeas = buildIdeas(report, 'fa');
-  assert.match(persianIdeas[0].topic, /نمونه‌های فعلی/);
-  assert.match(persianIdeas[0].concept, /نمونه‌های دریافت‌شده/);
+  assert.deepEqual(persianIdeas, []);
 });
 
 
@@ -1343,7 +1524,8 @@ void test('Editorial priority bands use the centralized, evidence-only threshold
     EDITORIAL_PRIORITY_CONFIG.weights.relevance +
       EDITORIAL_PRIORITY_CONFIG.weights.evidenceBreadth +
       EDITORIAL_PRIORITY_CONFIG.weights.freshness +
-      EDITORIAL_PRIORITY_CONFIG.weights.differentiation,
+      EDITORIAL_PRIORITY_CONFIG.weights.differentiation +
+      EDITORIAL_PRIORITY_CONFIG.weights.platformMomentum,
     1,
   );
   assert.equal(getEditorialPriorityBand(85), 'strong');
@@ -1351,6 +1533,7 @@ void test('Editorial priority bands use the centralized, evidence-only threshold
   assert.equal(getEditorialPriorityBand(64), 'weak');
   assert.equal(getEditorialPriorityBand(100), 'strong');
   assert.equal(getEditorialPriorityBand(0), 'weak');
+  assert.equal(EDITORIAL_PRIORITY_CONFIG.baseWeights.relevance + EDITORIAL_PRIORITY_CONFIG.baseWeights.evidenceBreadth + EDITORIAL_PRIORITY_CONFIG.baseWeights.freshness + EDITORIAL_PRIORITY_CONFIG.baseWeights.differentiation, 1);
 });
 
 function makeEditorialPriorityTestIdea(topic: string, engineScore?: number) {
@@ -1401,4 +1584,69 @@ void test('Editorial priority does not fabricate freshness when all matched evid
     now: Date.UTC(2026, 10, 20),
   });
   assert.equal(result.components.freshness, 0);
+});
+
+void test('Editorial scoring uses measured YouTube velocity without counting videos as independent publisher groups', () => {
+  const base = {
+    topic: 'Mars sample return',
+    anchor: 'Mars sample return technical review',
+    news: [
+      { title: 'NASA Mars sample return mission architecture', summary: 'The sample retrieval and transfer plan needs technical review.', sourceName: 'NASA', sourceId: 'nasa', sourceUrl: 'https://nasa.gov/mars', publishedAt: '2026-11-18T00:00:00Z' },
+      { title: 'ESA Mars sample return collaboration', summary: 'The mission update describes sample handling and independent review.', sourceName: 'ESA', sourceId: 'esa', sourceUrl: 'https://esa.int/mars', publishedAt: '2026-11-17T00:00:00Z' },
+    ],
+    historicalNews: [],
+    context: [],
+    now: Date.UTC(2026, 10, 20),
+  };
+  const withVideoSamples = scoreEditorialOpportunity({
+    ...base,
+    videos: [
+      { title: 'MOCK Mars sample return views', channel: 'MOCK channel A', publishedAt: '2026-11-19T00:00:00Z', viewCount: 9000000, viewsPerHour: 1200, channelOutlierRatio: 5 },
+      { title: 'MOCK Mars sample return high engagement', channel: 'MOCK channel B', publishedAt: '2026-11-18T00:00:00Z', viewCount: 8000000, viewsPerHour: 600, channelOutlierRatio: 3 },
+      { title: 'MOCK Mars sample return breakthrough', channel: 'MOCK channel C', publishedAt: '2026-11-17T00:00:00Z', viewCount: 7000000, viewsPerHour: 300, channelOutlierRatio: 2 },
+    ],
+  });
+  assert.notEqual(withVideoSamples.components.platformMomentum, 0);
+  assert.equal(withVideoSamples.components.audienceSignal, null);
+  assert.ok(withVideoSamples.components.platformMomentum > 0);
+  assert.ok(withVideoSamples.reason.includes('2 publisher group(s)'));
+  assert.ok(withVideoSamples.reason.includes('measured platform momentum'));
+});
+
+void test('YouTube growth requires two snapshots and computes elapsed-time velocity', () => {
+  const first: Video = { ...video, id: 'growth-video', channel: 'Growth channel', viewCount: 1000, likeCount: 20 };
+  const initial = captureYouTubeSnapshots([first], [], now);
+  assert.equal(initial.videos[0].growth?.status, 'insufficient-history');
+  assert.equal(initial.videos[0].growth?.viewsPerDay, null);
+  const second = captureYouTubeSnapshots([{ ...first, viewCount: 1600 }], initial.snapshots, now + 2 * 86400000);
+  assert.equal(second.videos[0].growth?.status, 'measured');
+  assert.equal(second.videos[0].growth?.deltaViews, 600);
+  assert.equal(second.videos[0].growth?.viewsPerDay, 300);
+  assert.equal(second.snapshots[0].viewCount, 1600);
+});
+
+void test('YouTube growth does not invent velocity for zero or too-short intervals', () => {
+  const first: Video = { ...video, id: 'fast-video', viewCount: 1000 };
+  const initial = captureYouTubeSnapshots([first], [], now);
+  const second = captureYouTubeSnapshots([{ ...first, viewCount: 1500 }], initial.snapshots, now + 5 * 60000);
+  assert.equal(second.videos[0].growth?.status, 'insufficient-history');
+  assert.equal(second.videos[0].growth?.viewsPerHour, null);
+});
+
+void test('YouTube channel baseline excludes the measured video and uses three peer histories', () => {
+  const capturedAt = Date.UTC(2026, 10, 25, 12, 0, 0);
+  const day = 86400000;
+  const history: import('../lib/types').YouTubeSnapshot[] = [];
+  for (const [videoId, rate] of [['peer-1', 100], ['peer-2', 200], ['peer-3', 300], ['target', 1000]] as const) {
+    history.push(
+      { id: videoId + ':a', videoId, channel: 'Shared channel', capturedAt: capturedAt - 2 * day, viewCount: 0, likeCount: null, commentCount: null },
+      { id: videoId + ':b', videoId, channel: 'Shared channel', capturedAt: capturedAt - day, viewCount: rate, likeCount: null, commentCount: null },
+    );
+  }
+  const target: Video = { ...video, id: 'target', channel: 'Shared channel', viewCount: 2000, likeCount: null };
+  const result = captureYouTubeSnapshots([target], history, capturedAt);
+  assert.equal(result.videos[0]?.growth?.viewsPerDay, 1000);
+  assert.equal(result.videos[0]?.growth?.channelBaselineViewsPerDay, 200);
+  assert.equal(result.videos[0]?.growth?.channelOutlierRatio, 5);
+  assert.equal(result.videos[0]?.growth?.snapshotCount, 3);
 });

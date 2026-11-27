@@ -1,6 +1,5 @@
 import { z } from 'zod';
-import { type Budget, type ResearchInput, type Video, type Region } from './types';
-import type { EvidenceItem, OpportunityScore, Topic } from './engine-v2';
+import { type Budget, type ResearchInput, type Video, type Region, type YouTubeGrowth } from './types';
 import { matchesStrongResearchTopic, scoreResearchText } from './intelligence';
 export type Fetcher = typeof fetch;
 export class ApiError extends Error {
@@ -200,6 +199,7 @@ const searchSchema = z.object({
         title: z.string(),
         description: z.string(),
         channelTitle: z.string(),
+        channelId: z.string().optional(),
         publishedAt: z.string().datetime(),
         thumbnails: z.object({
           medium: z.object({ url: z.string() }).optional(),
@@ -348,12 +348,17 @@ export async function searchYouTube(input: ResearchInput, options: YouTubeOption
     searchAttemptBudget: { used: 0, limit: YOUTUBE_SEARCH_REQUEST_LIMIT },
   };
   let lastError: unknown;
-  for (const search of searches) {
-    onProgress?.(`Sampling ${SEARCH_BUCKET_LABELS[search.bucket](topic)} · ${search.language || 'global'} · ${search.order}`);
+  let haltSearch = false;
+  const searchStates = searches.map((search) => ({ search, nextPageToken: undefined as string | undefined, page: 0 }));
+  const fetchSearchPage = async (state: typeof searchStates[number]) => {
+    if (haltSearch || researchOptions.searchAttemptBudget!.used >= researchOptions.searchAttemptBudget!.limit) return;
+    const { search } = state;
+    const page = state.page + 1;
+    onProgress?.(`Sampling ${SEARCH_BUCKET_LABELS[search.bucket](topic)} · ${search.language || 'global'} · page ${page}`);
     const params: Record<string, string> = {
       part: 'snippet', type: 'video', q: search.query, order: search.order,
       maxResults: '50', videoDuration: input.duration,
-      fields: 'nextPageToken,items(id/videoId,snippet(title,description,channelTitle,publishedAt,thumbnails))',
+      fields: 'nextPageToken,items(id/videoId,snippet(title,description,channelTitle,channelId,publishedAt,thumbnails))',
     };
     const regionCodes: Partial<Record<Region, string>> = {
       'United States': 'US', Iran: 'IR', 'United Kingdom': 'GB', Germany: 'DE',
@@ -362,31 +367,58 @@ export async function searchYouTube(input: ResearchInput, options: YouTubeOption
     if (search.language) params.relevanceLanguage = search.language;
     if (search.bucket !== 'popularity' && regionCodes[input.region]) params.regionCode = regionCodes[input.region]!;
     if (input.category) params.videoCategoryId = input.category;
-    // Apply the exact user-selected window locally for date/view-count ordered searches.
     if (search.order === 'relevance' && input.days > 0)
       params.publishedAfter = new Date(searchNow - input.days * 86400000).toISOString();
+    if (state.nextPageToken) params.pageToken = state.nextPageToken;
     try {
       const raw = await youtube('search', params, researchOptions, 1);
       const parsed = searchSchema.safeParse(raw);
       if (!parsed.success) throw new ApiError('YouTube returned an invalid search response.', 'invalid');
+      state.page = page;
+      state.nextPageToken = parsed.data.nextPageToken;
       for (const item of parsed.data.items) {
         if (!isWithinYouTubeResearchWindow(item.snippet.publishedAt, input.days, searchNow)) continue;
         const id = item.id.videoId;
         if (!candidates.has(id)) {
           candidates.set(id, {
             id, title: item.snippet.title, description: item.snippet.description,
-            channel: item.snippet.channelTitle, publishedAt: item.snippet.publishedAt,
+            channel: item.snippet.channelTitle, channelId: item.snippet.channelId, publishedAt: item.snippet.publishedAt,
             thumbnail: item.snippet.thumbnails.medium?.url ?? item.snippet.thumbnails.default?.url ?? '',
             fetchedAt: Date.now(), query: SEARCH_BUCKET_LABELS[search.bucket](topic),
           });
         }
         bucketIds[search.bucket].push(id);
       }
+      return true;
     } catch (error) {
       lastError = error;
+      state.nextPageToken = undefined;
       warnings.push((error instanceof Error ? error.message : 'A YouTube search failed.') + ' Another result bucket may still be available.');
-      if (error instanceof ApiError && ['quota', 'budget', 'key', 'permission', 'invalid', 'offline', 'timeout', 'attempt-limit'].includes(error.code)) break;
+      if (error instanceof ApiError && ['quota', 'budget', 'key', 'permission', 'invalid', 'offline', 'timeout', 'attempt-limit'].includes(error.code))
+        haltSearch = true;
+      return false;
     }
+  };
+
+  // First sample every planned query angle. Then use any remaining per-run
+  // search budget for additional pages, round-robin across the same buckets.
+  for (const state of searchStates) {
+    if (haltSearch || researchOptions.searchAttemptBudget!.used >= researchOptions.searchAttemptBudget!.limit) break;
+    await fetchSearchPage(state);
+  }
+  while (!haltSearch && researchOptions.searchAttemptBudget!.used < researchOptions.searchAttemptBudget!.limit) {
+    let requestedAnotherPage = false;
+    for (const state of searchStates) {
+      if (haltSearch || researchOptions.searchAttemptBudget!.used >= researchOptions.searchAttemptBudget!.limit) break;
+      if (!state.nextPageToken) continue;
+      requestedAnotherPage = true;
+      await fetchSearchPage(state);
+    }
+    if (!requestedAnotherPage) break;
+  }
+  if (researchOptions.searchAttemptBudget!.used >= researchOptions.searchAttemptBudget!.limit &&
+      searchStates.some((state) => Boolean(state.nextPageToken))) {
+    warnings.push('The per-run YouTube search safety budget was reached. Additional result pages were left for a later refresh.');
   }
   if (!candidates.size && lastError) throw lastError;
 
@@ -433,18 +465,17 @@ export async function searchYouTube(input: ResearchInput, options: YouTubeOption
     if (selected.size >= resultLimit) break;
   }
   const collected = [...selected.values()];
-  let statisticsBatchWarnings = 0;
   for (let offset = 0; offset < collected.length; offset += 50) {
     const batch = collected.slice(offset, offset + 50);
     try {
       const raw = await youtube('videos', {
         part: 'statistics', id: batch.map((item) => item.id).join(','),
-        fields: 'items(id,statistics(viewCount,likeCount))',
+        fields: 'items(id,statistics(viewCount,likeCount,commentCount))',
       }, options, 1);
       const parsed = z.object({
         items: z.array(z.object({
           id: z.string(),
-          statistics: z.object({ viewCount: z.string().optional(), likeCount: z.string().optional() }).optional(),
+          statistics: z.object({ viewCount: z.string().optional(), likeCount: z.string().optional(), commentCount: z.string().optional() }).optional(),
         })),
       }).safeParse(raw);
       if (!parsed.success) throw new ApiError('Video statistics returned an invalid response.', 'invalid');
@@ -454,18 +485,9 @@ export async function searchYouTube(input: ResearchInput, options: YouTubeOption
         video.viewCount = stats?.viewCount && /^\d+$/.test(stats.viewCount) ? Number(stats.viewCount) : null;
         video.likeCount = stats?.likeCount && /^\d+$/.test(stats.likeCount) ? Number(stats.likeCount) : null;
       }
-    } catch (error) {
-      // One failed statistics batch must not discard the remaining batches.
-      // Keep the warning typed, bounded and counted; stop only on a hard
-      // quota/budget/key failure so the existing request budget is respected.
-      const detail = error instanceof Error ? error.message : 'unknown error';
-      if (statisticsBatchWarnings < 3) {
-        warnings.push(('Video statistics batch ' + (Math.floor(offset / 50) + 1) +
-          ' could not be loaded: ' + detail).slice(0, 220));
-        statisticsBatchWarnings += 1;
-      }
-      if (error instanceof ApiError && ['quota', 'budget', 'key', 'permission'].includes(error.code)) break;
-      continue;
+    } catch {
+      warnings.push('Video titles and dates were retrieved, but raw view/like counts could not be loaded. Sorting falls back to available fields.');
+      break;
     }
   }
   return {
@@ -533,10 +555,11 @@ export type YouTubeSampleVideo = {
   channelSubscriberCount: number | null;
   channelVideoCount: number | null;
   url: string;
+  growth?: YouTubeGrowth;
 };
 export type YouTubeSampleFilters = {
   days?: 0 | 7 | 30 | 90;
-  order?: 'date' | 'viewCount' | 'relevance';
+  order?: 'date' | 'viewCount' | 'relevance' | 'discovery';
   region?: Region;
   language?: string;
   pageToken?: string;
@@ -606,8 +629,41 @@ function encodeLikeSampleCursor(relevance: string, views: string) {
   }));
 }
 
-/** Search once for a normal sort, or sample two discovery pools for raw-like sorting.
- *  The likes mode remains a bounded sample, never a global ranking.
+const DISCOVERY_CURSOR_PREFIX = 'mohsen-scout-discovery-v1:';
+const discoveryCursorSchema = z.object({
+  version: z.literal(1),
+  views: z.string().optional().default(''),
+  recent: z.string().optional().default(''),
+  relevance: z.string().optional().default(''),
+});
+function decodeDiscoveryCursor(token?: string) {
+  if (!token) return { views: '', recent: '', relevance: '' };
+  if (!token.startsWith(DISCOVERY_CURSOR_PREFIX)) {
+    throw new ApiError('This YouTube discovery cursor is invalid. Start a new sample.', 'invalid');
+  }
+  try {
+    const raw = JSON.parse(decodeURIComponent(token.slice(DISCOVERY_CURSOR_PREFIX.length)));
+    const parsed = discoveryCursorSchema.safeParse(raw);
+    if (!parsed.success) throw new Error('Invalid cursor shape');
+    return parsed.data;
+  } catch {
+    throw new ApiError('The saved YouTube discovery cursor is invalid. Start a new sample.', 'invalid');
+  }
+}
+function encodeDiscoveryCursor(views: string, recent: string, relevance: string) {
+  if (!views && !recent && !relevance) return undefined;
+  return DISCOVERY_CURSOR_PREFIX + encodeURIComponent(JSON.stringify({
+    version: 1,
+    views,
+    recent,
+    relevance,
+  }));
+}
+
+/**
+ * Samples three independent official YouTube search orders and interleaves their
+ * returned IDs. The API's order is preserved within each lane; no local growth,
+ * demand, or composite score is calculated from API statistics.
  */
 export async function searchYouTubeSample(
   topic: string,
@@ -637,12 +693,66 @@ export async function searchYouTubeSample(
   if (filters.language) commonParams.relevanceLanguage = filters.language;
   if (days > 0) commonParams.publishedAfter = new Date(Date.now() - days * 86400000).toISOString();
 
-  const selectedById = new Map<string, z.infer<typeof spaceSearchSchema>['items'][number]>();
+  type SearchItem = z.infer<typeof spaceSearchSchema>['items'][number];
+  const selectedById = new Map<string, SearchItem>();
   const warnings: string[] = [];
   let nextPageToken: string | undefined;
   let lastSearchError: unknown;
+  let selectedOverride: SearchItem[] | undefined;
 
-  if (order === 'relevance') {
+  if (order === 'discovery') {
+    const cursor = decodeDiscoveryCursor(filters.pageToken);
+    const isFirstPage = !filters.pageToken;
+    const poolSize = Math.max(1, Math.ceil(resultLimit / 3));
+    const laneIds: Record<'views' | 'recent' | 'relevance', string[]> = {
+      views: [], recent: [], relevance: [],
+    };
+    const next: Record<'views' | 'recent' | 'relevance', string> = {
+      views: '', recent: '', relevance: '',
+    };
+    const pools = [
+      { name: 'views' as const, order: 'viewCount', token: cursor.views },
+      { name: 'recent' as const, order: 'date', token: cursor.recent },
+      { name: 'relevance' as const, order: 'relevance', token: cursor.relevance },
+    ];
+    for (const pool of pools) {
+      if (!isFirstPage && !pool.token) continue;
+      try {
+        const params: Record<string, string> = {
+          ...commonParams,
+          order: pool.order,
+          maxResults: String(poolSize),
+        };
+        if (pool.token) params.pageToken = pool.token;
+        const raw = await youtube('search', params, options, 1);
+        const parsed = spaceSearchSchema.safeParse(raw);
+        if (!parsed.success) throw new ApiError('YouTube returned an invalid discovery sample.', 'invalid');
+        next[pool.name] = parsed.data.nextPageToken ?? '';
+        for (const item of parsed.data.items) {
+          laneIds[pool.name].push(item.id.videoId);
+          if (!selectedById.has(item.id.videoId)) selectedById.set(item.id.videoId, item);
+        }
+      } catch (error) {
+        lastSearchError = error;
+        warnings.push((error instanceof Error ? error.message : 'A YouTube discovery lane failed.') + ' Completed lanes remain available.');
+        if (error instanceof ApiError && ['quota', 'budget', 'key', 'permission', 'offline', 'timeout', 'attempt-limit'].includes(error.code)) break;
+      }
+    }
+    const orderedIds: string[] = [];
+    const seen = new Set<string>();
+    const maxLaneLength = Math.max(...Object.values(laneIds).map((ids) => ids.length), 0);
+    for (let index = 0; index < maxLaneLength; index++) {
+      for (const lane of ['views', 'recent', 'relevance'] as const) {
+        const id = laneIds[lane][index];
+        if (id && !seen.has(id)) {
+          seen.add(id);
+          orderedIds.push(id);
+        }
+      }
+    }
+    selectedOverride = orderedIds.map((id) => selectedById.get(id)).filter((item): item is SearchItem => Boolean(item));
+    nextPageToken = encodeDiscoveryCursor(next.views, next.recent, next.relevance);
+  } else if (order === 'relevance') {
     const cursor = decodeLikeSampleCursor(filters.pageToken);
     const isFirstPage = !filters.pageToken;
     const poolSize = Math.max(1, Math.ceil(resultLimit / 2));
@@ -673,7 +783,8 @@ export async function searchYouTubeSample(
     }
     nextPageToken = encodeLikeSampleCursor(relevanceNext, viewsNext);
   } else {
-    if (filters.pageToken?.startsWith(LIKE_SAMPLE_CURSOR_PREFIX)) {
+    if (filters.pageToken?.startsWith(LIKE_SAMPLE_CURSOR_PREFIX) ||
+        filters.pageToken?.startsWith(DISCOVERY_CURSOR_PREFIX)) {
       throw new ApiError('This YouTube sample cursor belongs to a different sort. Start a new sample.', 'invalid');
     }
     try {
@@ -691,7 +802,7 @@ export async function searchYouTubeSample(
   }
 
   if (!selectedById.size && lastSearchError) throw lastSearchError;
-  const selected = [...selectedById.values()].slice(0, resultLimit);
+  const selected = (selectedOverride ?? [...selectedById.values()]).slice(0, resultLimit);
   if (!selected.length) {
     return {
       videos: [],
@@ -732,7 +843,7 @@ export async function searchYouTubeSample(
       fields: 'items(id,statistics(subscriberCount,videoCount))',
     }, options, 1);
     const channelParsed = channelStatsSchema.safeParse(channelRaw);
-    if (!channelParsed.success) throw new ApiError('Channel statistics returned an invalid response.', 'invalid');
+    if (!channelParsed.success) throw new ApiError('YouTube channel statistics returned an invalid response.', 'invalid');
     channelMetrics = new Map(channelParsed.data.items.map((item): [string, { subscribers: number | null; videos: number | null }] => [
       item.id,
       {
@@ -762,9 +873,11 @@ export async function searchYouTubeSample(
     channelVideoCount: channelMetrics.get(item.snippet.channelId)?.videos ?? null,
     url: 'https://www.youtube.com/watch?v=' + item.id.videoId,
   }));
-  const scopeWarning = order === 'relevance'
-    ? 'Most Likes combines relevance-ordered and view-count-ordered discovery pools, then compares actual public like counts within the returned sample. It is not a global like-count ranking.'
-    : 'Sorting is applied to the returned sample using publication dates or actual public view counts. This is not a complete market census or a growth-rate/saturation score.';
+  const scopeWarning = order === 'discovery'
+    ? 'Discovery Mix interleaves YouTube official view-count, newest-first and relevance search lanes. Public counts are raw observations only; no growth or market score is calculated.'
+    : order === 'relevance'
+      ? 'Most Likes combines relevance-ordered and view-count-ordered discovery pools, then compares actual public like counts within the returned sample. It is not a global like-count ranking.'
+      : 'Results use YouTube official publication-date or view-count order. This is a limited sample, not a complete market census or a growth-rate/saturation score.';
   return {
     videos,
     warning: ['Limited YouTube sample. ' + scopeWarning, ...warnings, statisticsWarning, channelWarning].filter(Boolean).join(' '),
@@ -830,6 +943,96 @@ export function fingerprintText(value: string): string {
   return (hash >>> 0).toString(16).padStart(8, '0');
 }
 
+export const structuredSecondOpinionSchema = z.object({
+  decision: z.enum(['develop', 'gather_more_evidence', 'reframe']),
+  strengths: z.array(z.string().trim().min(1).max(280)).max(3),
+  risks: z.array(z.string().trim().min(1).max(280)).max(3),
+  missingData: z.array(z.string().trim().min(1).max(280)).max(3),
+  validationSteps: z.array(z.string().trim().min(1).max(280)).max(3),
+  nextAction: z.string().trim().min(1).max(360),
+}).strict();
+
+export type StructuredSecondOpinion = z.infer<typeof structuredSecondOpinionSchema>;
+
+/**
+ * The explicitly invoked second-opinion model receives the topic, candidate concept,
+ * bounded independent evidence and bounded YouTube platform signals. It never receives
+ * credentials, private notes, aggregate engine scores or the local ranking decision.
+ */
+export function structuredSecondOpinionPrompt(
+  topic: string,
+  concept: string,
+  language: 'fa' | 'en' = 'en',
+  evidenceSources: readonly { sourceType?: string; sourceName: string; title: string; summary?: string; sourceUrl: string }[] = [],
+  youtubeSignals: readonly YouTubeSampleVideo[] = [],
+): string {
+  const cleanTopic = topic.trim().slice(0, 180);
+  const cleanConcept = concept.trim().slice(0, 1200);
+  if (!cleanTopic || !cleanConcept) throw new ApiError('A topic and candidate concept are required for the second opinion.', 'input');
+  const independentSources = evidenceSources.slice(0, 6).flatMap((source) => {
+    try {
+      const url = new URL(source.sourceUrl);
+      const host = url.hostname.toLowerCase();
+      if (url.protocol !== 'https:' || host === 'youtube.com' || host.endsWith('.youtube.com') || host === 'youtu.be' || host.endsWith('.googlevideo.com')) return [];
+      return [{ sourceType: (source.sourceType ?? 'independent').slice(0, 40), sourceName: source.sourceName.slice(0, 120), title: source.title.slice(0, 240), summary: (source.summary ?? '').slice(0, 420), sourceUrl: url.toString().slice(0, 500) }];
+    } catch { return []; }
+  });
+  const instruction = language === 'fa'
+    ? 'موضوع و ایده را با اتکا به منابع مستقل و سیگنال‌های پلتفرمی YouTube که همراه درخواست آمده‌اند، نقادانه بررسی کن. منابع ممکن است ناقص یا قدیمی باشند؛ ادعای باز کردن یا راستی‌آزمایی صفحه‌ای را نکن. نمونه ویدئوها، عنوان، کانال، آمار عمومی و رشد اندازه‌گیری‌شده YouTube را برای کشف روند و زاویه محتوا تحلیل کن، اما آن‌ها را استناد ناشر مستقل یا اثبات ادعای علمی/خبری تلقی نکن. رشد اندازه‌گیری‌شده را از پیش‌بینی جدا کن و هیچ تضمین بازدید نساز. منابع مستقل و قضاوت شخصی را از هم جدا کن و در صورت ناکافی بودن شواهد صریحاً بگو. با زبان طبیعی و روان و بدون اصطلاح تخصصی نامفهوم بنویس. فقط JSON معتبر و بدون Markdown با کلیدهای decision (develop, gather_more_evidence یا reframe)، strengths (حداکثر ۳)، risks (حداکثر ۳)، missingData (حداکثر ۳)، validationSteps (حداکثر ۳) و nextAction برگردان.'
+    : 'Critically assess this idea using the independent sources and YouTube platform observations supplied here. Sources may be incomplete or stale; do not claim to have opened or verified them. Analyze YouTube sample videos, titles, channels, public statistics and measured growth for platform trends and content angles, but never present them as independent publisher citations or proof of scientific/news claims. Distinguish measured growth from forecasts and do not promise views or virality. Write in natural, clear language and avoid unexplained technical jargon. Return only valid JSON: decision (develop, gather_more_evidence, reframe), strengths (max 3), risks (max 3), missingData (max 3), validationSteps (max 3), nextAction.';
+  const youtubePlatformSignals = youtubeSignals.slice(0, 18).map((video) => ({
+    videoId: video.id, title: video.title.slice(0, 180), description: video.description.slice(0, 360),
+    channel: video.channel.slice(0, 100), publishedAt: video.publishedAt,
+    viewCount: video.viewCount, likeCount: video.likeCount,
+    channelSubscriberCount: video.channelSubscriberCount, channelVideoCount: video.channelVideoCount,
+    growth: video.growth ? {
+      snapshotCount: video.growth.snapshotCount, deltaViews: video.growth.deltaViews,
+      viewsPerHour: video.growth.viewsPerHour, viewsPerDay: video.growth.viewsPerDay,
+      channelBaselineViewsPerDay: video.growth.channelBaselineViewsPerDay,
+      channelOutlierRatio: video.growth.channelOutlierRatio, status: video.growth.status,
+    } : null,
+  }));
+  return (instruction + '\n\n' + JSON.stringify({ topic: cleanTopic, candidateConcept: cleanConcept, independentSources, youtubePlatformSignals })).slice(0, 8500);
+}
+export function parseStructuredSecondOpinion(content: string): StructuredSecondOpinion {
+  const cleaned = content.trim()
+    .replace(/^\x60{3}(?:json)?\s*/i, '')
+    .replace(/\x60{3}\s*$/, '')
+    .trim();
+  let value: unknown;
+  try {
+    value = JSON.parse(cleaned);
+  } catch {
+    throw new ApiError('The second opinion was not valid JSON. The local recommendation remains available.', 'invalid');
+  }
+  const parsed = structuredSecondOpinionSchema.safeParse(value);
+  if (!parsed.success) {
+    throw new ApiError('The second opinion did not match the required response schema. The local recommendation remains available.', 'invalid');
+  }
+  return parsed.data;
+}
+
+export function formatStructuredSecondOpinion(
+  opinion: StructuredSecondOpinion,
+  language: 'fa' | 'en' = 'en',
+): string {
+  const fa = language === 'fa';
+  const decision = opinion.decision === 'develop'
+    ? (fa ? 'توسعه ایده' : 'Develop the concept')
+    : opinion.decision === 'reframe'
+      ? (fa ? 'بازتعریف موضوع' : 'Reframe the topic')
+      : (fa ? 'جمع‌آوری شواهد بیشتر' : 'Gather more evidence');
+  const sections = [
+    (fa ? 'تصمیم: ' : 'Decision: ') + decision,
+    (fa ? 'نقاط قوت: ' : 'Strengths: ') + (opinion.strengths.join(' · ') || (fa ? 'ثبت نشد' : 'None reported')),
+    (fa ? 'ریسک‌ها: ' : 'Risks: ') + (opinion.risks.join(' · ') || (fa ? 'ثبت نشد' : 'None reported')),
+    (fa ? 'داده‌های مفقود: ' : 'Missing data: ') + (opinion.missingData.join(' · ') || (fa ? 'ثبت نشد' : 'None reported')),
+    (fa ? 'راستی‌آزمایی: ' : 'Validation: ') + (opinion.validationSteps.join(' · ') || (fa ? 'ثبت نشد' : 'None reported')),
+    (fa ? 'گام بعدی: ' : 'Next action: ') + opinion.nextAction,
+  ];
+  return sections.join('\n\n');
+}
+
 export type InternalEngineReviewInput = {
   topic: string;
   summary: string;
@@ -849,103 +1052,26 @@ export function internalEngineReviewPrompt(input: InternalEngineReviewInput): st
   );
   const gaps = (input.gaps ?? []).slice(0, 6).map((item) => item.slice(0, 220));
   const discrepancies = (input.discrepancies ?? []).slice(0, 6).map((item) => item.slice(0, 220));
+  const level = fa
+    ? input.confidence.level === 'high' ? 'زیاد' : input.confidence.level === 'moderate' ? 'متوسط' : 'کم'
+    : input.confidence.level;
   const payload = [
-    'Topic: ' + input.topic.trim().slice(0, 180),
+    (fa ? 'موضوع: ' : 'Topic: ') + input.topic.trim().slice(0, 180),
     ...(input.recommendation?.topic.trim() && input.recommendation.concept.trim()
-      ? ['Candidate idea to assess independently (not an endorsed verdict): ' +
-          input.recommendation.topic.trim().slice(0, 180) + '\nConcept: ' +
+      ? [(fa ? 'ایده پیشنهادی برای بررسی مستقل (نه نتیجه قطعی): ' : 'Candidate idea for an independent review (not an endorsed verdict): ') +
+          input.recommendation.topic.trim().slice(0, 180) + (fa ? '\nمفهوم: ' : '\nConcept: ') +
           input.recommendation.concept.trim().slice(0, 1000)]
       : []),
-    'Local engine summary: ' + input.summary.trim().slice(0, 1200),
-    'Processed evidence signals:\n' + (evidence.join('\n') || 'No evidence signals supplied.'),
-    'Local confidence: ' + input.confidence.level + ' — ' + input.confidence.reason.slice(0, 400),
-    'Research gaps:\n' + (gaps.join('\n') || 'Not reported.'),
-    'Potential discrepancies:\n' + (discrepancies.join('\n') || 'Not reported.'),
+    (fa ? 'خلاصه موتور داخلی: ' : 'Local engine summary: ') + input.summary.trim().slice(0, 1200),
+    (fa ? 'شواهد بررسی‌شده:\n' : 'Processed evidence signals:\n') + (evidence.join('\n') || (fa ? 'شاهدی ارائه نشده است.' : 'No evidence signals supplied.')),
+    (fa ? 'میزان اطمینان: ' : 'Local confidence: ') + level + ' — ' + input.confidence.reason.slice(0, 400),
+    (fa ? 'مواردی که هنوز روشن نیستند:\n' : 'Research gaps:\n') + (gaps.join('\n') || (fa ? 'گزارشی ثبت نشده است.' : 'Not reported.')),
+    (fa ? 'اختلاف‌های احتمالی منابع:\n' : 'Potential discrepancies:\n') + (discrepancies.join('\n') || (fa ? 'موردی ثبت نشده است.' : 'Not reported.')),
   ].join('\n\n');
   const instruction = fa
-    ? 'این یک بازبینی تصمیم‌محور برای سازنده محتواست، نه گزارش خبری عمومی. فقط موضوع تحریری و شاخص‌های تجمیعی موتور محلی در اختیار تو قرار دارد؛ تیتر خام، عنوان و توضیح ویدئو، پیوند و آمار تک‌تک موارد عمداً ارسال نشده‌اند. وانمود نکن که منبع یا ویدئوی منفرد را دیده‌ای. ایده پیشنهادی را مستقل نقد کن و صرفاً تصمیم موتور داخلی را تأیید نکن. ابتدا فقط یکی از این تصمیم‌ها را انتخاب کن: «توسعه ایده»، «جمع‌آوری شواهد بیشتر» یا «بازتعریف موضوع». وضوح، اصالت، امکان تولید و فرض‌های تناسب با مخاطب را ارزیابی کن. فقط وقتی بازه‌ای از احتمال موفقیت ارائه کن که شواهد ورودی شامل نتایج تاریخیِ کافی و واقعاً قابل‌مقایسه و زمینه عملکرد معنادار باشد؛ آن را مشروط بدان و فرض‌ها را روشن کن. در غیر این صورت صریحاً بگو از داده‌های موجود درصد قابل‌اتکا قابل محاسبه نیست و داده‌های لازم را نام ببر. برای پرکردن جای خالی هرگز عدد نساز. دلیل را با شمارنده‌های واقعی توضیح بده، نه امتیاز ساختگی. سپس حداکثر دو یافته کاربردی، یک نقد مخالف یا سوگیری نمونه‌گیری، یک اقدام دستی مشخص برای جست‌وجو یا راستی‌آزمایی و مهم‌ترین داده مفقود را بیان کن. واقعیت، استنباط و مجهول را جدا نگه دار. بازدید خام را از رشد، تقاضا و عملکرد آینده جدا بدان؛ هیچ نرخ رشد، رقابت بازار یا پیش‌بینی وایرال‌شدن نساز. هیچ منبع، آمار، تقاضا یا رابطه علّی بیرونی جعل نکن. پاسخ کوتاه و بدون تعریف عمومی از YouTube یا خبرخوانی باشد. فقط این بخش‌ها را بنویس: «تصمیم»، «یافته‌های مفید»، «نقد مخالف»، «اقدام بعدی»، «داده مفقود»؛ هر بخش حداکثر دو جمله.'
-    : 'This is a decision review for a creator, not a general news digest. You receive only the editorial topic and aggregate local-engine indicators; raw headlines, video titles, descriptions, links and per-item statistics are intentionally excluded. Do not pretend to have seen individual sources or videos. Independently critique the proposed idea rather than endorsing the local engine\'s decision. First choose exactly one action: Develop the concept, Gather more evidence, or Reframe the topic. Assess clarity, originality, production feasibility and assumptions about audience fit. Estimate a success-probability range only if the supplied evidence includes enough comparable historical outcomes and meaningful performance context; label it as conditional and state its assumptions. Otherwise say explicitly that no reliable percentage can be calculated from the available evidence and name the missing data. Never invent a number to fill the gap. Justify the decision using the supplied counts, never an invented score. Then give at most two useful findings, one important counterargument or sampling bias, one specific manual search or verification action, and the most important missing data. Separate facts, inferences and unknowns. Raw views are not growth, demand or future performance; do not infer growth rates, market competition or virality. Never invent sources, metrics, demand or causal links. Be concise and avoid generic explanations of YouTube or news feeds. Return only these sections: Decision, Useful Findings, Adversarial Check, Next Action, Missing Data; no more than two sentences per section.';
+    ? 'این بازبینی برای کمک به تصمیم‌گیری سازنده محتواست، نه نوشتن گزارش رسمی. فقط موضوع، خلاصه و شاخص‌های پردازش‌شده را می‌بینی؛ عنوان خام خبر و ویدئو، پیوندها و آمار تک‌تک موارد عمداً در اختیار تو نیستند. وانمود نکن منبعی را دیده‌ای که به تو داده نشده است. ایده را مستقل نقد کن و صرفاً حرف موتور داخلی را تأیید نکن. اول یکی از این سه تصمیم را انتخاب کن: «توسعه ایده»، «جمع‌آوری شواهد بیشتر» یا «تغییر زاویه». بعد حداکثر دو نکته مفید، یک ایراد مهم یا احتمال سوگیری نمونه، یک اقدام مشخص برای بررسی و مهم‌ترین داده مفقود را بگو. فقط وقتی درباره احتمال موفقیت صحبت کن که داده تاریخی کافی و واقعاً قابل مقایسه وجود داشته باشد؛ در غیر این صورت روشن بگو با اطلاعات فعلی نمی‌توان درصد قابل اتکایی داد. هیچ عدد، منبع یا رابطه علت‌ومعلولی نساز. بازدید خام را معادل تقاضا یا رشد نگیر. واقعیت، برداشت و چیزهایی را که هنوز نمی‌دانیم از هم جدا کن. با فارسی طبیعی، ساده و حرفه‌ای بنویس؛ جمله کوتاه باشد و خواننده مجبور نشود متن را دوباره بخواند. از لحن اداری، عبارت‌های ترجمه‌ای و اصطلاحات تخصصی بی‌توضیح دوری کن. فقط این بخش‌ها را بنویس: «تصمیم»، «یافته‌های مفید»، «نقد مخالف»، «اقدام بعدی»، «داده‌های مفقود»؛ هر بخش حداکثر دو جمله.'
+    : 'This is a decision review for a creator, not a general news digest. You receive only the editorial topic and aggregate local-engine indicators; raw headlines, video titles, descriptions, links and per-item statistics are intentionally excluded. Do not pretend to have seen individual sources or videos. Independently critique the proposed idea rather than endorsing the local engine. First choose exactly one action: Develop the concept, Gather more evidence, or Reframe the topic. Assess clarity, originality, production feasibility and assumptions about audience fit. Estimate a success-probability range only if the supplied evidence includes enough comparable historical outcomes and meaningful performance context; label it as conditional and state its assumptions. Otherwise say explicitly that no reliable percentage can be calculated from the available evidence and name the missing data. Never invent a number to fill the gap. Justify the decision using the supplied counts, never an invented score. Then give at most two useful findings, one important counterargument or sampling bias, one specific manual search or verification action, and the most important missing data. Separate facts, inferences and unknowns. Raw views are not growth, demand or future performance; do not infer growth rates, market competition or virality. Never invent sources, metrics, demand or causal links. Be concise and avoid generic explanations of YouTube or news feeds. Write in natural, clear language with short, direct sentences that a creator can understand on the first read; avoid stiff report language, translation-like phrasing and unexplained jargon. Return only these sections: Decision, Useful Findings, Adversarial Check, Next Action, Missing Data; no more than two sentences per section.';
   return (instruction + '\n\n' + payload).slice(0, 10500);
-}
-
-/**
- * Compact structural input for the second, schema-validated AI review. It is
- * derived from the same unified brief that produces the dashboard ideas/chart;
- * no raw headlines, URLs or invented metrics are added here.
- */
-export type EngineV2ReviewInput = {
-  topic: string;
-  result: {
-    topics: readonly Topic[];
-    scores: readonly OpportunityScore[];
-    items: readonly EvidenceItem[];
-  };
-  /** The idea chosen locally; presented to the model as a candidate, not a verdict. */
-  idea?: { titleSuggestion: string; angle: string; why: string };
-  language?: 'fa' | 'en';
-};
-
-const ENGINE_V2_REVIEW_MAX_CHARS = 4000;
-
-/**
- * Builds a bounded (<= 4000 chars) prompt from the unified brief. At most three
- * top topics are included, each with at most three real evidence items already
- * observed by the engine. Views are included only when actually observed.
- */
-export function engineV2ReviewPrompt(input: EngineV2ReviewInput): string {
-  const fa = input.language === 'fa';
-  const clean = (value: unknown, limit: number) =>
-    typeof value === 'string' ? value.replace(/\s+/g, ' ').trim().slice(0, limit) : '';
-  const unit = (value: unknown) =>
-    typeof value === 'number' && Number.isFinite(value) ? Math.round(value * 100) / 100 : 0;
-
-  const scores = new Map((input.result?.scores ?? []).map((score) => [score.topicId, score]));
-  const items = new Map((input.result?.items ?? []).map((item) => [item.id, item]));
-  const topics = [...(input.result?.topics ?? [])]
-    .map((topic) => ({ topic, score: scores.get(topic.id) }))
-    .filter((entry): entry is { topic: Topic; score: OpportunityScore } => Boolean(entry.score))
-    .sort((left, right) =>
-      right.score.value - left.score.value || left.topic.id.localeCompare(right.topic.id))
-    .slice(0, 3)
-    .map(({ topic, score }) => ({
-      label: clean(topic.label, 80),
-      score: Math.round(score.value),
-      confidence: unit(score.confidence),
-      momentum: unit(topic.momentum),
-      supplyGap: unit(topic.supplyGap),
-      avgOutlier: unit(topic.avgOutlier),
-      evidence: [...(topic.itemIds ?? [])]
-        .map((id) => items.get(id))
-        .filter((item): item is EvidenceItem => Boolean(item))
-        .sort((left, right) => (right.views ?? -1) - (left.views ?? -1) || left.id.localeCompare(right.id))
-        .slice(0, 3)
-        .map((item) => ({
-          title: clean(item.title, 90),
-          source: clean(item.source, 24),
-          ...(typeof item.views === 'number' && Number.isFinite(item.views) ? { views: item.views } : {}),
-        })),
-    }));
-  const idea = input.idea
-    ? {
-        titleSuggestion: clean(input.idea.titleSuggestion, 120),
-        angle: clean(input.idea.angle, 240),
-        why: clean(input.idea.why, 300),
-      }
-    : undefined;
-
-  const instruction = fa
-    ? 'تو بازبینی مستقل دوم درباره تصمیم موتور محلی برای یک سازنده محتوا هستی. فقط خلاصه امتیاز موضوعات و شواهد واقعی که موتور محلی واقعاً دیده است در اختیار داری. هرگز بازدید، درصد، نرخ رشد، رقم رقابت، منبع، پیوند، مجموعه داده یا رابطه علّی جعل نکن. شاهدی که در داده نیست نساز. اعداد را تأیید نکن و آن‌ها را بهعنوان واقعیت تکرار نکن؛ فقط نشانه‌های محدود محلی بدان. تصمیم موتور محلی را مستقل نقد کن، نه اینکه صرفاً آن را تأیید کنی. اگر داده کافی نیست، صریحاً بگو و مهمترین داده مفقود را نام ببر.\n\nفقط JSON سختگیرانه (STRICT JSON) برگردان — یک شیء، بدون مارکداون، متن اضافی یا بلوک کد. دقیقاً پنج کلید و نه بیشتر:\n{"decision":"develop"|"gather_more"|"reframe","usefulFindings":["...","..."],"counterCritique":"حداکثر ۲ جمله","nextAction":"حداکثر ۲ جمله","missingData":"حداکثر ۲ جمله"}\nusefulFindings حداکثر ۲ رشته کوتاه دارد؛ رشته‌های counterCritique، nextAction و missingData هرکدام حداکثر ۲ جملهاند. دقیقاً یکی از develop, gather_more یا reframe را انتخاب کن.'
-    : 'You are an independent second AI reviewing a LOCAL engine decision for a creator. You receive only compact topic scores and the REAL evidence the engine actually observed. Never invent a view count, percentage, growth rate, competition figure, source, URL, dataset or causal claim. Do not invent evidence that is not in the payload. Do not endorse or restate numbers as facts; treat them only as bounded local signals. Criticize the local engine decision independently instead of agreeing with it. If the supplied data is insufficient, say so plainly and name the most important missing data.\n\nReturn STRICT JSON ONLY — one object, no markdown, no prose, no code fences. Exactly these five keys and no others:\n{"decision":"develop"|"gather_more"|"reframe","usefulFindings":["...","..."],"counterCritique":"<=2 sentences","nextAction":"<=2 sentences","missingData":"<=2 sentences"}\nusefulFindings has at most 2 short strings; counterCritique, nextAction and missingData are at most 2 sentences each. Choose exactly one of develop, gather_more or reframe.';
-
-  const payload = [
-    'Topic: ' + clean(input.topic, 120),
-    'Top local topics (bounded signals, not facts; real evidence only): ' + JSON.stringify(topics),
-    ...(idea ? ['Chosen idea (candidate, not an endorsed verdict): ' + JSON.stringify(idea)] : []),
-    'Data sufficiency: ' + (topics.length
-      ? 'partial local signals present'
-      : (fa ? 'داده محلی کافی موجود نیست' : 'insufficient local data')),
-  ].join('\n');
-  return (instruction + '\n\n' + payload).slice(0, ENGINE_V2_REVIEW_MAX_CHARS);
 }
 
 /** Stable YYYY-MM-DD key for the device's local calendar day; independent of locale formatting. */
@@ -1073,74 +1199,6 @@ export async function getOpinion(
     if (!parsed.success || !parsed.data.choices[0].message.content.trim())
       throw new ApiError('The AI reply was empty or could not be read. Try another free model.', 'invalid');
     return parsed.data.choices[0].message.content.trim();
-  } finally {
-    opinionRequestInFlight = false;
-  }
-}
-
-/** Strict, bounded shape for the second AI's structured complement. */
-export const engineV2OpinionSchema = z.object({
-  decision: z.enum(['develop', 'gather_more', 'reframe']),
-  usefulFindings: z.array(z.string().min(1).max(280)).max(2),
-  counterCritique: z.string().min(1).max(600),
-  nextAction: z.string().min(1).max(600),
-  missingData: z.string().min(1).max(600),
-}).strict();
-export type EngineV2Opinion = z.infer<typeof engineV2OpinionSchema>;
-
-/**
- * Validates an untrusted structured opinion. Returns the parsed value or throws
- * an ApiError with code 'invalid'; never throws a raw Zod/JSON error.
- */
-export function validateEngineV2Opinion(value: unknown): EngineV2Opinion {
-  const parsed = engineV2OpinionSchema.safeParse(value);
-  if (!parsed.success)
-    throw new ApiError('The AI reply did not match the required structured format.', 'invalid');
-  return parsed.data;
-}
-
-/** Removes accidental markdown fences without touching a bare JSON object. */
-function stripMarkdownCodeFence(text: string): string {
-  return text.trim()
-    .replace(/^\x60{3}(?:json)?\s*/i, '')
-    .replace(/\s*\x60{3}$/, '')
-    .trim();
-}
-
-/** Same request path and error handling as getOpinion, plus strict JSON validation. */
-export async function getStructuredOpinion(
-  key: string,
-  model: string,
-  prompt: string,
-  beforeRequest?: (quota?: OpenRouterDailyQuota) => Promise<void>,
-  fetcher: Fetcher = fetch,
-): Promise<EngineV2Opinion> {
-  if (opinionRequestInFlight) throw new ApiError('Another OpenRouter analysis is already running. Wait for it to finish.', 'busy');
-  if (!key.trim() || !model.trim() || !prompt.trim())
-    throw new ApiError('The OpenRouter key, selected model and idea prompt are required.', 'input');
-  opinionRequestInFlight = true;
-  try {
-    await beforeRequest?.();
-    const raw = await requestJson('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model, max_tokens: 900, messages: [{ role: 'user', content: prompt }] }),
-    }, fetcher);
-    const providerError = openRouterProviderError(raw);
-    if (providerError) throw providerError;
-    const parsed = z
-      .object({ choices: z.array(z.object({ message: z.object({ content: z.string() }) })).min(1) })
-      .safeParse(raw);
-    if (!parsed.success || !parsed.data.choices[0].message.content.trim())
-      throw new ApiError('The AI reply was empty or could not be read. Try another free model.', 'invalid');
-    const text = stripMarkdownCodeFence(parsed.data.choices[0].message.content);
-    let value: unknown;
-    try {
-      value = JSON.parse(text) as unknown;
-    } catch {
-      throw new ApiError('The AI reply was not valid JSON.', 'invalid');
-    }
-    return validateEngineV2Opinion(value);
   } finally {
     opinionRequestInFlight = false;
   }

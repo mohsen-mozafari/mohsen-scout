@@ -1,6 +1,6 @@
 import * as Haptics from 'expo-haptics';
 import { useCallback, useEffect, useState } from 'react';
-import { Text, View, Linking } from 'react-native';
+import { Text, View } from 'react-native';
 import { Button, Skeleton } from 'heroui-native';
 import { KeyRound, Download, Upload, Bell, Trash2, Bug } from 'lucide-react-native';
 import {
@@ -12,14 +12,17 @@ import {
   Choices,
   Action,
   Fold,
+  BadgeText,
   styles,
   ErrorBox,
   useOperation,
 } from '@/components/ScoutUI';
 import { useScout } from '@/lib/store';
-import { type Preferences, defaults, regions, languages } from '@/lib/types';
+import { type Preferences, type SecondOpinionProvider, DEFAULT_CLOUDFLARE_FREE_MODEL, DEFAULT_SECOND_OPINION_ORDER, defaults, regions, languages } from '@/lib/types';
 import { getKey, setKey, deleteKey, credentialPersistence, type Credential } from '@/lib/vault';
 import { getFreeModels, getOpenRouterDailyQuota, testYouTube, testOpenRouter, quotaDay, localDateKey } from '@/lib/api';
+import { discoverSecondOpinionModels, testSecondOpinionCredential } from '@/lib/ai-gateway';
+import { testFirecrawlKey } from '@/lib/web-research';
 import { exportBackup, importBackup, restorePersonalData } from '@/lib/backup';
 import { shareText, readBackup, shareApk } from '@/lib/transfer';
 import { configureSchedule, enableNotifications, scheduleNotice } from '@/lib/scheduler';
@@ -27,12 +30,25 @@ import { commitWithSchedule } from '@/lib/schedule';
 import { router, type ErrorBoundaryProps } from 'expo-router';
 import { palette as p } from '@/lib/theme';
 import { translateText } from '@/lib/i18n';
+import { openExternalUrl } from '@/lib/external-links';
 import { SPACE_NICHES, SPACE_NEWS_SOURCES, type WikiLanguage } from '@/lib/space';
+function providerName(provider: SecondOpinionProvider): string {
+  return provider === 'cloudflare' ? 'Cloudflare Workers AI' : provider === 'xai' ? 'Grok (xAI)' : provider[0].toUpperCase() + provider.slice(1);
+}
 function normalizePreferences(value?: Partial<Preferences>): Preferences {
   const fallback = defaults().preferences;
+  const legacy = value as (Omit<Partial<Preferences>, 'secondOpinionProvider' | 'secondOpinionOrder' | 'secondOpinionModels'> & { secondOpinionProvider?: string; secondOpinionOrder?: string[]; secondOpinionModels?: Record<string, string> }) | undefined;
+  const legacyModels = legacy?.secondOpinionModels ?? {};
+  const migratedOrder = Array.isArray(legacy?.secondOpinionOrder)
+    ? legacy.secondOpinionOrder.map((provider) => provider === 'groq' ? 'xai' : provider).filter((provider): provider is SecondOpinionProvider => ['gemini', 'xai', 'cloudflare', 'openrouter'].includes(provider))
+    : fallback.secondOpinionOrder;
+  const migratedModel = legacyModels.xai || 'grok-4.7';
   return {
     ...fallback,
     ...value,
+    secondOpinionProvider: legacy?.secondOpinionProvider === 'groq' ? 'xai' : (value?.secondOpinionProvider ?? fallback.secondOpinionProvider),
+    secondOpinionOrder: migratedOrder.length ? migratedOrder : fallback.secondOpinionOrder,
+    secondOpinionModels: { ...fallback.secondOpinionModels, ...legacyModels, xai: migratedModel },
     languages: Array.isArray(value?.languages) ? [...value.languages] : fallback.languages,
     spaceNewsSources: Array.isArray(value?.spaceNewsSources) ? [...value.spaceNewsSources] : fallback.spaceNewsSources,
   };
@@ -70,14 +86,23 @@ function CredentialSection({
     void op.run(async () => {
       const value = await getKey(kind);
       if (!value) throw new Error('Save a key before testing.');
-      if (kind === 'youtube')
+      if (kind === 'youtube') {
         await testYouTube({
           key: value,
           charge: useScout.getState().charge,
           onQuota: () =>
             useScout.getState().commit((d) => ({ ...d, budget: { ...d.budget, exhausted: true } })),
         });
-      else await testOpenRouter(value);
+      } else if (kind === 'openrouter') {
+        await testOpenRouter(value);
+      } else if (kind === 'cloudflare-account-id') {
+        if (!/^[a-f0-9]{32}$/i.test(value.trim())) throw new Error('Cloudflare Account ID must be 32 hexadecimal characters.');
+      } else if (kind === 'firecrawl') {
+        await testFirecrawlKey(value);
+      } else {
+        const accountId = kind === 'cloudflare' ? await getKey('cloudflare-account-id') ?? undefined : undefined;
+        await testSecondOpinionCredential(kind, { key: value, accountId });
+      }
     }, `${label} connection verified.`);
   return (
     <View style={{ gap: 14 }}>
@@ -92,8 +117,8 @@ function CredentialSection({
         label={stored ? 'Replace key' : 'API key'}
         value={key}
         onChange={setValue}
-        secret
-        placeholder="Enter your key here, never in chat"
+        secret={kind !== 'cloudflare-account-id'}
+        placeholder={kind === 'cloudflare-account-id' ? '32-character Cloudflare Account ID' : 'Enter your key here, never in chat'}
       />
       <Txt muted>{credentialPersistence}</Txt>
       <Action
@@ -148,14 +173,28 @@ export default function Settings() {
   const ready = useScout((s) => s.ready);
   const [prefs, setPrefs] = useState<Preferences>(() => normalizePreferences(data.preferences));
   const [models, setModels] = useState<{ id: string; name: string }[]>([]);
-  const [credentialStatus, setCredentialStatus] = useState<{ youtube: boolean | null; openrouter: boolean | null }>({
+  const [credentialStatus, setCredentialStatus] = useState<Record<Credential, boolean | null>>({
     youtube: null,
     openrouter: null,
+    gemini: null,
+    xai: null,
+    cloudflare: null,
+    'cloudflare-account-id': null,
+    firecrawl: null,
   });
   const [modelBusy, setModelBusy] = useState(false);
   const [confirm, setConfirm] = useState('');
   const [restore, setRestore] = useState<ReturnType<typeof importBackup>>();
   const op = useOperation();
+  const fa = prefs.uiLanguage === 'fa';
+  const providerOrder = prefs.secondOpinionOrder ?? DEFAULT_SECOND_OPINION_ORDER;
+  const moveProvider = (index: number, direction: -1 | 1) => {
+    const nextIndex = index + direction;
+    if (nextIndex < 0 || nextIndex >= providerOrder.length) return;
+    const next = [...providerOrder];
+    [next[index], next[nextIndex]] = [next[nextIndex], next[index]];
+    setPrefs({ ...prefs, secondOpinionProvider: next[0], secondOpinionOrder: next });
+  };
   const handleCredentialStatus = useCallback((kind: Credential, stored: boolean | null) => {
     setCredentialStatus((current) => ({ ...current, [kind]: stored }));
   }, []);
@@ -165,12 +204,16 @@ export default function Settings() {
   }, [data.preferences]);
   useEffect(() => {
     let active = true;
-    void Promise.all([getKey('youtube'), getKey('openrouter')])
-      .then(([youtube, openrouter]) => {
-        if (active) setCredentialStatus({ youtube: Boolean(youtube), openrouter: Boolean(openrouter) });
+    const kinds: Credential[] = ['youtube', 'openrouter', 'gemini', 'xai', 'cloudflare', 'cloudflare-account-id', 'firecrawl'];
+    void Promise.all(kinds.map(async (kind) => [kind, Boolean(await getKey(kind))] as const))
+      .then((entries) => {
+        if (!active) return;
+        setCredentialStatus(Object.fromEntries(entries) as Record<Credential, boolean | null>);
       })
       .catch(() => {
-        if (active) setCredentialStatus({ youtube: null, openrouter: null });
+        if (active) setCredentialStatus({
+          youtube: null, openrouter: null, gemini: null, xai: null, cloudflare: null, 'cloudflare-account-id': null, firecrawl: null,
+        });
       });
     return () => { active = false; };
   }, []);
@@ -190,16 +233,27 @@ export default function Settings() {
     void op.run(async () => {
       setModelBusy(true);
       try {
-        const available = await getFreeModels();
+        const provider = prefs.secondOpinionProvider;
+        const credentialKind: Credential = provider === 'openrouter' ? 'openrouter' : provider;
+        const key = await getKey(credentialKind);
+        if (!key) throw new Error('Save this provider key before refreshing its model list.');
+        const accountId = provider === 'cloudflare' ? await getKey('cloudflare-account-id') ?? undefined : undefined;
+        const available = provider === 'openrouter'
+          ? await getFreeModels()
+          : await discoverSecondOpinionModels(provider, { key, accountId });
         setModels(available);
-        if (!available.length)
-          throw new Error('No free models are currently available. Try later.');
-        if (!prefs.model || !available.some((m) => m.id === prefs.model))
-          setPrefs({ ...prefs, model: available[0].id });
+        if (!available.length) throw new Error('No supported models were returned by this provider.');
+        const currentModels = prefs.secondOpinionModels ?? defaults().preferences.secondOpinionModels;
+        if (!available.some((model) => model.id === currentModels[provider])) {
+          setPrefs({
+            ...prefs,
+            secondOpinionModels: { ...currentModels, [provider]: available[0].id },
+          });
+        }
       } finally {
         setModelBusy(false);
       }
-    }, 'Available free models refreshed.');
+    }, 'Provider models refreshed.');
   const refreshOpenRouterQuota = () =>
     void op.run(async () => {
       const key = await getKey('openrouter');
@@ -223,6 +277,7 @@ export default function Settings() {
   return (
     <Page showBack title="Settings" eyebrow="DEVICE & PROVIDERS" subtitle="Control your local profile, provider access, quotas, privacy and backups.">
       {!ready && <Skeleton className="h-32 rounded-2xl" />}
+      <Fold title={fa ? 'نمایه، زبان و تنظیمات کشف' : 'Profile, language and discovery'} summary={fa ? 'نمایه، منطقه، زبان و حوزه‌های پژوهش' : 'Profile, region, language and discovery scope'}>
       <Fold title="Profile & defaults" summary={prefs.region + ' · ' + (prefs.languages?.length ?? 0) + ' language(s)'}>
         <Field
           label="Name (optional)"
@@ -324,6 +379,8 @@ export default function Settings() {
         />
         <Action busy={op.busy} disabled={!ready} onPress={save}>Save discovery preferences</Action>
       </Fold>
+      </Fold>
+      <Fold title="Connections & AI providers" summary={fa ? 'کلیدها، جست‌وجوی وب و ارائه‌دهندگان هوش مصنوعی' : 'API credentials, web search and AI providers'}>
       <Fold title="YouTube API" summary={credentialStatus.youtube === null ? 'Key status not confirmed' : credentialStatus.youtube ? 'Key saved securely' : 'Key not set'}>
         <CredentialSection kind="youtube" label="YouTube Data API v3" onStatusChange={handleCredentialStatus} />
         <Txt muted>
@@ -331,10 +388,14 @@ export default function Settings() {
           Native clients cannot keep bundled secrets; this key belongs to you and is entered on your
           device. Google controls project quota.
         </Txt>
+        <Txt muted>{fa
+          ? 'در حالت فعلی، نمونه‌های خام YouTube جدا نمایش داده می‌شوند و امتیاز/نسبت/پیش‌بینی مشتق‌شده از آن‌ها ساخته نمی‌شود. برای معیارهای مشتق‌شده مانند امتیاز کانال، نسبت تعامل یا رتبه‌بندی رشد، ابتدا باید اصلاحیه رسمی Derived Metrics Policy را برای پروژه API خود بپذیری: Section 5 · Use Cases, API Integration, and Feature Implementation · Analytics & Reporting. این برنامه پذیرش را از طرف تو انجام نمی‌دهد.'
+          : 'In the current mode, raw YouTube samples are displayed separately and no custom score, ratio or forecast is derived from them. To use derived metrics such as channel scores, engagement ratios or growth leaderboards, first accept YouTube’s Derived Metrics Policy amendment for your API project: Section 5 · Use Cases, API Integration, and Feature Implementation · Analytics & Reporting. The app cannot accept this amendment on your behalf.'}</Txt>
+        <Action secondary onPress={() => void openExternalUrl('https://developers.google.com/youtube/terms/derived-metrics-policy')}>Read YouTube derived-metrics policy</Action>
         <Action
           secondary
           onPress={() =>
-            void Linking.openURL(
+            void openExternalUrl(
               'https://console.cloud.google.com/apis/library/youtube.googleapis.com',
             )
           }
@@ -342,57 +403,149 @@ export default function Settings() {
           Open Google Cloud
         </Action>
       </Fold>
-      <Fold title="OpenRouter · optional" summary={(credentialStatus.openrouter === null ? 'Key status not confirmed' : credentialStatus.openrouter ? 'Key saved securely' : 'Key not set') + ' · ' + (prefs.hybridIntelligence ? 'Automatic review on' : 'Manual review only')}>
+      <Fold title="Independent web research · Firecrawl" summary={prefs.webResearchEnabled ? 'Enabled · Firecrawl + selected RSS + Wikimedia' : 'Disabled · selected RSS + Wikimedia only'}>
         <Choices
-          label="Automatic external AI second opinion"
-          options={['Automatic after research', 'Manual only']}
-          selected={[prefs.hybridIntelligence ? 'Automatic after research' : 'Manual only']}
-          onChange={(values) => setPrefs({ ...prefs, hybridIntelligence: values[0] === 'Automatic after research' })}
+          label={fa ? 'جست‌وجوی وب مستقل' : 'Independent web search'}
+          options={['Enabled', 'Disabled']}
+          selected={[prefs.webResearchEnabled ? 'Enabled' : 'Disabled']}
+          onChange={(values) => setPrefs({ ...prefs, webResearchEnabled: values[0] === 'Enabled' })}
         />
+        <Txt muted>{fa
+          ? 'Firecrawl Search نتایج وب و خبر را برای موضوع انتخابی پیدا می‌کند و با کلید شخصی می‌تواند خلاصه محتوای صفحات را هم برگرداند. بدون کلید، جست‌وجوی رایگانِ بدون کلید با محدودیت روزانه IP امتحان می‌شود؛ در صورت محدودیت یا قطع دسترسی، خوراک‌های RSS و ویکی‌مدیا مستقل ادامه می‌دهند.'
+          : 'Firecrawl Search finds independent web/news sources for the selected topic and can return concise page summaries when a personal key is configured. Without a key, keyless search is attempted subject to daily IP limits; RSS feeds and Wikimedia continue independently if Firecrawl is unavailable.'}</Txt>
+        <CredentialSection kind="firecrawl" label="Firecrawl API key (optional)" onStatusChange={handleCredentialStatus} />
+        <Txt muted>{fa
+          ? 'فقط عبارت موضوع و تنظیمات جست‌وجو به Firecrawl ارسال می‌شود؛ هیچ عنوان، توضیح، شناسه، آمار یا تصویر YouTube به Firecrawl فرستاده نمی‌شود. کلید Firecrawl به‌صورت رمزنگاری‌شده روی همین دستگاه نگهداری می‌شود.'
+          : 'Only the topic query and search options are sent to Firecrawl. No YouTube title, description, ID, statistic or thumbnail is sent. A Firecrawl key is stored encrypted on this device.'}</Txt>
+        <Action busy={op.busy} onPress={save} disabled={!ready}>Save web research settings</Action>
+      </Fold>
+      <Fold title="Second Opinion · Multi-provider" summary={providerOrder.map(providerName).join(' → ')}>
         <Txt muted>
           {prefs.uiLanguage === 'fa'
-            ? 'در حالت خودکار، پس از پایان تحلیل محلی، موضوع تحقیق، تیترهای عمومی خبرها و بخش کوتاهی از خلاصه آن‌ها، عنوان و نام کانال ویدئوهای عمومی YouTube و آمار عمومی بازدید/پسند به همراه یافته‌های پردازش‌شده موتور داخلی برای نظر دوم ارسال می‌شوند. متن کامل خبرها، توضیحات کامل ویدئوها، یادداشت‌های خصوصی و کلیدهای API ارسال نمی‌شوند. این ارسال فقط با فعال‌کردن حالت خودکار انجام می‌شود.'
-            : 'In automatic mode, after local analysis finishes, the topic, public news headlines with short excerpts, public YouTube video titles and channel names, available public view/like counts, and processed local findings are sent for the second opinion. Full articles, full video descriptions, private notes and API keys are not sent. This happens only while automatic review is enabled.'}
-          OpenRouter usage is limited by the existing daily cap and cached by evidence content.
+            ? 'پس از تولید ایده، نقد خودکار با ترتیب اولویت ذخیره‌شده اجرا می‌شود. در صورت خطا، محدودیت یا پاسخ نامعتبر، سرویس بعدی امتحان می‌شود. برای نقد ایده، موضوع و مفهوم، حداکثر ۶ منبع مستقل و سیگنال‌های پلتفرمی YouTube همان ایده (تا ۱۸ ویدئو شامل عنوان، توضیح محدود، شناسه/کانال، آمار عمومی و رشد اندازه‌گیری‌شده) ممکن است به ارائه‌دهنده منتخب ارسال شود. داده YouTube استناد مستقل یا اثبات ادعای علمی/خبری نیست. کلیدها، هدرهای احراز هویت و یادداشت‌های خصوصی ارسال نمی‌شوند.'
+            : 'After local idea generation, automatic critique uses the saved provider priority order and falls back on failures or invalid responses. The selected provider may receive the idea topic/concept, up to six independent sources, and YouTube platform signals for that idea (up to 18 videos with titles, limited descriptions, IDs/channels, public statistics and measured growth). YouTube data is platform context, not independent proof of scientific or news claims. API keys, authorization headers and private notes are not sent.'}
         </Txt>
-        <Action busy={op.busy} disabled={!ready} onPress={save}>Save AI automation</Action>
-        <CredentialSection kind="openrouter" label="OpenRouter" onStatusChange={handleCredentialStatus} />
-        <Txt>
-          Free-model requests today (UTC): {prefs.openRouterDailyUsed ?? prefs.openRouterRequestsToday ?? 0}
-          /{prefs.openRouterDailyLimit ?? 50} · Remaining: {prefs.openRouterDailyRemaining ?? 'not refreshed'}
-        </Txt>
-        <Action secondary busy={op.busy} onPress={refreshOpenRouterQuota}>
-          Refresh OpenRouter quota
-        </Action>
         <Txt muted>
           {prefs.uiLanguage === 'fa'
-            ? 'مدل‌های رایگان به‌صورت زنده شناسایی می‌شوند و دسترسی ارائه‌دهندگان ممکن است تغییر کند. در حالت خودکار، تیترهای عمومی خبرها، عنوان ویدئوهای عمومی و آمار بازدید/پسند موجود همراه تحلیل پردازش‌شده ارسال می‌شوند؛ در حالت دستی فقط هنگام درخواست خودت ارسال انجام می‌شود.'
-            : 'Free models are discovered live and provider availability may change. Automatic mode includes public news headlines, public video titles, available view/like counts and processed analysis; manual mode sends a request only when you ask.'}
+            ? 'نکته حریم خصوصی: طبق شرایط فعلی Google، محتوای ارسالی در سطح رایگان Gemini می‌تواند برای بهبود محصولات Google استفاده شود؛ در سطح پولی این استفاده اعلام نشده است. محدودیت، قیمت و دسترسی همه سرویس‌ها و مدل‌ها تغییرپذیر است؛ قبل از استفاده شرایط حساب خودت را بررسی کن. Grok (xAI) و Cloudflare نیز ممکن است هزینه یا سهمیه مصرف داشته باشند.'
+            : 'Privacy and billing note: Google currently states that Gemini Free Tier content may be used to improve its products; the Paid Tier is listed as not used for product improvement. Provider pricing, quotas and model availability can change. Check your account terms before use. Grok (xAI) and Cloudflare models may also incur charges or quota limits.'}
         </Txt>
-        <Txt muted>Selected model: {prefs.model || 'Auto-select an available free model'}</Txt>
-        <Action busy={modelBusy || op.busy} secondary onPress={loadModels}>
-          Refresh free models
-        </Action>
+        <Choices
+          label="Preferred provider"
+          options={['Gemini', 'Grok (xAI)', 'Cloudflare Workers AI', 'OpenRouter']}
+          selected={[providerName(prefs.secondOpinionProvider ?? 'gemini')]}
+          onChange={(values) => {
+            const selected: Record<string, SecondOpinionProvider> = {
+              Gemini: 'gemini', 'Grok (xAI)': 'xai', 'Cloudflare Workers AI': 'cloudflare', OpenRouter: 'openrouter',
+            };
+            const provider = selected[values[0]] ?? 'gemini';
+            const currentOrder = prefs.secondOpinionOrder ?? DEFAULT_SECOND_OPINION_ORDER;
+            const nextOrder = [provider, ...currentOrder.filter((item) => item !== provider)];
+            setPrefs({ ...prefs, secondOpinionProvider: provider, secondOpinionOrder: nextOrder });
+          }}
+        />
+        <Choices
+          label={fa ? 'نقد خودکار پس از تحقیق' : 'Automatic AI critique after research'}
+          options={['Enabled', 'Disabled']}
+          selected={[prefs.automaticExternalReview ? 'Enabled' : 'Disabled']}
+          onChange={(values) => setPrefs({ ...prefs, automaticExternalReview: values[0] === 'Enabled' })}
+        />
+        <Txt muted>{fa
+          ? 'در حالت فعال، هر ایده تازه با مدل اصلی بررسی می‌شود؛ در صورت خطا یا عدم دسترسی، مدل‌های پشتیبان به ترتیب امتحان می‌شوند. اگر همه مدل‌ها در دسترس نباشند، ایده‌های موتور داخلی حفظ می‌شوند و وضعیت نقد ناموفق ثبت می‌شود.'
+          : 'When enabled, each new idea is reviewed by the primary model; if it fails or is unavailable, backup providers are tried in order. If every provider fails, local ideas are preserved and the failed review is reported.'}</Txt>
+        <Heading>{fa ? 'ترتیب اولویت اجرا' : 'Provider priority order'}</Heading>
+        <Txt muted>{fa
+          ? 'ردیف اول سرویس اصلی است؛ اگر کلید نداشته باشد یا درخواست ناموفق باشد، سرویس‌های بعدی به همین ترتیب امتحان می‌شوند. برای جابه‌جایی از دکمه‌های بالا و پایین استفاده کن.'
+          : 'The first row is the primary provider. If it has no saved key or its request fails, the following providers are tried in order. Use Move up or Move down to reorder them.'}</Txt>
+        {providerOrder.map((provider, index) => (
+          <View key={provider} style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}>
+            <View style={{ flex: 1, minWidth: 0, gap: 3 }}>
+              <BadgeText>{index === 0
+                ? (fa ? 'اولویت ۱ · اصلی' : 'PRIORITY 1 · PRIMARY')
+                : (fa ? 'پشتیبان ' + (index + 1) : 'FALLBACK ' + (index + 1))}</BadgeText>
+              <Txt>{providerName(provider)}</Txt>
+            </View>
+            <View style={{ flexDirection: 'row', gap: 5 }}>
+              <View style={{ width: 88 }}>
+                <Action secondary disabled={index === 0} onPress={() => moveProvider(index, -1)}>
+                  {fa ? '↑ بالاتر' : '↑ Move up'}
+                </Action>
+              </View>
+              <View style={{ width: 88 }}>
+                <Action secondary disabled={index === providerOrder.length - 1} onPress={() => moveProvider(index, 1)}>
+                  {fa ? '↓ پایین‌تر' : '↓ Move down'}
+                </Action>
+              </View>
+            </View>
+          </View>
+        ))}
+        <Field
+          label={'Gemini model'}
+          value={prefs.secondOpinionModels?.gemini ?? 'gemini-3.8-flash'}
+          onChange={(value) => setPrefs({ ...prefs, secondOpinionModels: { ...prefs.secondOpinionModels, gemini: value } })}
+          placeholder="gemini-3.8-flash"
+        />
+        <Field
+          label={'Grok (xAI) model'}
+          value={prefs.secondOpinionModels?.xai ?? 'grok-4.7'}
+          onChange={(value) => setPrefs({ ...prefs, secondOpinionModels: { ...prefs.secondOpinionModels, xai: value } })}
+          placeholder="grok-4.7"
+        />
+        <Field
+          label={'Cloudflare Workers AI model'}
+          value={prefs.secondOpinionModels?.cloudflare ?? DEFAULT_CLOUDFLARE_FREE_MODEL}
+          onChange={(value) => setPrefs({ ...prefs, secondOpinionModels: { ...prefs.secondOpinionModels, cloudflare: value } })}
+          placeholder={DEFAULT_CLOUDFLARE_FREE_MODEL}
+        />
+        <Field
+          label={'OpenRouter model (must be in its live free-model list)'}
+          value={prefs.secondOpinionModels?.openrouter ?? ''}
+          onChange={(value) => setPrefs({ ...prefs, secondOpinionModels: { ...prefs.secondOpinionModels, openrouter: value } })}
+          placeholder="Auto-select a live free model"
+        />
+        <Action secondary busy={modelBusy || op.busy} onPress={loadModels}>Refresh models for preferred provider</Action>
         {models.map((model) => (
           <Button
-            variant={prefs.model === model.id ? 'primary' : 'secondary'}
+            variant={(prefs.secondOpinionModels?.[prefs.secondOpinionProvider] ?? '') === model.id ? 'primary' : 'secondary'}
             key={model.id}
-            className="h-auto justify-start p-4"
-            onPress={() => setPrefs({ ...prefs, model: model.id })}
+            className="h-auto justify-start p-3"
+            onPress={() => setPrefs({
+              ...prefs,
+              secondOpinionModels: { ...prefs.secondOpinionModels, [prefs.secondOpinionProvider]: model.id },
+            })}
           >
             <Button.Label numberOfLines={2}>{model.name}</Button.Label>
           </Button>
         ))}
-        <Action disabled={!ready} busy={op.busy} onPress={save}>
-          Save model
-        </Action>
-        <Action
-          secondary
-          onPress={() => void Linking.openURL('https://openrouter.ai/settings/keys')}
-        >
-          Open OpenRouter
-        </Action>
+        <Action disabled={!ready} busy={op.busy} onPress={save}>Save second-opinion settings</Action>
+        <Fold title="Gemini API key" summary={credentialStatus.gemini ? 'Key saved securely' : 'Key not set'}>
+          <CredentialSection kind="gemini" label="Gemini API key" onStatusChange={handleCredentialStatus} />
+          <Action secondary onPress={() => void openExternalUrl('https://aistudio.google.com/apikey')}>Open Google AI Studio</Action>
+        </Fold>
+        <Fold title="Grok (xAI) API key" summary={credentialStatus.xai ? 'Key saved securely' : 'Key not set'}>
+          <CredentialSection kind="xai" label="Grok (xAI) API key" onStatusChange={handleCredentialStatus} />
+          <Action secondary onPress={() => void openExternalUrl('https://console.x.ai/')}>Open Grok (xAI) Console</Action>
+        </Fold>
+        <Fold title="Cloudflare Workers AI" summary={credentialStatus.cloudflare && credentialStatus['cloudflare-account-id'] ? 'Token and Account ID saved' : 'Token or Account ID missing'}>
+          <CredentialSection kind="cloudflare-account-id" label="Cloudflare Account ID" onStatusChange={handleCredentialStatus} />
+          <CredentialSection kind="cloudflare" label="Cloudflare API token" onStatusChange={handleCredentialStatus} />
+          <Txt muted>{fa
+            ? 'راه ساده: در داشبورد Workers AI گزینهٔ Use REST API و سپس Create a Workers AI API Token را بزن؛ همان‌جا Account ID را هم بردار. اگر توکن را دستی می‌سازی، مجوزهای AI Gateway - Read، AI Gateway - Edit و Workers AI - Read را بده. مدل پیش‌فرض رایگان: @cf/zai-org/glm-4.7-flash. پلن رایگان روزانه ۱۰٬۰۰۰ Neurons دارد و سهمیه در ساعت ۰۰:۰۰ UTC صفر می‌شود؛ با تمام‌شدن سهمیه، درخواست‌ها متوقف می‌شوند.'
+            : 'Easy setup: In the Workers AI dashboard choose Use REST API, then Create a Workers AI API Token; copy the Account ID shown there too. For a manually created token, grant AI Gateway - Read, AI Gateway - Edit, and Workers AI - Read. Default free model: @cf/zai-org/glm-4.7-flash. The Free plan includes 10,000 Neurons per day, resetting at 00:00 UTC; requests stop when the daily allocation is exhausted.'}</Txt>
+          <Action secondary onPress={() => void openExternalUrl('https://dash.cloudflare.com/?to=/:account/ai/workers-ai')}>Open Workers AI dashboard</Action>
+        </Fold>
+        <Fold title="OpenRouter" summary={credentialStatus.openrouter ? 'Key saved securely' : 'Key not set'}>
+          <CredentialSection kind="openrouter" label="OpenRouter API key" onStatusChange={handleCredentialStatus} />
+          <Txt>
+            Free-model requests today (UTC): {prefs.openRouterDailyUsed ?? prefs.openRouterRequestsToday ?? 0}
+            /{prefs.openRouterDailyLimit ?? 50} · Remaining: {prefs.openRouterDailyRemaining ?? 'not refreshed'}
+          </Txt>
+          <Action secondary busy={op.busy} onPress={refreshOpenRouterQuota}>Refresh OpenRouter quota</Action>
+          <Action secondary onPress={() => void openExternalUrl('https://openrouter.ai/settings/keys')}>Open OpenRouter</Action>
+        </Fold>
       </Fold>
+      </Fold>
+      <Fold title="Automation & quota management" summary={fa ? 'سقف مصرف و زمان‌بندی اجرای خودکار' : 'Usage limits and scheduled research'}>
       <Fold title="API budget & quota" summary={(data.budget.units ?? 0) + ' units · ' + (data.budget.requests ?? 0) + ' requests today'}>
         <Txt>Estimated units today: {data.budget.date === quotaDay() ? data.budget.units : 0}</Txt>
         <Txt>Requests today: {data.budget.date === quotaDay() ? data.budget.requests : 0}</Txt>
@@ -419,7 +572,7 @@ export default function Settings() {
         <Action
           secondary
           onPress={() =>
-            void Linking.openURL(
+            void openExternalUrl(
               'https://console.cloud.google.com/apis/api/youtube.googleapis.com/quotas',
             )
           }
@@ -430,7 +583,7 @@ export default function Settings() {
       <Fold title="Automatic YouTube research" summary={prefs.schedule === 'Manual' ? 'Manual · off' : prefs.paused ? 'Paused' : prefs.schedule}>
         <Choices
           label="Frequency"
-          options={['Manual', 'Every 12 hours', 'Daily', 'Weekly'] as const}
+          options={['Manual', 'Every 6 hours', 'Every 12 hours', 'Daily', 'Weekly'] as const}
           selected={[prefs.schedule]}
           onChange={(v) => setPrefs({ ...prefs, schedule: v[0] })}
         />
@@ -442,7 +595,7 @@ export default function Settings() {
         />
         <Txt muted>{scheduleNotice}</Txt>
         <Txt muted>
-          Uses the last manually researched topic and the same daily budget. No continuous polling.
+          Uses the last researched topic and the same daily quota. Each scheduled run refreshes the selected publisher feeds and official YouTube sample, then generates new local ideas. Android may defer the six-hour minimum; there is no always-on polling.
         </Txt>
         <Action busy={op.busy} onPress={save}>
           Save schedule
@@ -456,6 +609,8 @@ export default function Settings() {
           Allow notifications
         </Action>
       </Fold>
+      </Fold>
+      <Fold title="Backup, privacy and diagnostics" summary={fa ? 'پشتیبان‌گیری، داده‌های محلی، حریم خصوصی و سلامت برنامه' : 'Backups, local data, privacy and app diagnostics'}>
       <Fold title="Backup & phone transfer" summary={(data.notes?.length ?? 0) + ' notes · ' + (data.links?.length ?? 0) + ' links · ' + (data.ideas?.length ?? 0) + ' ideas'}>
         <Txt muted>
           Exports your notes, links, folders, tags, ideas and preferences. API metadata, AI replies
@@ -529,9 +684,7 @@ export default function Settings() {
       </Fold>
       <Fold title="Privacy & data management" summary={(data.researchMemory?.length ?? 0) + ' saved research topics · keys stay on device'}>
         <Txt muted>
-          YouTube receives your searches and API key. OpenRouter receives the topic and processed aggregate research signals only when automatic hybrid review is enabled, or the prompt you manually request. Raw news/video metadata, private notes and API keys are not sent. Nothing is sent to an app-owned server. No video, audio,
-          subtitle or caption downloads. API titles, descriptions and thumbnails expire within 29
-          days; saved personal links and notes remain.
+          YouTube receives YouTube search queries and the key stored on this device. Firecrawl receives the research topic query when independent web search is enabled. The selected AI provider receives the new idea, its concept and source summaries/links from independent publisher, web and Wikimedia sources when automatic review is enabled. YouTube API data (video titles, descriptions, IDs, view/like counts and thumbnails) is never sent to Firecrawl or AI providers and is not combined into publisher/web editorial scores. Private notes and API keys are not sent. Nothing is sent to an app-owned server. No video, audio, subtitle or caption downloads. YouTube API metadata is purged within 29 days; saved personal links and notes remain.
         </Txt>
         <Txt muted>{'Saved research memory: ' + data.researchMemory.length + ' topic(s). This memory is used only for local research comparisons and can be cleared independently.'}</Txt>
         <Action
@@ -579,6 +732,7 @@ export default function Settings() {
                 defaults().preferences,
                 async () => {
                   await deleteKey('youtube');
+                  await deleteKey('firecrawl');
                   await deleteKey('openrouter');
                   await current.commit(() => defaults());
                 },
@@ -592,20 +746,20 @@ export default function Settings() {
         </Action>
         <Action
           secondary
-          onPress={() => void Linking.openURL('https://policies.google.com/privacy')}
+          onPress={() => void openExternalUrl('https://policies.google.com/privacy')}
         >
           Google Privacy Policy
         </Action>
-        <Action secondary onPress={() => void Linking.openURL('https://www.youtube.com/t/terms')}>
+        <Action secondary onPress={() => void openExternalUrl('https://www.youtube.com/t/terms')}>
           YouTube Terms of Service
         </Action>
-        <Action secondary onPress={() => void Linking.openURL('https://openrouter.ai/privacy')}>
+        <Action secondary onPress={() => void openExternalUrl('https://openrouter.ai/privacy')}>
           OpenRouter privacy
         </Action>
       </Fold>
-      <Fold title="App info & mock diagnostics" summary="Version 1.5.9 · local-first · isolated test runner">
+      <Fold title="App info & mock diagnostics" summary="Version 1.26.0 · local-first · isolated test runner">
         <Heading>MOHSEN SCOUT</Heading>
-        <Txt>Version 1.5.9</Txt>
+        <Txt>Version 1.26.0</Txt>
         <Txt muted>Run synthetic regression checks with mocked responses. They do not call YouTube or OpenRouter, use saved API keys, or change your research workspace.</Txt>
         <Action secondary icon={Bug} onPress={() => router.push({
           pathname: '/diagnostics',
@@ -614,7 +768,8 @@ export default function Settings() {
           Run mock regression checks
         </Action>
       </Fold>
-      {Boolean(op.error) && <ErrorBox message={op.error} onRetry={op.clear} />}
+      </Fold>
+      {Boolean(op.error) && <ErrorBox message={op.error} onDismiss={op.clear} />}
       {Boolean(op.message) && <Txt muted>{op.message}</Txt>}
     </Page>
   );

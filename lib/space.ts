@@ -657,8 +657,6 @@ export type WikiSignal = {
   articleUrl: string;
   apiUrl: string;
   summary: string;
-  /** Optional non-fatal limitation when the summary endpoint was unavailable. */
-  warning?: string;
   monthlyViews: { month: string; views: number }[];
 };
 const formatApiMonth = (date: Date) => String(date.getUTCFullYear()) + String(date.getUTCMonth() + 1).padStart(2, '0') + '0100';
@@ -691,19 +689,15 @@ export async function getWikipediaSignal(
   const articlePath = encodeURIComponent(articleTitle.replace(/ /g, '_'));
   const summaryUrl = 'https://' + language + '.wikipedia.org/api/rest_v1/page/summary/' + articlePath;
   let summary = '';
-  let summaryWarning: string | undefined;
   let articleUrl = 'https://' + language + '.wikipedia.org/wiki/' + articlePath;
   try {
     const parsedSummary = wikiSummarySchema.safeParse(await requestJson(summaryUrl, { headers: wikiHeaders }, fetcher));
     if (parsedSummary.success) {
       summary = parsedSummary.data.extract;
       articleUrl = parsedSummary.data.content_urls?.desktop.page ?? articleUrl;
-    } else {
-      summaryWarning = 'Wikipedia summary was unavailable; only the article title and pageview series were retained.';
     }
   } catch {
     // The pageviews series remains useful when the summary endpoint is unavailable.
-    summaryWarning = 'Wikipedia summary request failed; only the article title and pageview series were retained.';
   }
   const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 6, 1));
   const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
@@ -718,7 +712,6 @@ export async function getWikipediaSignal(
     articleUrl,
     apiUrl,
     summary,
-    ...(summaryWarning ? { warning: summaryWarning } : {}),
     monthlyViews: views.data.items.map((item) => ({
       month: item.timestamp.slice(0, 4) + '-' + item.timestamp.slice(4, 6),
       views: item.views,
@@ -742,41 +735,41 @@ export function buildResearchOutline(
   if (language === 'fa') {
     return {
       titleIdeas: [
-        'دانشمندان واقعاً درباره ' + safeTopic + ' چه کشف کرده‌اند؟',
-        safeTopic + ': شواهد، رازها و آنچه در ادامه می‌آید',
-        'چرا ' + safeTopic + ' مهم‌تر از چیزی است که ابتدا به نظر می‌رسد؟',
+        'درباره ' + safeTopic + ' دقیقاً چه می‌دانیم؟',
+        safeTopic + '؛ شواهد موجود و پرسش‌هایی که هنوز پاسخ ندارند',
+        'اهمیت ' + safeTopic + ' در چیست؟',
       ],
       outline: [
-        'شروع: پرسش اصلی درباره ' + safeTopic + ' را بدون بزرگ‌نمایی مطرح کن.',
-        'زمینه: مأموریت، ابزار یا روش علمی پشت شواهد را توضیح بده.',
-        ...(lead.length ? ['شواهد: گزارش‌های منبع اخیر را بررسی کن — ' + lead.join('؛ ') + '؛ عنوان‌ها را از نتیجه‌گیری علمی جدا نگه دار.'] : ['شواهد: قوی‌ترین مدارک اولیه موجود را ارائه کن و توضیح بده چه چیزی را ثابت می‌کنند و چه چیزی را نه.']),
-        'جزئیات جالب: یک نتیجه تأییدشده را انتخاب کن و اهمیت آن را توضیح بده.',
-        'موارد ناشناخته: پرسش‌های علمی باز را از مشاهدات تأییدشده جدا کن.',
-        'اهمیت: یافته را به داستان گسترده‌تر نجوم و اکتشافات فضایی وصل کن.',
-        'پایان: یک پرسش مشخص برای دنبال کردن مأموریت یا مشاهده بعدی مطرح کن.',
+        'شروع: یک پرسش روشن درباره ' + safeTopic + ' مطرح کن و از همان ابتدا پاسخ را لو نده.',
+        'زمینه: فقط اطلاعاتی را بگو که برای فهم موضوع لازم است؛ مأموریت، ابزار یا روش علمی را ساده توضیح بده.',
+        ...(lead.length ? ['آنچه منابع می‌گویند: گزارش‌های زیر را با دقت مرور کن — ' + lead.join('؛ ') + '؛ تیتر را با نتیجه علمی قطعی اشتباه نگیر.'] : ['شواهد: قوی‌ترین سند اولیه را معرفی کن و دقیق بگو چه چیزی را نشان می‌دهد و چه چیزی را ثابت نمی‌کند.']),
+        'نکته مهم: یک نتیجه تأییدشده را انتخاب کن و توضیح بده چرا اهمیت دارد.',
+        'پرسش‌های باز: چیزهایی را که هنوز معلوم نیست از یافته‌های تأییدشده جدا کن.',
+        'اهمیت موضوع: نتیجه را در تصویر بزرگ‌تر نجوم و اکتشافات فضایی قرار بده.',
+        'پایان: با یک پرسش مشخص تمام کن؛ پرسشی که پاسخ آن به داده یا مشاهده بعدی وابسته است.',
       ],
       verificationQuestions: [
-        'آیا منبع اولیه یک اندازه‌گیری مستقیم را شرح می‌دهد، یک تفسیر یا یک فرضیه؟',
-        'آیا نتیجه گزارش‌شده مستقل تأیید شده یا هنوز مقدماتی است؟',
-        'آیا تاریخ‌ها، وضعیت مأموریت و نام ابزارها به‌روز هستند؟',
-        'چه مدرکی می‌تواند توضیح پیشنهادی را تغییر دهد یا تضعیف کند؟',
+        'منبع اولیه از مشاهده مستقیم حرف می‌زند یا از تفسیر و فرضیه؟',
+        'آیا منبع مستقلی نتیجه را تأیید کرده یا هنوز با یک گزارش مقدماتی روبه‌رو هستیم؟',
+        'تاریخ‌ها، وضعیت مأموریت و نام ابزارها را از منبع رسمی بررسی کرده‌ای؟',
+        'چه مدرکی می‌تواند این توضیح را رد کند یا تغییر دهد؟',
       ],
     };
   }
   return {
     titleIdeas: [
-      'What Scientists Have Actually Discovered About ' + safeTopic,
-      safeTopic + ': The Evidence, the Mystery and What Comes Next',
-      'Why ' + safeTopic + ' Matters More Than It First Appears',
+      'What do we actually know about ' + safeTopic + '?',
+      safeTopic + ': what the evidence shows and what remains unknown',
+      'Why does ' + safeTopic + ' matter?',
     ],
     outline: [
-      'Opening: introduce the central question behind ' + safeTopic + ' without overstating the discovery.',
-      'Context: explain the mission, instrument or scientific method behind the evidence.',
-      ...(lead.length ? ['Evidence: unpack the latest source reports — ' + lead.join('; ') + '.'] : ['Evidence: present the strongest primary-source material available and explain what it does and does not establish.']),
-      'The surprising detail: select one verified result and explain why it changes the picture.',
+      'Opening: start with one clear question about ' + safeTopic + ' and let the viewer see why it matters.',
+      'Context: give only the background needed to understand the mission, instrument or scientific method.',
+      ...(lead.length ? ['What the sources report: examine these headlines — ' + lead.join('; ') + '. Keep a headline separate from a confirmed scientific result.'] : ['Evidence: introduce the strongest available primary source and state what it does—and does not—show.']),
+      'The key detail: choose one verified finding and explain it in plain language.',
       'What remains unknown: separate open scientific questions from confirmed observations.',
-      'Why it matters: connect the finding to the wider story of astronomy and space exploration.',
-      'Ending: give viewers one precise question to watch for in the next mission or observation.',
+      'Why it matters: place the finding in the wider story of astronomy and space exploration.',
+      'Ending: leave viewers with one precise question that a future observation or mission could answer.',
     ],
     verificationQuestions: [
       'Does the primary source describe a measurement, an interpretation or a hypothesis?',

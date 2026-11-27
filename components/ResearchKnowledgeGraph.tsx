@@ -167,7 +167,7 @@ export function ResearchKnowledgeGraph({
         const type = nodeById.get(id)?.type;
         // Generic evidence summary nodes connect every idea to the whole corpus.
         // The Wikimedia summary is a specific exception: it points to one article.
-        if (!['news', 'youtube', 'context', 'entity', 'publisher'].includes(type ?? '') && id !== 'evidence-wikimedia') continue;
+        if (!['news', 'youtube', 'context', 'entity', 'concept', 'publisher'].includes(type ?? '') && id !== 'evidence-wikimedia') continue;
         for (const otherId of adjacency.get(id) ?? []) {
           if (otherId !== ideaNodeId && otherId !== 'topic-root' && !otherId.startsWith('idea-')) {
             relatedIds.add(otherId);
@@ -193,7 +193,7 @@ export function ResearchKnowledgeGraph({
         nodes,
         directEvidenceCount,
         relationKinds: new Set(nodes
-          .filter((node) => ['news', 'youtube', 'context', 'entity', 'publisher'].includes(node.type))
+          .filter((node) => ['news', 'youtube', 'context', 'entity', 'concept', 'publisher'].includes(node.type))
           .map((node) => node.type)).size,
       });
     }
@@ -231,9 +231,9 @@ export function ResearchKnowledgeGraph({
     for (let i = 0; i < points.length; i++) {
       for (let j = i + 1; j < points.length && lines.length < 64; j++) {
         const first = (connectionsByIdea.get(points[i].idea.id)?.nodes ?? [])
-          .filter((node) => ['news', 'youtube', 'context', 'entity', 'publisher'].includes(node.type));
+          .filter((node) => ['news', 'youtube', 'context', 'entity', 'concept', 'publisher'].includes(node.type));
         const second = (connectionsByIdea.get(points[j].idea.id)?.nodes ?? [])
-          .filter((node) => ['news', 'youtube', 'context', 'entity', 'publisher'].includes(node.type));
+          .filter((node) => ['news', 'youtube', 'context', 'entity', 'concept', 'publisher'].includes(node.type));
         const firstIds = new Set(first.map((node) => node.id));
         const secondIds = new Set(second.map((node) => node.id));
         let sharedType: string | undefined;

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Text, Linking, View } from 'react-native';
+import { Text, View } from 'react-native';
 import { Skeleton } from 'heroui-native';
 import { Link, router, useLocalSearchParams } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
@@ -22,15 +22,18 @@ import {
 } from '@/components/ScoutUI';
 import { VideoRow } from '@/components/VideoRow';
 import { useScout } from '@/lib/store';
-import { type Idea, statuses, languages } from '@/lib/types';
-import { buildIdeaAnalysis, limitations, reasoning } from '@/lib/engine';
+import { type Idea, statuses, languages, DEFAULT_SECOND_OPINION_ORDER } from '@/lib/types';
+import { buildIdeaAnalysis, limitations } from '@/lib/engine';
 import { getIdeaDisplayTitle } from '@/lib/idea-research';
 import { getKey } from '@/lib/vault';
-import { localDateKey, getFreeModels, getOpenRouterDailyQuota, getOpinion, nextOpenRouterUsage, opinionPrompt, selectFreeModel } from '@/lib/api';
+import { structuredSecondOpinionPrompt, formatStructuredSecondOpinion, getFreeModels, selectFreeModel } from '@/lib/api';
+import { requestSecondOpinionWithFallback, DEFAULT_SECOND_OPINION_MODELS, type SecondOpinionProviderConfig } from '@/lib/ai-gateway';
 import { uid } from '@/lib/types';
 import { recordRuntimeFinish, recordRuntimeStart } from '@/lib/runtime-metrics';
+import { withResearchProviderQueue } from '@/lib/research-agent';
 import { MediaPreview } from '@/components/MediaPreview';
 import { palette as p } from '@/lib/theme';
+import { openExternalUrl } from '@/lib/external-links';
 import { getEditorialPriorityBand } from '@/lib/editorial-priority';
 export default function Detail() {
   const params = useLocalSearchParams<{ idea?: string; video?: string }>();
@@ -60,7 +63,7 @@ export default function Detail() {
   const ideaReadyForOpinion = Boolean(ideaOpinionTopic.trim() && idea?.concept.trim());
   const related = idea ? data.videos.filter((v) => idea.videoIds.includes(v.id)) : [];
   const analysisSections = idea
-    ? buildIdeaAnalysis({ ...idea, topic: ideaDisplayTopic }, related, uiLanguage)
+    ? buildIdeaAnalysis({ ...idea, topic: ideaDisplayTopic }, [], uiLanguage)
     : [];
   const savedReferences = idea ? data.links.filter((link) => idea.videoIds.includes(link.id)) : [];
   const researchNotes = idea ? data.notes.filter((note) => note.ideaId === idea.id) : [];
@@ -70,59 +73,59 @@ export default function Detail() {
       if (!ideaReadyForOpinion) throw new Error('Add a meaningful topic and non-empty video concept before requesting an AI opinion.');
       recordRuntimeStart('AI');
       try {
-      const key = await getKey('openrouter');
-      if (!key) throw new Error('Add your OpenRouter key in Settings first.');
-      const models = await getFreeModels();
-      const model = selectFreeModel(models, data.preferences.model);
-      if (!model) throw new Error('No free models are currently available. Try refreshing later.');
-      if (model !== data.preferences.model) {
-        await useScout
-          .getState()
-          .commit((d) => ({ ...d, preferences: { ...d.preferences, model } }));
-      }
-      const quota = model.toLowerCase().endsWith(':free')
-        ? await getOpenRouterDailyQuota(key).catch(() => undefined)
-        : undefined;
-      if (quota && quota.remaining <= 0)
-        throw new Error('OpenRouter free-model daily quota is exhausted (' + quota.used + '/' + quota.limit + ' UTC).');
-      const text = await getOpinion(
-        key,
-        model,
-        opinionPrompt(ideaOpinionTopic, idea.concept, idea.decision, uiLanguage),
-        async () => {
-          const current = useScout.getState().data.preferences;
-          const day = localDateKey();
-          const usage = nextOpenRouterUsage(
-            current.openRouterUsageDay,
-            current.openRouterRequestsToday,
-            day,
-            quota?.limit ?? (model.toLowerCase().endsWith(':free') ? 50 : 10000),
-            quota?.used,
-          );
-          await useScout.getState().commit((d) => ({
-            ...d,
-            preferences: {
-              ...d.preferences,
-              ...usage,
-              ...(quota ? {
-                openRouterDailyLimit: quota.limit,
-                openRouterDailyUsed: quota.used + 1,
-                openRouterDailyRemaining: Math.max(0, quota.remaining - 1),
-                openRouterQuotaCheckedAt: Date.now(),
-              } : {}),
-            },
-          }));
-        },
-      );
-      await useScout.getState().commit((d) => ({
-        ...d,
-        opinions: [
-          { id: uid(), ideaId: idea.id, text, model, createdAt: Date.now() },
-          ...d.opinions,
-        ],
-      }));
-      recordRuntimeFinish('AI', 'success');
-      setConsent(false);
+        const order = data.preferences.secondOpinionOrder?.length
+          ? data.preferences.secondOpinionOrder
+          : DEFAULT_SECOND_OPINION_ORDER;
+        const configuredModels = data.preferences.secondOpinionModels ?? DEFAULT_SECOND_OPINION_MODELS;
+        const configs: SecondOpinionProviderConfig[] = [];
+        for (const provider of new Set(order)) {
+          try {
+            const key = await getKey(provider);
+            const accountId = provider === 'cloudflare'
+              ? await getKey('cloudflare-account-id') ?? undefined
+              : undefined;
+            let models = [configuredModels[provider] ?? DEFAULT_SECOND_OPINION_MODELS[provider]];
+            if (provider === 'openrouter') {
+              const liveFreeModels = await getFreeModels();
+              const preferred = selectFreeModel(liveFreeModels, models[0]);
+              models = liveFreeModels.map((item) => item.id).filter((id) => id !== preferred);
+              if (preferred) models.unshift(preferred);
+              models = models.filter(Boolean).slice(0, 5);
+            }
+            for (const model of new Set(models.map((item) => item.trim()).filter(Boolean))) {
+              configs.push({ provider, key: key ?? '', model, ...(accountId ? { accountId } : {}) });
+            }
+          } catch {
+            continue;
+          }
+        }
+        const decisionContext = idea.decision.trim()
+          ? '\\nUser decision context: ' + idea.decision.trim().slice(0, 600)
+          : '';
+        const prompt = structuredSecondOpinionPrompt(
+          ideaOpinionTopic,
+          idea.concept + decisionContext,
+          uiLanguage,
+          idea.evidenceSources ?? [],
+          related.slice(0, 25).map((video) => ({
+            id: video.id, title: video.title, description: video.description, channel: video.channel,
+            channelId: video.channelId ?? '', publishedAt: video.publishedAt, thumbnailUrl: video.thumbnail,
+            viewCount: video.viewCount ?? null, likeCount: video.likeCount ?? null,
+            channelSubscriberCount: null, channelVideoCount: null,
+            url: 'https://www.youtube.com/watch?v=' + video.id, growth: video.growth,
+          })),
+        );
+        const result = await withResearchProviderQueue(() => requestSecondOpinionWithFallback(configs, prompt));
+        const formatted = formatStructuredSecondOpinion(result.opinion, uiLanguage);
+        await useScout.getState().commit((d) => ({
+          ...d,
+          opinions: [
+            { id: uid(), ideaId: idea.id, text: formatted, model: result.provider + ' / ' + result.model, createdAt: Date.now() },
+            ...d.opinions,
+          ],
+        }));
+        recordRuntimeFinish('AI', 'success');
+        setConsent(false);
       } catch (error) {
         recordRuntimeFinish('AI', 'error', error instanceof Error ? error.message : String(error));
         throw error;
@@ -185,7 +188,7 @@ export default function Detail() {
       </SourceTitle>
       {idea ? (
         <Panel>
-          {typeof idea.engineScore === 'number' && Number.isFinite(idea.engineScore) ? (() => {
+          {idea.engineScoreBasis === 'publisher-web-only-v2' && typeof idea.engineScore === 'number' && Number.isFinite(idea.engineScore) ? (() => {
             const band = getEditorialPriorityBand(idea.engineScore);
             const tint = band === 'strong' ? p.success : band === 'moderate' ? p.cyan : p.danger;
             const fa = uiLanguage === 'fa';
@@ -201,13 +204,15 @@ export default function Detail() {
               </View>
             );
           })() : (
-            <Txt muted>{uiLanguage === 'fa' ? 'این ایده هنوز امتیاز تحریری مبتنی بر شواهد ندارد؛ امتیاز یا برچسبی به‌صورت حدسی ساخته نمی‌شود.' : 'This idea has no evidence-based editorial score yet. No score or label is fabricated.'}</Txt>
+            <Txt muted>{idea.engineScore !== undefined && idea.engineScoreBasis !== 'publisher-web-only-v2'
+              ? (uiLanguage === 'fa' ? 'امتیاز نسخه قدیمی نمایش داده نمی‌شود؛ رتبه‌بندی فعلی فقط از شواهد مستقل وب و ناشران استفاده می‌کند.' : 'A legacy score from an older engine version is hidden; current ranking uses independent web/publisher evidence only.')
+              : (uiLanguage === 'fa' ? 'این ایده هنوز امتیاز تحریری مستقل ندارد؛ امتیاز یا برچسبی به‌صورت حدسی ساخته نمی‌شود.' : 'This idea has no independent evidence-based editorial score yet. No score or label is fabricated.')}</Txt>
           )}
         </Panel>
       ) : null}
       {video && (
         <>
-          <MediaPreview uri={video.thumbnail} aspectRatio={16 / 9} onPress={() => void Linking.openURL('https://www.youtube.com/watch?v=' + video.id).catch(() => {})} alt={video.title} />
+          <MediaPreview uri={video.thumbnail} aspectRatio={16 / 9} onPress={() => void openExternalUrl('https://www.youtube.com/watch?v=' + video.id, uiLanguage)} alt={video.title} />
           <SourceText>
             {video.channel} · {new Date(video.publishedAt).toLocaleDateString('en-US')}
           </SourceText>
@@ -228,26 +233,28 @@ export default function Detail() {
           <Action icon={Bookmark} busy={op.busy} onPress={saveVideoIdea}>
             Save Opportunity
           </Action>
-          <Action icon={Sparkles} secondary busy={op.busy} onPress={saveVideoIdea}>
-            Create idea for AI opinion
-          </Action>
         </Panel>
       )}
       {idea && (
         <>
           {idea.imageUrl ? <MediaPreview uri={idea.imageUrl} aspectRatio={16 / 9} viewer alt={idea.topic} /> : null}
+          <Fold title={uiLanguage === 'fa' ? 'مفهوم ویدئو و دلیل بررسی' : 'Video concept and rationale'} summary={uiLanguage === 'fa' ? 'ایده، فرضیه و چرایی بررسی' : 'Idea, hypothesis and why it merits investigation'}>
           <Panel>
             <Text style={styles.badge}>{idea.assessment}</Text>
             <Heading>Video concept</Heading>
             <SourceText>{idea.concept || 'Add your own concept.'}</SourceText>
             <Heading>Why investigate it?</Heading>
-            <Txt>{reasoning(idea, related.length, data.preferences.uiLanguage ?? 'fa')}</Txt>
+            <Txt>{data.preferences.uiLanguage === 'fa'
+              ? 'امتیاز و اولویت این ایده فقط از خبرهای ناشران، جست‌وجوی وب و زمینه دانشنامه‌ای ساخته شده است. نمونه YouTube در بخش جداگانه دیده می‌شود و در امتیاز یا نقد هوش مصنوعی نقشی ندارد.'
+              : 'This idea’s editorial priority uses publisher news, independent web search and encyclopedia context only. The YouTube sample is displayed separately and does not affect the score or AI critique.'}</Txt>
           </Panel>
+          </Fold>
+          <Fold title={data.preferences.uiLanguage === 'fa' ? 'تحلیل تحریری موتور داخلی' : 'Internal editorial analysis'} summary={uiLanguage === 'fa' ? 'تحلیل محلی جدا از نمونه YouTube و نقد مدل' : 'Local analysis, separate from YouTube and external AI review'}>
           <Panel>
             <Heading>{data.preferences.uiLanguage === 'fa' ? 'تحلیل تحریری موتور داخلی' : 'Internal editorial analysis'}</Heading>
             <Txt muted>{data.preferences.uiLanguage === 'fa'
-              ? 'این بررسی محلی است و فقط از مفهوم ثبت‌شده و نمونه‌های پیوندخورده موجود روی دستگاه استفاده می‌کند؛ منبع تازه‌ای دریافت نمی‌کند و نظر AI نیست.'
-              : 'This local review uses only the saved concept and linked examples already on this device. It fetches no new sources and is not an AI opinion.'}</Txt>
+              ? 'این بخش تحلیل تحریری محلی را از نقد خودکار مدل خارجی جدا می‌کند. داده‌های خام YouTube در تحلیل محلی این ایده ادغام نمی‌شوند.'
+              : 'This section separates the local editorial checklist from the automatic external-model critique. Raw YouTube API data is not merged into this idea analysis.'}</Txt>
             {analysisSections.map((section) => (
               <View key={section.id} style={{ gap: 6 }}>
                 <Heading>{section.title}</Heading>
@@ -256,27 +263,45 @@ export default function Detail() {
               </View>
             ))}
           </Panel>
+          </Fold>
           <Txt muted>
             {idea.region} · {idea.languages.map((l) => languages[l] || l).join(', ')}
           </Txt>
           {idea.sourceUrl ? (
-            <Action secondary onPress={() => void Linking.openURL(idea.sourceUrl!).catch(() => {})}>
+            <Action secondary onPress={() => void openExternalUrl(idea.sourceUrl!, uiLanguage)}>
               {'Open original source · ' + (idea.sourceName || 'Publisher')}
             </Action>
           ) : null}
+          {idea.evidenceSources?.length ? (
+            <Fold title={uiLanguage === 'fa' ? 'منابع تحقیق' : 'Research sources'} summary={idea.evidenceSources.length + ' independent source(s)'}>
+              <Txt muted>{uiLanguage === 'fa'
+                ? 'این منابع مستقل پشتوانه ایده و امتیاز تحریری هستند. هر پیوند را پیش از ضبط باز و ادعای اصلی را در منبع اولیه بررسی کن.'
+                : 'These independent sources support the idea and its editorial priority. Open each link and verify key claims against the original source before recording.'}</Txt>
+              {idea.evidenceSources.map((source) => (
+                <View key={source.sourceUrl} style={{ gap: 4 }}>
+                  <Text style={styles.badge}>{source.sourceName} · {source.sourceType}</Text>
+                  <SourceText>{source.title}</SourceText>
+                  {source.summary ? <Txt muted>{source.summary}</Txt> : null}
+                  <Action secondary onPress={() => void openExternalUrl(source.sourceUrl, uiLanguage)}>Open source ↗</Action>
+                </View>
+              ))}
+            </Fold>
+          ) : null}
+          <Fold title={uiLanguage === 'fa' ? 'ادامه پژوهش با ابزارهای دیگر' : 'Continue with other research tools'} summary={uiLanguage === 'fa' ? 'YouTube، توجه عمومی و وب مستقل' : 'YouTube, public attention and independent web'}>
           <Panel>
             <Heading>Continue this research</Heading>
             <Txt muted>Each tool opens with this idea&apos;s topic. Results can be connected back here without creating a second copy of the idea.</Txt>
             <Action secondary onPress={() => router.push({ pathname: '/youtube', params: { topic: idea.topic, idea: idea.id } })}>YouTube research</Action>
-            <Action secondary onPress={() => router.push({ pathname: '/trend-intelligence', params: { topic: idea.topic, idea: idea.id } })}>Explore a paginated YouTube sample</Action>
+            <Action secondary onPress={() => router.push({ pathname: '/youtube', params: { topic: idea.topic, idea: idea.id, mode: 'advanced' } })}>Explore a paginated YouTube sample</Action>
             <Action secondary onPress={() => router.push({ pathname: '/search-demand', params: { topic: idea.topic, idea: idea.id } })}>Compare public interest</Action>
             <Action secondary onPress={() => router.push({ pathname: '/deep-research', params: { topic: idea.topic, idea: idea.id } })}>Prepare a deep research brief</Action>
           </Panel>
+          </Fold>
           {savedReferences.length > 0 && (
             <Fold title={`Saved video references (${savedReferences.length})`}>
               <Txt muted>These are personal YouTube links you chose to keep. API titles, thumbnails and statistics remain temporary and are not copied into your notes or backup.</Txt>
               {savedReferences.map((link) => (
-                <Action key={link.id} secondary onPress={() => void Linking.openURL(link.url).catch(() => {})}>
+                <Action key={link.id} secondary onPress={() => void openExternalUrl(link.url, uiLanguage)}>
                   {link.manualTitle.trim() || 'Open saved YouTube reference'}
                 </Action>
               ))}
@@ -368,21 +393,19 @@ export default function Detail() {
                 busy={op.busy}
                 onPress={() =>
                   void op.run(async () => {
-                    await useScout.getState().commit((d) => ({
-                      ...d,
-                      ideas: d.ideas.map((i) => (i.id === idea.id ? idea : i)),
-                    }));
+                    await useScout.getState().updateIdea(idea);
                     setEditing(false);
-                  }, 'Changes saved.')
+                  }, 'Changes saved. If distinct retained evidence exists, the next idea is generated locally.')
                 }
               >
                 Save changes
               </Action>
             </Panel>
           )}
+          <Fold title="Second opinion and AI review" summary={uiLanguage === 'fa' ? 'اختیاری · فقط پس از تأیید شما' : 'Optional · only sent after your confirmation'}>
           <Heading>Second opinion</Heading>
           <Txt muted>
-            Optional. Sends only your editorial topic, concept and personal decision to OpenRouter.
+            Optional. Sends only your editorial topic, concept and personal decision to the configured AI provider priority chain.
             No YouTube titles, descriptions, statistics or notes are sent.
           </Txt>
           {!consent ? (
@@ -394,10 +417,10 @@ export default function Detail() {
             </>
           ) : (
             <Panel>
-              <Heading>Share this idea with OpenRouter?</Heading>
+              <Heading>Share this idea with your configured AI providers?</Heading>
               <Txt muted>
                 You choose when to send. Replies are subjective and may disagree with the internal
-                assessment. Free models have provider rate limits.
+                assessment. The app tries configured providers in priority order when a provider fails.
               </Txt>
               <Txt>Topic: {ideaOpinionTopic}</Txt>
               <Txt>Concept: {idea.concept}</Txt>
@@ -434,6 +457,8 @@ export default function Detail() {
                 </Action>
               </Panel>
             ))}
+          </Fold>
+          <Fold title="Idea management and retention" summary={uiLanguage === 'fa' ? 'بایگانی یا حذف این ایده' : 'Archive or delete this idea'}>
           <Action
             secondary
             onPress={() =>
@@ -468,6 +493,7 @@ export default function Detail() {
           >
             {confirm ? 'Confirm delete idea' : 'Delete idea'}
           </Action>
+          </Fold>
         </>
       )}
       {video && (
@@ -511,8 +537,9 @@ export default function Detail() {
           secondary
           onPress={() =>
             void op.run(async () => {
-              await Linking.openURL(
+              await openExternalUrl(
                 savedLink?.url || `https://www.youtube.com/watch?v=${video?.id}`,
+                uiLanguage,
               );
             })
           }
@@ -524,7 +551,7 @@ export default function Detail() {
         <Txt muted>Your personal link and notes are retained; API metadata is not available.</Txt>
       )}
       {Boolean(savedLink?.note) && <Txt>{savedLink?.note}</Txt>}
-      {Boolean(op.error) && <ErrorBox message={op.error} onRetry={op.clear} />}
+      {Boolean(op.error) && <ErrorBox message={op.error} onDismiss={op.clear} />}
       {Boolean(op.message) && <Txt muted>{op.message}</Txt>}
     </Page>
   );

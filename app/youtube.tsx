@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { Text, View, Linking } from 'react-native';
+import { Text, View } from 'react-native';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { Button, Skeleton } from 'heroui-native';
 import { ArrowRight, SlidersHorizontal, Sparkles, KeyRound, Search } from 'lucide-react-native';
@@ -26,7 +26,9 @@ import { relatedQueries } from '@/lib/api';
 import { limitations } from '@/lib/engine';
 import { sortResearchVideos, type ResearchVideoSort } from '@/lib/intelligence';
 import { getKey } from '@/lib/vault';
+import { openExternalUrl } from '@/lib/external-links';
 import { SETTINGS_ROUTE } from '@/lib/routes';
+import { AdvancedDiscoveryPanel } from './trend-intelligence';
 const RESEARCH_SORT_OPTIONS: ResearchVideoSort[] = [
   'Newest', 'Oldest', 'Most Views', 'Least Views',
   'Most Likes', 'Least Likes', 'Most Relevant', 'A-Z', 'Z-A',
@@ -35,7 +37,7 @@ const isResearchVideoSort = (value: string): value is ResearchVideoSort =>
   RESEARCH_SORT_OPTIONS.some((option) => option === value);
 
 export default function Discover() {
-  const params = useLocalSearchParams<{ topic?: string; idea?: string; report?: string }>();
+  const params = useLocalSearchParams<{ topic?: string; idea?: string; report?: string; mode?: string }>();
   const preferences = useScout((s) => s.data.preferences);
   const ready = useScout((s) => s.ready);
   const busy = useScout((s) => s.busy);
@@ -190,12 +192,15 @@ export default function Discover() {
             onChange={(v) => { setMaximum(v[0]); setReportId(''); }}
           />
         </Fold>
+        <Action secondary disabled={!topic.trim()} onPress={() => router.push({ pathname: '/trend-intelligence', params: { topic: topic.trim(), ...(linkedIdea ? { idea: linkedIdea.id } : {}) } })}>
+          {preferences.uiLanguage === 'fa' ? 'حالت پیشرفته: ترکیب چندمسیره Discovery Mix' : 'Advanced mode: multi-lane Discovery Mix'}
+        </Action>
         <Action
           icon={Search}
-          disabled={busy || !ready || !topic.trim() || !selectedLanguages.length}
+          disabled={!ready || !topic.trim() || !selectedLanguages.length}
           onPress={() => void run()}
         >
-          {busy ? 'Researching…' : '2 · Search YouTube sample'}
+          {busy ? 'Start another research task' : '2 · Search YouTube sample'}
         </Action>
       </Panel>
       {Boolean(topic.trim()) && !report && (
@@ -227,6 +232,14 @@ export default function Discover() {
           <ArrowRight size={16} color={p.muted} />
         </Button>
       )}
+      <Fold
+        title="Advanced YouTube Discovery Mix"
+        summary="Multi-lane, paginated official API sampling"
+        defaultExpanded={params.mode === 'advanced'}
+      >
+        <Txt muted>Both research modes now live in this workspace. Standard research gives you a focused query and saved report; the advanced mode samples several official search lanes and supports pagination. Neither is a real-time or platform-wide trend census.</Txt>
+        <AdvancedDiscoveryPanel />
+      </Fold>
       {busy && (
         <View style={{ gap: 12 }}>
           <Txt muted>{progress}</Txt>
@@ -259,7 +272,7 @@ export default function Discover() {
           {linkedIdea ? (
             <Panel>
               <Heading>Connect this research</Heading>
-              <Txt muted>Current idea: {linkedIdea.topic}. Connecting stores this report and its temporary video references locally. YouTube metadata remains subject to the existing retention policy.</Txt>
+              <Txt muted>Current idea: {linkedIdea.topic}. Connecting stores this report and its persistent YouTube video references locally.</Txt>
               <Action
                 secondary
                 busy={op.busy}
@@ -277,7 +290,7 @@ export default function Discover() {
             <Txt muted>{limitations}</Txt>
             <Txt muted>
               Collected {new Date(report.createdAt).toLocaleString('en-US')}. Cached for 15 minutes.
-              Metadata expires after 29 days.
+              YouTube reports, metadata and growth snapshots are retained locally without automatic expiry.
             </Txt>
             <Txt muted>Queries: {report.queries.join(' · ')}</Txt>
           </Fold>
@@ -285,7 +298,7 @@ export default function Discover() {
             <Txt muted>Recent examples, not proof of an emerging trend.</Txt>
             {[...report.videos].sort((a, b) => Date.parse(b.publishedAt) - Date.parse(a.publishedAt)).slice(0, 2).map((v) => (
               <View style={{ gap: 6 }} key={v.id}>
-                <MediaPreview uri={v.thumbnail} aspectRatio={16 / 9} onPress={() => void Linking.openURL('https://www.youtube.com/watch?v=' + v.id).catch(() => {})} alt={v.title} />
+                <MediaPreview uri={v.thumbnail} aspectRatio={16 / 9} onPress={() => void openExternalUrl('https://www.youtube.com/watch?v=' + v.id, preferences.uiLanguage ?? 'fa')} alt={v.title} />
                 <Txt>{v.title}</Txt>
                 <Txt muted>
                   Observed publication: {new Date(v.publishedAt).toLocaleDateString('en-US')}
@@ -324,13 +337,13 @@ export default function Discover() {
               busy={op.busy}
               onPress={() => void op.run(() => useScout.getState().analyze(report.id))}
             >
-              Analyze saved sample
+              Analyze cached independent evidence
             </Action>
           )}
           {report.analyzed && (
             <View style={{ gap: 14 }}>
-              <Heading>Internal Engine · Evidence-backed ideas</Heading>
-              <Txt muted>The local Engine v2 uses the returned YouTube sample (including its search bucket and available video metadata) alongside publisher and Wikimedia evidence to create evidence-linked idea candidates. The full report and raw video records are not sent to OpenRouter. When an optional second-opinion review runs, it can receive a compact summary of the top topics and up to three real evidence titles, source labels and observed view counts.</Txt>
+              <Heading>Internal Engine · Evidence-linked ideas</Heading>
+              <Txt muted>The local engine creates ideas only when cached independent publisher evidence and saved research memory meet its evidence threshold. This analysis action does not turn YouTube search buckets, video titles or statistics into ideas. The sample stays separate; use “Connect this research” to attach the report and its temporary video references to a chosen idea.</Txt>
               {reportIdeas.length ? reportIdeas.map((idea) => (
                 <Button
                   variant="secondary"
@@ -347,8 +360,8 @@ export default function Discover() {
               )) : (
                 <Txt muted>
                   {preferences.uiLanguage === 'fa'
-                    ? 'نمونهٔ ویدئوها دریافت شده، اما موتور برای این گزارش ایده‌ای با شواهد کافی تأیید نکرده است. ویدئوها و محدودیت‌های نمونه در بخش پایین قابل بررسی‌اند.'
-                    : 'The video sample was received, but the engine did not find an idea with sufficient supporting evidence for this report. Review the videos and sample limitations below.'}
+                    ? 'برای این گزارش ایدهٔ تازه‌ای با شواهد مستقل کافی ثبت نشده است. نمونهٔ YouTube همچنان در بخش ویدئوهای مرتبط قابل مشاهده است؛ برای تولید ایده، تحقیق مستقل ناشران و وب را از داشبورد تازه‌سازی کن.'
+                    : 'No new idea met the independent-evidence threshold for this report. The YouTube sample remains available below; refresh independent publisher and web research from the dashboard to generate evidence-backed ideas.'}
                 </Txt>
               )}
             </View>

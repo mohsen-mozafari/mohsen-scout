@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Newspaper } from 'lucide-react-native';
-import { Linking, View, Text, FlatList } from 'react-native';
+import { View, Text, FlatList } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { Button } from 'heroui-native';
 import { Page, Panel, Heading, Txt, Action, Choices, Fold, styles, ErrorBox, useOperation, ScreenIntro, BadgeText, SourceHeading } from '@/components/ScoutUI';
@@ -12,9 +12,9 @@ import {
   type SpaceNewsItem, type WikiSignal, type SpaceNicheSuggestion,
 } from '@/lib/space';
 import { buildInternalResearch } from '@/lib/engine';
+import { buildPublisherIntelligence, type PublisherIntelligence } from '@/lib/news-intelligence';
 import { buildResearchInterestProfile, normalizeResearchText } from '@/lib/intelligence';
-import { collectEngineVideoEvidence, runSingleFlight } from '@/lib/dashboard';
-import { buildUnifiedBrief } from '@/lib/engine-v2-adapter';
+import { runSingleFlight } from '@/lib/dashboard';
 import { generateEditorialIdeas } from '@/lib/idea-generation';
 import { createResearchMemoryEntry } from '@/lib/research-memory';
 import { rememberTopicDossier } from '@/lib/topic-dossier';
@@ -23,6 +23,7 @@ import { setSelectedIdeaId } from '@/lib/idea-selection';
 import { palette as p } from '@/lib/theme';
 import { MediaPreview } from '@/components/MediaPreview';
 import { recordRuntimeFinish, recordRuntimeStart } from '@/lib/runtime-metrics';
+import { openExternalUrl } from '@/lib/external-links';
 
 export default function CosmicNews() {
   const params = useLocalSearchParams<{ niche?: string }>();
@@ -58,6 +59,7 @@ export default function CosmicNews() {
   const [radarWiki, setRadarWiki] = useState<WikiSignal>();
   const [lastScannedAt, setLastScannedAt] = useState<number | null>(null);
   const [nicheSuggestions, setNicheSuggestions] = useState<SpaceNicheSuggestion[]>([]);
+  const [publisherAnalysis, setPublisherAnalysis] = useState<PublisherIntelligence>();
   const scanInFlightRef = useRef<Promise<void> | null>(null);
   const op = useOperation();
   const fa = preferences.uiLanguage === 'fa';
@@ -115,15 +117,16 @@ export default function CosmicNews() {
         setRadarWiki(wiki);
 
         const currentData = useScout.getState().data;
-        const engineVideoEvidence = collectEngineVideoEvidence(currentData.reports, currentData.videos, Date.now(), 1000);
         const priorMemory = currentData.researchMemory.find(
           (entry) => normalizeResearchText(entry.topic) === normalizeResearchText(discoveryTopic),
         );
-        const hasEngineInput = Boolean(allEngineNews.length || wiki || engineVideoEvidence.length);
+        const hasEngineInput = Boolean(allEngineNews.length || wiki);
         if (hasEngineInput) {
           recordRuntimeStart('Engine');
           engineStarted = true;
         }
+        const publisherSignals = await buildPublisherIntelligence(allEngineNews, Date.now(), 7);
+        setPublisherAnalysis(publisherSignals);
         const nextRadarBrief = hasEngineInput ? buildInternalResearch({
           topic: discoveryTopic,
           feedback: buildResearchInterestProfile(currentData.ideas),
@@ -137,25 +140,9 @@ export default function CosmicNews() {
             publishedAt: item.publishedAt,
             sourceId: item.sourceId,
           })),
-          videos: engineVideoEvidence,
           ...(wiki ? { wiki } : {}),
         }) : undefined;
-        const unified = buildUnifiedBrief({
-          topic: discoveryTopic,
-          news: relevantNews,
-          videos: engineVideoEvidence,
-          wiki,
-          now: Date.now(),
-          niche: preferences.selectedSpaceNiche,
-          language: currentData.preferences.uiLanguage ?? 'fa',
-          region: currentData.preferences.region,
-          languages: currentData.preferences.languages,
-        });
-        if (unified.warnings.length) {
-          setWarnings((previous) => [...new Set([...previous, ...unified.warnings])].slice(0, 12));
-        }
-        // Keep the legacy radar ideas when the unified brief has no usable idea.
-        const automaticIdeas = unified.ideas.length ? unified.ideas : generateEditorialIdeas({
+        const automaticIdeas = generateEditorialIdeas({
           topic: discoveryTopic,
           news: relevantNews,
           context: wiki ? [{
@@ -312,10 +299,10 @@ export default function CosmicNews() {
             />
             <Panel variant="soft">
               <View style={styles.rowBetween}>
-                <Heading>Space Radar</Heading>
+                <Heading>{fa ? 'نمای کلی خبرها و توجه عمومی' : 'Publisher news and public-attention overview'}</Heading>
                 <BadgeText>{scanning ? 'REFRESHING' : lastScannedAt ? 'UPDATED' : 'NOT REFRESHED'}</BadgeText>
               </View>
-              <Txt muted>Official publisher feeds and Wikimedia monthly article pageviews. Pageviews are an attention proxy, not YouTube search volume, trend velocity or a view forecast.</Txt>
+              <Txt muted>{fa ? 'این صفحه خبرهای ناشران رسمی را از بازدید ماهانه مقاله ویکی‌مدیا جدا نگه می‌دارد. هیچ‌کدام به‌تنهایی حجم جست‌وجو یا روند YouTube نیستند.' : 'This page keeps official publisher news separate from Wikimedia monthly article pageviews. Neither alone represents search volume or a YouTube trend.'}</Txt>
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
                 {[
                   { label: fa ? 'گزارش منطبق' : 'MATCHED', value: radarNews.length },
@@ -343,6 +330,30 @@ export default function CosmicNews() {
               ) : (
                 <Txt muted>{scanning ? 'Checking Wikimedia attention data…' : 'No Wikimedia pageview sample is saved for this topic yet.'}</Txt>
               )}
+              {publisherAnalysis?.clusters.length ? (
+                <View style={{ gap: 8 }}>
+                  <Heading>{fa ? 'شتاب پوشش موضوعات در خبرهای ناشران' : 'Publisher-news topic momentum'}</Heading>
+                  <Txt muted>{fa
+                    ? 'این امتیاز فقط از تعداد و تازگی گزارش‌های RSS محاسبه شده است؛ تقاضای مخاطب یا روند YouTube را اندازه نمی‌گیرد.'
+                    : 'This coverage score uses RSS report counts and publication dates only. It is not audience demand or a YouTube trend score.'}</Txt>
+                  {publisherAnalysis.clusters.slice(0, 5).map((cluster) => (
+                    <View key={cluster.id} style={styles.softCard}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                        <SourceHeading>{cluster.title}</SourceHeading>
+                        <BadgeText>{(fa ? 'پوشش خبر ' : 'NEWS COVERAGE ') + cluster.publisherCoverageScore + '/100'}</BadgeText>
+                      </View>
+                      <Txt muted>{cluster.articleCount + (fa ? ' گزارش · ' : ' reports · ') + cluster.publishers.length + (fa ? ' گروه ناشر' : ' publisher groups')}</Txt>
+                      <Txt muted>{(fa ? 'شتاب: ' : 'Momentum: ') + cluster.momentum + ' · ' + cluster.currentWindowCount + (fa ? ' گزارش در ۷ روز اخیر در برابر ' : ' reports in the latest 7 days versus ') + cluster.previousWindowCount + (fa ? ' گزارش در ۷ روز قبل' : ' in the preceding 7 days')}</Txt>
+                      <Txt muted>{cluster.reason}</Txt>
+                      {cluster.evidence.slice(0, 2).map((reference) => (
+                        <Button key={reference.url} variant="tertiary" className="h-auto justify-start px-0" onPress={() => void openExternalUrl(reference.url, preferences.uiLanguage)}>
+                          <Button.Label>{reference.sourceName + ': ' + reference.title + ' ↗'}</Button.Label>
+                        </Button>
+                      ))}
+                    </View>
+                  ))}
+                </View>
+              ) : null}
               {nicheSuggestions.length ? (
                 <View style={{ gap: 7 }}>
                   <Heading>{fa ? 'موضوعات پوشش‌داده‌شده در خوراک‌های انتخابی' : 'Topics covered by selected feeds'}</Heading>
@@ -364,6 +375,10 @@ export default function CosmicNews() {
                 </View>
               ) : null}
               </Fold>
+            </Panel>
+            <Panel>
+              <Heading>{fa ? 'خوراک خبرهای ناشران' : 'Publisher feed'}</Heading>
+              <Txt muted>{fa ? 'خبرها، فیلتر حوزه و وضعیت تازه‌سازی در این بخش جدا از سیگنال‌های توجه عمومی قرار دارند.' : 'Browse publisher stories, filter by niche and refresh feeds separately from public-attention signals.'}</Txt>
               <View style={styles.rowBetween}>
                 <Txt muted>{lastUpdatedAt > 0
                   ? 'Last successful publisher response: ' + new Date(lastUpdatedAt).toLocaleString()
@@ -384,7 +399,7 @@ export default function CosmicNews() {
                 <Action secondary onPress={() => router.push({ pathname: '/youtube', params: { topic: niche?.topic ?? (nicheId === 'custom' ? preferences.customSpaceNiche : 'Space science discoveries') } })}>Search this topic on YouTube</Action>
                 <Action secondary onPress={() => router.push({ pathname: '/deep-research', params: { topic: niche?.topic ?? (nicheId === 'custom' ? preferences.customSpaceNiche : 'Space science discoveries'), niche: nicheId } })}>Start Deep Research</Action>
                 {SPACE_NEWS_SOURCES.filter((source) => preferences.spaceNewsSources.includes(source.id)).map((source) => (
-                  <Button key={source.id} variant="tertiary" className="h-auto justify-start px-0" onPress={() => void Linking.openURL(source.url).catch(() => {})}>
+                  <Button key={source.id} variant="tertiary" className="h-auto justify-start px-0" onPress={() => void openExternalUrl(source.url, preferences.uiLanguage)}>
                     <Button.Label>{'Open official ' + source.label + ' feed ↗'}</Button.Label>
                   </Button>
                 ))}
@@ -400,7 +415,7 @@ export default function CosmicNews() {
               <Heading>{item.title}</Heading>
               {item.summary ? <Txt muted>{item.summary}</Txt> : null}
             </View>
-            <Button variant="tertiary" className="h-auto justify-start px-0" onPress={() => void Linking.openURL(item.url).catch(() => {})}>
+            <Button variant="tertiary" className="h-auto justify-start px-0" onPress={() => void openExternalUrl(item.url, preferences.uiLanguage)}>
               <Button.Label>Open original source ↗</Button.Label>
             </Button>
             <Action secondary onPress={() => saveItem(item)} busy={op.busy}>Save source to Notes</Action>

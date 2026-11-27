@@ -1,3 +1,4 @@
+import { EDITORIAL_PRIORITY_CONFIG } from './editorial-priority';
 export type ResearchFeedbackProfile = {
   positiveTopics: string[];
   negativeTopics: string[];
@@ -43,22 +44,46 @@ const RESEARCH_ENTITY_ALIASES: readonly {
   { name: 'Saturn', kind: 'celestial-body', aliases: ['Saturn', 'زحل'] },
 ];
 
-export type ResearchEntityDocument = { id: string; text: string; sourceId?: string };
+export type ResearchEntityDocument = { id: string; text: string; sourceId?: string; sourceIds?: string[] };
+
+export type EmergentResearchConcept = {
+  id: string;
+  term: string;
+  mentionCount: number;
+  evidenceIds: string[];
+  sourceIds: string[];
+  sourceCount: number;
+};
+
+export type EmergentConceptRelation = {
+  id: string;
+  fromConceptId: string;
+  toConceptId: string;
+  evidenceIds: string[];
+  cooccurrenceCount: number;
+};
 
 export function extractResearchEntityCandidates(
   documents: readonly ResearchEntityDocument[],
 ): ResearchEntityCandidate[] {
   const results: ResearchEntityCandidate[] = [];
+  // Normalization is invariant for this extraction pass. Prepare each document
+  // once instead of repeating Unicode normalization for every known entity.
+  const searchableDocuments = documents.map((document) => ({
+    ...document,
+    normalizedText: ' ' + normalizeResearchText(document.text) + ' ',
+  }));
   for (const entity of RESEARCH_ENTITY_ALIASES) {
     const evidenceIds: string[] = [];
     const sourceIds = new Set<string>();
+    const aliases = entity.aliases
+      .map((alias) => ' ' + normalizeResearchText(alias) + ' ')
+      .filter((needle) => needle.length > 4);
     let mentionCount = 0;
-    for (const document of documents) {
-      const normalizedText = ' ' + normalizeResearchText(document.text) + ' ';
+    for (const document of searchableDocuments) {
+      const normalizedText = document.normalizedText;
       let documentMentions = 0;
-      for (const alias of entity.aliases) {
-        const needle = ' ' + normalizeResearchText(alias) + ' ';
-        if (needle.trim().length <= 2) continue;
+      for (const needle of aliases) {
         let offset = 0;
         while ((offset = normalizedText.indexOf(needle, offset)) >= 0) {
           documentMentions += 1;
@@ -88,9 +113,11 @@ export function buildResearchEntityRelations(
   entities: readonly ResearchEntityCandidate[],
 ): ResearchEntityRelation[] {
   const relations: ResearchEntityRelation[] = [];
+  const evidenceSets = entities.map((entity) => new Set(entity.evidenceIds));
   for (let left = 0; left < entities.length; left += 1) {
     for (let right = left + 1; right < entities.length; right += 1) {
-      const evidenceIds = entities[left].evidenceIds.filter((id) => entities[right].evidenceIds.includes(id));
+      const rightEvidence = evidenceSets[right];
+      const evidenceIds = entities[left].evidenceIds.filter((id) => rightEvidence.has(id));
       if (!evidenceIds.length) continue;
       relations.push({
         id: 'co-mention:' + entities[left].id + ':' + entities[right].id,
@@ -208,6 +235,91 @@ export function tokenizeResearchText(value: string): string[] {
   }
   // A caller may sort or mutate its returned list; do not expose the cached array.
   return [...tokens];
+}
+
+/**
+ * Extracts recurring non-topic terms from the actual evidence set. Counts are
+ * document-based, not corpus-wide claims; callers must label the bounded sample.
+ */
+export function extractEmergentResearchConcepts(
+  documents: readonly ResearchEntityDocument[],
+  topic: string,
+  minimumDocumentCount = 2,
+  limit = 10,
+): EmergentResearchConcept[] {
+  const topicTerms = new Set(tokenizeResearchText(topic).filter((term) => term.length > 2));
+  const aggregates = new Map<string, {
+    mentionCount: number;
+    evidenceIds: Set<string>;
+    sourceIds: Set<string>;
+  }>();
+  for (const document of documents) {
+    const counts = new Map<string, number>();
+    for (const term of tokenizeResearchText(document.text)) {
+      if (term.length < 3 || STOP_WORDS.has(term) || topicTerms.has(term) || term.startsWith('__concept_')) continue;
+      counts.set(term, (counts.get(term) ?? 0) + 1);
+    }
+    for (const [term, count] of counts) {
+      const aggregate = aggregates.get(term) ?? {
+        mentionCount: 0,
+        evidenceIds: new Set<string>(),
+        sourceIds: new Set<string>(),
+      };
+      aggregate.mentionCount += count;
+      aggregate.evidenceIds.add(document.id);
+      const documentSourceIds = document.sourceIds?.length
+        ? document.sourceIds
+        : [document.sourceId?.trim() || document.id];
+      for (const sourceId of documentSourceIds) {
+        const normalizedSourceId = sourceId.trim();
+        if (normalizedSourceId) aggregate.sourceIds.add(normalizedSourceId);
+      }
+      aggregates.set(term, aggregate);
+    }
+  }
+  const minimum = Math.max(1, Math.floor(minimumDocumentCount) || 1);
+  const maximum = Math.max(0, Math.min(30, Math.floor(limit) || 0));
+  return [...aggregates.entries()]
+    .filter(([, item]) => item.evidenceIds.size >= minimum)
+    .map(([term, item]) => ({
+      id: 'concept:' + term.replace(/[^a-z0-9\u0600-\u06ff]+/gi, '-').slice(0, 90),
+      term,
+      mentionCount: item.mentionCount,
+      evidenceIds: [...item.evidenceIds].sort(),
+      sourceIds: [...item.sourceIds].sort(),
+      sourceCount: item.sourceIds.size,
+    }))
+    .sort((a, b) =>
+      b.evidenceIds.length - a.evidenceIds.length ||
+      b.sourceCount - a.sourceCount ||
+      b.mentionCount - a.mentionCount ||
+      a.term.localeCompare(b.term),
+    )
+    .slice(0, maximum);
+}
+
+/** Links recurring concepts only when they co-occur in multiple retrieved documents. */
+export function buildEmergentConceptRelations(
+  concepts: readonly EmergentResearchConcept[],
+  minimumSharedDocuments = 2,
+): EmergentConceptRelation[] {
+  const relations: EmergentConceptRelation[] = [];
+  const evidenceSets = concepts.map((concept) => new Set(concept.evidenceIds));
+  const minimum = Math.max(1, Math.floor(minimumSharedDocuments) || 1);
+  for (let left = 0; left < concepts.length; left += 1) {
+    for (let right = left + 1; right < concepts.length; right += 1) {
+      const evidenceIds = concepts[left]!.evidenceIds.filter((id) => evidenceSets[right]!.has(id));
+      if (evidenceIds.length < minimum) continue;
+      relations.push({
+        id: 'concept-cooccurrence:' + concepts[left]!.id + ':' + concepts[right]!.id,
+        fromConceptId: concepts[left]!.id,
+        toConceptId: concepts[right]!.id,
+        evidenceIds,
+        cooccurrenceCount: evidenceIds.length,
+      });
+    }
+  }
+  return relations.sort((a, b) => b.cooccurrenceCount - a.cooccurrenceCount || a.id.localeCompare(b.id));
 }
 
 function conceptIndexes(value: string): number[] {
@@ -640,9 +752,11 @@ export type EditorialOpportunitySignals = {
     relevance: number;
     evidenceBreadth: number;
     freshness: number;
-    /** Always null: raw lifetime views are not converted into demand or growth estimates. */
+    /** Always null: this score is not a forecast of audience size or demand. */
     audienceSignal: null;
     differentiation: number;
+    /** Bounded score from measured snapshot velocity and channel-relative outlier data only. */
+    platformMomentum: number;
   };
   reason: string;
 };
@@ -650,15 +764,15 @@ export type EditorialOpportunitySignals = {
 /**
  * Explainable editorial prioritization from the supplied research sample.
  * This is a relative editorial decision aid, never a prediction of views,
- * revenue, audience demand, growth or virality. Raw view counts are deliberately
- * excluded from the calculation; missing evidence is not fabricated.
+ * revenue, audience demand or virality. Lifetime view counts are excluded;
+ * platform momentum uses measured snapshot velocity and channel-relative history only.
  */
 export type EditorialOpportunityScorerInput = {
   topic: string;
   news: readonly ResearchDocument[];
   historicalNews?: readonly ResearchDocument[];
   context?: readonly ResearchDocument[];
-  videos: readonly { title: string; description?: string; channel?: string; publishedAt?: string; viewCount?: number | null }[];
+  videos: readonly { title: string; description?: string; channel?: string; publishedAt?: string; viewCount?: number | null; viewsPerHour?: number | null; viewsPerDay?: number | null; channelOutlierRatio?: number | null }[];
   now?: number;
 };
 
@@ -667,6 +781,7 @@ type IndexedEditorialDocument = {
   families: readonly string[];
   kind: 'news' | 'history' | 'video' | 'context';
   channel: string;
+  momentum: number;
 };
 
 /**
@@ -685,41 +800,48 @@ export function createEditorialOpportunityScorer(
     families: readonly string[];
     kind: IndexedEditorialDocument['kind'];
     channel: string;
+    momentum: number;
   }[] = [
     ...input.news.map((item) => ({
       text: item.title + ' ' + (item.summary ?? ''),
       date: timestamp(item.publishedAt),
       families: publisherFamilies(item),
       kind: 'news' as const,
-      channel: '',
+      channel: '', momentum: 0,
     })),
     ...(input.historicalNews ?? []).map((item) => ({
       text: item.title + ' ' + (item.summary ?? ''),
       date: timestamp(item.publishedAt),
       families: publisherFamilies(item),
       kind: 'history' as const,
-      channel: '',
+      channel: '', momentum: 0,
     })),
     ...(input.context ?? []).map((item) => ({
       text: item.title + ' ' + (item.summary ?? ''),
       date: timestamp(item.publishedAt),
       families: [] as string[],
       kind: 'context' as const,
-      channel: '',
+      channel: '', momentum: 0,
     })),
-    ...input.videos.map((item) => ({
-      text: item.title + ' ' + (item.description ?? ''),
-      date: timestamp(item.publishedAt),
-      families: [] as string[],
-      kind: 'video' as const,
-      channel: item.channel ?? '',
-    })),
+    // YouTube contributes platform relevance/freshness, never independent-publisher corroboration.
+    ...input.videos.map((item) => {
+      const rate = item.viewsPerHour ?? (item.viewsPerDay == null ? null : item.viewsPerDay / 24);
+      const velocityScore = rate !== null && Number.isFinite(rate) && rate > 0
+        ? Math.min(100, Math.log10(1 + rate) * 22) : 0;
+      const outlierScore = item.channelOutlierRatio !== null && item.channelOutlierRatio !== undefined &&
+        Number.isFinite(item.channelOutlierRatio) && item.channelOutlierRatio > 0
+        ? Math.min(100, Math.log10(1 + item.channelOutlierRatio) * 35) : 0;
+      return {
+        text: item.title + ' ' + (item.description ?? ''), date: timestamp(item.publishedAt),
+        families: [] as string[], kind: 'video' as const, channel: item.channel ?? '',
+        momentum: Math.round(velocityScore * 0.7 + outlierScore * 0.3),
+      };
+    }),
   ];
 
   const documents: IndexedEditorialDocument[] = [];
   const tokenIndex = new Map<string, number[]>();
   const topicRelevantDocuments = new Set<number>();
-  let topicMatchedVideoCount = 0;
 
   for (const source of sourceDocuments) {
     const tokens = new Set(tokenizeResearchText(source.text));
@@ -729,13 +851,13 @@ export function createEditorialOpportunityScorer(
       families: source.families,
       kind: source.kind,
       channel: source.channel,
+      momentum: source.momentum,
     });
 
-    if (scoreResearchText(input.topic, source.text) > 0) {
-      topicRelevantDocuments.add(index);
-      if (source.kind === 'video') topicMatchedVideoCount += 1;
-    }
-
+    if (scoreResearchText(input.topic, source.text) > 0) topicRelevantDocuments.add(index);
+    // Index every record, then select evidence by the individual editorial anchor.
+    // This keeps anchor-specific context (e.g. Wikimedia article data) while
+    // preventing unrelated parent-topic videos from bleeding into another angle.
     for (const token of tokens) {
       const posting = tokenIndex.get(token);
       if (posting) posting.push(index);
@@ -750,8 +872,11 @@ export function createEditorialOpportunityScorer(
       for (const index of tokenIndex.get(token) ?? []) anchorDocuments.add(index);
     }
 
-    const relevantIndexes = new Set(anchorDocuments);
-    for (const index of topicRelevantDocuments) relevantIndexes.add(index);
+    // A subtopic score uses documents that match this anchor. Parent-topic context
+    // is only a fallback when no directly matching records exist.
+    const relevantIndexes = anchorDocuments.size
+      ? new Set(anchorDocuments)
+      : new Set(topicRelevantDocuments);
 
     const relevant: IndexedEditorialDocument[] = [];
     for (const index of relevantIndexes) relevant.push(documents[index]);
@@ -761,41 +886,47 @@ export function createEditorialOpportunityScorer(
       : 0;
     const relevance = Math.round(Math.min(100, overlap * 70 + (relevant.length ? 30 : 0)));
     const publisherGroups = new Set<string>();
-    const videoChannels = new Set<string>();
     const kinds = new Set<IndexedEditorialDocument['kind']>();
     for (const document of relevant) {
       kinds.add(document.kind);
-      if (document.kind === 'video') {
-        if (document.channel) videoChannels.add(document.channel);
-      } else if (document.kind !== 'context') {
+      if (document.kind !== 'context' && document.kind !== 'video') {
         for (const family of document.families) publisherGroups.add(family);
       }
     }
     const evidenceBreadth = Math.round(Math.min(100,
-      publisherGroups.size * 18 + videoChannels.size * 7 + kinds.size * 18));
+      publisherGroups.size * 22 + kinds.size * 18));
     const dated = relevant.filter((item) => item.date > 0);
     const fresh = dated.filter((item) =>
       now - item.date <= 30 * 86400000 && now >= item.date - 86400000).length;
     // Missing dates are missing evidence, not a neutral or invented freshness score.
     const freshness = dated.length ? Math.round(100 * fresh / dated.length) : 0;
     const audienceSignal = null;
+    const platformVideos = relevant.filter((item) => item.kind === 'video');
+    const platformMomentum = platformVideos.length
+      ? Math.round(platformVideos.reduce((sum, item) => sum + item.momentum, 0) / platformVideos.length)
+      : 0;
     const anchorFrequency = anchorDocuments.size;
-    const saturation = topicMatchedVideoCount;
     const differentiation = Math.round(Math.max(0, Math.min(100,
-      100 - Math.min(65, Math.max(0, anchorFrequency - 1) * 7) -
-      Math.min(35, Math.max(0, saturation - 2) * 3))));
+      100 - Math.min(65, Math.max(0, anchorFrequency - 1) * 7))));
+    const measuredMomentumAvailable = platformVideos.some((item) => item.momentum > 0);
+    const activeWeights = measuredMomentumAvailable
+      ? EDITORIAL_PRIORITY_CONFIG.weights
+      : EDITORIAL_PRIORITY_CONFIG.baseWeights;
     const weighted = [
-      { value: relevance, weight: 0.30 },
-      { value: evidenceBreadth, weight: 0.30 },
-      { value: freshness, weight: 0.20 },
-      { value: differentiation, weight: 0.20 },
+      { value: relevance, weight: activeWeights.relevance },
+      { value: evidenceBreadth, weight: activeWeights.evidenceBreadth },
+      { value: freshness, weight: activeWeights.freshness },
+      { value: differentiation, weight: activeWeights.differentiation },
+      ...(measuredMomentumAvailable
+        ? [{ value: platformMomentum, weight: EDITORIAL_PRIORITY_CONFIG.weights.platformMomentum }]
+        : []),
     ];
     const score = Math.round(weighted.reduce((sum, part) => sum + part.value * part.weight, 0));
     const freshnessRatio = dated.length ? fresh / dated.length : 0;
     const confidence: EditorialOpportunitySignals['confidence'] =
-      relevant.length >= 12 && publisherGroups.size >= 3 && videoChannels.size >= 3 && fresh >= 3 && freshnessRatio >= 0.25
+      relevant.length >= 12 && publisherGroups.size >= 3 && fresh >= 3 && freshnessRatio >= 0.25
         ? 'high'
-        : relevant.length >= 5 && (publisherGroups.size >= 2 || videoChannels.size >= 2) && (fresh >= 1 || dated.length === 0)
+        : relevant.length >= 5 && publisherGroups.size >= 2 && (fresh >= 1 || dated.length === 0)
           ? 'moderate' : 'low';
     const currentPublisherItems = relevant.filter((item) => item.kind === 'news').length;
     const historicalPublisherItems = relevant.filter((item) => item.kind === 'history').length;
@@ -805,14 +936,15 @@ export function createEditorialOpportunityScorer(
       publisherGroups.size ? publisherGroups.size + ' publisher group(s) across current and saved research' : 'no directly relevant publisher group',
       currentPublisherItems + ' current and ' + historicalPublisherItems + ' historical publisher record(s) matched',
       supportingContextItems + ' supporting context record(s) matched',
-      videoChannels.size ? videoChannels.size + ' relevant YouTube channel(s)' : 'no relevant YouTube channel sample',
+      platformVideos.length + ' YouTube platform observation(s) matched',
+      platformVideos.length ? 'measured platform momentum ' + platformMomentum + '/100 from view velocity and channel-relative outliers; not a demand forecast' : 'no measured platform-momentum sample',
       fresh ? fresh + ' fresh dated evidence record(s)' : 'no fresh dated evidence record',
-      'raw view counts are not treated as demand or growth indicators',
+      'lifetime view counts are not used as demand; platform momentum uses measured snapshot velocity only',
     ].join('; ');
     return {
       score,
       confidence,
-      components: { relevance, evidenceBreadth, freshness, audienceSignal, differentiation },
+      components: { relevance, evidenceBreadth, freshness, audienceSignal, differentiation, platformMomentum },
       reason,
     };
   };

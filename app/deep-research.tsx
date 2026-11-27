@@ -1,22 +1,29 @@
 import { useState } from 'react';
-import { Linking, View, Text } from 'react-native';
+import { View, Text } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { Button } from 'heroui-native';
 import { Page, Panel, Heading, Txt, Field, Action, Fold, styles, ErrorBox, useOperation, SourceText } from '@/components/ScoutUI';
 import { palette as p } from '@/lib/theme';
 import { useScout } from '@/lib/store';
 import { translateText } from '@/lib/i18n';
-import { uid, RETENTION_MS, type Idea } from '@/lib/types';
+import { uid, type Idea, type ResearchDossier, type Video } from '@/lib/types';
 import { getKey } from '@/lib/vault';
+import { enrichResearchEvidence, fetchWebResearch, type WebResearchItem } from '@/lib/web-research';
+import { assessEvidenceProvenance } from '@/lib/research-provenance';
 import { buildInternalResearch, rankNewsForTopic, type InternalResearchResult } from '@/lib/engine';
+import { reviewResearchHypotheses } from '@/lib/hypothesis-engine';
 import { buildResearchInterestProfile, normalizeResearchText } from '@/lib/intelligence';
 import { MediaPreview } from '@/components/MediaPreview';
 import { ResearchOverviewChart } from '@/components/ResearchOverviewChart';
 import { getTopicDossier, rememberTopicDossier } from '@/lib/topic-dossier';
 import { generateEditorialIdeas } from '@/lib/idea-generation';
-import { buildUnifiedBrief, type UnifiedBrief } from '@/lib/engine-v2-adapter';
+import { buildPublisherIntelligence, type PublisherIntelligence } from '@/lib/news-intelligence';
 import { createResearchMemoryEntry } from '@/lib/research-memory';
-import { recordRuntimeFinish, recordRuntimeStart } from '@/lib/runtime-metrics';
+import { getConfiguredResearchProviderCount, runResearchAgentSerialized } from '@/lib/research-agent';
+import { mapWithConcurrency, withManualResearchLease } from '@/lib/research-concurrency';
+import { assessResearchEvidenceCoverage, MAX_DEEP_RESEARCH_RESULTS_PER_QUERY, MAX_DEEP_RESEARCH_ROUNDS, mergeIndependentResearchEvidence, planResearchRound } from '@/lib/research-orchestrator';
+import { recordRuntimeFinish, recordRuntimeStart, useRuntimeMetrics } from '@/lib/runtime-metrics';
+import { openExternalUrl } from '@/lib/external-links';
 import { searchYouTubeSample, type YouTubeSampleVideo } from '@/lib/api';
 import {
   SPACE_NICHES, fetchSpaceNews, newsForNiche, getWikipediaSignal, buildResearchOutline,
@@ -27,6 +34,7 @@ type Brief = {
   topic: string;
   createdAt: number;
   news: SpaceNewsItem[];
+  webResults: WebResearchItem[];
   wiki?: WikiSignal;
   videos: YouTubeSampleVideo[];
   warnings: string[];
@@ -35,9 +43,11 @@ type Brief = {
   verificationQuestions: string[];
   scriptDraft: string[];
   internalAnalysis: InternalResearchResult;
+  researchDossier?: ResearchDossier;
+  publisherIntelligence?: PublisherIntelligence;
   generatedIdeas: Idea[];
-  unifiedAngles: string[];
-  unifiedBrief: UnifiedBrief;
+  /** True while the quick evidence report is visible and deeper verification continues. */
+  quickReport?: boolean;
 };
 
 export default function DeepResearch() {
@@ -51,57 +61,38 @@ export default function DeepResearch() {
   const [topic, setTopic] = useState(typeof params.topic === 'string' ? params.topic : '');
   const [brief, setBrief] = useState<Brief>();
   const op = useOperation();
+  const runtimeMetrics = useRuntimeMetrics();
+  const runtimeDurationSummary = (['YouTube', 'Sources', 'Wikimedia', 'Engine', 'AI'] as const)
+    .map((stage) => stage + ': ' + (runtimeMetrics.modules[stage].lastDurationMs
+      ? (runtimeMetrics.modules[stage].lastDurationMs / 1000).toFixed(1) + 's'
+      : '—'))
+    .join(' · ');
   const nicheId = typeof params.niche === 'string' ? params.niche : preferences.selectedSpaceNiche;
   const niche = SPACE_NICHES.find((item) => item.id === nicheId);
-  const run = () => void op.run(async () => {
+  const measuredYouTubeGrowth = brief?.videos.filter((video) =>
+    video.growth?.status === 'measured' && typeof video.growth.viewsPerHour === 'number',
+  ) ?? [];
+  const fastestYouTubeGrowth = [...measuredYouTubeGrowth].sort((a, b) =>
+    (b.growth?.viewsPerHour ?? -1) - (a.growth?.viewsPerHour ?? -1),
+  )[0];
+  const youtubeChannelCount = brief ? new Set(brief.videos.map((video) => video.channelId || video.channel)).size : 0;
+  const run = () => void op.run(() => withManualResearchLease(async () => {
     const query = topic.trim();
     if (!query) throw new Error('Choose a topic before starting deep research.');
     const warnings: string[] = [];
+    const configuredReviewerCount = await getConfiguredResearchProviderCount(preferences);
+    if (configuredReviewerCount < 2) {
+      warnings.push('Research preflight: configure two distinct AI providers for independent review. The quick report will still be prepared, but model-backed claims remain unverified.');
+    }
     const priorMemory = researchMemory.find((entry) => normalizeResearchText(entry.topic) === normalizeResearchText(query));
     if (priorMemory) warnings.push(preferences.uiLanguage === 'fa' ? 'حافظه تحقیق محلی قبلی برای مقایسه بارگذاری شد؛ ادعاهای منابع ذخیره‌شده با نتایج فعلی بررسی می‌شوند.' : 'Previous local research memory was loaded for comparison; saved source claims may be checked against this run.');
     const cachedDossier = getTopicDossier(query);
-    const cachedNews = (cachedDossier?.news ?? []).filter((item) => preferences.spaceNewsSources.includes(item.sourceId));
-    let newsResult: Awaited<ReturnType<typeof fetchSpaceNews>>;
-    if (cachedNews.length) {
-      newsResult = { items: cachedNews, warnings: [], registry: useScout.getState().data.feedRegistry };
-    } else {
-      recordRuntimeStart('Sources');
-      try {
-        newsResult = await fetchSpaceNews(preferences.spaceNewsSources);
-        recordRuntimeFinish('Sources', newsResult.warnings.length ? 'partial' : 'success');
-      } catch (error) {
-        recordRuntimeFinish('Sources', 'error', error instanceof Error ? error.message : String(error));
-        throw error;
-      }
-    }
-    warnings.push(...newsResult.warnings);
-    if (cachedNews.length) warnings.push(preferences.uiLanguage === 'fa' ? 'شواهد خبری تازه از پرونده محلی موضوع دوباره استفاده شد؛ درخواست دیگری برای خوراک خبری ارسال نشد.' : 'Reused recent publisher evidence from the local topic dossier; no additional feed request was made.');
-    const nicheNews = niche
-      ? newsForNiche(newsResult.items, nicheId)
-      : nicheId === 'custom'
-        ? newsForNiche(newsResult.items, nicheId, preferences.customSpaceNiche)
-        : newsResult.items;
-    const selectedNews = rankNewsForTopic(query, nicheNews, 30, feedback);
-    let wiki: WikiSignal | undefined;
-    if (cachedDossier?.wiki?.language === (preferences.spaceInterestLanguage ?? 'en')) {
-      wiki = cachedDossier.wiki;
-      warnings.push('Reused recent Wikimedia evidence from the local topic dossier; no additional pageview request was made.');
-    } else {
-      recordRuntimeStart('Wikimedia');
-      try {
-        wiki = await getWikipediaSignal(query, preferences.spaceInterestLanguage ?? 'en');
-        recordRuntimeFinish('Wikimedia', wiki ? 'success' : 'partial');
-      } catch (error) {
-        recordRuntimeFinish('Wikimedia', 'error', error instanceof Error ? error.message : String(error));
-        warnings.push(error instanceof Error ? error.message : 'Public-interest data was unavailable.');
-      }
-    }
+
     let videos: YouTubeSampleVideo[] = [];
+    let fetchedFreshYouTube = false;
     let videoCriteria = cachedDossier?.videoCriteria;
     const linkedReport = linkedIdea?.reportId ? reports.find((report) => report.id === linkedIdea.reportId) : undefined;
-    const reusableReport = linkedReport && linkedReport.videos.length > 0 && Date.now() - linkedReport.createdAt < RETENTION_MS
-      ? linkedReport
-      : undefined;
+    const reusableReport = linkedReport && linkedReport.videos.length > 0 ? linkedReport : undefined;
     if (reusableReport) {
       videoCriteria = undefined;
       videos = reusableReport.videos.map((video) => ({
@@ -109,7 +100,7 @@ export default function DeepResearch() {
         channel: video.channel, channelId: '', publishedAt: video.publishedAt,
         thumbnailUrl: video.thumbnail, viewCount: video.viewCount ?? null,
         likeCount: video.likeCount ?? null, channelSubscriberCount: null,
-        channelVideoCount: null, url: 'https://www.youtube.com/watch?v=' + video.id,
+        channelVideoCount: null, url: 'https://www.youtube.com/watch?v=' + video.id, growth: video.growth,
       }));
       warnings.push('Reused the YouTube report already linked to this idea; no additional YouTube quota was used.');
     } else if (cachedDossier?.videos.length && cachedDossier.videoCriteria?.days === (preferences.defaultResearchDays ?? 30) && cachedDossier.videoCriteria.region === preferences.region && cachedDossier.videoCriteria.language === (preferences.languages[0] ?? '') && cachedDossier.videoCriteria.order === 'viewCount') {
@@ -127,6 +118,7 @@ export default function DeepResearch() {
               onQuota: () => useScout.getState().commit((data) => ({ ...data, budget: { ...data.budget, exhausted: true } })),
             }, 25, { days: preferences.defaultResearchDays ?? 30, region: preferences.region, language: preferences.languages[0] });
             videos = sample.videos;
+            fetchedFreshYouTube = true;
             videoCriteria = {
               days: preferences.defaultResearchDays ?? 30,
               region: preferences.region,
@@ -146,18 +138,91 @@ export default function DeepResearch() {
         warnings.push(error instanceof Error ? error.message : 'YouTube sample was unavailable.');
       }
     }
+    const cachedNews = (cachedDossier?.news ?? []).filter((item) => preferences.spaceNewsSources.includes(item.sourceId));
+    let newsResult: Awaited<ReturnType<typeof fetchSpaceNews>>;
+    if (cachedNews.length) {
+      newsResult = { items: cachedNews, warnings: [], registry: useScout.getState().data.feedRegistry };
+    } else {
+      recordRuntimeStart('Sources');
+      try {
+        newsResult = await fetchSpaceNews(preferences.spaceNewsSources);
+        recordRuntimeFinish('Sources', newsResult.warnings.length ? 'partial' : 'success');
+      } catch (error) {
+        recordRuntimeFinish('Sources', 'error', error instanceof Error ? error.message : String(error));
+        throw error;
+      }
+    }
+    warnings.push(...newsResult.warnings);
+    if (cachedNews.length) warnings.push(preferences.uiLanguage === 'fa' ? 'شواهد خبری تازه از پرونده محلی موضوع دوباره استفاده شد؛ درخواست دیگری برای خوراک خبری ارسال نشد.' : 'Reused recent publisher evidence from the local topic dossier; no additional feed request was made.');
+    let webResults: WebResearchItem[] = [];
+    let firecrawlKey: string | undefined;
+    if (preferences.webResearchEnabled) {
+      try {
+        firecrawlKey = (await getKey('firecrawl').catch(() => undefined)) ?? undefined;
+        const web = await fetchWebResearch(query, {
+          apiKey: firecrawlKey ?? undefined,
+          limit: 6,
+          days: preferences.defaultResearchDays,
+        });
+        webResults = web.items;
+        warnings.push(...web.warnings);
+      } catch (error) {
+        warnings.push('Independent web search unavailable: ' + (error instanceof Error ? error.message : 'Firecrawl request failed.') + ' Official feeds and Wikimedia continue independently.');
+      }
+    }
+    const nicheNews = niche
+      ? newsForNiche(newsResult.items, nicheId)
+      : nicheId === 'custom'
+        ? newsForNiche(newsResult.items, nicheId, preferences.customSpaceNiche)
+        : newsResult.items;
+    const selectedNews = rankNewsForTopic(query, nicheNews, 6, feedback);
+    let wiki: WikiSignal | undefined;
+    if (cachedDossier?.wiki?.language === (preferences.spaceInterestLanguage ?? 'en')) {
+      wiki = cachedDossier.wiki;
+      warnings.push('Reused recent Wikimedia evidence from the local topic dossier; no additional pageview request was made.');
+    } else {
+      recordRuntimeStart('Wikimedia');
+      try {
+        wiki = await getWikipediaSignal(query, preferences.spaceInterestLanguage ?? 'en');
+        recordRuntimeFinish('Wikimedia', wiki ? 'success' : 'partial');
+      } catch (error) {
+        recordRuntimeFinish('Wikimedia', 'error', error instanceof Error ? error.message : String(error));
+        warnings.push(error instanceof Error ? error.message : 'Public-interest data was unavailable.');
+      }
+    }
     if (!selectedNews.length) {
       warnings.push(preferences.uiLanguage === 'fa' ? 'مقاله ناشر با ارتباط مستقیم با این موضوع در دسترس نبود. گزارش داخلی تا زمان یافتن شواهد اولیه اکتشافی باقی می‌ماند.' : 'No directly relevant publisher article was available for this topic. The internal report will remain exploratory until primary evidence is found.');
     }
-    if (!wiki && !videos.length) {
-      warnings.push(preferences.uiLanguage === 'fa' ? 'شواهد ویکی‌مدیا یا یوتیوب در دسترس نبود. از این اجرا نمی‌توان درباره تقاضا یا رقابت نتیجه‌گیری کرد.' : 'No Wikimedia or YouTube evidence was available. No demand or competition conclusion can be drawn from this run.');
+    if (!wiki) {
+      warnings.push(preferences.uiLanguage === 'fa' ? 'نمونه توجه ویکی‌مدیا در دسترس نبود؛ داده‌های YouTube به‌عنوان سیگنال مستقل پلتفرم در کنار خبرها تحلیل می‌شوند، اما یک snapshot به‌تنهایی رشد را اثبات نمی‌کند.' : 'No Wikimedia attention sample was available. The separately displayed YouTube sample is not used to infer publisher momentum, demand or competition.');
     }
     recordRuntimeStart('Engine');
     try {
+    let publisherIntelligence: PublisherIntelligence | undefined;
+    try {
+      publisherIntelligence = await buildPublisherIntelligence(selectedNews, Date.now(), 7);
+    } catch {
+      warnings.push(preferences.uiLanguage === 'fa'
+        ? 'خوشه‌بندی خبرهای ناشران کامل نشد؛ تحلیل و ایده‌های اصلی ادامه پیدا می‌کنند.'
+        : 'Publisher clustering could not finish; the core analysis and idea generation will continue.');
+    }
+    if (fetchedFreshYouTube && videos.length) {
+      const fetchedAt = Date.now();
+      const records: Video[] = videos.map((video) => ({
+        id: video.id, title: video.title, description: video.description,
+        channel: video.channel, thumbnail: video.thumbnailUrl, publishedAt: video.publishedAt,
+        fetchedAt, query, viewCount: video.viewCount, likeCount: video.likeCount,
+        commentCount: null, channelId: video.channelId,
+      }));
+      const persisted = await useScout.getState().saveYouTubeSample(records);
+      const growthById = new Map(persisted.map((video) => [video.id, video.growth]));
+      videos = videos.map((video) => ({ ...video, growth: growthById.get(video.id) }));
+    }
     const outline = buildResearchOutline(query, selectedNews.map((item) => item.title), preferences.uiLanguage ?? 'fa');
     const internalAnalysis = buildInternalResearch({
       topic: query,
-      news: selectedNews.map((item) => ({
+      news: [
+        ...selectedNews.map((item) => ({
         title: item.title,
         summary: item.summary,
         sourceName: item.sourceName,
@@ -165,12 +230,223 @@ export default function DeepResearch() {
         publishedAt: item.publishedAt,
         sourceId: item.sourceId,
       })),
+        ...webResults.map((item) => ({
+          title: item.title,
+          summary: item.summary,
+          sourceName: item.sourceName,
+          sourceUrl: item.url,
+          publishedAt: item.publishedAt ?? null,
+          sourceId: 'web:' + item.sourceName,
+        })),
+      ],
       wiki,
       videos,
+      videoWindowDays: preferences.defaultResearchDays ?? 30,
       feedback,
       priorMemory,
       language: preferences.uiLanguage ?? 'fa',
     });
+    // Publish a useful local result before waiting for adaptive web searches and cross-provider review.
+    setBrief({
+      topic: query,
+      createdAt: Date.now(),
+      news: selectedNews,
+      webResults,
+      wiki,
+      videos,
+      warnings: [...warnings],
+      ...outline,
+      scriptDraft: [],
+      internalAnalysis,
+      publisherIntelligence,
+      generatedIdeas: [],
+      quickReport: true,
+    });
+    // Run a bounded, source-led research loop. The model proposes falsifiable
+    // questions; Firecrawl retrieves new evidence; the model then re-evaluates it.
+    // YouTube API metadata is deliberately excluded from this external review.
+    const initialResearchEvidence: WebResearchItem[] = [
+      ...selectedNews.map((item) => ({
+        id: 'publisher:' + item.id,
+        title: item.title,
+        summary: item.summary,
+        url: item.url,
+        sourceName: item.sourceName,
+        ...(item.publishedAt ? { publishedAt: item.publishedAt } : {}),
+        category: 'news' as const,
+      })),
+      ...webResults,
+    ];
+    const researchEvidence: WebResearchItem[] = mergeIndependentResearchEvidence([], initialResearchEvidence).items;
+    if (preferences.webResearchEnabled && firecrawlKey) {
+      try {
+        const hydration = await enrichResearchEvidence(researchEvidence, firecrawlKey, 6);
+        researchEvidence.splice(0, researchEvidence.length, ...hydration.items);
+        warnings.push(...hydration.warnings);
+        if (hydration.enrichedCount) {
+          warnings.push(hydration.enrichedCount + ' original publisher page(s) were fetched for local quote verification; full page text is used only for this research run.');
+        }
+      } catch {
+        warnings.push('Original publisher page text could not be fetched. Search summaries remain contextual leads, not claim-level proof.');
+      }
+    }
+    const alreadyAsked: string[] = [];
+    let researchDossier: ResearchDossier | undefined;
+    let fallbackReview: ReturnType<typeof reviewResearchHypotheses> | undefined;
+    let modelReviewEnabled = configuredReviewerCount >= 2;
+    try {
+      recordRuntimeStart('AI');
+      let outcome = await runResearchAgentSerialized({
+        topic: query,
+        researchNiche: niche?.topic ?? (nicheId === 'custom' ? preferences.customSpaceNiche : query),
+        internalEngineFindings: {
+          summary: internalAnalysis.summary,
+          keyFindings: internalAnalysis.evidence.map((item) => item.detail),
+          gaps: internalAnalysis.intelligence.gaps,
+          verificationQuestions: internalAnalysis.verificationQuestions,
+          potentialContradictions: internalAnalysis.intelligence.potentialContradictions,
+        },
+        evidence: researchEvidence,
+        youtubeSignals: videos,
+        preferences,
+        previous: priorMemory?.researchDossier,
+        alreadyAsked,
+      });
+      warnings.push(...outcome.warnings);
+      recordRuntimeFinish('AI', outcome.dossier ? 'success' : 'partial', outcome.warnings.join(' ').slice(0, 220));
+      if (outcome.dossier) {
+        researchDossier = outcome.dossier;
+      } else {
+        modelReviewEnabled = false;
+        fallbackReview = reviewResearchHypotheses(query, researchEvidence.map((item) => ({
+          id: item.id, title: item.title, summary: item.summary, url: item.url, sourceName: item.sourceName,
+          ...(item.publishedAt ? { publishedAt: item.publishedAt } : {}),
+        })), alreadyAsked, 3);
+        warnings.push('Local fallback discovery is active. Hypotheses remain provisional because independent model review was not available.');
+      }
+      // Adaptive evidence-led discovery: bounded by rounds, searches and evidence size.
+      // Failed searches are marked attempted too, so one failing query cannot loop forever.
+      let previousRoundNewEvidenceCount: number | undefined;
+      let researchStopReason = '';
+      for (let round = 1; round <= MAX_DEEP_RESEARCH_ROUNDS; round += 1) {
+        const plan = planResearchRound({
+          round,
+          queriesAttempted: alreadyAsked.length,
+          evidenceCount: researchEvidence.length,
+          previousRoundNewEvidenceCount,
+          nextQueries: researchDossier?.nextQueries ?? (fallbackReview?.nextDirections ?? []).map((item) => ({
+            query: item.query, purpose: 'independent-confirmation' as const, hypothesisId: '', priority: 3, reason: item.reason,
+          })),
+          alreadyAsked,
+        });
+        if (!plan.queries.length) {
+          researchStopReason = plan.stopReason;
+          break;
+        }
+        const beforeCount = researchEvidence.length;
+        const queryResults = await mapWithConcurrency(plan.queries, 2, async (plannedQuery) => {
+          try {
+            const result = await fetchWebResearch(plannedQuery.query, {
+              apiKey: firecrawlKey ?? undefined,
+              limit: MAX_DEEP_RESEARCH_RESULTS_PER_QUERY,
+              days: preferences.defaultResearchDays,
+            });
+            return { plannedQuery, result };
+          } catch (error) {
+            return { plannedQuery, error: error instanceof Error ? error.message : 'Search unavailable.' };
+          }
+        });
+        for (const item of queryResults) {
+          alreadyAsked.push(item.plannedQuery.query);
+          if ('error' in item) {
+            warnings.push('Follow-up research search failed: ' + item.error);
+            continue;
+          }
+          warnings.push(...item.result.warnings);
+          const mergedEvidence = mergeIndependentResearchEvidence(researchEvidence, item.result.items);
+          researchEvidence.splice(0, researchEvidence.length, ...mergedEvidence.items);
+          const mergedWeb = mergeIndependentResearchEvidence(webResults, mergedEvidence.addedItems);
+          webResults.splice(0, webResults.length, ...mergedWeb.items);
+          if (mergedEvidence.rejectedCount) {
+            warnings.push('Some follow-up results were excluded because their URL was invalid, duplicated, or outside the independent-web evidence boundary.');
+          }
+        }
+        const newEvidenceCount = researchEvidence.length - beforeCount;
+        previousRoundNewEvidenceCount = newEvidenceCount;
+        if (newEvidenceCount === 0) {
+          researchStopReason = 'Research stopped because the latest focused searches added no new independent source URLs.';
+          break;
+        }
+        if (modelReviewEnabled) {
+          recordRuntimeStart('AI');
+          const nextOutcome = await runResearchAgentSerialized({
+            topic: query,
+            researchNiche: niche?.topic ?? (nicheId === 'custom' ? preferences.customSpaceNiche : query),
+            internalEngineFindings: {
+              summary: internalAnalysis.summary,
+              keyFindings: internalAnalysis.evidence.map((item) => item.detail),
+              gaps: internalAnalysis.intelligence.gaps,
+              verificationQuestions: internalAnalysis.verificationQuestions,
+              potentialContradictions: internalAnalysis.intelligence.potentialContradictions,
+            },
+            evidence: researchEvidence,
+            youtubeSignals: videos,
+            preferences,
+            previous: researchDossier,
+            alreadyAsked,
+          });
+          warnings.push(...nextOutcome.warnings);
+          recordRuntimeFinish('AI', nextOutcome.dossier ? 'success' : 'partial', nextOutcome.warnings.join(' ').slice(0, 220));
+          if (nextOutcome.dossier) {
+            researchDossier = nextOutcome.dossier;
+          } else {
+            modelReviewEnabled = false;
+            fallbackReview = reviewResearchHypotheses(query, researchEvidence.map((item) => ({
+              id: item.id, title: item.title, summary: item.summary, url: item.url, sourceName: item.sourceName,
+              ...(item.publishedAt ? { publishedAt: item.publishedAt } : {}),
+            })), alreadyAsked, 3);
+            warnings.push('The configured independent reviewer is unavailable. Further discovery will use the local exploratory planner; no claim is model-validated.');
+          }
+        } else {
+          fallbackReview = reviewResearchHypotheses(query, researchEvidence.map((item) => ({
+            id: item.id, title: item.title, summary: item.summary, url: item.url, sourceName: item.sourceName,
+            ...(item.publishedAt ? { publishedAt: item.publishedAt } : {}),
+          })), alreadyAsked, 3);
+        }
+        if (!researchDossier && !fallbackReview?.nextDirections.length) {
+          researchStopReason = 'No new defensible local or model-led research direction was available.';
+          break;
+        }
+
+      }
+      if (!researchStopReason && researchDossier) {
+        researchStopReason = 'The adaptive research round limit was reached; unresolved questions remain recorded for a later manual review.';
+      }
+      if (researchDossier && researchStopReason) {
+        researchDossier = { ...researchDossier, stoppingReason: researchStopReason };
+      }
+      const evidenceCoverage = assessResearchEvidenceCoverage(researchEvidence);
+      const evidenceProvenance = assessEvidenceProvenance(researchEvidence);
+      const fullTextEvidenceCount = researchEvidence.filter((item) => Boolean(item.sourceText && item.sourceText.length >= 300)).length;
+      if (fullTextEvidenceCount < 2) {
+        warnings.push('Fewer than two source documents contain fetched original text. No hypothesis can be treated as established from summaries or headlines alone.');
+      }
+      if (evidenceProvenance.publisherFamilyCount < 2) {
+        warnings.push('Research currently covers fewer than two approximated publisher families. Cross-source independence is not established.');
+      }
+      if (evidenceProvenance.syndicatedItemCount) {
+        warnings.push(evidenceProvenance.syndicatedItemCount + ' likely syndicated or near-identical cross-publisher item pair(s) were grouped together and do not count as separate corroboration.');
+      }
+      if (evidenceCoverage.uniqueHostCount < 2) {
+        warnings.push('Research evidence currently covers fewer than two distinct web hosts; source independence has not been established.');
+      }
+      if (evidenceCoverage.undatedCount > 0) {
+        warnings.push(evidenceCoverage.undatedCount + ' independent web result(s) have no usable publication date; freshness remains uncertain.');
+      }
+    } catch (error) {
+      recordRuntimeFinish('AI', 'error', error instanceof Error ? error.message : String(error));
+      warnings.push('Model-backed deep research could not complete; the local source analysis remains available.');
+    }
     rememberTopicDossier(query, {
       news: selectedNews.length ? selectedNews : cachedDossier?.news ?? [],
       wiki, videos, videoCriteria, internalAnalysis,
@@ -187,6 +463,8 @@ export default function DeepResearch() {
         publishedAt: item.publishedAt,
         sourceId: item.sourceId,
       })),
+      videos,
+      videoWindowDays: preferences.defaultResearchDays ?? 30,
       feedback,
       priorMemory,
       language: preferences.uiLanguage ?? 'fa',
@@ -198,6 +476,7 @@ export default function DeepResearch() {
       previous: priorMemory,
       now: Date.now(),
       language: preferences.uiLanguage ?? 'fa',
+      researchDossier,
     });
     if (memoryEntry && priorMemory) {
       const latestSnapshot = memoryEntry.history?.[0];
@@ -205,37 +484,70 @@ export default function DeepResearch() {
         warnings.push(latestSnapshot.changes.join(' '));
       }
     }
-    const unified = buildUnifiedBrief({
+    const generatedIdeas = generateEditorialIdeas({
       topic: query,
       news: selectedNews,
-      videos,
-      wiki,
-      now: Date.now(),
-      niche: nicheId,
-      language: preferences.uiLanguage ?? 'fa',
-      region: preferences.region,
-      languages: preferences.languages,
-    });
-    warnings.push(...unified.warnings);
-    // Bound the sample handed to the engine; the UI news list is already capped at 30.
-    const generatedIdeas = unified.ideas.length ? unified.ideas : generateEditorialIdeas({
-      topic: query,
-      news: selectedNews,
-      videos: videos.slice(0, 30).map((video) => ({
-        id: video.id, title: video.title, description: video.description,
-        channel: video.channel, publishedAt: video.publishedAt,
-        viewCount: video.viewCount, likeCount: video.likeCount,
-      })),
-      context: wiki ? [{ title: wiki.articleTitle, summary: wiki.summary, sourceUrl: wiki.articleUrl, sourceName: 'Wikimedia' }] : [],
+      context: [
+        ...webResults.map((item) => ({ title: item.title, summary: item.summary, sourceUrl: item.url, sourceName: item.sourceName, publishedAt: item.publishedAt ?? null })),
+        ...videos.slice(0, 25).map((video) => ({
+          title: video.title,
+          summary: [
+            'YouTube platform observation from channel ' + video.channel,
+            'Views: ' + (video.viewCount ?? 'unavailable') + '; likes: ' + (video.likeCount ?? 'unavailable'),
+            'Measured growth: ' + (video.growth?.viewsPerHour == null ? 'insufficient snapshot history' : video.growth.viewsPerHour.toFixed(2) + ' views/hour'),
+          ].join('. '),
+          sourceName: 'YouTube platform signal', sourceUrl: video.url, publishedAt: video.publishedAt,
+          platform: 'youtube' as const, videoId: video.id, thumbnailUrl: video.thumbnailUrl,
+          channel: video.channel, viewCount: video.viewCount, likeCount: video.likeCount,
+          viewsPerHour: video.growth?.viewsPerHour ?? null, viewsPerDay: video.growth?.viewsPerDay ?? null,
+          channelOutlierRatio: video.growth?.channelOutlierRatio ?? null,
+        })),
+        ...(wiki ? [{ title: wiki.articleTitle, summary: wiki.summary, sourceUrl: wiki.articleUrl, sourceName: 'Wikimedia' }] : []),
+        ...(researchDossier ? [{
+          title: 'Research synthesis: ' + researchDossier.conclusion,
+          summary: [
+            'Independent review status: ' + (researchDossier.reviewStatus ?? 'not-reviewed'),
+            'Confidence: ' + researchDossier.confidence,
+            ...researchDossier.gaps.map((gap) => 'Research gap: ' + gap),
+            ...researchDossier.contradictions.map((item) => 'Potential contradiction: ' + item.description),
+          ].join('\n'),
+          sourceName: 'MOHSEN SCOUT Research Dossier',
+          ...(researchDossier.hypotheses.flatMap((hypothesis) => [
+            ...(hypothesis.supportingQuotes ?? []),
+            ...(hypothesis.challengingQuotes ?? []),
+          ])[0]?.sourceUrl ? {
+            sourceUrl: researchDossier.hypotheses.flatMap((hypothesis) => [
+              ...(hypothesis.supportingQuotes ?? []),
+              ...(hypothesis.challengingQuotes ?? []),
+            ])[0]!.sourceUrl,
+          } : {}),
+        }] : []),
+        ...(researchDossier?.hypotheses ?? []).map((hypothesis) => ({
+          title: (hypothesis.status === 'supported' ? 'Cross-reviewed hypothesis: '
+            : hypothesis.status === 'contested' ? 'Contested research question: '
+              : 'Unverified research hypothesis: ') + hypothesis.claim,
+          summary: [
+            'Final status: ' + hypothesis.status,
+            'Confidence: ' + hypothesis.confidence,
+            hypothesis.rationale,
+            ...(hypothesis.supportingQuotes ?? []).map((citation) => 'Verified supporting quote (' + citation.sourceName + '): ' + citation.quote),
+            ...(hypothesis.challengingQuotes ?? []).map((citation) => 'Verified challenging quote (' + citation.sourceName + '): ' + citation.quote),
+            ...hypothesis.missingEvidence.map((gap) => 'Missing evidence: ' + gap),
+          ].join('\n'),
+          sourceName: 'MOHSEN SCOUT Research Dossier',
+          ...((hypothesis.supportingQuotes ?? [])[0]?.sourceUrl
+            ? { sourceUrl: hypothesis.supportingQuotes![0]!.sourceUrl }
+            : (hypothesis.challengingQuotes ?? [])[0]?.sourceUrl
+              ? { sourceUrl: hypothesis.challengingQuotes![0]!.sourceUrl } : {}),
+        })),
+      ],
       existingIdeas: useScout.getState().data.ideas,
       region: preferences.region,
       languages: preferences.languages,
       language: preferences.uiLanguage ?? 'fa',
       limit: 25,
+      researchDossier,
     });
-    const unifiedAngles = unified.angles.length
-      ? unified.angles
-      : internalAnalysis.angles.slice(0, 6).map((angle) => angle.title + ': ' + angle.hook);
     await useScout.getState().commit((data) => ({
       ...data,
       ideas: [...generatedIdeas, ...data.ideas],
@@ -249,31 +561,33 @@ export default function DeepResearch() {
     setBrief({
       topic: query,
       createdAt: Date.now(),
+      quickReport: false,
       news: selectedNews,
+      webResults,
       wiki,
       videos,
       warnings,
       internalAnalysis,
+      researchDossier,
+      publisherIntelligence,
       generatedIdeas,
-      unifiedAngles,
-      unifiedBrief: unified,
       ...outline,
       scriptDraft: preferences.uiLanguage === 'fa' ? [
-        'قلاب — با پرسش اصلی شروع کن: ' + outline.titleIdeas[0],
-        'زمینه — پیش از بیان نتیجه جدید، مأموریت، تلسکوپ یا فرایند فیزیکی را توضیح بده.',
-        ...(selectedNews.length ? ['شواهد مبتنی بر منبع — مشاهده گزارش‌شده را با نام ناشر، تاریخ و پیوند اصلی معرفی کن. عدد یا ادعایی خارج از منبع اضافه نکن.'] : ['شواهد — پس از بررسی مقاله یا اطلاعیه مأموریت، قوی‌ترین یافته تأییدشده را وارد کن.']),
-        'توضیح — سازوکار علمی را به زبان ساده شرح بده و اصطلاحات ناآشنا را تعریف کن.',
-        'محدودیت‌ها — بگو این مشاهده چه چیزی را ثابت نمی‌کند و کدام تفسیرها هنوز موقت‌اند.',
-        'اهمیت — توضیح بده این نتیجه در داستان گسترده‌تر علم فضا چه اهمیتی دارد.',
-        'پایان — به پرسش آغازین برگرد و بگو کدام مشاهده یا مأموریت آینده می‌تواند پاسخ را روشن کند.',
+        'شروع ویدئو — با یک پرسش روشن آغاز کن: ' + outline.titleIdeas[0],
+        'زمینه — قبل از گفتن نتیجه، فقط پیش‌زمینه لازم را توضیح بده؛ مثلاً مأموریت، ابزار یا فرایند علمی.',
+        ...(selectedNews.length ? ['شواهد و منبع — مشاهده گزارش‌شده را با نام ناشر، تاریخ و پیوند اصلی معرفی کن. چیزی فراتر از آنچه منبع گفته اضافه نکن.'] : ['شواهد — پس از بررسی مقاله یا اطلاعیه رسمی، مهم‌ترین یافته‌ای را که واقعاً تأیید شده وارد کن.']),
+        'توضیح ساده — سازوکار علمی را با زبان قابل فهم توضیح بده و اصطلاحات ناآشنا را همان‌جا معنی کن.',
+        'آنچه هنوز نمی‌دانیم — روشن کن این مشاهده چه چیزی را ثابت نمی‌کند و کدام برداشت‌ها هنوز قطعی نیستند.',
+        'اهمیت — توضیح بده این یافته چه چیزی به دانسته‌های ما اضافه می‌کند.',
+        'پایان‌بندی — به پرسش اول برگرد و بگو کدام داده یا مشاهده آینده می‌تواند پاسخ دقیق‌تری بدهد.',
       ] : [
-        'HOOK — Open with the central question: ' + outline.titleIdeas[0],
-        'CONTEXT — Explain the mission, telescope or physical process before presenting the new result.',
-        ...(selectedNews.length ? ['SOURCE-LED EVIDENCE — Introduce the reported observation using the exact publisher, date and link shown above. Do not add figures or claims absent from that source.'] : ['EVIDENCE — Insert the strongest verified primary-source finding after checking the linked paper or mission release.']),
-        'EXPLANATION — Translate the scientific mechanism into plain language and define unfamiliar terms.',
-        'LIMITS — State what the observation does not prove and which interpretations remain provisional.',
-        'PAYOFF — Explain why the result matters in the wider story of space science.',
-        'CLOSING — Return to the opening question and tell viewers what upcoming observation or mission could resolve it.',
+        'OPENING — Start with one clear question: ' + outline.titleIdeas[0],
+        'CONTEXT — Give viewers only the background they need to understand the mission, instrument or scientific process.',
+        ...(selectedNews.length ? ['WHAT THE SOURCE SAYS — Name the publisher, date and original link. Do not add a figure or claim that the source does not report.'] : ['EVIDENCE — After checking the linked paper or official mission update, add the strongest finding that is actually supported.']),
+        'PLAIN-LANGUAGE EXPLANATION — Explain the scientific process in everyday language and define unfamiliar terms as they appear.',
+        'WHAT IS STILL UNKNOWN — Say what the observation does not prove and which explanations remain provisional.',
+        'WHY IT MATTERS — Explain what this result adds to our understanding.',
+        'ENDING — Return to the opening question and point to the next observation or data that could answer it.',
       ],
     });
     recordRuntimeFinish('Engine', 'success');
@@ -281,32 +595,33 @@ export default function DeepResearch() {
       recordRuntimeFinish('Engine', 'error', error instanceof Error ? error.message : String(error));
       throw error;
     }
-  }, 'Source-backed research brief prepared.');
+  }), 'Source-backed research brief prepared.');
   const saveToNotes = () => void op.run(async () => {
     if (!brief) throw new Error('Generate a research brief first.');
+    const fa = preferences.uiLanguage === 'fa';
     const blocks = [
-      { id: uid(), type: 'heading' as const, text: 'Source findings' },
-      ...(brief.wiki ? [{ id: uid(), type: 'paragraph' as const, text: brief.wiki.articleTitle + ': ' + brief.wiki.summary + '\nArticle: ' + brief.wiki.articleUrl }] : []),
+      { id: uid(), type: 'heading' as const, text: fa ? 'یافته‌های منابع' : 'Source findings' },
+      ...(brief.wiki ? [{ id: uid(), type: 'paragraph' as const, text: brief.wiki.articleTitle + ': ' + brief.wiki.summary + (fa ? '\nمقاله: ' : '\nArticle: ') + brief.wiki.articleUrl }] : []),
       ...brief.news.map((item) => ({ id: uid(), type: 'link' as const, text: item.sourceName + ': ' + item.title + '\n' + item.summary + '\n' + item.url })),
-      { id: uid(), type: 'heading' as const, text: 'Internal research engine' },
+      { id: uid(), type: 'heading' as const, text: fa ? 'موتور تحقیق داخلی' : 'Internal research engine' },
       { id: uid(), type: 'paragraph' as const, text: brief.internalAnalysis.summary },
       ...brief.internalAnalysis.evidence.map((item) => ({ id: uid(), type: 'bullet' as const, text: item.label + ': ' + item.detail })),
-      ...brief.internalAnalysis.angles.map((angle) => ({ id: uid(), type: 'bullet' as const, text: angle.title + '\n' + angle.hook + '\n' + angle.approach + '\nVerify: ' + angle.verification })),
-      { id: uid(), type: 'heading' as const, text: 'Suggested video titles' },
+      ...brief.internalAnalysis.angles.map((angle) => ({ id: uid(), type: 'bullet' as const, text: angle.title + '\n' + angle.hook + '\n' + angle.approach + (fa ? '\nراستی‌آزمایی: ' : '\nVerify: ') + angle.verification })),
+      { id: uid(), type: 'heading' as const, text: fa ? 'عنوان‌های پیشنهادی ویدئو' : 'Suggested video titles' },
       ...brief.titleIdeas.map((title) => ({ id: uid(), type: 'bullet' as const, text: title })),
-      { id: uid(), type: 'heading' as const, text: 'Video outline' },
+      { id: uid(), type: 'heading' as const, text: fa ? 'طرح ویدئو' : 'Video outline' },
       ...brief.outline.map((line) => ({ id: uid(), type: 'bullet' as const, text: line })),
-      { id: uid(), type: 'heading' as const, text: 'Script draft structure' },
+      { id: uid(), type: 'heading' as const, text: fa ? 'پیش‌نویس ساختار روایت' : 'Script draft structure' },
       ...brief.scriptDraft.map((line) => ({ id: uid(), type: 'bullet' as const, text: line })),
-      { id: uid(), type: 'heading' as const, text: 'Verification checklist' },
+      { id: uid(), type: 'heading' as const, text: fa ? 'فهرست راستی‌آزمایی' : 'Verification checklist' },
       ...brief.verificationQuestions.map((line) => ({ id: uid(), type: 'checklist' as const, text: line, checked: false })),
-      ...brief.warnings.map((warning) => ({ id: uid(), type: 'paragraph' as const, text: 'Limitation: ' + warning })),
+      ...brief.warnings.map((warning) => ({ id: uid(), type: 'paragraph' as const, text: (fa ? 'محدودیت: ' : 'Limitation: ') + warning })),
     ];
     const note = {
       id: uid(),
-      title: ('Space research: ' + brief.topic).slice(0, 120),
-      folder: 'Space Research',
-      tags: ['space', 'research'],
+      title: ((fa ? 'پژوهش فضایی: ' : 'Space research: ') + brief.topic).slice(0, 120),
+      folder: fa ? 'پژوهش فضایی' : 'Space Research',
+      tags: fa ? ['فضا', 'پژوهش', 'deep-research'] : ['space', 'research', 'deep-research'],
       blocks,
       updatedAt: Date.now(),
       ...(linkedIdea ? { ideaId: linkedIdea.id } : {}),
@@ -315,21 +630,29 @@ export default function DeepResearch() {
   }, 'Research brief saved to Notes.');
   return (
     <Page title="Deep Research" eyebrow="3-STEP RESEARCH WORKSPACE" showBack subtitle="Choose a question, build one evidence-backed brief, then review the sections you need.">
-      <Txt muted>Step 1 · Choose the topic. Step 2 · Build the brief. Step 3 · Review the evidence, sources and production plan. Research begins only when you press the action.</Txt>
+      <Txt muted>Step 1 · Choose the topic. Step 2 · Sample YouTube first, then verify the strongest leads with independent web and publisher evidence. Step 3 · Review the findings and production plan.</Txt>
       {linkedIdea ? <Action secondary onPress={() => router.push({ pathname: '/detail', params: { idea: linkedIdea.id } })}>{'Research linked to: ' + linkedIdea.topic + ' · Open idea'}</Action> : null}
+      <Action secondary onPress={() => router.push('/browser')}>Open internal web browser</Action>
       <Panel>
         <Heading>1 · Choose the research question</Heading>
         <Field label="What should this brief investigate?" value={topic} onChange={setTopic} placeholder="e.g. What JWST has found in exoplanet atmospheres" multiline />
-        <Txt muted>Uses selected publisher feeds, a clearly labelled Wikimedia attention proxy and a bounded YouTube sample. The brief keeps original source links and verification steps.</Txt>
+        <Txt muted>YouTube is sampled first for audience-facing topics and video patterns. Independent web and publisher sources are then used to verify claims; repeat snapshots are required before reporting measured growth.</Txt>
         <Action busy={op.busy} disabled={!topic.trim()} onPress={run}>2 · Build research brief</Action>
       </Panel>
       {brief && (
         <>
           <Panel>
             <Heading>Research overview · {brief.topic}</Heading>
-            <Text style={styles.badge}>Prepared {new Date(brief.createdAt).toLocaleString()}</Text>
-            <Txt muted>{brief.news.length} publisher reports · {brief.videos.length} YouTube sample videos · {brief.generatedIdeas.length} generated ideas · {brief.wiki ? 'Wikimedia context available' : 'No Wikimedia result'}.</Txt>
-            <Txt muted>Wikimedia pageviews indicate article attention, not YouTube demand. Treat generated angles as research candidates and verify claims against the linked primary sources.</Txt>
+            <Text style={styles.badge}>{brief.quickReport && op.busy
+              ? 'Quick evidence report · deeper verification in progress'
+              : 'Prepared ' + new Date(brief.createdAt).toLocaleString()}</Text>
+            {brief.quickReport && op.busy
+              ? <Txt muted>The internal engine result is available now. Independent source searches and any eligible cross-provider review will update this report when complete.</Txt>
+              : null}
+            <Txt muted>{brief.videos.length} YouTube sample videos from {youtubeChannelCount} channels · {brief.news.length} publisher reports · {brief.webResults.length} web results · {brief.generatedIdeas.length} ideas.</Txt>
+            <Txt muted>Latest stage durations · {runtimeDurationSummary}</Txt>
+            <Txt muted>{measuredYouTubeGrowth.length} videos have repeat-snapshot growth measurements{fastestYouTubeGrowth ? ' · fastest: ' + fastestYouTubeGrowth.title + ' (' + fastestYouTubeGrowth.growth!.viewsPerHour!.toFixed(1) + ' views/hour)' : ' · no growth rate is available yet; a single view-count snapshot is not growth'}.</Txt>
+            <Txt muted>Wikimedia pageviews indicate article attention, not YouTube demand. Treat generated angles as research candidates and verify factual claims against the linked primary sources.</Txt>
             {brief.warnings.length ? <Fold title="Coverage limits & warnings" summary={brief.warnings.length + ' item(s) to review'}>{brief.warnings.map((warning) => <Txt muted key={warning}>Limitation: {warning}</Txt>)}</Fold> : null}
           </Panel>
           <Fold title="3 · Recommended content ideas" summary={brief.generatedIdeas.length + ' evidence-backed ideas'}>          <Panel>
@@ -342,27 +665,42 @@ export default function DeepResearch() {
                 <Action secondary onPress={() => router.push({ pathname: '/detail', params: { idea: idea.id } })}>Open idea details</Action>
               </View>
             )) : <Txt muted>No sufficiently distinct angle could be generated from the returned evidence. Add more source material or choose a narrower question.</Txt>}
-            {brief.unifiedAngles.length ? (
-              <View style={{ gap: 5, borderTopWidth: 1, borderTopColor: p.border, paddingTop: 10 }}>
-                <Heading>Engine-v2 angles from this evidence</Heading>
-                {brief.unifiedAngles.map((angle) => <Txt muted key={angle}>{angle}</Txt>)}
-              </View>
-            ) : null}
           </Panel>
-</Fold>          <Fold title="4 · Engine findings, evidence & confidence" summary={brief.internalAnalysis.evidence.length + ' evidence signals · ' + brief.internalAnalysis.angles.length + ' content angles'}>          <Panel>
+</Fold>          <Fold title="4 · Engine findings, evidence & confidence" summary={brief.internalAnalysis.evidence.length + ' evidence signals · ' + brief.internalAnalysis.angles.length + ' content angles'} defaultExpanded>          <Panel>
             <Heading>Internal Research Engine</Heading>
             <ResearchOverviewChart
               topic={brief.topic}
+              analysis={brief.internalAnalysis}
               ideas={brief.generatedIdeas}
               language={preferences.uiLanguage ?? 'fa'}
             />
+            {brief.publisherIntelligence?.clusters.length ? (
+              <Fold title="Publisher-only topic clusters" summary={brief.publisherIntelligence.clusters.length + ' clusters · ' + brief.publisherIntelligence.uniqueCount + ' unique reports'}>
+                <Txt muted>Coverage and momentum are computed only from selected publisher RSS records. This is not audience demand, YouTube popularity or monetization.</Txt>
+                {brief.publisherIntelligence.clusters.slice(0, 5).map((cluster) => (
+                  <View key={cluster.id} style={{ gap: 4 }}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                      <SourceText>{cluster.title}</SourceText>
+                      <Text style={styles.badge}>{cluster.publisherCoverageScore}/100 coverage</Text>
+                    </View>
+                    <Txt muted>{cluster.articleCount} stories · {cluster.publishers.length} publisher groups · {cluster.momentum}</Txt>
+                    <Txt muted>{cluster.currentWindowCount} stories in the latest 7 days · {cluster.previousWindowCount} in the preceding 7 days</Txt>
+                    {cluster.evidence.slice(0, 2).map((reference) => (
+                      <Button key={reference.url} variant="tertiary" className="h-auto justify-start px-0" onPress={() => void openExternalUrl(reference.url, preferences.uiLanguage ?? 'fa')}>
+                        <Button.Label>{reference.sourceName + ': ' + reference.title + ' ↗'}</Button.Label>
+                      </Button>
+                    ))}
+                  </View>
+                ))}
+              </Fold>
+            ) : null}
             <Txt muted>{brief.internalAnalysis.summary}</Txt>
             {brief.internalAnalysis.evidence.map((item) => (
               <View key={item.id} style={{ gap: 3 }}>
                 <Text style={styles.badge}>{item.label}</Text>
                 <Txt muted>{item.detail}</Txt>
                 {item.sourceUrl ? (
-                  <Button variant="tertiary" className="h-auto justify-start px-0" onPress={() => void Linking.openURL(item.sourceUrl!).catch(() => {})}>
+                  <Button variant="tertiary" className="h-auto justify-start px-0" onPress={() => void openExternalUrl(item.sourceUrl!, preferences.uiLanguage ?? 'fa')}>
                     <Button.Label>Open evidence source ↗</Button.Label>
                   </Button>
                 ) : null}
@@ -389,17 +727,95 @@ export default function DeepResearch() {
               {brief.internalAnalysis.intelligence.trend.anomaly ? <Txt muted>{'Potential anomaly: ' + translateText(brief.internalAnalysis.intelligence.trend.anomaly.charAt(0).toUpperCase() + brief.internalAnalysis.intelligence.trend.anomaly.slice(1), preferences.uiLanguage ?? 'fa')}</Txt> : null}
               {brief.internalAnalysis.intelligence.gaps.map((gap) => <Txt muted key={gap}>{'Research gap: ' + gap}</Txt>)}
               {brief.internalAnalysis.intelligence.followUpQueries.map((query) => <View key={query} style={{ gap: 2 }}><Txt muted>Follow-up search:</Txt><SourceText>{query}</SourceText></View>)}
-              {brief.internalAnalysis.intelligence.sharedConcepts.length ? <Txt muted>{'Shared terms across publisher and video samples: ' + brief.internalAnalysis.intelligence.sharedConcepts.join(', ') + '. This is wording overlap only.'}</Txt> : null}
+              {brief.internalAnalysis.intelligence.sharedConcepts.length ? <Txt muted>{'Shared terms across publisher records: ' + brief.internalAnalysis.intelligence.sharedConcepts.join(', ')}</Txt> : null}
               {brief.internalAnalysis.intelligence.scenarios.map((scenario) => <Txt muted key={scenario}>{scenario}</Txt>)}
               {brief.internalAnalysis.intelligence.potentialContradictions.map((item) => <Txt muted key={item}>{'Potential discrepancy: ' + item}</Txt>)}
             </View>
+            <Fold
+              title={preferences.uiLanguage === 'fa' ? 'تحلیل چندپارادایمی موتور هوشمند' : 'Multi-paradigm engine analysis'}
+              summary={brief.internalAnalysis.intelligence.paradigms.readinessLabel}
+            >
+              <Txt>{brief.internalAnalysis.intelligence.paradigms.synthesis}</Txt>
+              {brief.internalAnalysis.intelligence.paradigms.lenses.map((item) => (
+                <View key={item.id} style={{ gap: 4, borderTopWidth: 1, borderTopColor: p.border, paddingTop: 9 }}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                    <Heading>{item.title}</Heading>
+                    <Text style={styles.badge}>{item.statusLabel}</Text>
+                  </View>
+                  <Txt muted>{item.summary}</Txt>
+                  {item.findings.map((finding) => <Txt key={item.id + '-finding-' + finding}>{'• ' + finding}</Txt>)}
+                  {item.caveats.map((caveat) => <Txt muted key={item.id + '-caveat-' + caveat}>{caveat}</Txt>)}
+                </View>
+              ))}
+            </Fold>
           </Panel>
-</Fold>          {brief.wiki && (
+</Fold>
+          {brief.researchDossier ? (
+            <Fold
+              title={preferences.uiLanguage === 'fa' ? 'پرونده تحقیق عمیق و اکتشاف چندمرحله‌ای' : 'Deep research dossier · iterative discovery'}
+              summary={brief.researchDossier.hypotheses.length + ' hypotheses · ' + brief.researchDossier.completedQueries.length + ' follow-up searches'}
+              defaultExpanded
+            >
+              <Panel>
+                <Heading>{preferences.uiLanguage === 'fa' ? 'جمع‌بندی انتقادی' : 'Critical synthesis'}</Heading>
+                <Txt>{brief.researchDossier.conclusion || (preferences.uiLanguage === 'fa' ? 'جمع‌بندی کافی در دسترس نیست.' : 'No sufficient synthesis is available.')}</Txt>
+                {brief.researchDossier.provisionalConclusion ? (
+                  <View style={{ gap: 3 }}>
+                    <Txt muted>{preferences.uiLanguage === 'fa' ? 'جمع‌بندی مقدماتی پژوهشگر اول — هنوز تأیید مستقل نشده' : 'First researcher draft — not independently verified'}</Txt>
+                    <Txt muted>{brief.researchDossier.provisionalConclusion}</Txt>
+                  </View>
+                ) : null}
+                <Txt muted>{'Confidence: ' + brief.researchDossier.confidence + ' · ' + brief.researchDossier.stoppingReason}</Txt>
+                <Txt muted>{'Independent review: ' + (brief.researchDossier.reviewStatus ?? 'not available') +
+                  (brief.researchDossier.reviewerProvider ? ' · reviewer: ' + brief.researchDossier.reviewerProvider + ' / ' + brief.researchDossier.reviewerModel : '')}</Txt>
+                <Txt muted>{'Original text records: ' + (brief.researchDossier.fullTextEvidenceCount ?? 0) +
+                  ' · summary-only: ' + (brief.researchDossier.summaryOnlyEvidenceCount ?? 0) +
+                  ' · independently assessed evidence records: ' + (brief.researchDossier.reviewedEvidenceCount ?? 0) +
+                  ' · publisher groups (heuristic): ' + (brief.researchDossier.publisherFamilyCount ?? 0) +
+                  ' · checked quotes: ' + (brief.researchDossier.verifiedCitationCount ?? 0)}</Txt>
+                <Heading>{preferences.uiLanguage === 'fa' ? 'فرضیه‌های قابل آزمون' : 'Testable hypotheses'}</Heading>
+                {brief.researchDossier.hypotheses.map((item) => (
+                  <View key={item.id} style={{ gap: 4, borderTopWidth: 1, borderTopColor: p.border, paddingTop: 8 }}>
+                    <SourceText>{item.claim}</SourceText>
+                    <Txt muted>{item.rationale}</Txt>
+                    <Text style={styles.badge}>{item.status} · {item.confidence}</Text>
+                    {item.supportingEvidenceIds.length ? <Txt muted>{'Supports: ' + item.supportingEvidenceIds.join(', ')}</Txt> : null}
+                    {item.challengingEvidenceIds.length ? <Txt muted>{'Challenges: ' + item.challengingEvidenceIds.join(', ')}</Txt> : null}
+                    {(item.supportingQuotes ?? []).map((citation) => (
+                      <View key={item.id + '-support-' + citation.evidenceId + '-' + citation.quote.slice(0, 32)} style={{ gap: 2 }}>
+                        <Txt muted>{'Verbatim checked · ' + citation.sourceName}</Txt>
+                        <SourceText>{'“' + citation.quote + '”'}</SourceText>
+                      </View>
+                    ))}
+                    {(item.challengingQuotes ?? []).map((citation) => (
+                      <View key={item.id + '-challenge-' + citation.evidenceId + '-' + citation.quote.slice(0, 32)} style={{ gap: 2 }}>
+                        <Txt muted>{'Verbatim checked counterevidence · ' + citation.sourceName}</Txt>
+                        <SourceText>{'“' + citation.quote + '”'}</SourceText>
+                      </View>
+                    ))}
+                    {item.missingEvidence.map((gap) => <Txt muted key={gap}>{'Missing: ' + gap}</Txt>)}
+                  </View>
+                ))}
+                <Heading>{preferences.uiLanguage === 'fa' ? 'ارزیابی منابع' : 'Source assessments'}</Heading>
+                {brief.researchDossier.evidenceReviews.map((item) => (
+                  <View key={item.evidenceId} style={{ gap: 2 }}>
+                    <Txt>{item.evidenceId + ' · ' + item.role}</Txt>
+                    <Txt muted>{item.sourceType + ' · ' + item.credibility + ' · ' + item.freshness + ' — ' + item.reason}</Txt>
+                  </View>
+                ))}
+                <Heading>{preferences.uiLanguage === 'fa' ? 'پرسش‌های اکتشافی بعدی' : 'Next discovery questions'}</Heading>
+                {brief.researchDossier.nextQueries.map((item) => <View key={item.query} style={{ gap: 2 }}><SourceText>{item.query}</SourceText><Txt muted>{item.purpose + ' · priority ' + item.priority + ' — ' + item.reason}</Txt></View>)}
+                {brief.researchDossier.gaps.map((item) => <Txt muted key={item}>{'Research gap: ' + item}</Txt>)}
+                {brief.researchDossier.contradictions.map((item) => <Txt muted key={item.description + '-' + item.evidenceIds.join(',')}>{'Contradiction: ' + item.description + ' · ' + item.evidenceIds.join(', ')}</Txt>)}
+              </Panel>
+            </Fold>
+          ) : null}
+          {brief.wiki && (
           <Fold title="5 · Wikimedia context" summary={brief.wiki.articleTitle}>            <Panel>
               <Heading>Public-interest context · Wikimedia</Heading>
               <SourceText>{brief.wiki.articleTitle}</SourceText>
               <SourceText muted>{brief.wiki.summary || 'No encyclopedia summary was returned.'}</SourceText>
-              <Button variant="tertiary" className="h-auto justify-start px-0" onPress={() => void Linking.openURL(brief.wiki!.articleUrl).catch(() => {})}>
+              <Button variant="tertiary" className="h-auto justify-start px-0" onPress={() => void openExternalUrl(brief.wiki!.articleUrl, preferences.uiLanguage ?? 'fa')}>
                 <Button.Label>Check the article and its references ↗</Button.Label>
               </Button>
             </Panel>
@@ -414,24 +830,38 @@ export default function DeepResearch() {
                 <Text style={styles.badge}>{item.sourceName} · {item.publishedAt ? new Date(item.publishedAt).toLocaleDateString() : 'Date not supplied'}</Text>
                 <SourceText>{item.title}</SourceText>
                 {Boolean(item.summary) && <SourceText>{item.summary}</SourceText>}
-                <Button variant="tertiary" className="h-auto justify-start px-0" onPress={() => void Linking.openURL(item.url).catch(() => {})}>
+                <Button variant="tertiary" className="h-auto justify-start px-0" onPress={() => void openExternalUrl(item.url, preferences.uiLanguage ?? 'fa')}>
                   <Button.Label>Open publisher source ↗</Button.Label>
                 </Button>
               </View>
             ))}
           </Panel>
-</Fold>          <Fold title="7 · YouTube evidence sample" summary={brief.videos.length + ' videos · source links retained'}>          <Panel>
+</Fold>          <Fold title="7 · Independent web research" summary={brief.webResults.length + ' search result(s)'}>
+            <Panel>
+              <Heading>Web and news search</Heading>
+              {brief.webResults.length ? brief.webResults.map((item) => (
+                <View key={item.id} style={{ gap: 5 }}>
+                  <Text style={styles.badge}>{item.sourceName} · {item.category}</Text>
+                  <SourceText>{item.title}</SourceText>
+                  <Txt muted>{item.summary}</Txt>
+                  <Button variant="tertiary" className="h-auto justify-start px-0" onPress={() => void openExternalUrl(item.url, preferences.uiLanguage ?? 'fa')}>
+                    <Button.Label>Open web source ↗</Button.Label>
+                  </Button>
+                </View>
+              )) : <Txt muted>Firecrawl returned no usable results. The official publisher feeds and Wikimedia sources above remain available.</Txt>}
+            </Panel>
+</Fold>          <Fold title="8 · YouTube sample (separate API data)" summary={brief.videos.length + ' videos · source links retained'}>          <Panel>
             <Heading>YouTube evidence</Heading>
             {brief.videos.length > 0 ? brief.videos.map((video) => (
               <View key={video.id} style={{ gap: 4 }}>
-                <MediaPreview uri={video.thumbnailUrl} aspectRatio={16 / 9} onPress={() => void Linking.openURL(video.url).catch(() => {})} alt={video.title} />
+                <MediaPreview uri={video.thumbnailUrl} aspectRatio={16 / 9} onPress={() => void openExternalUrl(video.url, preferences.uiLanguage ?? 'fa')} alt={video.title} />
                 <SourceText>{video.title}</SourceText>
                 <Text style={styles.badge}>{video.channel} · {video.viewCount === null ? 'Views unavailable' : video.viewCount.toLocaleString() + ' views'} · {video.likeCount === null ? 'Likes unavailable' : video.likeCount.toLocaleString() + ' likes'}</Text>
                 <Txt muted>{video.channelSubscriberCount === null ? 'Subscribers unavailable' : video.channelSubscriberCount.toLocaleString() + ' subscribers'} · {video.channelVideoCount === null ? 'Channel video total unavailable' : video.channelVideoCount.toLocaleString() + ' uploads'}</Txt>
               </View>
             )) : <Txt muted>No YouTube sample was available. This does not block the source-led brief.</Txt>}
           </Panel>
-</Fold>          <Fold title="8 · Production plan & verification" summary={brief.titleIdeas.length + ' title ideas · ' + brief.outline.length + ' story steps'}>          <Panel>
+</Fold>          <Fold title="9 · Production plan & verification" summary={brief.titleIdeas.length + ' title ideas · ' + brief.outline.length + ' story steps'}>          <Panel>
             <Heading>Suggested video titles</Heading>
             {brief.titleIdeas.map((title) => <Txt key={title}>{title}</Txt>)}
           </Panel>

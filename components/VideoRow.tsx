@@ -1,4 +1,4 @@
-import { View, Text, Linking } from 'react-native';
+import { View, Text } from 'react-native';
 import { router } from 'expo-router';
 import { Button } from 'heroui-native';
 import { ArrowUpRight, Bookmark } from 'lucide-react-native';
@@ -7,9 +7,11 @@ import { type Video } from '@/lib/types';
 import { useScout } from '@/lib/store';
 import { palette as p } from '@/lib/theme';
 import { MediaPreview } from './MediaPreview';
+import { openExternalUrl } from '@/lib/external-links';
 export function VideoRow({ video, topic }: { video: Video; topic: string }) {
   const op = useOperation();
   const saved = useScout((s) => s.data.links.some((l) => l.id === video.id));
+  const language = useScout((s) => s.data.preferences.uiLanguage ?? 'fa');
   return (
     <View style={[styles.listCard, { gap: 12 }]}>
       <Button
@@ -34,7 +36,7 @@ export function VideoRow({ video, topic }: { video: Video; topic: string }) {
           </View>
         </View>
       </Button>
-      <Action secondary onPress={() => void Linking.openURL('https://www.youtube.com/watch?v=' + video.id).catch(() => {})}>
+      <Action secondary onPress={() => void openExternalUrl('https://www.youtube.com/watch?v=' + video.id, language)}>
         Open on YouTube
       </Action>
       <Action

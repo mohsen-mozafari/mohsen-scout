@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { View, Text, Linking, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
+import { View, Text, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import { Button, Skeleton } from 'heroui-native';
 import { router, useLocalSearchParams, Link } from 'expo-router';
 import { Plus, Trash2, ChevronUp, ChevronDown, NotebookPen } from 'lucide-react-native';
@@ -21,6 +21,7 @@ import { moveNoteBlock } from '@/lib/utils';
 import { useScout } from '@/lib/store';
 import { uid, type Note, type NoteBlock } from '@/lib/types';
 import { palette as p } from '@/lib/theme';
+import { openExternalUrl } from '@/lib/external-links';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 export default function NoteEditor() {
@@ -32,6 +33,7 @@ export default function NoteEditor() {
   }>();
   const existing = useScout((s) => s.data.notes.find((n) => n.id === id));
   const ready = useScout((s) => s.ready);
+  const language = useScout((s) => s.data.preferences.uiLanguage ?? 'fa');
   const [note, setNote] = useState<Note>(
     () =>
       existing ?? {
@@ -215,7 +217,7 @@ export default function NoteEditor() {
                     } else {
                       if (!block.text.startsWith('https://'))
                         throw new Error('Use a secure https link.');
-                      await Linking.openURL(block.text);
+                      await openExternalUrl(block.text, language);
                     }
                   })
                 }

@@ -5,7 +5,7 @@ import { createManualIdea } from '../lib/engine';
 import type { SpaceNewsItem } from '../lib/space';
 import { defaults } from '../lib/types';
 import { validateLocal } from '../lib/validation';
-import { tokenizeResearchText } from '../lib/intelligence';
+import { createEditorialOpportunityScorer, tokenizeResearchText } from '../lib/intelligence';
 
 const news: SpaceNewsItem[] = [
   {
@@ -22,7 +22,7 @@ const news: SpaceNewsItem[] = [
     sourceId: 'esa-science',
     sourceName: 'ESA',
     title: 'MOCK: New spectroscopy analysis examines methane on a distant world',
-    summary: 'MOCK: Researchers compare observation methods and uncertainty in atmospheric readings.',
+    summary: 'MOCK: Researchers compare observation methods and uncertainty in exoplanet atmosphere readings.',
     url: 'https://www.esa.int/mock-spectroscopy-report',
     publishedAt: '2026-11-14T12:00:00Z',
   },
@@ -55,6 +55,29 @@ const base = {
   now: 1794760000000,
 };
 
+const batchAnchors = Array.from({ length: 30 }, (_, index) =>
+  'astroterm' + String.fromCharCode(97 + Math.floor(index / 26)) + String.fromCharCode(97 + (index % 26)),
+);
+const batchAnchorText = batchAnchors.join(' ');
+const batchNews: SpaceNewsItem[] = Array.from({ length: 12 }, (_, index) => ({
+  id: 'batch-news-' + index,
+  sourceId: index % 2 ? 'esa-science' : 'nasa',
+  sourceName: index % 2 ? 'ESA' : 'NASA',
+  title: 'MOCK: JWST exoplanet atmosphere ' + batchAnchorText + ' mission observation record' + index,
+  summary: 'MOCK: JWST exoplanet atmosphere ' + batchAnchorText + ' measurement calibration uncertainty instrument response analysis',
+  url: 'https://' + (index % 2 ? 'esa.int' : 'nasa.gov') + '/mock-batch-' + index,
+  publishedAt: new Date(Date.UTC(2026, 10, 15 - index)).toISOString(),
+}));
+
+const batchVideos = Array.from({ length: 6 }, (_, index) => ({
+  id: ['dQw4w9WgXcQ', '9bZkp7q19f0', '3JZ_D3ELwOQ', 'L_jWHffIx5E', 'kJQP7kiw5Fk', 'fJ9rUzIMcZQ'][index],
+  title: 'MOCK: JWST exoplanet atmosphere spectroscopy sample ' + index,
+  description: 'MOCK: JWST exoplanet atmosphere ' + batchAnchorText + ' uncertainty measurement',
+  channel: 'MOCK channel ' + index,
+  publishedAt: new Date(Date.UTC(2026, 10, 10 - index)).toISOString(),
+  viewCount: 1800000 - index * 25000,
+}));
+
 void test('idea engine receives the complete user-selected YouTube period, including all-time history', () => {
   const now = Date.parse('2026-11-20T12:00:00Z');
   const records = [
@@ -68,29 +91,26 @@ void test('idea engine receives the complete user-selected YouTube period, inclu
   assert.deepEqual(filterVideosToSelectedResearchPeriod(records, 0, now).map((item) => item.id), ['recent', 'older', 'too-old']);
 });
 
-void test('idea engine rejects unrelated samples and marks a single-channel hypothesis uncertain', () => {
-  const unrelated = generateEditorialIdeas({
-    ...base, news: [], videos: [{
-      id: 'dQw4w9WgXcQ', title: 'JWST gaming commentary',
-      description: 'A creator update and channel news unrelated to this topic.',
-      channel: 'MOCK Unrelated Channel', publishedAt: '2026-11-15T12:00:00Z',
-    }], limit: 8,
-  });
-  assert.equal(unrelated.length, 0);
-  const singleSource = generateEditorialIdeas({
-    ...base, news: [], videos: [{
-      id: '9bZkp7q19f0', title: 'JWST exoplanet atmosphere: measurement limits',
+void test('publisher idea generation ignores YouTube-only input', () => {
+  const generated = generateEditorialIdeas({
+    ...base,
+    news: [],
+    videos: [{
+      id: '9bZkp7q19f0',
+      title: 'JWST exoplanet atmosphere: measurement limits',
       description: 'An overview of atmospheric measurement uncertainty.',
-      channel: 'MOCK Single Channel', publishedAt: '2026-11-15T12:00:00Z',
-    }], limit: 8,
+      channel: 'MOCK Single Channel',
+      publishedAt: '2026-11-15T12:00:00Z',
+      viewCount: 1200,
+    }],
+    limit: 8,
   });
-  assert.ok(singleSource.length > 0);
-  assert.ok(singleSource.every((idea) => idea.assessment === 'Uncertain'));
+  assert.deepEqual(generated, []);
 });
 
 void test('idea generation works with official news only and links its original source',() => {
   const ideas = generateEditorialIdeas({ ...base, news, videos: [], limit: 5 });
-  assert.ok(ideas.length >= 3);
+  assert.ok(ideas.length > 0);
   assert.ok(ideas.every((idea) => idea.engineGenerated && idea.ideaCategory));
   assert.ok(ideas.every((idea) => idea.sourceUrl?.startsWith('https://')));
   assert.ok(ideas.every((idea) => idea.videoIds.length === 0));
@@ -118,26 +138,23 @@ void test('editorial priority survives the validated local SQLite data shape', (
   );
 });
 
-void test('idea generation works with YouTube only without persisting raw video metadata', () => {
+void test('YouTube platform samples can support platform-aware ideas without publisher citations', () => {
   const ideas = generateEditorialIdeas({ ...base, news: [], videos, reportId: 'report-1', limit: 4 });
   assert.ok(ideas.length > 0);
-  assert.ok(ideas.every((idea) => idea.reportId === 'report-1'));
+  assert.ok(ideas.every((idea) => idea.engineScoreBasis === 'platform-aware-v3'));
   assert.ok(ideas.every((idea) => idea.videoIds.length > 0));
-  const persisted = JSON.stringify(ideas);
-  assert.doesNotMatch(persisted, /MOCK: Exoplanet methane spectroscopy explained|MOCK Science Channel|12345/);
+  assert.ok(ideas.every((idea) => (idea.evidenceSources ?? []).length === 0));
 });
 
-void test('mixed research can produce a category-specific cross-source idea', () => {
+void test('cross-source category stays unavailable without independent web evidence', () => {
   const ideas = generateEditorialIdeas({
     ...base,
     news,
-    videos,
+    videos: [],
     category: 'Cross-source',
     limit: 3,
   });
-  assert.ok(ideas.length > 0);
-  assert.ok(ideas.every((idea) => idea.ideaCategory === 'Cross-source'));
-  assert.ok(ideas.some((idea) => idea.sourceName === 'NASA' || idea.sourceName === 'ESA'));
+  assert.deepEqual(ideas, []);
 });
 
 void test('refresh avoids generating titles already present in Ideas', () => {
@@ -160,9 +177,63 @@ void test('a selected category changes the generated angle rather than acting as
   assert.ok(ideas.every((idea) => idea.ideaCategory === 'Evidence audit'));
 });
 
+
+void test('cross-source editorial angles require publisher and independent web evidence', () => {
+  const generated = generateEditorialIdeas({
+    ...base,
+    news,
+    videos: [
+      {
+        id: 'dQw4w9WgXcQ',
+        title: 'JWST exoplanet atmosphere methane spectroscopy signals',
+        description: 'Methane spectral lines and atmospheric measurement limits.',
+        channel: 'MOCK Science Channel A',
+        publishedAt: '2026-11-15T12:00:00Z',
+        viewCount: 2400000,
+      },
+      {
+        id: '9bZkp7q19f0',
+        title: 'James Webb exoplanet atmosphere water vapor analysis',
+        description: 'Water vapor observations and spectroscopy uncertainty.',
+        channel: 'MOCK Science Channel B',
+        publishedAt: '2026-11-14T12:00:00Z',
+        viewCount: 1200000,
+      },
+    ],
+    context: [{
+      title: 'JWST exoplanet atmosphere methane spectroscopy results from an independent research institute',
+      summary: 'The independent research paper discusses methane spectral lines, water vapor and the limits of atmospheric measurement.',
+      sourceName: 'Independent Research Institute',
+      sourceUrl: 'https://research.example.org/jwst-exoplanet-atmosphere',
+      publishedAt: '2026-11-16T10:00:00Z',
+    }],
+    category: 'Cross-source',
+    limit: 5,
+  });
+  assert.ok(generated.length > 0);
+  assert.ok(generated.every((idea) => idea.ideaCategory === 'Cross-source'));
+  assert.ok(generated.every((idea) => idea.videoIds.length > 0));
+  assert.ok(generated.every((idea) => idea.engineScoreBasis === 'platform-aware-v3'));
+});
+
 void test('no evidence produces no fabricated generated idea', () => {
   const ideas = generateEditorialIdeas({ ...base, news: [], videos: [], context: [] });
   assert.equal(ideas.length, 0);
+});
+
+void test('user-provided topic context alone does not create generated ideas', () => {
+  const ideas = generateEditorialIdeas({
+    ...base,
+    news: [],
+    videos: [],
+    context: [{
+      title: base.topic,
+      summary: 'User-selected topic context only; not an independent source or claim verification.',
+      sourceName: 'User-provided topic',
+    }],
+    limit: 4,
+  });
+  assert.deepEqual(ideas, []);
 });
 
 void test('manual ideas remain distinct from locally generated ideas', () => {
@@ -180,7 +251,7 @@ void test('automatic ingestion does not create duplicate ideas for unchanged evi
 });
 
 
-void test('idea generation uses title and description relevance without discarding missing view metrics', () => {
+void test('YouTube sample selection is independent of publisher editorial scoring', () => {
   const selected = selectIdeaGenerationVideos('JWST exoplanet atmosphere', [
     { id: 'dQw4w9WgXcQ', title: 'Unrelated gaming highlights', viewCount: 99000000 },
     { id: 'abc123XYZ_1', title: 'Daily unrelated roundup', description: 'JWST exoplanet atmosphere discovery details', viewCount: 199000000 },
@@ -204,40 +275,80 @@ void test('repeated engine-generated cards collapse in the Ideas list without me
   assert.equal(visible[0].id, duplicate.id);
   assert.equal(visible[1].id, personal.id);
   assert.equal(stored.length, 3);
+
+  const persianFirst = {
+    ...first,
+    topic: 'Overview alpha',
+    concept: 'پرسش اصلی: How methane spectral emission lines clearly reveal exoplanet atmosphere composition.',
+  };
+  const persianDuplicate = {
+    ...persianFirst,
+    id: 'persian-semantic-duplicate',
+    topic: 'Overview beta',
+  };
+  assert.equal(deduplicateDisplayIdeas([persianFirst, persianDuplicate]).length, 1);
 });
 
-void test('video-only idea hypotheses can use relevant videos even when view statistics are unavailable', () => {
+void test('one isolated YouTube video is insufficient evidence for an automated idea', () => {
   const generated = generateEditorialIdeas({
-    ...base, news: [],
-    videos: [{ id: 'dQw4w9WgXcQ', title: 'Exoplanet atmosphere', viewCount: null }],
+    ...base,
+    news: [],
+    videos: [{
+      id: 'dQw4w9WgXcQ',
+      title: 'JWST exoplanet atmosphere methane spectroscopy',
+      description: 'A local example with measurement limits.',
+      channel: 'MOCK Single Channel',
+      publishedAt: '2026-11-15T12:00:00Z',
+    }],
+  });
+  assert.deepEqual(generated, []);
+});
+
+void test('multiple YouTube platform signals can support a platform-aware idea without becoming publisher citations', () => {
+  const rawTitles = [
+    'MOCK: JWST exoplanet atmosphere methane spectroscopy signals',
+    'MOCK: James Webb exoplanet atmosphere water vapor analysis',
+  ];
+  const rawDescriptions = [
+    'MOCK: Methane spectral lines and atmospheric measurement limits.',
+    'MOCK: Water vapor observations and spectroscopy uncertainty.',
+  ];
+  const generated = generateEditorialIdeas({
+    ...base,
+    news: [],
+    reportId: 'report-video-test',
+    videos: [
+      { id: 'dQw4w9WgXcQ', title: rawTitles[0], description: rawDescriptions[0],
+        channel: 'MOCK Science Channel A', publishedAt: '2026-11-15T12:00:00Z',
+        viewCount: 2400000, growth: { snapshotCount: 3, deltaViews: 90000, viewsPerHour: 3750,
+          viewsPerDay: 90000, channelBaselineViewsPerDay: 10000, channelOutlierRatio: 9,
+          measuredAt: base.now, status: 'measured' } },
+      { id: '9bZkp7q19f0', title: rawTitles[1], description: rawDescriptions[1],
+        channel: 'MOCK Science Channel B', publishedAt: '2026-11-14T12:00:00Z',
+        viewCount: 1200000, growth: { snapshotCount: 2, deltaViews: 24000, viewsPerHour: 1000,
+          viewsPerDay: 24000, channelBaselineViewsPerDay: 4000, channelOutlierRatio: 6,
+          measuredAt: base.now, status: 'measured' } },
+    ],
+    limit: 5,
   });
   assert.ok(generated.length > 0);
-  assert.ok(generated.every((idea) => idea.engineScore !== undefined));
-  assert.ok(generated.every((idea) => idea.engineScoreReason));
+  assert.ok(generated.every((idea) => idea.engineScoreBasis === 'platform-aware-v3'));
+  assert.ok(generated.every((idea) => idea.videoIds.length >= 2));
+  assert.ok(generated.every((idea) => !(idea.evidenceSources ?? []).some((source) => source.sourceUrl.includes('youtube.com'))));
 });
-
-const batchAnchors = Array.from({ length: 30 }, (_, index) =>
-  'astroterm' + String.fromCharCode(97 + Math.floor(index / 26)) + String.fromCharCode(97 + (index % 26)),
-);
-const batchAnchorText = batchAnchors.join(' ');
-const batchNews: SpaceNewsItem[] = Array.from({ length: 12 }, (_, index) => ({
-  id: 'batch-news-' + index,
-  sourceId: index % 2 ? 'esa-science' : 'nasa',
-  sourceName: index % 2 ? 'ESA' : 'NASA',
-  title: 'MOCK: JWST exoplanet atmosphere ' + batchAnchorText + ' mission observation record' + index,
-  summary: 'MOCK: JWST exoplanet atmosphere ' + batchAnchorText + ' measurement calibration uncertainty instrument response analysis',
-  url: 'https://' + (index % 2 ? 'esa.int' : 'nasa.gov') + '/mock-batch-' + index,
-  publishedAt: new Date(Date.UTC(2026, 10, 15 - index)).toISOString(),
-}));
-
-const batchVideos = Array.from({ length: 6 }, (_, index) => ({
-  id: ['dQw4w9WgXcQ', '9bZkp7q19f0', '3JZ_D3ELwOQ', 'L_jWHffIx5E', 'kJQP7kiw5Fk', 'fJ9rUzIMcZQ'][index],
-  title: 'MOCK: JWST exoplanet atmosphere spectroscopy sample ' + index,
-  description: 'MOCK: JWST exoplanet atmosphere ' + batchAnchorText + ' uncertainty measurement',
-  channel: 'MOCK channel ' + index,
-  publishedAt: new Date(Date.UTC(2026, 10, 10 - index)).toISOString(),
-  viewCount: 1800000 - index * 25000,
-}));
+void test('user-provided topic text alone is not treated as independent evidence', () => {
+  const generated = generateEditorialIdeas({
+    ...base,
+    news: [],
+    videos: [],
+    context: [{
+      title: base.topic,
+      summary: 'This is only the topic entered by the user.',
+      sourceName: 'User-provided topic',
+    }],
+  });
+  assert.deepEqual(generated, []);
+});
 
 void test('one batch can return more than eight ideas without duplicate IDs or titles', () => {
   const generated = generateEditorialIdeas({ ...base, topic: 'JWST exoplanet atmosphere', news: batchNews, videos: batchVideos, limit: 25 });
@@ -278,16 +389,20 @@ void test('distinct evidence anchors in the same category are not incorrectly co
   assert.equal(new Set(generated.map((idea) => idea.topic)).size, generated.length);
 });
 
-void test('video-only idea generation derives angles from the highest-ranked relevant video concepts', () => {
+void test('YouTube-only titles cannot become generated editorial ideas', () => {
   const generated = generateEditorialIdeas({
-    ...base, news: [],
-    videos: [{ id: 'dQw4w9WgXcQ', title: 'JWST exoplanet atmosphere methane spectroscopy', description: 'Detailed methane signatures and spectroscopic measurement limits.', viewCount: 2400000, publishedAt: '2026-11-15T12:00:00Z' }],
+    ...base,
+    news: [],
+    videos: [{
+      id: 'dQw4w9WgXcQ',
+      title: 'JWST exoplanet atmosphere methane spectroscopy',
+      description: 'Detailed methane signatures and spectroscopic measurement limits.',
+      viewCount: 2400000,
+      publishedAt: '2026-11-15T12:00:00Z',
+    }],
     limit: 8,
   });
-  assert.ok(generated.length > 0);
-  assert.ok(generated.some((idea) => /methane|spectroscopy/i.test(idea.topic)));
-  assert.ok(generated.every((idea) => idea.videoIds.includes('dQw4w9WgXcQ')));
-  assert.doesNotMatch(JSON.stringify(generated), /JWST exoplanet atmosphere methane spectroscopy/);
+  assert.deepEqual(generated, []);
 });
 
 void test('semantic aliases are retained by the shared relevance matcher', () => {
@@ -298,13 +413,13 @@ void test('semantic aliases are retained by the shared relevance matcher', () =>
   assert.deepEqual(selected.map((video) => video.id), ['abcdefghijk']);
 });
 
-void test('idea evidence scope reports all received records separately from detailed topic matches', () => {
+void test('publisher-backed ideas use publisher evidence and ignore the separate YouTube sample', () => {
   const unrelatedNews: SpaceNewsItem = {
     id: 'unrelated-news',
     sourceId: 'sky-telescope',
     sourceName: 'Sky & Telescope',
     title: 'MOCK: Lunar observation schedule published',
-    summary: 'MOCK: A separate lunar observing guide with no exoplanet or spectroscopy detail.',
+    summary: 'MOCK: A separate lunar observing guide focused on night-sky viewing schedules and telescope setup.',
     url: 'https://skyandtelescope.org/mock-lunar-schedule',
     publishedAt: '2026-11-10T12:00:00Z',
   };
@@ -312,13 +427,24 @@ void test('idea evidence scope reports all received records separately from deta
     ...base,
     news: [...news, unrelatedNews],
     videos,
+    reportId: 'report-from-separate-youtube-sample',
     limit: 1,
   });
   assert.ok(generated.length > 0);
-  assert.match(generated[0].concept, /3 publisher item\(s\) received; 2 topic-matched/);
-  assert.match(generated[0].concept, /2 YouTube record\(s\) received; 2 relevant sample\(s\) selected for detailed analysis/);
+  assert.ok(generated[0].concept.includes('3 publisher item(s) received; 2 topic-matched'));
+  assert.ok(generated[0].concept.includes('YouTube'));
+  assert.ok(generated[0].sourceUrl?.startsWith('https://'));
+  assert.ok(generated[0].videoIds.length > 0);
+  assert.equal(generated[0].engineScoreBasis, 'platform-aware-v3');
+  assert.ok((generated[0].evidenceSources ?? []).length > 0);
+  assert.ok((generated[0].evidenceSources ?? []).every((source) => source.sourceType === 'publisher'));
+  assert.equal(generated[0].reportId, 'report-from-separate-youtube-sample');
+  assert.ok(videos.every((video) =>
+    !generated[0].topic.includes(video.title) &&
+    !generated[0].concept.includes(video.title) &&
+    !generated[0].concept.includes(video.description ?? ''),
+  ));
 });
-
 
 void test('the local engine evaluates the complete retained YouTube sample without a fixed 100-record cutoff', () => {
   const records = Array.from({ length: 125 }, (_, index) => ({
@@ -457,4 +583,111 @@ void test('raw lifetime view counts cannot change the selected related-video ord
     selectIdeaGenerationVideos(base.topic, sample).map((video) => video.id),
     selectIdeaGenerationVideos(base.topic, reversedViews).map((video) => video.id),
   );
+});
+
+
+void test('refresh with thousands of saved ideas stays bounded and does not mutate saved records', () => {
+  const saved = Array.from({ length: 2500 }, (_, index) => ({
+    ...createManualIdea(
+      'Previously saved personal angle ' + index,
+      'A user-authored note kept in the local library.',
+      '',
+      'Germany',
+      ['en'],
+    ),
+    id: 'saved-idea-' + index,
+  }));
+  const originalIds = saved.map((idea) => idea.id);
+  const startedAt = Date.now();
+  const generated = generateEditorialIdeas({
+    ...base,
+    news,
+    existingIdeas: saved,
+    limit: 10,
+    now: base.now + 5000,
+  });
+  const elapsed = Date.now() - startedAt;
+  assert.ok(generated.length <= 10);
+  assert.equal(new Set(generated.map((idea) => idea.id)).size, generated.length);
+  assert.deepEqual(saved.map((idea) => idea.id), originalIds);
+  assert.ok(elapsed < 5000, 'a local refresh should not spend seconds scanning 2,500 saved ideas');
+});
+
+void test('refresh updates an active generated idea in place while preserving user-authored fields', () => {
+  const original = generateEditorialIdeas({ ...base, news, videos, limit: 1 })[0];
+  assert.ok(original);
+  const edited = { ...original, note: 'Keep my note', decision: 'Keep my decision', status: 'Saved Opportunities' as const, createdAt: 1234 };
+  const refreshed = generateEditorialIdeas({
+    ...base, news, videos, existingIdeas: [edited], refreshExisting: true, now: base.now + 5000, limit: 1,
+  });
+  const same = refreshed.find((idea) => idea.id === edited.id);
+  assert.ok(same);
+  assert.equal(same.note, 'Keep my note');
+  assert.equal(same.decision, 'Keep my decision');
+  assert.equal(same.status, 'Saved Opportunities');
+  assert.equal(same.createdAt, 1234);
+  assert.ok((same.engineScoredAt ?? 0) > 0);
+});
+
+
+void test('research dossier status and source quotations flow into generated video ideas', () => {
+  const researchDossier = {
+    version: 1 as const, updatedAt: base.now, provider: 'gemini' as const, model: 'test-model',
+    hypotheses: [{
+      id: 'h-supported',
+      claim: 'JWST methane spectroscopy measurements and instrument limits',
+      rationale: 'The reviewed evidence describes methane spectroscopy and uncertainty in JWST atmospheric interpretation.',
+      status: 'supported' as const, confidence: 'moderate' as const,
+      supportingEvidenceIds: ['e1', 'e2'], challengingEvidenceIds: [], missingEvidence: [],
+      supportingQuotes: [{
+        evidenceId: 'e1',
+        quote: 'The original instrument team describes methane spectral interpretation limits in the observation.',
+        sourceName: 'NASA',
+        sourceUrl: 'https://science.nasa.gov/example/jwst-methane',
+        publisherFamily: 'nasa.gov',
+        verification: 'verbatim-checked' as const,
+      }],
+      challengingQuotes: [],
+    }],
+    evidenceReviews: [], nextQueries: [], completedQueries: [], contradictions: [], gaps: [],
+    conclusion: 'A bounded supported hypothesis.', confidence: 'moderate' as const,
+    stoppingReason: 'Reviewed.', reviewStatus: 'independently-reviewed' as const,
+  };
+  const ideas = generateEditorialIdeas({ ...base, news, videos: [], researchDossier, limit: 5 });
+  assert.ok(ideas.length > 0);
+  const matched = ideas.find((idea) => idea.researchStatus === 'supported');
+  assert.ok(matched);
+  assert.ok(matched?.evidenceSources?.some((source) => source.sourceUrl === 'https://science.nasa.gov/example/jwst-methane'));
+  assert.ok(matched?.concept.includes('supported'));
+});
+
+void test('subtopic opportunity scoring does not borrow momentum from a different topic angle', () => {
+  const score = createEditorialOpportunityScorer({
+    topic: 'Mars exploration',
+    news: [
+      { title: 'Mars water ice observations', summary: 'Evidence about water ice beneath the surface.', sourceName: 'NASA', sourceUrl: 'https://www.nasa.gov/mars-water', publishedAt: '2026-11-20T00:00:00Z' },
+      { title: 'Mars mission budget and launch schedule', summary: 'Cost planning and mission schedule details.', sourceName: 'ESA', sourceUrl: 'https://www.esa.int/mars-budget', publishedAt: '2026-11-20T00:00:00Z' },
+    ],
+    videos: [
+      { title: 'Mars water ice explained', channel: 'Science A', publishedAt: '2026-11-20T00:00:00Z', viewsPerHour: 1500, channelOutlierRatio: 8 },
+      { title: 'Mars launch budget explained', channel: 'Science B', publishedAt: '2026-11-20T00:00:00Z', viewsPerHour: 10, channelOutlierRatio: 0.5 },
+    ],
+    now: Date.parse('2026-11-25T12:00:00Z'),
+  });
+  const water = score('water ice').components.platformMomentum;
+  const budget = score('mission budget').components.platformMomentum;
+  assert.ok(water > budget);
+});
+
+void test('local idea validation preserves research verification fields', () => {
+  const generated = generateEditorialIdeas({ ...base, news, videos: [], limit: 1 });
+  assert.ok(generated.length > 0);
+  const enriched = generated.map((idea) => ({
+    ...idea, researchStatus: 'supported' as const, researchConfidence: 'moderate' as const,
+  }));
+  const data = defaults();
+  data.ideas = enriched;
+  const restored = validateLocal(data);
+  assert.deepEqual(restored.ideas.map((idea) => idea.researchStatus), ['supported']);
+  assert.deepEqual(restored.ideas.map((idea) => idea.researchConfidence), ['moderate']);
 });

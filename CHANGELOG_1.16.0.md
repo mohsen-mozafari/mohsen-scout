@@ -1,0 +1,28 @@
+# MOHSEN SCOUT 1.16.0 — research discovery upgrade
+
+Base: Build 26 commit `df2917dca62ef0882fdca0621a42e83b9f84dca2`.
+This release candidate is isolated on `feature/v1.16.0-research-discovery-from-build-26`; it does not modify `main`.
+
+## Implemented
+- Added a model-backed research agent using the Gemini, Groq, Cloudflare or OpenRouter provider already configured in Settings. Each web/news round can ask the model to form falsifiable hypotheses, classify supplied evidence as support/challenge/context, assess visible source type and freshness, identify contradictions and gaps, and propose the next targeted searches.
+- Added strict local validation for the model response: only evidence IDs actually present in the independent web result set are retained; duplicate searches, unknown IDs and YouTube-hosted records are filtered. Malformed model output falls back to the explicit local heuristic path and is reported as such.
+- Persisted a bounded research dossier in device-local research memory: hypotheses, evidence roles, source assessments, completed and pending research queries, contradictions, gaps, conclusion, confidence and stopping reason. Later research passes can use this prior dossier.
+- Research-agent calls reuse the configured provider fallback chain and local OpenRouter usage accounting. The agent receives web/publisher evidence only, not raw YouTube API metadata.
+- Replaced one-shot keyword-frequency follow-up planning with an iterative hypothesis-review loop. After each web/news round, the engine rebuilds candidate hypotheses from accumulated evidence and selects a new branch for independent confirmation, counterevidence, or mechanism checks.
+- Added an auditable hypothesis review record to source activity: provisional status, confidence, linked evidence IDs, support/challenge signal counts, and host-family diversity. Explicitly labels these as lexical signals and domain proxies, not semantic proof or verified ownership independence.
+- Added tests for contested hypotheses, exclusion of YouTube/invalid URLs from independent evidence, counterevidence planning, and repeat-query suppression.
+- YouTube collection is now the first source phase. A missing key, exhausted quota, network error, or empty YouTube result does not prevent the independent feed, web/news, and Wikimedia phases from running.
+- Independent web/news research now performs one initial search plus up to three bounded adaptive follow-up searches. Each round re-evaluates the accumulated evidence and may branch toward independent confirmation, counterevidence, or mechanism checks. Search ranking is not treated as source credibility.
+- Added unit tests for bounded query planning, URL validation, and duplicate-query suppression. The planner now suppresses follow-up terms already explored in the current run.
+- Added a device-local pending-research checkpoint using AsyncStorage. A run records its input before network work; after an unexpected process exit, the next successful app launch automatically restarts that topic as a fresh research pass. The checkpoint is cleared only after a completed run and expires after 14 days.
+- Added an isolated Android 1.16.0 workflow with package version 1.16.0 / Android versionCode 36, preserving signed ARM64 build verification and release publishing.
+
+## Important compliance boundary retained from Build 26
+- Raw YouTube API metadata remains isolated from idea generation, scoring, research summaries, durable idea text, and external AI prompts. No derived views/hour, growth, engagement, or market-wide score was added.
+- The existing 29-day YouTube metadata retention policy is unchanged.
+- No server, scraping, always-on polling, or new paid provider was introduced.
+
+## Not claimed as complete
+- Recovery is topic-level, not an exact per-source cursor: if Android kills the process, the app restarts that research topic from the beginning on the next launch. It does not resume midway through a specific API call. The existing Android OS scheduler remains best-effort and cannot guarantee execution after force-stop or battery restrictions.
+- This is a bounded discovery improvement, not a claim that the app is an autonomous researcher with unlimited crawling or a market-wide YouTube census.
+- Native device testing and the GitHub Actions APK result must be confirmed before treating this candidate as install-ready.

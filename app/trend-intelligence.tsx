@@ -1,17 +1,20 @@
-import { useRef, useState } from 'react';
-import { Linking, View, Text } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { View, Text } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
-import { Page, Panel, Heading, Txt, Field, Action, Choices, styles, ErrorBox, useOperation } from '@/components/ScoutUI';
+import { Panel, Heading, Txt, Field, Action, Choices, styles, ErrorBox, useOperation } from '@/components/ScoutUI';
 import { useScout } from '@/lib/store';
+import { SETTINGS_ROUTE } from '@/lib/routes';
 import { searchYouTubeSample, type YouTubeSampleVideo } from '@/lib/api';
 import { getKey } from '@/lib/vault';
 import { MediaPreview } from '@/components/MediaPreview';
 import { rememberTopicDossier } from '@/lib/topic-dossier';
 import { recordRuntimeFinish, recordRuntimeStart } from '@/lib/runtime-metrics';
+import { openExternalUrl } from '@/lib/external-links';
+import type { Video } from '@/lib/types';
 
 const formatCount = (value: number | null, label: string) => value === null ? label + ' unavailable' : value.toLocaleString() + ' ' + label;
 
-export default function TrendIntelligence() {
+export function AdvancedDiscoveryPanel() {
   const params = useLocalSearchParams<{ topic?: string; idea?: string }>();
   const preferences = useScout((state) => state.data.preferences);
   const linkedIdea = useScout((state) => state.data.ideas.find((idea) => idea.id === params.idea));
@@ -19,7 +22,7 @@ export default function TrendIntelligence() {
   const [videos, setVideos] = useState<YouTubeSampleVideo[]>([]);
   const [warning, setWarning] = useState('');
   const [days, setDays] = useState(String(preferences.defaultResearchDays ?? 30));
-  const [sort, setSort] = useState('Most Views');
+  const [sort, setSort] = useState('Discovery Mix');
   const [nextPageToken, setNextPageToken] = useState('');
   const [activeSearch, setActiveSearch] = useState<{ topic: string; days: 0 | 7 | 30 | 90; sort: string }>();
   const searchGeneration = useRef(0);
@@ -49,7 +52,7 @@ export default function TrendIntelligence() {
         onQuota: () => useScout.getState().commit((data) => ({ ...data, budget: { ...data.budget, exhausted: true } })),
       }, 50, {
         days: search.days,
-        order: search.sort === 'Newest' ? 'date' : search.sort === 'Most Likes' ? 'relevance' : 'viewCount',
+        order: search.sort === 'Discovery Mix' ? 'discovery' : search.sort === 'Newest' ? 'date' : search.sort === 'Most Likes' ? 'relevance' : 'viewCount',
         region: preferences.region,
         language: preferences.languages[0],
         ...(pageToken ? { pageToken } : {}),
@@ -61,16 +64,30 @@ export default function TrendIntelligence() {
       throw error;
     }
     if (generation !== searchGeneration.current) return;
+    let persistedVideos: Video[] = [];
+    try {
+      const fetchedAt = Date.now();
+      persistedVideos = await useScout.getState().saveYouTubeSample(result.videos.map((video) => ({
+        id: video.id, title: video.title, description: video.description, channel: video.channel,
+        thumbnail: video.thumbnailUrl, publishedAt: video.publishedAt, fetchedAt,
+        query: search.topic, viewCount: video.viewCount, likeCount: video.likeCount,
+        commentCount: null, channelId: video.channelId,
+      })));
+    } catch {
+      setWarning('YouTube sample was loaded, but its local growth snapshot could not be saved.');
+    }
+    const growthById = new Map(persistedVideos.map((video) => [video.id, video.growth]));
+    const pageVideos = result.videos.map((video) => ({ ...video, growth: growthById.get(video.id) ?? video.growth }));
     const combinedVideos = append
-      ? [...videos, ...result.videos.filter((video) => !videos.some((item) => item.id === video.id))]
-      : result.videos;
+      ? [...videos, ...pageVideos.filter((video) => !videos.some((item) => item.id === video.id))]
+      : pageVideos;
     rememberTopicDossier(search.topic, {
       videos: combinedVideos,
       videoCriteria: {
         days: search.days,
         region: preferences.region,
         language: preferences.languages[0] ?? '',
-        order: search.sort === 'Newest' ? 'date' : search.sort === 'Most Likes' ? 'relevance' : 'viewCount',
+        order: search.sort === 'Discovery Mix' ? 'discovery' : search.sort === 'Newest' ? 'date' : search.sort === 'Most Likes' ? 'relevance' : 'viewCount',
       },
     });
     setVideos(combinedVideos);
@@ -94,7 +111,7 @@ export default function TrendIntelligence() {
     void op.run(() => executeSample(activeSearch, nextPageToken, true), 'Loaded the next YouTube result page.');
   };
 
-  const sortedVideos = [...videos].sort((a, b) => {
+  const sortedVideos = sort === 'Discovery Mix' ? videos : [...videos].sort((a, b) => {
     if (sort === 'Newest') return Date.parse(b.publishedAt) - Date.parse(a.publishedAt);
     const aValue = sort === 'Most Likes' ? a.likeCount : a.viewCount;
     const bValue = sort === 'Most Likes' ? b.likeCount : b.viewCount;
@@ -105,8 +122,8 @@ export default function TrendIntelligence() {
   const channels = new Set(videos.map((video) => video.channelId)).size;
 
   return (
-    <Page title="YouTube Trend Sample" eyebrow="BOUNDED API SAMPLE" showBack subtitle="Inspect a paginated sample from YouTube's official API. This is not a global market ranking or a demand forecast.">
-      <Txt muted>Measure YouTube separately from search interest and publisher news. This view uses the official YouTube Data API, not scraping.</Txt>
+    <>
+      <Txt muted>Use this advanced mode when one standard YouTube query is not enough. It combines distinct official result lanes, deduplicates them and paginates the bounded sample; it does not claim to measure the whole platform.</Txt>
       {linkedIdea ? <Txt muted>Research context: {linkedIdea.topic}. Only video links you explicitly save below become durable personal references.</Txt> : null}
       <Panel>
         <Field label="Space topic" value={topic} onChange={(value) => { setTopic(value); resetSample(); }} placeholder="e.g. exoplanet atmosphere discoveries" />
@@ -122,13 +139,15 @@ export default function TrendIntelligence() {
         />
         <Choices
           label="Sort sample by"
-          options={['Newest', 'Most Views', 'Most Likes']}
+          options={['Discovery Mix', 'Newest', 'Most Views', 'Most Likes']}
           selected={[sort]}
           onChange={(values) => { setSort(values[0]); resetSample(); }}
         />
         <Action busy={op.busy} disabled={!topic.trim()} onPress={run}>Sample YouTube videos</Action>
-        <Txt muted>{sort === 'Most Likes' ? 'Each page samples two discovery pools (relevance and view-count order), then ranks only returned videos by actual public like counts. Estimate: about 202 quota units per page. This is not a global like-count ranking.' : 'Each page uses one official search request plus batched video and channel statistics (about 102 quota units). Newest sorts the returned sample by publication timestamp; Most Views sorts by actual public view counts.'}</Txt>
-        <Txt muted>Use Load next 50 to expand the same search. This remains a bounded sample, not a complete market ranking; nothing loads automatically in the background.</Txt>
+        <Txt muted>{sort === 'Discovery Mix' ? 'Each page samples three official YouTube search lanes (view-count order, newest-first and relevance) and interleaves distinct results without calculating a growth score. Estimate: about 302 quota units per page.' : sort === 'Most Likes' ? 'Each page samples two discovery pools (relevance and view-count order), then compares raw public like counts within the returned sample. Estimate: about 202 quota units per page; this is not a global ranking.' : 'Each page uses one official search request plus video and channel statistics (about 102 quota units). Newest follows YouTube publication-date order; Most Views follows YouTube view-count order.'}</Txt>
+        <Txt muted>Use Load next 50 to expand the same bounded sample. Discovery Mix spends more API quota to cover three official result lanes. Nothing scans automatically in the background.</Txt>
+        <Action secondary disabled={!topic.trim()} onPress={() => router.push({ pathname: '/deep-research', params: { topic: topic.trim() } })}>Research independent web and news sources</Action>
+        <Action secondary onPress={() => router.push('/browser')}>Open internal web browser</Action>
       </Panel>
       {Boolean(warning) && <Txt muted>{warning}</Txt>}
       {videos.length > 0 && (
@@ -140,15 +159,16 @@ export default function TrendIntelligence() {
       )}
       {sortedVideos.map((video) => (
         <Panel key={video.id}>
-          <MediaPreview uri={video.thumbnailUrl} aspectRatio={16 / 9} onPress={() => void Linking.openURL(video.url).catch(() => {})} alt={video.title} />
+          <MediaPreview uri={video.thumbnailUrl} aspectRatio={16 / 9} onPress={() => void openExternalUrl(video.url, preferences.uiLanguage ?? 'fa')} alt={video.title} />
           <View style={{ gap: 5 }}>
             <Heading>{video.title}</Heading>
             <Text style={styles.badge}>{video.channel}</Text>
             <Txt muted>{formatCount(video.viewCount, 'views')} · {formatCount(video.likeCount, 'likes')}</Txt>
+            <Txt muted>{video.growth?.viewsPerHour == null ? 'Growth: awaiting another snapshot' : video.growth.viewsPerHour.toLocaleString(undefined, { maximumFractionDigits: 1 }) + ' views/hour'} · {video.growth?.channelOutlierRatio == null ? 'Channel baseline unavailable' : video.growth.channelOutlierRatio.toLocaleString(undefined, { maximumFractionDigits: 2 }) + '× channel baseline'}</Txt>
             <Txt muted>{video.channelSubscriberCount === null ? 'Subscribers hidden/unavailable' : video.channelSubscriberCount.toLocaleString() + ' subscribers'} · {video.channelVideoCount === null ? 'Channel video total unavailable' : video.channelVideoCount.toLocaleString() + ' channel videos'}</Txt>
             <Txt muted>Published {new Date(video.publishedAt).toLocaleDateString()}</Txt>
           </View>
-          <Action secondary onPress={() => void Linking.openURL(video.url).catch(() => {})}>Open video on YouTube</Action>
+          <Action secondary onPress={() => void openExternalUrl(video.url, preferences.uiLanguage ?? 'fa')}>Open video on YouTube</Action>
             {linkedIdea ? (
               <Action
                 secondary
@@ -168,7 +188,22 @@ export default function TrendIntelligence() {
       {videos.length > 0 && !nextPageToken && <Txt muted>YouTube has no next page for this query and filter set.</Txt>}
       {Boolean(op.error) && <ErrorBox message={op.error} onRetry={run} />}
       {Boolean(op.message) && <Txt muted>{op.message}</Txt>}
-      <Action secondary onPress={() => router.push('/(tabs)/settings')}>Manage YouTube API key and research defaults</Action>
-    </Page>
+      <Action secondary onPress={() => router.push(SETTINGS_ROUTE)}>Manage YouTube API key and research defaults</Action>
+    </>
   );
+}
+
+export default function TrendIntelligence() {
+  const params = useLocalSearchParams<{ topic?: string; idea?: string }>();
+  useEffect(() => {
+    router.replace({
+      pathname: '/youtube',
+      params: {
+        mode: 'advanced',
+        ...(typeof params.topic === 'string' ? { topic: params.topic } : {}),
+        ...(typeof params.idea === 'string' ? { idea: params.idea } : {}),
+      },
+    });
+  }, [params.topic, params.idea]);
+  return null;
 }

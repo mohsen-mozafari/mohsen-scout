@@ -7,6 +7,7 @@
 - Confirmed Android startup crash: AndroidX Startup could not initialize `WorkManagerInitializer` because R8 removed reflectively-instantiated Room/WorkManager constructors. A local Expo config plugin adds the two upstream keep rules while retaining R8; a post-prebuild check verifies the file is present and referenced by the generated app Gradle configuration.
 - Existing `expo-background-task`, scheduler, SQLite, SecureStore, notification, backup/restore, existing Opportunities/Library/Notes and API quota code are preserved. No scheduler feature is removed to hide the startup error.
 - New Space Radar replaces the Discover landing view; the original general YouTube research screen is preserved as `/youtube` and reachable from the Radar dashboard. Existing tabs remain one app.
+- Owner-approved current policy: YouTube is the primary research input, growth snapshots and YouTube metadata are retained without automatic expiry, and both the local engine and Deep Research models analyze the platform signals. The older 29-day/YouTube-isolation notes below are historical and superseded.
 - Added on-demand NASA/JPL/ESA RSS reading, niche-by-source coverage, a bounded official YouTube popularity sample plus public channel-size metadata charged to the existing budget, Wikimedia monthly article pageviews, source-linked Deep Research outline and narration scaffold, and save-to-Notes.
 - RSS and Wikimedia results are in-memory cached for 10 minutes. No periodic news polling, server, large history store or new database table is introduced. YouTube key remains in SecureStore.
 - Version-1 backups without Space preferences remain importable. Legacy SQLite preferences merge with current defaults before validation. The original My Library continues to enforce its YouTube-link-only contract.
@@ -148,7 +149,7 @@ An APK build cannot be launched or verified from this session: no build executor
 
 ## Mock coverage
 
-Original 25 checks: Mohsen/manual defaults; persisted schema rejection; 29-day metadata expiry; personal bookmarks; backup round trip and API/AI exclusions; invalid backup and stripped injected credential fields; local quota/Pacific reset; query generation; official endpoint and separate region/language; deduplication; pagination cap; quota-stop hook; pre-network budget gate; malformed responses; concurrent suppression; invalid key/disabled API; bounded retries and per-attempt charging; no automatic AI POST retry; offline; timeout/abort; zero-price model selection; unavailable model; no API metadata in prompts or generated ideas.
+Historical 25-check baseline (before owner-approved indefinite retention): Mohsen/manual defaults; persisted schema rejection; former 29-day metadata expiry; personal bookmarks; backup round trip and API/AI exclusions; invalid backup and stripped injected credential fields; local quota/Pacific reset; query generation; official endpoint and separate region/language; deduplication; pagination cap; quota-stop hook; pre-network budget gate; malformed responses; concurrent suppression; invalid key/disabled API; bounded retries and per-attempt charging; no automatic AI POST retry; offline; timeout/abort; zero-price model selection; unavailable model; no API metadata in prompts or generated ideas.
 
 Ten new checks:
 

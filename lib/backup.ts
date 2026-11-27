@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { defaults, type LocalData, regions, statuses, DEFAULT_SPACE_NEWS_SOURCE_IDS } from './types';
+import { researchDossierSchema } from './validation';
 const text = z.string().max(50000);
 const identifierSchema = z.string().min(1).max(200);
 const timestamp = z.number().finite().nonnegative();
@@ -100,7 +101,7 @@ const backupSchema = z.object({
         title: text,
         sourceUrl: text,
         publishedAt: z.string().datetime().nullable(),
-      })).max(12),
+      })).max(120),
       keyFindings: z.array(text).max(12),
       unresolvedQuestions: z.array(text).max(12),
       contradictions: z.array(text).max(8),
@@ -108,16 +109,47 @@ const backupSchema = z.object({
       history: z.array(z.object({
       capturedAt: timestamp,
       sourceFingerprint: text.max(64),
-      sourceCount: z.number().int().min(0).max(12),
-      newSourceCount: z.number().int().min(0).max(12),
-      updatedSourceCount: z.number().int().min(0).max(12),
+      sourceCount: z.number().int().min(0).max(120),
+      newSourceCount: z.number().int().min(0).max(120),
+      updatedSourceCount: z.number().int().min(0).max(120),
       keyFindings: z.array(text.max(2000)).max(8),
       unresolvedQuestions: z.array(text.max(500)).max(12),
       contradictions: z.array(text.max(500)).max(8),
       confidence: z.enum(['low', 'moderate', 'high']),
       changes: z.array(text.max(300)).max(4),
     })).max(8).optional().default([]),
+      researchDossier: researchDossierSchema.optional(),
     })).max(40).optional().default([]),
+    researchActivity: z.array(z.object({
+      id: identifierSchema,
+      engine: z.enum(['YouTube Data API', 'Firecrawl Search', 'Publisher Feeds', 'Wikimedia', 'Internal Engine', 'AI Provider Review']),
+      query: text.max(1600),
+      topic: text.max(180),
+      niche: text.max(180),
+      startedAt: timestamp,
+      completedAt: timestamp.optional(),
+      durationMs: z.number().int().min(0).max(3600000).optional(),
+      status: z.enum(['running', 'success', 'partial', 'empty', 'error', 'skipped']),
+      resultCount: z.number().int().min(0).max(100000),
+      analyzedCount: z.number().int().min(0).max(100000),
+      results: z.array(z.object({
+        id: text.max(1000),
+        title: text.max(500),
+        sourceName: text.max(160),
+        url: z.string().url().optional(),
+        summary: text.max(1200),
+        publishedAt: z.string().datetime().optional(),
+        relevanceScore: z.number().int().min(0).max(100),
+        relevanceBand: z.enum(['high', 'medium', 'low']),
+        sourceAssessment: z.enum(['configured-feed', 'not-assessed']),
+        includedInAnalysis: z.boolean(),
+        decisionReason: text.max(700),
+        feedback: z.enum(['useful', 'irrelevant', 'duplicate', 'weak-source']).optional(),
+      })).max(8),
+      warnings: z.array(text.max(700)).max(12),
+      error: text.max(700).optional(),
+      reportId: identifierSchema.optional(),
+    })).max(400).optional().default([]),
     preferences,
   }),
 });
@@ -140,6 +172,7 @@ export function exportBackup(data: LocalData) {
         })),
         notes: data.notes,
         researchMemory: data.researchMemory,
+        researchActivity: data.researchActivity.map(({ reportId: _reportId, ...event }) => event),
         ideas: data.ideas.map(({ reportId: _reportId, ...value }) => ({
           ...value,
           videoIds: value.videoIds.filter((id) =>
@@ -193,6 +226,7 @@ export function importBackup(raw: string): LocalData {
   return {
     ...fresh,
     ...result.data.personal,
+    researchActivity: result.data.personal.researchActivity.map(({ reportId: _reportId, ...event }) => event),
     ideas: result.data.personal.ideas.map((idea) => ({
       ...idea,
       videoIds: idea.videoIds.filter((id) =>
@@ -220,6 +254,7 @@ export function restorePersonalData(current: LocalData, restored: LocalData): Lo
     links: restored.links,
     notes: restored.notes,
     researchMemory: restored.researchMemory,
+    researchActivity: restored.researchActivity.map(({ reportId: _reportId, ...event }) => event),
     opinions: current.opinions.filter((opinion) => {
       const before = current.ideas.find((idea) => idea.id === opinion.ideaId);
       const after = restored.ideas.find((idea) => idea.id === opinion.ideaId);
@@ -233,7 +268,7 @@ export function restorePersonalData(current: LocalData, restored: LocalData): Lo
     }),
   };
 }
-export function personalLinks(data: LocalData) {
+export function personalLinks(data: Pick<LocalData, 'links'>) {
   return data.links
     .map(
       (l) => `${l.manualTitle || l.topic || 'Saved video'}\n${l.url}${l.note ? `\n${l.note}` : ''}`,

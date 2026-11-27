@@ -1,8 +1,12 @@
 import { z } from 'zod';
-import { type LocalData, regions, statuses } from './types';
+import { DEFAULT_CLOUDFLARE_FREE_MODEL, DEFAULT_SECOND_OPINION_ORDER, type LocalData, type SecondOpinionProvider, regions, statuses } from './types';
+import type { RecordDomain } from './storage-records';
+
 const id = z.string().min(1);
 const text = z.string();
 const time = z.number().finite().nonnegative();
+const secondOpinionProviderSchema = z.enum(['gemini', 'xai', 'groq', 'cloudflare', 'openrouter'])
+  .transform((provider): SecondOpinionProvider => provider === 'groq' ? 'xai' : provider);
 export const inputSchema = z.object({
   topic: text,
   region: z.enum(regions),
@@ -11,6 +15,75 @@ export const inputSchema = z.object({
   duration: z.enum(['any', 'short', 'medium', 'long']),
   category: text,
   maxResults: z.number().int().min(1).max(100),
+});
+export const researchDossierSchema = z.object({
+  version: z.literal(1),
+  updatedAt: time,
+  provider: secondOpinionProviderSchema,
+  model: text.max(160),
+  hypotheses: z.array(z.object({
+    id: id.max(90), claim: text.max(420), rationale: text.max(1400),
+    status: z.enum(['supported', 'contested', 'insufficient-evidence']),
+    confidence: z.enum(['low', 'moderate', 'high']),
+    supportingEvidenceIds: z.array(text.max(120)).max(12),
+    challengingEvidenceIds: z.array(text.max(120)).max(12),
+    missingEvidence: z.array(text.max(280)).max(5),
+    modelProposedStatus: z.enum(['supported', 'contested', 'insufficient-evidence']).optional(),
+    supportingQuotes: z.array(z.object({
+      evidenceId: text.max(120), quote: text.max(260), sourceName: text.max(160),
+      sourceUrl: text.url(), publisherFamily: text.max(180), verification: z.literal('verbatim-checked'),
+    })).max(8).optional(),
+    challengingQuotes: z.array(z.object({
+      evidenceId: text.max(120), quote: text.max(260), sourceName: text.max(160),
+      sourceUrl: text.url(), publisherFamily: text.max(180), verification: z.literal('verbatim-checked'),
+    })).max(8).optional(),
+  })).max(6),
+  evidenceReviews: z.array(z.object({
+    evidenceId: text.max(120), role: z.enum(['supports', 'challenges', 'context', 'irrelevant']),
+    credibility: z.enum(['high', 'medium', 'low', 'unknown']),
+    sourceType: z.enum(['primary', 'secondary', 'opinion', 'unknown']), freshness: z.enum(['recent', 'old', 'unknown']),
+    reason: text.max(500),
+  })).max(48),
+  nextQueries: z.array(z.object({
+    query: text.max(220), purpose: z.enum(['independent-confirmation', 'counterevidence', 'mechanism', 'alternate-explanation', 'primary-source']),
+    hypothesisId: text.max(90), priority: z.number().int().min(1).max(5), reason: text.max(320), searchedAt: time.optional(),
+  })).max(4),
+  completedQueries: z.array(z.object({
+    query: text.max(220), purpose: z.enum(['independent-confirmation', 'counterevidence', 'mechanism', 'alternate-explanation', 'primary-source']),
+    hypothesisId: text.max(90), priority: z.number().int().min(1).max(5), reason: text.max(320), searchedAt: time.optional(),
+  })).max(40),
+  contradictions: z.array(z.object({ description: text.max(500), evidenceIds: z.array(text.max(120)).max(8) })).max(8),
+  gaps: z.array(text.max(420)).max(10), conclusion: text.max(1400),
+  confidence: z.enum(['low', 'moderate', 'high']),
+  provisionalConclusion: text.max(1400).optional(),
+  stoppingReason: text.max(420),
+  reviewedEvidenceCount: z.number().int().min(0).max(48).optional(),
+  reviewStatus: z.enum(['pending-independent-review', 'partially-reviewed', 'independently-reviewed', 'review-unavailable']).optional(),
+  reviewerProvider: secondOpinionProviderSchema.optional(),
+  reviewerModel: text.max(160).optional(),
+  fullTextEvidenceCount: z.number().int().min(0).max(48).optional(),
+  summaryOnlyEvidenceCount: z.number().int().min(0).max(48).optional(),
+  publisherFamilyCount: z.number().int().min(0).max(48).optional(),
+  syndicatedItemCount: z.number().int().min(0).max(48).optional(),
+  verifiedCitationCount: z.number().int().min(0).max(200).optional(),
+});
+
+const youtubeGrowth = z.object({
+  snapshotCount: z.number().int().min(1),
+  deltaViews: z.number().finite().nullable(),
+  viewsPerHour: z.number().finite().nonnegative().nullable(),
+  viewsPerDay: z.number().finite().nonnegative().nullable(),
+  channelBaselineViewsPerDay: z.number().finite().nonnegative().nullable(),
+  channelOutlierRatio: z.number().finite().nonnegative().nullable(),
+  measuredAt: time,
+  status: z.enum(['insufficient-history', 'measured']),
+});
+const youtubeSnapshot = z.object({
+  id, videoId: id, channelId: text.optional(), channel: text,
+  capturedAt: time,
+  viewCount: z.number().nonnegative().nullable(),
+  likeCount: z.number().nonnegative().nullable(),
+  commentCount: z.number().nonnegative().nullable(),
 });
 const video = z.object({
   id,
@@ -23,6 +96,9 @@ const video = z.object({
   query: text,
   viewCount: z.number().nonnegative().nullable().optional(),
   likeCount: z.number().nonnegative().nullable().optional(),
+  commentCount: z.number().nonnegative().nullable().optional(),
+  channelId: text.optional(),
+  growth: youtubeGrowth.optional(),
 });
 const schema = z.object({
   preferences: z.object({
@@ -35,6 +111,11 @@ const schema = z.object({
     budget: z.number().int().min(100).max(10000),
     model: text,
     hybridIntelligence: z.boolean().optional().default(false),
+    webResearchEnabled: z.boolean().optional().default(true),
+    automaticExternalReview: z.boolean().optional().default(true),
+    secondOpinionProvider: secondOpinionProviderSchema.optional().default('gemini'),
+    secondOpinionOrder: z.array(secondOpinionProviderSchema).min(1).max(4).optional().default(DEFAULT_SECOND_OPINION_ORDER),
+    secondOpinionModels: z.object({ gemini: z.string().max(120).optional().default('gemini-3.8-flash'), xai: z.string().max(120).optional().default('grok-4.7'), cloudflare: z.string().max(160).optional().default(DEFAULT_CLOUDFLARE_FREE_MODEL), openrouter: z.string().max(160).optional().default('') }).optional().default({ gemini: 'gemini-3.8-flash', xai: 'grok-4.7', cloudflare: DEFAULT_CLOUDFLARE_FREE_MODEL, openrouter: '' }),
     openRouterUsageDay: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
     openRouterRequestsToday: z.number().int().min(0).max(10000).optional(),
     openRouterDailyLimit: z.number().int().min(0).max(10000).optional(),
@@ -42,7 +123,7 @@ const schema = z.object({
     openRouterDailyRemaining: z.number().int().min(0).max(10000).optional(),
     openRouterQuotaCheckedAt: time.optional(),
     youtubeRefreshTimestamps: z.array(time).max(5000).optional().default([]),
-    schedule: z.enum(['Manual', 'Every 12 hours', 'Daily', 'Weekly']),
+    schedule: z.enum(['Manual', 'Every 6 hours', 'Every 12 hours', 'Daily', 'Weekly']),
     paused: z.boolean(),
     lastInput: inputSchema.optional(),
     spaceNewsSources: z.array(z.enum(['nasa', 'jpl', 'cneos', 'esa-space', 'esa-science', 'space-com', 'phys-space', 'universe-today', 'sky-telescope'])).max(9).optional().default(['nasa', 'jpl', 'cneos', 'esa-space', 'esa-science', 'space-com', 'phys-space', 'universe-today', 'sky-telescope']),
@@ -79,27 +160,19 @@ const schema = z.object({
       ideaCategory: text.max(80).optional(),
       generationKey: text.max(1200).optional(),
       engineScore: z.number().int().min(0).max(100).optional(),
+      engineScoredAt: time.optional(),
       engineScoreReason: text.max(600).optional(),
-      // Engine-v2 explainability fields must survive persistence, otherwise
-      // evidence-backed ideas and their claims vanish from the saved data shape.
-      engineV2Score: z.number().finite().optional(),
-      engineV2Confidence: z.number().finite().optional(),
-      engineV2Why: text.optional(),
-      engineV2Evidence: z.array(z.object({
-        title: text,
-        url: text.optional(),
-        views: z.number().finite().nonnegative().optional(),
-        source: text,
-      })).optional(),
-      engineV2Claims: z.array(z.object({
-        text: text,
-        source: text,
-        url: text.optional(),
-      })).optional(),
-      engineV2Risk: text.optional(),
-      engineV2BestTime: text.optional(),
-      engineV2RevenueLabel: text.optional(),
-      dataSufficient: z.boolean().optional(),
+      engineScoreBasis: z.enum(['publisher-web-only-v2', 'platform-aware-v3']).optional(),
+      researchStatus: z.enum(['supported', 'contested', 'unverified', 'not-reviewed']).optional(),
+      researchConfidence: z.enum(['low', 'moderate', 'high']).optional(),
+      evidenceSources: z.array(z.object({
+        sourceType: z.enum(['publisher', 'web', 'encyclopedia']),
+        sourceName: text.max(160),
+        title: text.max(500),
+        summary: text.max(1500).optional(),
+        sourceUrl: text.url(),
+        publishedAt: z.string().datetime().optional(),
+      })).max(8).optional(),
     }),
   ),
   links: z.array(
@@ -153,6 +226,37 @@ const schema = z.object({
     }),
   ),
   videos: z.array(video),
+  youtubeSnapshots: z.array(youtubeSnapshot).optional().default([]),
+  researchActivity: z.array(z.object({
+    id: id.max(120),
+    engine: z.enum(['YouTube Data API', 'Firecrawl Search', 'Publisher Feeds', 'Wikimedia', 'Internal Engine', 'AI Provider Review']),
+    query: text.max(1600),
+    topic: text.max(180),
+    niche: text.max(180),
+    startedAt: time,
+    completedAt: time.optional(),
+    durationMs: z.number().int().min(0).max(3600000).optional(),
+    status: z.enum(['running', 'success', 'partial', 'empty', 'error', 'skipped']),
+    resultCount: z.number().int().min(0).max(100000),
+    analyzedCount: z.number().int().min(0).max(100000),
+    results: z.array(z.object({
+      id: text.max(1000),
+      title: text.max(500),
+      sourceName: text.max(160),
+      url: text.url().optional(),
+      summary: text.max(1200),
+      publishedAt: z.string().datetime().optional(),
+      relevanceScore: z.number().int().min(0).max(100),
+      relevanceBand: z.enum(['high', 'medium', 'low']),
+      sourceAssessment: z.enum(['configured-feed', 'not-assessed']),
+      includedInAnalysis: z.boolean(),
+      decisionReason: text.max(700),
+      feedback: z.enum(['useful', 'irrelevant', 'duplicate', 'weak-source']).optional(),
+    })).max(8),
+    warnings: z.array(text.max(700)).max(12),
+    error: text.max(700).optional(),
+    reportId: id.optional(),
+  })).max(400).optional().default([]),
   feedRegistry: z.array(z.object({
     sourceId: z.enum(['nasa', 'jpl', 'cneos', 'esa-space', 'esa-science', 'space-com', 'phys-space', 'universe-today', 'sky-telescope']),
     configuredUrl: text.url(),
@@ -203,6 +307,7 @@ const schema = z.object({
       confidence: z.enum(['low', 'moderate', 'high']),
       changes: z.array(text.max(300)).max(4),
     })).optional().default([]),
+    researchDossier: researchDossierSchema.optional(),
   })).optional().default([]),
   budget: z.object({
     date: text, units: z.number().nonnegative(), requests: z.number().int().nonnegative(), exhausted: z.boolean(),
@@ -226,4 +331,11 @@ export function validateLocalEntry<K extends keyof LocalData>(key: K, value: unk
   const parsed = schema.shape[key].safeParse(value);
   if (!parsed.success) throw new Error('Saved ' + String(key) + ' data is unreadable. Retry the last change.');
   return parsed.data as LocalData[K];
+}
+
+/** Validate a single SQLite record rather than parsing a potentially huge collection. */
+export function validateLocalRecord(domain: RecordDomain, value: unknown): unknown {
+  const parsed = schema.shape[domain].safeParse([value]);
+  if (!parsed.success) throw new Error('Saved ' + domain + ' record is unreadable. Retry the last change.');
+  return (parsed.data as unknown[])[0];
 }

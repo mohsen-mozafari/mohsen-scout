@@ -93,15 +93,15 @@ export default function Diagnostics() {
     >
       <Panel>
         <View style={[styles.rowBetween, { flexWrap: 'wrap' }]}>
-          <BadgeText>LOCAL · NO LIVE API</BadgeText>
+          <BadgeText>MOCK / SYNTHETIC · NO LIVE API</BadgeText>
           <Txt muted>{busy ? 'Running checks…' : lastRunAt ? 'Last run: ' + new Date(lastRunAt).toLocaleString(language === 'fa' ? 'fa-IR' : 'en-US') : 'Not run in this session'}</Txt>
         </View>
         <Heading>{results.length ? 'Regression test results' : 'Ready to test this build'}</Heading>
         <Txt muted>
-          Synthetic responses only. No real API keys, network requests to providers or changes to your saved research are made by these checks.
+          Synthetic mock responses only. These are local regression checks—not end-to-end provider tests. They make no provider network requests, read no saved API keys and do not change your saved research.
         </Txt>
         <Action icon={results.length ? RefreshCw : Play} busy={busy} onPress={() => void execute()}>
-          {results.length ? 'Rerun all mock tests' : 'Run mock tests'}
+          {results.length ? 'Rerun all local mock tests' : 'Run local mock tests'}
         </Action>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
           <MetricCard label="PASSED" value={passed} tone="mint" hint="Checks completed successfully" />

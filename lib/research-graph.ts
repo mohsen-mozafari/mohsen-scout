@@ -3,7 +3,7 @@ import type { InternalResearchResult } from './engine';
 import type { SpaceNewsItem, WikiSignal } from './space';
 import { matchesResearchTerms } from './intelligence';
 
-export type ResearchGraphGroupId = 'sources' | 'youtube' | 'context' | 'evidence' | 'entities' | 'findings' | 'angles' | 'ideas';
+export type ResearchGraphGroupId = 'sources' | 'youtube' | 'context' | 'evidence' | 'entities' | 'concepts' | 'findings' | 'angles' | 'ideas';
 
 export type ResearchGraphItem = {
   id: string;
@@ -19,7 +19,7 @@ export type ResearchGraphGroup = {
   items: ResearchGraphItem[];
 };
 
-export type ResearchGraphNodeType = 'topic' | 'publisher' | 'news' | 'youtube' | 'context' | 'evidence' | 'entity' | 'finding' | 'idea';
+export type ResearchGraphNodeType = 'topic' | 'publisher' | 'news' | 'youtube' | 'context' | 'evidence' | 'entity' | 'concept' | 'finding' | 'idea';
 export type ResearchGraphNode = ResearchGraphItem & { type: ResearchGraphNodeType; groupId?: ResearchGraphGroupId };
 export type ResearchGraphEdge = { id: string; source: string; target: string; relation: string };
 export type ResearchGraphModel = { topic: string; summary: string; groups: ResearchGraphGroup[]; nodes: ResearchGraphNode[]; edges: ResearchGraphEdge[] };
@@ -45,6 +45,9 @@ export type BuildResearchGraphInput = {
 };
 
 export function buildResearchGraphModel(input: BuildResearchGraphInput): ResearchGraphModel {
+  // Raw YouTube API samples stay on their dedicated results screen. This graph is an
+  // independent-source view and must not merge or correlate YouTube metadata.
+  const rawDisplayVideos: BuildResearchGraphInput['videos'] = [];
   const fa = input.language === 'fa';
   const number = (value: number) => new Intl.NumberFormat(input.language).format(value);
   const text = (english: string, persian: string) => fa ? persian : english;
@@ -64,11 +67,11 @@ export function buildResearchGraphModel(input: BuildResearchGraphInput): Researc
     });
   }
 
-  if (input.videos.length) {
+  if (rawDisplayVideos.length) {
     groups.push({
       id: 'youtube',
       title: text('YouTube sample', 'نمونه یوتیوب'),
-      items: input.videos.map((video) => ({
+      items: rawDisplayVideos.map((video) => ({
         id: 'video-' + video.id,
         title: video.title,
         meta: [video.channel, video.publishedAt].filter(Boolean).join(' · '),
@@ -168,6 +171,33 @@ export function buildResearchGraphModel(input: BuildResearchGraphInput): Researc
             }),
           text('A co-mention indicates that names occur in the same evidence record; it does not establish causation or a verified relationship.', 'هم‌ذکری فقط یعنی نام‌ها در یک رکورد شاهد کنار هم آمده‌اند و رابطه علّی یا ارتباط قطعی را ثابت نمی‌کند.'),
         ].join('\n'),
+      })),
+    });
+  }
+
+  if (input.analysis.emergentConcepts.length) {
+    groups.push({
+      id: 'concepts',
+      title: text('Emerging evidence concepts', 'مفاهیم نوظهور در شواهد'),
+      items: input.analysis.emergentConcepts.map((concept) => ({
+        id: 'concept-' + concept.id,
+        title: concept.term,
+        meta: number(concept.evidenceIds.length) + ' ' + text('evidence documents', 'سند شاهد') +
+          ' · ' + number(concept.sourceCount) + ' ' + text('source IDs', 'شناسه منبع') +
+          ' · ' + number(concept.mentionCount) + ' ' + text('mentions', 'ذکر'),
+        detail: [
+          text('Evidence records: ', 'رکوردهای شاهد: ') + concept.evidenceIds.join(', '),
+          text('Contributing publisher IDs: ', 'شناسه ناشران مشارکت‌کننده: ') + concept.sourceIds.join(', '),
+          text('These are recurring words in the retrieved sample, not verified entities or causal claims.', 'این‌ها واژه‌های پرتکرار در نمونه دریافت‌شده‌اند، نه موجودیت تأییدشده یا ادعای علّی.'),
+          ...input.analysis.conceptRelations
+            .filter((relation) => relation.fromConceptId === concept.id || relation.toConceptId === concept.id)
+            .map((relation) => {
+              const otherId = relation.fromConceptId === concept.id ? relation.toConceptId : relation.fromConceptId;
+              const other = input.analysis.emergentConcepts.find((item) => item.id === otherId);
+              return text('Co-occurs with: ', 'هم‌رخداد با: ') + (other?.term ?? otherId) +
+                ' · ' + number(relation.cooccurrenceCount) + ' ' + text('shared documents', 'سند مشترک');
+            }),
+        ].join('\\n'),
       })),
     });
   }
@@ -281,7 +311,8 @@ export function buildResearchGraphModel(input: BuildResearchGraphInput): Researc
           : group.id === 'context' ? 'context'
             : group.id === 'evidence' ? 'evidence'
               : group.id === 'entities' ? 'entity'
-                : group.id === 'angles' || group.id === 'ideas' ? 'idea' : 'finding',
+                : group.id === 'concepts' ? 'concept'
+                  : group.id === 'angles' || group.id === 'ideas' ? 'idea' : 'finding',
       groupId: group.id,
     }))),
   ];
@@ -321,7 +352,7 @@ export function buildResearchGraphModel(input: BuildResearchGraphInput): Researc
       if (entity.evidenceIds.includes(story.url) || entity.evidenceIds.includes(story.id))
         addEdge('source-' + story.id, entityNodeId, text('mentions entity', 'به این موجودیت اشاره می‌کند'));
     }
-    for (const video of input.videos) {
+    for (const video of rawDisplayVideos) {
       if (entity.evidenceIds.includes('youtube:' + video.id))
         addEdge('video-' + video.id, entityNodeId, text('mentions entity in temporary sample', 'ذکر موجودیت در نمونه موقت'));
     }
@@ -334,11 +365,31 @@ export function buildResearchGraphModel(input: BuildResearchGraphInput): Researc
     );
   }
 
+  for (const concept of input.analysis.emergentConcepts) {
+    for (const story of input.news) {
+      if (
+        concept.evidenceIds.includes(story.url) ||
+        concept.evidenceIds.includes(story.id) ||
+        Boolean(story.sourceId && concept.sourceIds.includes(story.sourceId)) ||
+        matchesResearchTerms(story.title + ' ' + story.summary, [concept.term])
+      ) {
+        addEdge('source-' + story.id, 'concept-' + concept.id, text('contains recurring term', 'دارای واژه پرتکرار'));
+      }
+    }
+  }
+  for (const relation of input.analysis.conceptRelations) {
+    addEdge(
+      'concept-' + relation.fromConceptId,
+      'concept-' + relation.toConceptId,
+      text('co-occurs across ' + relation.cooccurrenceCount + ' evidence documents', 'هم‌رخداد در ' + relation.cooccurrenceCount + ' سند شاهد'),
+    );
+  }
+
   if (nodeIds.has('evidence-publisher-news')) {
     for (const item of input.news) addEdge('source-' + item.id, 'evidence-publisher-news', text('represented in news evidence', 'بازتاب‌یافته در شواهد خبری'));
   }
   if (nodeIds.has('evidence-youtube-sample')) {
-    for (const video of input.videos) addEdge('video-' + video.id, 'evidence-youtube-sample', text('represented in video sample', 'بازتاب‌یافته در نمونه ویدئویی'));
+    for (const video of rawDisplayVideos) addEdge('video-' + video.id, 'evidence-youtube-sample', text('represented in video sample', 'بازتاب‌یافته در نمونه ویدئویی'));
   }
   if (nodeIds.has('wikimedia-article') && nodeIds.has('evidence-wikimedia')) {
     addEdge('wikimedia-article', 'evidence-wikimedia', text('context for', 'زمینه برای'));
@@ -348,7 +399,7 @@ export function buildResearchGraphModel(input: BuildResearchGraphInput): Researc
     .map((term) => term.trim())
     .filter((term) => term.length >= 3)
     .slice(0, 24);
-  if (shared.length && input.news.length && input.videos.length) {
+  if (shared.length && input.news.length && rawDisplayVideos.length) {
     // Index matches once per shared term. A bounded edge budget prevents a large
     // retained corpus from producing a quadratic graph rebuild or a UI freeze.
     const newsByTerm = new Map<string, SpaceNewsItem[]>();
@@ -356,7 +407,7 @@ export function buildResearchGraphModel(input: BuildResearchGraphInput): Researc
     for (const term of shared) {
       const matchedNews = input.news.filter((story) =>
         matchesResearchTerms(story.title + ' ' + story.summary, [term]));
-      const matchedVideos = input.videos.filter((video) =>
+      const matchedVideos = rawDisplayVideos.filter((video) =>
         matchesResearchTerms(video.title + ' ' + video.description, [term]));
       if (matchedNews.length && matchedVideos.length) {
         newsByTerm.set(term, matchedNews);

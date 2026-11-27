@@ -33,6 +33,26 @@ export type ResearchInput = {
   category: string;
   maxResults: number;
 };
+export type YouTubeSnapshot = {
+  id: string;
+  videoId: string;
+  channelId?: string;
+  channel: string;
+  capturedAt: number;
+  viewCount: number | null;
+  likeCount: number | null;
+  commentCount: number | null;
+};
+export type YouTubeGrowth = {
+  snapshotCount: number;
+  deltaViews: number | null;
+  viewsPerHour: number | null;
+  viewsPerDay: number | null;
+  channelBaselineViewsPerDay: number | null;
+  channelOutlierRatio: number | null;
+  measuredAt: number;
+  status: 'insufficient-history' | 'measured';
+};
 export type Video = {
   id: string;
   title: string;
@@ -44,6 +64,9 @@ export type Video = {
   query: string;
   viewCount?: number | null;
   likeCount?: number | null;
+  commentCount?: number | null;
+  channelId?: string;
+  growth?: YouTubeGrowth;
 };
 export type Assessment =
   | 'Strong Opportunity'
@@ -66,6 +89,14 @@ export const statuses: IdeaStatus[] = [
   'Rejected Ideas',
   'Completed Research',
 ];
+export type IdeaEvidenceSource = {
+  sourceType: 'publisher' | 'web' | 'encyclopedia';
+  sourceName: string;
+  title: string;
+  summary?: string;
+  sourceUrl: string;
+  publishedAt?: string;
+};
 export type Idea = {
   id: string;
   topic: string;
@@ -88,18 +119,14 @@ export type Idea = {
   generationKey?: string;
   /** Explainable local editorial-priority score (not a view or revenue forecast). */
   engineScore?: number;
+  /** Timestamp of the latest local engine evaluation. */
+  engineScoredAt?: number;
   engineScoreReason?: string;
-  /** Optional engine-v2 explainability fields; additive only, no required shape changes. */
-  engineV2Score?: number;
-  engineV2Confidence?: number;
-  engineV2Why?: string;
-  engineV2Evidence?: { title: string; url?: string; views?: number; source: string }[];
-  /** Literal, attributable claims copied from real evidence titles/summaries. */
-  engineV2Claims?: { text: string; source: string; url?: string }[];
-  engineV2Risk?: string;
-  engineV2BestTime?: string;
-  engineV2RevenueLabel?: string;
-  dataSufficient?: boolean;
+  engineScoreBasis?: 'publisher-web-only-v2' | 'platform-aware-v3';
+  evidenceSources?: IdeaEvidenceSource[];
+  /** Scientific verification is separate from editorial opportunity priority. */
+  researchStatus?: 'supported' | 'contested' | 'unverified' | 'not-reviewed';
+  researchConfidence?: 'low' | 'moderate' | 'high';
 };
 export type Report = {
   id: string;
@@ -147,6 +174,9 @@ export const DEFAULT_SPACE_NEWS_SOURCE_IDS: SpaceNewsSourceId[] = ['nasa', 'jpl'
 export type SpaceNewsSourceId = 'nasa' | 'jpl' | 'cneos' | 'esa-space' | 'esa-science' | 'space-com' | 'phys-space' | 'universe-today' | 'sky-telescope';
 export type WikiLanguage = 'en' | 'fa' | 'de' | 'fr' | 'es' | 'ja';
 export type UiLanguage = 'fa' | 'en';
+export type SecondOpinionProvider = 'gemini' | 'xai' | 'cloudflare' | 'openrouter';
+export const DEFAULT_CLOUDFLARE_FREE_MODEL = '@cf/zai-org/glm-4.7-flash';
+export const DEFAULT_SECOND_OPINION_ORDER: SecondOpinionProvider[] = ['gemini', 'xai', 'cloudflare', 'openrouter'];
 export type Preferences = {
   uiLanguage: UiLanguage;
   name: string;
@@ -157,7 +187,13 @@ export type Preferences = {
   budget: number;
   model: string;
   /** Automatic privacy-bounded external review after local research completes. */
+  /** Kept for backward compatibility; external review now requires an explicit manual action. */
   hybridIntelligence: boolean;
+  webResearchEnabled: boolean;
+  automaticExternalReview: boolean;
+  secondOpinionProvider: SecondOpinionProvider;
+  secondOpinionOrder: SecondOpinionProvider[];
+  secondOpinionModels: { gemini: string; xai: string; cloudflare: string; openrouter: string };
   /** Local mirror of OpenRouter free-model daily quota for this key. */
   openRouterUsageDay?: string;
   openRouterRequestsToday?: number;
@@ -166,7 +202,7 @@ export type Preferences = {
   openRouterDailyRemaining?: number;
   openRouterQuotaCheckedAt?: number;
   youtubeRefreshTimestamps?: number[];
-  schedule: 'Manual' | 'Every 12 hours' | 'Daily' | 'Weekly';
+  schedule: 'Manual' | 'Every 6 hours' | 'Every 12 hours' | 'Daily' | 'Weekly';
   paused: boolean;
   lastInput?: ResearchInput;
   spaceNewsSources: SpaceNewsSourceId[];
@@ -193,6 +229,71 @@ export type ResearchMemorySnapshot = {
   confidence: 'low' | 'moderate' | 'high';
   changes: string[];
 };
+export type ResearchDossierEvidenceReview = {
+  evidenceId: string;
+  role: 'supports' | 'challenges' | 'context' | 'irrelevant';
+  credibility: 'high' | 'medium' | 'low' | 'unknown';
+  sourceType: 'primary' | 'secondary' | 'opinion' | 'unknown';
+  freshness: 'recent' | 'old' | 'unknown';
+  reason: string;
+};
+export type ResearchDossierQuote = {
+  evidenceId: string;
+  quote: string;
+  sourceName: string;
+  sourceUrl: string;
+  publisherFamily: string;
+  verification: 'verbatim-checked';
+};
+export type ResearchDossierHypothesis = {
+  id: string;
+  claim: string;
+  rationale: string;
+  /** Final status is assigned only after independent review and local quote checks. */
+  status: 'supported' | 'contested' | 'insufficient-evidence';
+  confidence: 'low' | 'moderate' | 'high';
+  supportingEvidenceIds: string[];
+  challengingEvidenceIds: string[];
+  missingEvidence: string[];
+  /** First model's suggestion is retained for audit, never treated as a final verdict. */
+  modelProposedStatus?: 'supported' | 'contested' | 'insufficient-evidence';
+  supportingQuotes?: ResearchDossierQuote[];
+  challengingQuotes?: ResearchDossierQuote[];
+};
+export type ResearchDossierQuery = {
+  query: string;
+  purpose: 'independent-confirmation' | 'counterevidence' | 'mechanism' | 'alternate-explanation' | 'primary-source';
+  hypothesisId: string;
+  priority: number;
+  reason: string;
+  searchedAt?: number;
+};
+export type ResearchDossier = {
+  version: 1;
+  updatedAt: number;
+  provider: SecondOpinionProvider;
+  model: string;
+  hypotheses: ResearchDossierHypothesis[];
+  evidenceReviews: ResearchDossierEvidenceReview[];
+  nextQueries: ResearchDossierQuery[];
+  completedQueries: ResearchDossierQuery[];
+  contradictions: { description: string; evidenceIds: string[] }[];
+  gaps: string[];
+  conclusion: string;
+  confidence: 'low' | 'moderate' | 'high';
+  /** First research model's conclusion, preserved as provisional only. */
+  provisionalConclusion?: string;
+  stoppingReason: string;
+  reviewedEvidenceCount?: number;
+  reviewStatus?: 'pending-independent-review' | 'partially-reviewed' | 'independently-reviewed' | 'review-unavailable';
+  reviewerProvider?: SecondOpinionProvider;
+  reviewerModel?: string;
+  fullTextEvidenceCount?: number;
+  summaryOnlyEvidenceCount?: number;
+  publisherFamilyCount?: number;
+  syndicatedItemCount?: number;
+  verifiedCitationCount?: number;
+};
 export type ResearchMemoryEntry = {
   topic: string;
   updatedAt: number;
@@ -203,6 +304,8 @@ export type ResearchMemoryEntry = {
   confidence: 'low' | 'moderate' | 'high';
   /** Bounded, versioned snapshots. Legacy entries without history remain valid. */
   history?: ResearchMemorySnapshot[];
+  /** Model-reviewed independent-source dossier; contains no raw YouTube API metadata. */
+  researchDossier?: ResearchDossier;
 };
 export type FeedRegistryRecord = {
   sourceId: SpaceNewsSourceId;
@@ -228,8 +331,49 @@ export type FeedRegistryRecord = {
     imageUrl?: string;
   }[];
 };
+export type ResearchActivityEngine =
+  | 'YouTube Data API'
+  | 'Firecrawl Search'
+  | 'Publisher Feeds'
+  | 'Wikimedia'
+  | 'Internal Engine'
+  | 'AI Provider Review';
+export type ResearchActivityStatus = 'running' | 'success' | 'partial' | 'empty' | 'error' | 'skipped';
+export type ResearchActivityFeedback = 'useful' | 'irrelevant' | 'duplicate' | 'weak-source';
+export type ResearchActivityResult = {
+  id: string;
+  title: string;
+  sourceName: string;
+  url?: string;
+  summary: string;
+  publishedAt?: string;
+  relevanceScore: number;
+  relevanceBand: 'high' | 'medium' | 'low';
+  sourceAssessment: 'configured-feed' | 'not-assessed';
+  includedInAnalysis: boolean;
+  decisionReason: string;
+  feedback?: ResearchActivityFeedback;
+};
+export type ResearchActivityEvent = {
+  id: string;
+  engine: ResearchActivityEngine;
+  query: string;
+  topic: string;
+  niche: string;
+  startedAt: number;
+  completedAt?: number;
+  durationMs?: number;
+  status: ResearchActivityStatus;
+  resultCount: number;
+  analyzedCount: number;
+  results: ResearchActivityResult[];
+  warnings: string[];
+  error?: string;
+  reportId?: string;
+};
 export type LocalData = {
   feedRegistry: FeedRegistryRecord[];
+  researchActivity: ResearchActivityEvent[];
   researchMemory: ResearchMemoryEntry[];
   preferences: Preferences;
   ideas: Idea[];
@@ -238,13 +382,14 @@ export type LocalData = {
   opinions: Opinion[];
   reports: Report[];
   videos: Video[];
+  youtubeSnapshots: YouTubeSnapshot[];
   budget: Budget;
 };
 export const uid = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
-export const RETENTION_MS = 29 * 24 * 60 * 60 * 1000;
 export function defaults(): LocalData {
   return {
     feedRegistry: [],
+    researchActivity: [],
     researchMemory: [],
     preferences: {
       uiLanguage: 'fa',
@@ -256,6 +401,11 @@ export function defaults(): LocalData {
       budget: 10000,
       model: '',
       hybridIntelligence: false,
+      webResearchEnabled: true,
+      automaticExternalReview: true,
+      secondOpinionProvider: 'gemini',
+      secondOpinionOrder: [...DEFAULT_SECOND_OPINION_ORDER],
+      secondOpinionModels: { gemini: 'gemini-3.8-flash', xai: 'grok-4.7', cloudflare: DEFAULT_CLOUDFLARE_FREE_MODEL, openrouter: '' },
       schedule: 'Daily',
       paused: false,
       spaceNewsSources: [...DEFAULT_SPACE_NEWS_SOURCE_IDS],
@@ -270,44 +420,39 @@ export function defaults(): LocalData {
     opinions: [],
     reports: [],
     videos: [],
+    youtubeSnapshots: [],
     budget: { date: '', units: 0, requests: 0, exhausted: false, searchExhausted: false, otherExhausted: false, searchManualRequests: 0, searchAutomaticRequests: 0, searchReserveRequests: 0, otherManualUnits: 0, otherAutomaticUnits: 0, otherReserveUnits: 0 },
   };
 }
-export function purgeExpired(data: LocalData, now = Date.now()): LocalData {
-  const hasExpiredVideo = data.videos.some((video) => now - video.fetchedAt >= RETENTION_MS);
-  const hasExpiredReport = data.reports.some((report) =>
-    now - report.createdAt >= RETENTION_MS ||
-    report.videos.some((video) => now - video.fetchedAt >= RETENTION_MS),
-  );
-
-  const originalReportIds = new Set(data.reports.map((report) => report.id));
-  const originalVideoIds = new Set([...data.videos.map((video) => video.id), ...data.links.map((link) => link.id)]);
+export function purgeExpired(data: LocalData, _now = Date.now()): LocalData {
+  // YouTube reports, videos and snapshots are owner-retained data: never expire them.
+  // This maintenance pass only removes dangling links after an explicit user deletion.
+  const reportIds = new Set(data.reports.map((report) => report.id));
+  const videoIds = new Set([...data.videos.map((video) => video.id), ...data.links.map((link) => link.id)]);
   const hasOrphanedIdeaReference = data.ideas.some((idea) =>
-    Boolean(idea.reportId && !originalReportIds.has(idea.reportId)) ||
-    idea.videoIds.some((id) => !originalVideoIds.has(id)),
+    Boolean(idea.reportId && !reportIds.has(idea.reportId)) ||
+    idea.videoIds.some((id) => !videoIds.has(id)),
   );
-  if (!hasExpiredVideo && !hasExpiredReport && !hasOrphanedIdeaReference) return data;
-
-  const videos = hasExpiredVideo
-    ? data.videos.filter((video) => now - video.fetchedAt < RETENTION_MS)
-    : data.videos;
-  const reports = hasExpiredReport
-    ? data.reports
-      .filter((report) => now - report.createdAt < RETENTION_MS)
-      .map((report) => {
-        const keptVideos = report.videos.filter((video) => now - video.fetchedAt < RETENTION_MS);
-        return keptVideos.length === report.videos.length ? report : { ...report, videos: keptVideos };
-      })
-    : data.reports;
-  const reportIds = new Set(reports.map((report) => report.id));
-  const retainedIds = new Set([...videos.map((video) => video.id), ...data.links.map((link) => link.id)]);
+  const hasOrphanedActivityReference = data.researchActivity.some((event) =>
+    Boolean(event.reportId && !reportIds.has(event.reportId)),
+  );
+  if (!hasOrphanedIdeaReference && !hasOrphanedActivityReference) return data;
   let ideasChanged = false;
   const ideas = data.ideas.map((idea) => {
-    const videoIds = idea.videoIds.filter((id) => retainedIds.has(id));
+    const nextVideoIds = idea.videoIds.filter((id) => videoIds.has(id));
     const reportId = idea.reportId && reportIds.has(idea.reportId) ? idea.reportId : undefined;
-    if (videoIds.length === idea.videoIds.length && reportId === idea.reportId) return idea;
+    if (nextVideoIds.length === idea.videoIds.length && reportId === idea.reportId) return idea;
     ideasChanged = true;
-    return { ...idea, videoIds, reportId };
+    return { ...idea, videoIds: nextVideoIds, reportId };
   });
-  return { ...data, videos, reports, ideas: ideasChanged ? ideas : data.ideas };
+  const researchActivity = hasOrphanedActivityReference
+    ? data.researchActivity.map((event) =>
+        event.reportId && !reportIds.has(event.reportId) ? { ...event, reportId: undefined } : event,
+      )
+    : data.researchActivity;
+  return {
+    ...data,
+    ideas: ideasChanged ? ideas : data.ideas,
+    researchActivity,
+  };
 }
