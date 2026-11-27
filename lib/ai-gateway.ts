@@ -195,7 +195,7 @@ const CLOUDFLARE_JSON_MODE_MODELS = new Set([
   '@cf/meta/llama-3-8b-instruct',
   '@cf/meta/llama-3.1-8b-instruct',
   '@hf/nousresearch/hermes-2-pro-mistral-7b',
-  '@thebloke/deepseek-coder-6.7b-instruct-awq',
+  '@hf/thebloke/deepseek-coder-6.7b-instruct-awq',
   '@cf/deepseek-ai/deepseek-r1-distill-qwen-32b',
 ]);
 
