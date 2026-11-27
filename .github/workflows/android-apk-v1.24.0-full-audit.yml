@@ -198,7 +198,7 @@ jobs:
             dist/MOHSEN-SCOUT-1.30.0-arm64.aab
             dist/SHA256SUMS.txt
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 30
 
   publish-release:
     if: github.ref == 'refs/heads/feature/v1.22.0-autonomous-researcher'
