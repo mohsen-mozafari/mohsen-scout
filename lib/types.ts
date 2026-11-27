@@ -66,6 +66,8 @@ export type Video = {
   likeCount?: number | null;
   commentCount?: number | null;
   channelId?: string;
+  channelSubscriberCount?: number | null;
+  channelVideoCount?: number | null;
   growth?: YouTubeGrowth;
 };
 export type Assessment =
