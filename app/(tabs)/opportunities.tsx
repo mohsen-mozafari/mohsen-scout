@@ -1,5 +1,6 @@
-import { memo, useDeferredValue, useMemo, useState } from 'react';
-import { FlatList, Platform, View, Text, Pressable } from 'react-native';
+import { memo, useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, InteractionManager, View, Text, Pressable, type ListRenderItemInfo } from 'react-native';
+import { FlashList } from '@shopify/flash-list';
 import { router } from 'expo-router';
 import { Button } from 'heroui-native';
 import { ArrowUpRight, Plus, Archive, Lightbulb, Activity } from 'lucide-react-native';
@@ -141,11 +142,27 @@ export default function Opportunities() {
   const [draftDecision, setDraftDecision] = useState('');
   const preferences = useScout((s) => s.data.preferences);
   const op = useOperation();
+  const [displayableIdeas, setDisplayableIdeas] = useState<Idea[]>([]);
+  const [ideasPreparing, setIdeasPreparing] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    setIdeasPreparing(true);
+    const task = InteractionManager.runAfterInteractions(() => {
+      const prepared = deduplicateDisplayIdeas(ideas.filter(isIdeaDisplayable));
+      if (!active) return;
+      setDisplayableIdeas(prepared);
+      setIdeasPreparing(false);
+    });
+    return () => {
+      active = false;
+      task.cancel();
+    };
+  }, [ideas]);
   const fa = preferences.uiLanguage === 'fa';
   const allCategoryLabel = fa ? 'همه زاویه‌ها' : 'All angles';
   const categoryLabel = (value?: string) => ideaCategoryLabel(value, fa);
   const categoryOptions = [allCategoryLabel, ...IDEA_GENERATION_CATEGORIES.map((value) => categoryLabel(value))];
-  const displayableIdeas = useMemo(() => deduplicateDisplayIdeas(ideas.filter(isIdeaDisplayable)), [ideas]);
   const indexedIdeas = useMemo(() => displayableIdeas.map((idea) => {
     const title = getIdeaDisplayTitle(idea, preferences.uiLanguage ?? 'fa');
     return {
@@ -203,6 +220,11 @@ export default function Opportunities() {
   const topOpportunityIds = useMemo(() => new Set(topOpportunities.map((idea) => idea.id)), [topOpportunities]);
   const featuredIdea = topOpportunities[0];
   const remainingIdeas = useMemo(() => sortedFiltered.filter((idea) => !topOpportunityIds.has(idea.id)), [sortedFiltered, topOpportunityIds]);
+  const uiLanguage = preferences.uiLanguage ?? 'fa';
+  const renderIdea = useCallback(({ item }: ListRenderItemInfo<Idea>) => (
+    <IdeaListItem item={item} fa={fa} language={uiLanguage} />
+  ), [fa, uiLanguage]);
+  const getIdeaType = useCallback((item: Idea) => item.engineGenerated ? 'generated' : 'personal', []);
   const sortOptions = fa
     ? ['امتیاز اولویت', 'جدیدترین', 'قدیمی‌ترین', 'عنوان صعودی', 'عنوان نزولی']
     : ['Priority score', 'Newest', 'Oldest', 'Title A–Z', 'Title Z–A'];
@@ -368,17 +390,14 @@ export default function Opportunities() {
   }, 'Complete idea saved.');
   return (
     <Page scroll={false}>
-      <FlatList
+      <FlashList
         style={{ flex: 1 }}
         data={remainingIdeas}
         keyExtractor={ideaKeyExtractor}
+        renderItem={renderIdea}
+        getItemType={getIdeaType}
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
-        initialNumToRender={5}
-        maxToRenderPerBatch={5}
-        updateCellsBatchingPeriod={32}
-        windowSize={5}
-        removeClippedSubviews={Platform.OS === 'android'}
         ListHeaderComponent={
           <View style={{ gap: 16, marginBottom: 18 }}>
             <ScreenIntro
@@ -532,10 +551,12 @@ export default function Opportunities() {
           </View>
 
         }
-        renderItem={({ item }) => (
-          <IdeaListItem item={item} fa={fa} language={preferences.uiLanguage ?? 'fa'} />
-        )}
-        ListEmptyComponent={sortedFiltered.length ? undefined : displayableIdeas.length ? (
+        ListEmptyComponent={ideasPreparing ? (
+          <View style={{ paddingVertical: 28, alignItems: 'center', gap: 10 }}>
+            <ActivityIndicator color={p.accent} />
+            <Txt muted>{fa ? 'آماده‌سازی فهرست ایده‌ها…' : 'Preparing your ideas…'}</Txt>
+          </View>
+        ) : sortedFiltered.length ? undefined : displayableIdeas.length ? (
           <Empty
             title="No ideas match this view."
             action="Clear filters"

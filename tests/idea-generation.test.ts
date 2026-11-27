@@ -264,6 +264,21 @@ void test('YouTube sample selection is independent of publisher editorial scorin
   assert.ok(!selected.some((video) => video.id === 'dQw4w9WgXcQ'), 'unrelated records remain excluded from topic-specific idea generation');
 });
 
+void test('Ideas list deduplication preserves large histories and personal records', () => {
+  const seed = generateEditorialIdeas({ ...base, news, videos, limit: 1 })[0];
+  assert.ok(seed);
+  const largeHistory = Array.from({ length: 1500 }, (_, index) => ({
+    ...seed,
+    id: 'large-generated-' + index,
+    topic: 'Independent research opportunity topic ' + index + ' subject',
+    concept: 'Central question: what makes evidence sample ' + index + ' distinct?',
+  }));
+  const personal = createManualIdea('Personal long-term project', 'A user-authored idea that must remain visible.', '', 'Germany', ['en']);
+  const visible = deduplicateDisplayIdeas([...largeHistory, personal]);
+  assert.equal(visible.length, 1501);
+  assert.equal(visible[visible.length - 1]?.id, personal.id);
+});
+
 void test('repeated engine-generated cards collapse in the Ideas list without merging personal ideas or stored data', () => {
   const first = generateEditorialIdeas({ ...base, news, videos, limit: 1 })[0];
   assert.ok(first);

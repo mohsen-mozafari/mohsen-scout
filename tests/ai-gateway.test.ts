@@ -22,6 +22,10 @@ function jsonResponse(value: unknown, status = 200, headers: Record<string, stri
   return new Response(JSON.stringify(value), { status, headers: { 'Content-Type': 'application/json', ...headers } });
 }
 
+function xaiResponse(content: string) {
+  return jsonResponse({ output: [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: content }] }] });
+}
+
 function requestUrl(input: RequestInfo | URL): string {
   if (typeof input === 'string') return input;
   if (input instanceof URL) return input.href;
@@ -61,23 +65,26 @@ void test('Gemini adapter uses the API-key header and sends only the approved ed
   assert.doesNotMatch(JSON.stringify(body), /nasa\.gov|youtube\.com|private video description|local score 94/i);
 });
 
-void test('Grok (xAI) adapter uses its OpenAI-compatible chat-completions contract', async () => {
+void test('Grok (xAI) adapter uses Responses API with server-side storage disabled', async () => {
   let capturedUrl = '';
   let capturedInit: RequestInit | undefined;
   const fetcher: typeof fetch = async (input, init) => {
     capturedUrl = requestUrl(input);
     capturedInit = init;
-    return jsonResponse({ choices: [{ message: { content: validOpinion } }] });
+    return xaiResponse(validOpinion);
   };
   const result = await requestSecondOpinionWithFallback([
     { provider: 'xai', key: 'xai-secret', model: 'grok-4.7' },
   ], 'topic and candidate only', fetcher);
   assert.equal(result.provider, 'xai');
-  assert.equal(capturedUrl, 'https://api.x.ai/v1/chat/completions');
+  assert.equal(capturedUrl, 'https://api.x.ai/v1/responses');
   assert.equal(requestHeader(capturedInit, 'Authorization'), 'Bearer xai-secret');
   const body = JSON.parse(requestBody(capturedInit));
   assert.equal(body.model, 'grok-4.7');
-  assert.deepEqual(body.messages, [{ role: 'user', content: 'topic and candidate only' }]);
+  assert.deepEqual(body.input, [{ role: 'user', content: 'topic and candidate only' }]);
+  assert.equal(body.max_output_tokens, 900);
+  assert.equal(body.store, false);
+  assert.deepEqual(body.text, { format: { type: 'json_object' } });
 });
 
 void test('Cloudflare adapter uses the OpenAI-compatible Workers AI chat route and requires a valid account ID', async () => {
@@ -94,13 +101,12 @@ void test('Cloudflare adapter uses the OpenAI-compatible Workers AI chat route a
   assert.equal(result.provider, 'cloudflare');
   assert.equal(capturedUrl, 'https://api.cloudflare.com/client/v4/accounts/023e105f4ecef8ad9ca31a8372d0c353/ai/v1/chat/completions');
   assert.equal(requestHeader(capturedInit, 'Authorization'), 'Bearer cloudflare-secret');
-  assert.equal(requestHeader(capturedInit, 'cf-aig-gateway-id'), 'default');
+  assert.equal(requestHeader(capturedInit, 'cf-aig-gateway-id'), null);
   assert.deepEqual(JSON.parse(requestBody(capturedInit)), {
     model: '@cf/zai-org/glm-4.7-flash',
     messages: [{ role: 'user', content: 'Return JSON for only approved text' }],
     max_tokens: 900,
     temperature: 0.2,
-    response_format: { type: 'json_object' },
   });
   let calls = 0;
   await assert.rejects(() => requestSecondOpinionWithFallback([
@@ -111,7 +117,19 @@ void test('Cloudflare adapter uses the OpenAI-compatible Workers AI chat route a
   }));
   assert.equal(calls, 0);
 });
-void test('Cloudflare research agent uses the same OpenAI-compatible route and gateway header', async () => {
+void test('Cloudflare enables JSON Mode only for supported models', async () => {
+  let capturedInit: RequestInit | undefined;
+  const result = await requestResearchAgentWithFallback([
+    { provider: 'cloudflare', key: 'cloudflare-secret', accountId: '023e105f4ecef8ad9ca31a8372d0c353', model: '@cf/meta/llama-3.3-70b-instruct-fp8-fast' },
+  ], 'Return a JSON object', async (_input, init) => {
+    capturedInit = init;
+    return jsonResponse({ choices: [{ message: { content: '{"hypotheses":[]}' } }] });
+  });
+  assert.equal(result.provider, 'cloudflare');
+  assert.deepEqual(JSON.parse(requestBody(capturedInit)).response_format, { type: 'json_object' });
+});
+
+void test('Cloudflare research agent omits unsupported JSON Mode for default GLM', async () => {
   let capturedUrl = '';
   let capturedInit: RequestInit | undefined;
   const result = await requestResearchAgentWithFallback([
@@ -123,12 +141,12 @@ void test('Cloudflare research agent uses the same OpenAI-compatible route and g
   });
   assert.equal(result.provider, 'cloudflare');
   assert.equal(capturedUrl, 'https://api.cloudflare.com/client/v4/accounts/023e105f4ecef8ad9ca31a8372d0c353/ai/v1/chat/completions');
-  assert.equal(requestHeader(capturedInit, 'cf-aig-gateway-id'), 'default');
+  assert.equal(requestHeader(capturedInit, 'cf-aig-gateway-id'), null);
   const body = JSON.parse(requestBody(capturedInit));
   assert.equal(body.model, '@cf/zai-org/glm-4.7-flash');
   assert.deepEqual(body.messages, [{ role: 'user', content: 'Return JSON for approved research input' }]);
   assert.equal(body.max_tokens, 4200);
-  assert.deepEqual(body.response_format, { type: 'json_object' });
+  assert.equal('response_format' in body, false);
 });
 void test('provider fallback advances after a rate limit and sends at most one generation request per provider', async () => {
   const calls: string[] = [];
@@ -146,7 +164,7 @@ void test('provider fallback advances after a rate limit and sends at most one g
         headers: { 'Retry-After': '120', 'Content-Type': 'application/json' },
       });
     }
-    if (url.includes('api.x.ai')) return jsonResponse({ choices: [{ message: { content: validOpinion } }] });
+    if (url.includes('api.x.ai')) return xaiResponse(validOpinion);
     return jsonResponse({ success: true, result: { response: validOpinion } });
   };
   const result = await requestSecondOpinionWithFallback(configs, 'approved prompt', fetcher);
@@ -166,7 +184,7 @@ void test('an invalid structured answer is rejected and falls back to the next p
     const url = requestUrl(input);
     calls.push(url);
     if (url.includes('generativelanguage')) return jsonResponse({ candidates: [{ content: { parts: [{ text: '{"decision":"invented"}' }] } }] });
-    return jsonResponse({ choices: [{ message: { content: validOpinion } }] });
+    return xaiResponse(validOpinion);
   });
   assert.equal(result.provider, 'xai');
   assert.deepEqual(result.attempts.map((attempt) => attempt.status), ['invalid-response', 'success']);
@@ -181,7 +199,7 @@ void test('missing credentials are skipped and duplicate providers never receive
     { provider: 'xai', key: 'another-key', model: 'grok-4.7' },
   ], 'prompt', async () => {
     calls += 1;
-    return jsonResponse({ choices: [{ message: { content: validOpinion } }] });
+    return xaiResponse(validOpinion);
   });
   assert.equal(result.provider, 'xai');
   assert.equal(calls, 1);
@@ -214,6 +232,20 @@ void test('model discovery reads active Gemini, Grok (xAI) and Cloudflare model 
   });
   assert.equal(cloudflare[0].id, '@cf/zai-org/glm-4.7-flash');
   assert.ok(cloudflare.some((model) => model.id === '@cf/google/gemma-4-26b-a4b-it'));
+});
+
+void test('provider API error detail is visible after saved-key redaction', async () => {
+  await assert.rejects(
+    () => requestSecondOpinionWithFallback([
+      { provider: 'gemini', key: 'sensitive-provider-key', model: 'gemini-3.8-flash' },
+    ], 'approved prompt', async () => jsonResponse({ error: { message: 'Invalid API key sensitive-provider-key; check model access.' } }, 401)),
+    (error: unknown) => {
+      assert.ok(error instanceof SecondOpinionProviderError);
+      assert.match(error.attempts[0]?.message ?? '', /Invalid API key \[redacted\]/);
+      assert.doesNotMatch(error.attempts[0]?.message ?? '', /sensitive-provider-key/);
+      return true;
+    },
+  );
 });
 
 void test('all-provider failure preserves a redacted audit trail for the Research Activity panel', async () => {

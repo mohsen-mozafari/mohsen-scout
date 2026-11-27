@@ -66,12 +66,38 @@ function parseRetryAfterSeconds(value: string | null): number | undefined {
   return Number.isFinite(date) ? Math.max(0, Math.ceil((date - Date.now()) / 1000)) : undefined;
 }
 
+async function readProviderErrorDetail(response: Response, secret?: string): Promise<string> {
+  const raw = await response.clone().text().catch(() => '');
+  if (!raw.trim()) return '';
+  let detail = '';
+  try {
+    const payload = JSON.parse(raw) as { error?: unknown; message?: unknown; errors?: unknown };
+    if (typeof payload.error === 'string') detail = payload.error;
+    else if (payload.error && typeof payload.error === 'object') {
+      const error = payload.error as { message?: unknown; code?: unknown; type?: unknown };
+      detail = [error.message, error.code, error.type].filter((v): v is string => typeof v === 'string' && Boolean(v.trim())).join(' · ');
+    }
+    if (!detail && typeof payload.message === 'string') detail = payload.message;
+    if (!detail && Array.isArray(payload.errors)) {
+      detail = payload.errors.map((item) => typeof item === 'string' ? item :
+        item && typeof item === 'object' && 'message' in item && typeof item.message === 'string' ? item.message : ''
+      ).filter(Boolean).join(' · ');
+    }
+  } catch { detail = raw; }
+  if (!detail) return '';
+  if (secret) detail = detail.split(secret).join('[redacted]');
+  return detail.replace(/Bearer\s+[^\s"',}]+/gi, 'Bearer [redacted]')
+    .replace(/\b(?:sk-[A-Za-z0-9_-]{8,}|AIza[0-9A-Za-z_-]{20,})\b/g, '[redacted]')
+    .replace(/[\r\n\t]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 240);
+}
+
 async function requestOnce(
   url: string,
   init: RequestInit,
   fetcher: Fetcher,
   provider: SecondOpinionProvider,
   timeoutMs = 25000,
+  secret?: string,
 ): Promise<unknown> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -87,18 +113,19 @@ async function requestOnce(
     }
     if (!response.ok) {
       const retryAfter = parseRetryAfterSeconds(response.headers.get('Retry-After'));
-      if (response.status === 401) throw new SecondOpinionProviderError(provider + ' rejected the saved key.', 'invalid-key');
-      if (response.status === 402) throw new SecondOpinionProviderError(provider + ' reports insufficient credits or billing balance.', 'credits');
-      if (response.status === 403) throw new SecondOpinionProviderError(provider + ' denied this request. Check model access and token permissions.', 'permission');
-      if (response.status === 404 || response.status === 410) throw new SecondOpinionProviderError(provider + ' model or endpoint is unavailable.', 'unavailable');
-      if (response.status === 408) throw new SecondOpinionProviderError(provider + ' request timed out.', 'timeout', retryAfter);
+      const detail = await readProviderErrorDetail(response, secret);
+      const suffix = detail ? ' Provider detail: ' + detail : '';
+      if (response.status === 401) throw new SecondOpinionProviderError(provider + ' rejected the saved key.' + suffix, 'invalid-key');
+      if (response.status === 402) throw new SecondOpinionProviderError(provider + ' reports insufficient credits or billing balance.' + suffix, 'credits');
+      if (response.status === 403) throw new SecondOpinionProviderError(provider + ' denied this request. Check model access and token permissions.' + suffix, 'permission');
+      if (response.status === 404 || response.status === 410) throw new SecondOpinionProviderError(provider + ' model or endpoint is unavailable.' + suffix, 'unavailable');
+      if (response.status === 408) throw new SecondOpinionProviderError(provider + ' request timed out.' + suffix, 'timeout', retryAfter);
       if (response.status === 429) throw new SecondOpinionProviderError(
-        provider + ' is rate-limited.' + (retryAfter === undefined ? '' : ' Retry-After: ' + retryAfter + 's.'),
-        'rate-limited',
-        retryAfter,
+        provider + ' is rate-limited.' + (retryAfter === undefined ? '' : ' Retry-After: ' + retryAfter + 's.') + suffix,
+        'rate-limited', retryAfter,
       );
-      if (response.status >= 500) throw new SecondOpinionProviderError(provider + ' service is temporarily unavailable.', 'unavailable', retryAfter);
-      throw new SecondOpinionProviderError(provider + ' rejected the request. Check the selected model and provider configuration.', 'invalid-response');
+      if (response.status >= 500) throw new SecondOpinionProviderError(provider + ' service is temporarily unavailable.' + suffix, 'unavailable', retryAfter);
+      throw new SecondOpinionProviderError(provider + ' rejected the request. Check the selected model and provider configuration.' + suffix, 'invalid-response');
     }
     try {
       return await response.json() as unknown;
@@ -128,14 +155,49 @@ function readOpenAICompatibleText(raw: unknown, provider: SecondOpinionProvider)
 function readGeminiText(raw: unknown): string {
   if (!raw || typeof raw !== 'object') throw new SecondOpinionProviderError('Gemini returned an invalid response.', 'invalid-response');
   const root = raw as { candidates?: Array<{ content?: { parts?: Array<{ text?: unknown }> }; finishReason?: string }> };
-  const text = (root.candidates?.[0]?.content?.parts ?? [])
-    .map((part) => typeof part.text === 'string' ? part.text : '')
-    .filter(Boolean)
-    .join('\n')
-    .trim();
+  const text = (root.candidates?.[0]?.content?.parts ?? []).map((part) => typeof part.text === 'string' ? part.text : '').filter(Boolean).join('\n').trim();
   if (!text) throw new SecondOpinionProviderError('Gemini returned no readable answer. The response may have been blocked or truncated.', 'invalid-response');
   return text;
 }
+
+function readXaiResponseText(raw: unknown): string {
+  if (!raw || typeof raw !== 'object') throw new SecondOpinionProviderError('xAI returned an invalid Responses API payload.', 'invalid-response');
+  const root = raw as { output_text?: unknown; output?: Array<{ content?: Array<{ type?: string; text?: unknown }> }>; status?: string; incomplete_details?: { reason?: string } };
+  const parts = (root.output ?? []).flatMap((item) => item.content ?? []);
+  const joined = parts.filter((part) => part.type === 'output_text' || part.type === 'text')
+    .map((part) => typeof part.text === 'string' ? part.text : '').filter(Boolean).join('\n');
+  const text = (typeof root.output_text === 'string' ? root.output_text : joined).trim();
+  if (!text) {
+    const reason = root.incomplete_details?.reason;
+    throw new SecondOpinionProviderError('xAI Responses API returned no readable text.' + (reason ? ' Response status: ' + root.status + '; reason: ' + reason + '.' : ''), 'invalid-response');
+  }
+  return text;
+}
+
+async function postXaiResponse(config: SecondOpinionProviderConfig, prompt: string, maxOutputTokens: number, temperature: number, fetcher: Fetcher, timeoutMs: number): Promise<string> {
+  const raw = await requestOnce('https://api.x.ai/v1/responses', {
+    method: 'POST',
+    headers: { Authorization: 'Bearer ' + config.key, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: config.model,
+      input: [{ role: 'user', content: prompt }],
+      max_output_tokens: maxOutputTokens,
+      temperature,
+      store: false,
+      text: { format: { type: 'json_object' } },
+    }),
+  }, fetcher, 'xai', timeoutMs, config.key);
+  return readXaiResponseText(raw);
+}
+
+const CLOUDFLARE_JSON_MODE_MODELS = new Set([
+  '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
+  '@cf/meta/llama-3-8b-instruct',
+  '@cf/meta/llama-3.1-8b-instruct',
+  '@hf/nousresearch/hermes-2-pro-mistral-7b',
+  '@thebloke/deepseek-coder-6.7b-instruct-awq',
+  '@cf/deepseek-ai/deepseek-r1-distill-qwen-32b',
+]);
 
 async function postCloudflareChatCompletion(
   config: SecondOpinionProviderConfig,
@@ -158,19 +220,21 @@ async function postCloudflareChatCompletion(
       headers: {
         Authorization: 'Bearer ' + config.key,
         'Content-Type': 'application/json',
-        'cf-aig-gateway-id': 'default',
       },
       body: JSON.stringify({
         model: config.model,
         messages: [{ role: 'user', content: prompt }],
         max_tokens: maxTokens,
         temperature,
-        response_format: { type: 'json_object' },
+        ...(CLOUDFLARE_JSON_MODE_MODELS.has(config.model)
+          ? { response_format: { type: 'json_object' } }
+          : {}),
       }),
     },
     fetcher,
     'cloudflare',
-    maxTokens > 1000 ? 40000 : 25000,
+    maxTokens > 1000 ? 90000 : 60000,
+    config.key,
   );
   return readOpenAICompatibleText(raw, 'cloudflare');
 }
@@ -196,25 +260,17 @@ async function postOpinion(
           contents: [{ role: 'user', parts: [{ text: prompt }] }],
           generationConfig: { maxOutputTokens: 900, temperature: 0.2, responseMimeType: 'application/json' },
         }),
-      },
-      fetcher,
-      provider,
+      }, fetcher, provider, 60000, key,
     );
     content = readGeminiText(raw);
-  } else if (provider === 'xai' || provider === 'openrouter') {
-    const url = provider === 'xai'
-      ? 'https://api.x.ai/v1/chat/completions'
-      : 'https://openrouter.ai/api/v1/chat/completions';
-    raw = await requestOnce(url, {
+  } else if (provider === 'xai') {
+    content = await postXaiResponse(config, prompt, 900, 0.2, fetcher, 90000);
+  } else if (provider === 'openrouter') {
+    raw = await requestOnce('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model,
-        max_tokens: 900,
-        temperature: 0.2,
-        messages: [{ role: 'user', content: prompt }],
-      }),
-    }, fetcher, provider);
+      body: JSON.stringify({ model, max_tokens: 900, temperature: 0.2, messages: [{ role: 'user', content: prompt }] }),
+    }, fetcher, provider, 60000, key);
     content = readOpenAICompatibleText(raw, provider);
   } else {
     content = await postCloudflareChatCompletion(config, prompt, 900, 0.2, fetcher);
@@ -298,27 +354,21 @@ async function postResearchPrompt(
           contents: [{ role: 'user', parts: [{ text: prompt }] }],
           generationConfig: { maxOutputTokens: 4200, temperature: 0.15, responseMimeType: 'application/json' },
         }),
-      },
-      fetcher,
-      provider,
-      40000,
+      }, fetcher, provider, 90000, key,
     );
     content = readGeminiText(raw);
-  } else if (provider === 'xai' || provider === 'openrouter') {
-    const url = provider === 'xai'
-      ? 'https://api.x.ai/v1/chat/completions'
-      : 'https://openrouter.ai/api/v1/chat/completions';
-    raw = await requestOnce(url, {
+  } else if (provider === 'xai') {
+    content = await postXaiResponse(config, prompt, 4200, 0.15, fetcher, 120000);
+  } else if (provider === 'openrouter') {
+    raw = await requestOnce('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model,
-        max_tokens: 4200,
-        temperature: 0.15,
+        model, max_tokens: 4200, temperature: 0.15,
         response_format: { type: 'json_object' },
         messages: [{ role: 'user', content: prompt }],
       }),
-    }, fetcher, provider, 40000);
+    }, fetcher, provider, 90000, key);
     content = readOpenAICompatibleText(raw, provider);
   } else {
     content = await postCloudflareChatCompletion(config, prompt, 4200, 0.15, fetcher);
@@ -387,7 +437,7 @@ export async function discoverSecondOpinionModels(
     raw = await requestOnce('https://generativelanguage.googleapis.com/v1beta/models', {
       method: 'GET',
       headers: { 'x-goog-api-key': credentials.key },
-    }, fetcher, provider);
+    }, fetcher, provider, 25000, credentials.key);
     const data = raw as { models?: Array<{ name?: string; displayName?: string; supportedGenerationMethods?: string[] }> };
     return (data.models ?? [])
       .filter((model) => model.name && model.supportedGenerationMethods?.includes('generateContent'))
@@ -397,7 +447,7 @@ export async function discoverSecondOpinionModels(
     raw = await requestOnce('https://api.x.ai/v1/models', {
       method: 'GET',
       headers: { Authorization: 'Bearer ' + credentials.key },
-    }, fetcher, provider);
+    }, fetcher, provider, 25000, credentials.key);
     const data = raw as { data?: Array<{ id?: string; owned_by?: string }> };
     return (data.data ?? []).filter((model) => model.id).map((model) => ({ id: model.id!, name: model.id! + (model.owned_by ? ' · ' + model.owned_by : '') }));
   }
@@ -407,7 +457,7 @@ export async function discoverSecondOpinionModels(
     raw = await requestOnce('https://api.cloudflare.com/client/v4/accounts/' + accountId + '/ai/models/search?task=text-generation&hide_experimental=true&per_page=100', {
       method: 'GET',
       headers: { Authorization: 'Bearer ' + credentials.key },
-    }, fetcher, provider);
+    }, fetcher, provider, 25000, credentials.key);
     const data = raw as { success?: boolean; result?: Array<{ name?: string; id?: string; description?: string; task?: { name?: string } }> };
     const discovered = (data.result ?? [])
       .filter((model) => model.name || model.id)
