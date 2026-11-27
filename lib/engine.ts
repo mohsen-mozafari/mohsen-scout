@@ -40,7 +40,8 @@ export type InternalResearchInput = {
   wiki?: Pick<WikiSignal, 'articleTitle' | 'language' | 'monthlyViews'>;
   videos?: readonly (Pick<
     YouTubeSampleVideo,
-    'id' | 'title' | 'channel' | 'publishedAt' | 'viewCount' | 'likeCount'
+    'id' | 'title' | 'channel' | 'publishedAt' | 'viewCount' | 'likeCount' |
+    'commentCount' | 'channelSubscriberCount' | 'channelVideoCount'
   > & Partial<Pick<YouTubeSampleVideo, 'description'>> & { growth?: YouTubeGrowth })[];
   feedback?: ResearchFeedbackProfile;
   language?: 'fa' | 'en';
