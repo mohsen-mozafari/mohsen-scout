@@ -40,9 +40,11 @@ export type InternalResearchInput = {
   wiki?: Pick<WikiSignal, 'articleTitle' | 'language' | 'monthlyViews'>;
   videos?: readonly (Pick<
     YouTubeSampleVideo,
-    'id' | 'title' | 'channel' | 'publishedAt' | 'viewCount' | 'likeCount' |
-    'commentCount' | 'channelSubscriberCount' | 'channelVideoCount'
-  > & Partial<Pick<YouTubeSampleVideo, 'description'>> & { growth?: YouTubeGrowth })[];
+    'id' | 'title' | 'channel' | 'publishedAt' | 'viewCount' | 'likeCount'
+  > & Partial<Pick<
+    YouTubeSampleVideo,
+    'description' | 'commentCount' | 'channelSubscriberCount' | 'channelVideoCount'
+  >> & { growth?: YouTubeGrowth })[];
   feedback?: ResearchFeedbackProfile;
   language?: 'fa' | 'en';
   priorMemory?: ResearchMemoryEntry;
