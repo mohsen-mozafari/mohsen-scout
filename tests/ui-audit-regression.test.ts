@@ -121,12 +121,12 @@ void test('release metadata and workflow agree on version 1.30.0', () => {
   const config = source('app.config.ts');
   const workflow = source('.github/workflows/android-apk-v1.24.0-full-audit.yml');
   const changelog = source('CHANGELOG_1.30.0.md');
-  assert.match(config, /version: '1\\.30\\.0'/);
-  assert.match(config, /versionCode: 51/);
-  assert.match(workflow, /versionCode='51'/);
-  assert.match(workflow, /versionName='1\\.30\\.0'/);
-  assert.match(workflow, /1\\.30\\.0/);
-  assert.match(workflow, /android-apk-v1\\.24\\.0-full-audit\\.yml/);
+  assert.ok(config.includes("version: '1.30.0'"));
+  assert.ok(config.includes('versionCode: 51'));
+  assert.ok(workflow.includes("versionCode='51'"));
+  assert.ok(workflow.includes("versionName='1.30.0'"));
+  assert.ok(workflow.includes('1.30.0'));
+  assert.ok(workflow.includes('android-apk-v1.24.0-full-audit.yml'));
   assert.match(changelog, /Research-engine integration|research-engine integration/);
 });
 
