@@ -484,12 +484,47 @@ export async function searchYouTube(input: ResearchInput, options: YouTubeOption
         const stats = counts.get(video.id);
         video.viewCount = stats?.viewCount && /^\d+$/.test(stats.viewCount) ? Number(stats.viewCount) : null;
         video.likeCount = stats?.likeCount && /^\d+$/.test(stats.likeCount) ? Number(stats.likeCount) : null;
+        video.commentCount = stats?.commentCount && /^\d+$/.test(stats.commentCount) ? Number(stats.commentCount) : null;
       }
     } catch {
-      warnings.push('Video titles and dates were retrieved, but raw view/like counts could not be loaded. Sorting falls back to available fields.');
+      warnings.push('Video statistics could not be loaded for every video; unavailable counts remain null rather than being estimated.');
       break;
     }
   }
+
+  // Collect channel-level public statistics in quota-accounted batches.
+  // Missing or hidden channel metrics stay null; they are never inferred.
+  const channelStats = new Map<string, { subscribers: number | null; videos: number | null }>();
+  const channelIds = [...new Set(collected.map((video) => video.channelId).filter((id): id is string => Boolean(id)))];
+  for (let offset = 0; offset < channelIds.length; offset += 50) {
+    const batch = channelIds.slice(offset, offset + 50);
+    try {
+      const raw = await youtube('channels', {
+        part: 'statistics',
+        id: batch.join(','),
+        fields: 'items(id,statistics(subscriberCount,videoCount))',
+      }, options, 1);
+      const parsed = channelStatsSchema.safeParse(raw);
+      if (!parsed.success) throw new ApiError('YouTube channel statistics returned an invalid response.', 'invalid');
+      for (const item of parsed.data.items) {
+        const subscribers = item.statistics?.subscriberCount;
+        const videos = item.statistics?.videoCount;
+        channelStats.set(item.id, {
+          subscribers: subscribers && /^\d+$/.test(subscribers) ? Number(subscribers) : null,
+          videos: videos && /^\d+$/.test(videos) ? Number(videos) : null,
+        });
+      }
+    } catch {
+      warnings.push('Public channel statistics could not be loaded for every channel; unavailable counts remain null.');
+      break;
+    }
+  }
+  for (const video of collected) {
+    const metrics = video.channelId ? channelStats.get(video.channelId) : undefined;
+    video.channelSubscriberCount = metrics?.subscribers ?? null;
+    video.channelVideoCount = metrics?.videos ?? null;
+  }
+
   return {
     videos: collected,
     queries: searches.map((search) => [search.query, search.bucket, search.language || 'global'].join(' · ')),
@@ -532,15 +567,48 @@ export async function testOpenRouter(key: string) {
   if (!z.object({ data: z.object({}).passthrough() }).safeParse(raw).success)
     throw new ApiError('OpenRouter returned an invalid response.', 'invalid');
 }
-export function opinionPrompt(topic: string, concept: string, decision: string, language: 'fa' | 'en' = 'en') {
+export function opinionPrompt(
+  topic: string,
+  concept: string,
+  decision: string,
+  language: 'fa' | 'en' = 'en',
+  youtubeSignals: readonly YouTubeSampleVideo[] = [],
+) {
   const cleanTopic = topic.trim();
   const cleanConcept = concept.trim();
   if (!cleanTopic || cleanTopic.toLowerCase() === 'untitled idea' || !cleanConcept)
     throw new ApiError('Complete the idea title and video concept before requesting an AI second opinion.', 'input');
   const instruction = language === 'fa'
-    ? 'به زبان فارسی روان و طبیعی پاسخ بده. نظر دوم باید کوتاه، کاربردی و دقیق باشد. داده یا آمار یوتیوب در اختیار تو نیست. تقاضا، رقابت، روند، امتیاز، احتمال یا درصد ساختگی ارائه نکن. قضاوت شخصی را از اطلاعاتی که کاربر داده جدا کن و در صورت ناکافی بودن اطلاعات صریحاً بگو. قبل از پاسخ نهایی، بی‌صدا چهار بررسی انجام بده: ارزیابی اولیه وضوح و اصالت ایده؛ نقد مخالف برای یافتن فرض‌های پنهان، ابهام‌ها و ضعف‌ها؛ بازبینی نتیجه با توجه به همان نقد؛ و انتخاب عملی‌ترین گام بعدی. زنجیره استدلال خصوصی را نمایش نده. خروجی نهایی را در بخش‌های «جمع‌بندی»، «نقاط قوت»، «ابهام‌ها و ریسک‌ها»، «روش راستی‌آزمایی» و «گام بعدی» تنظیم کن. فقط درباره موضوع، مفهوم پیشنهادی و تصمیم شخصی ارسال‌شده نظر بده.'
-    : 'Give a concise English second opinion. No YouTube API data or performance statistics are provided. Do not invent demand, competition, trends, scores, probabilities, or percentages. Separate user-provided information from subjective judgment and explicitly state insufficient evidence whenever support is not adequate. Before answering, silently perform four quality passes: assess clarity and originality; challenge hidden assumptions, ambiguity and weak points; revise the assessment in light of that critique; and select the most useful next action. Do not reveal private reasoning. Return only the final result under: Verdict, Strengths, Unknowns and Risks, Validation Steps, and Next Action. Assess only the supplied topic, concept and personal decision.';
-  return `${instruction} Topic: ${cleanTopic.slice(0, 300)}. Proposed concept: ${cleanConcept.slice(0, 1200)}. Personal decision: ${decision.trim().slice(0, 600) || 'No personal decision supplied yet.'}. Do not request, infer or analyze YouTube API data, external research or performance statistics.`;
+    ? 'به زبان فارسی روان و طبیعی پاسخ بده. نظر دوم باید کوتاه، کاربردی و دقیق باشد. نمونه کامل YouTube، عنوان و توضیح ویدئوها، کانال‌ها، تاریخ انتشار، آمار عمومی و رشد اندازه‌گیری‌شده در داده ورودی آمده است و باید برای ارزیابی روند پلتفرمی و زاویه محتوا استفاده شود. آن‌ها را نقل‌قول ناشر مستقل یا اثبات ادعای علمی/خبری نامرتبط جا نزن. تقاضا، رقابت، روند، امتیاز، احتمال یا درصد ساختگی ارائه نکن؛ رشد اندازه‌گیری‌شده را از پیش‌بینی جدا کن. قضاوت شخصی را از داده واقعی جدا کن و در صورت ناکافی بودن اطلاعات صریحاً بگو. قبل از پاسخ نهایی، وضوح و اصالت ایده، فرض‌های پنهان، ابهام‌ها، ضعف‌ها و عملی‌ترین گام بعدی را بررسی کن. زنجیره استدلال خصوصی را نمایش نده. خروجی نهایی را در بخش‌های «جمع‌بندی»، «نقاط قوت»، «ابهام‌ها و ریسک‌ها»، «روش راستی‌آزمایی» و «گام بعدی» تنظیم کن.'
+    : 'Give a concise English second opinion. The complete supplied YouTube sample, video titles and descriptions, channels, publication dates, public statistics and measured growth are part of the input and must inform platform-trend and content-angle assessment. Never present YouTube observations as independent publisher citations or proof of unrelated scientific/news claims. Do not invent demand, competition, scores, probabilities or percentages; distinguish measured growth from forecasts. Separate supplied data from subjective judgment and state when evidence is insufficient. Assess clarity, originality, hidden assumptions, ambiguity, weaknesses and the most useful next action. Do not reveal private reasoning. Return only the final result under: Verdict, Strengths, Unknowns and Risks, Validation Steps, and Next Action.';
+  const youtubePlatformSignals = youtubeSignals.map((video) => ({
+    videoId: video.id,
+    title: video.title,
+    description: video.description,
+    channel: video.channel,
+    publishedAt: video.publishedAt,
+    viewCount: video.viewCount,
+    likeCount: video.likeCount,
+    commentCount: video.commentCount ?? null,
+    channelSubscriberCount: video.channelSubscriberCount,
+    channelVideoCount: video.channelVideoCount,
+    growth: video.growth ? {
+      snapshotCount: video.growth.snapshotCount,
+      deltaViews: video.growth.deltaViews,
+      viewsPerHour: video.growth.viewsPerHour,
+      viewsPerDay: video.growth.viewsPerDay,
+      channelBaselineViewsPerDay: video.growth.channelBaselineViewsPerDay,
+      channelOutlierRatio: video.growth.channelOutlierRatio,
+      measuredAt: video.growth.measuredAt,
+      status: video.growth.status,
+    } : null,
+  }));
+  return instruction + '\n\n' + JSON.stringify({
+    topic: cleanTopic.slice(0, 300),
+    proposedConcept: cleanConcept.slice(0, 1200),
+    personalDecision: decision.trim().slice(0, 600) || 'No personal decision supplied yet.',
+    youtubePlatformSignals,
+  });
 }
 export type YouTubeSampleVideo = {
   id: string;
@@ -552,6 +620,7 @@ export type YouTubeSampleVideo = {
   thumbnailUrl: string;
   viewCount: number | null;
   likeCount: number | null;
+  commentCount?: number | null;
   channelSubscriberCount: number | null;
   channelVideoCount: number | null;
   url: string;
@@ -956,7 +1025,7 @@ export type StructuredSecondOpinion = z.infer<typeof structuredSecondOpinionSche
 
 /**
  * The explicitly invoked second-opinion model receives the topic, candidate concept,
- * bounded independent evidence and bounded YouTube platform signals. It never receives
+ * bounded independent evidence and the complete current-idea YouTube platform sample. It never receives
  * credentials, private notes, aggregate engine scores or the local ranking decision.
  */
 export function structuredSecondOpinionPrompt(
@@ -980,10 +1049,10 @@ export function structuredSecondOpinionPrompt(
   const instruction = language === 'fa'
     ? 'موضوع و ایده را با اتکا به منابع مستقل و سیگنال‌های پلتفرمی YouTube که همراه درخواست آمده‌اند، نقادانه بررسی کن. منابع ممکن است ناقص یا قدیمی باشند؛ ادعای باز کردن یا راستی‌آزمایی صفحه‌ای را نکن. نمونه ویدئوها، عنوان، کانال، آمار عمومی و رشد اندازه‌گیری‌شده YouTube را برای کشف روند و زاویه محتوا تحلیل کن، اما آن‌ها را استناد ناشر مستقل یا اثبات ادعای علمی/خبری تلقی نکن. رشد اندازه‌گیری‌شده را از پیش‌بینی جدا کن و هیچ تضمین بازدید نساز. منابع مستقل و قضاوت شخصی را از هم جدا کن و در صورت ناکافی بودن شواهد صریحاً بگو. با زبان طبیعی و روان و بدون اصطلاح تخصصی نامفهوم بنویس. فقط JSON معتبر و بدون Markdown با کلیدهای decision (develop, gather_more_evidence یا reframe)، strengths (حداکثر ۳)، risks (حداکثر ۳)، missingData (حداکثر ۳)، validationSteps (حداکثر ۳) و nextAction برگردان.'
     : 'Critically assess this idea using the independent sources and YouTube platform observations supplied here. Sources may be incomplete or stale; do not claim to have opened or verified them. Analyze YouTube sample videos, titles, channels, public statistics and measured growth for platform trends and content angles, but never present them as independent publisher citations or proof of scientific/news claims. Distinguish measured growth from forecasts and do not promise views or virality. Write in natural, clear language and avoid unexplained technical jargon. Return only valid JSON: decision (develop, gather_more_evidence, reframe), strengths (max 3), risks (max 3), missingData (max 3), validationSteps (max 3), nextAction.';
-  const youtubePlatformSignals = youtubeSignals.slice(0, 18).map((video) => ({
-    videoId: video.id, title: video.title.slice(0, 180), description: video.description.slice(0, 360),
-    channel: video.channel.slice(0, 100), publishedAt: video.publishedAt,
-    viewCount: video.viewCount, likeCount: video.likeCount,
+  const youtubePlatformSignals = youtubeSignals.map((video) => ({
+    videoId: video.id, title: video.title, description: video.description,
+    channel: video.channel, publishedAt: video.publishedAt,
+    viewCount: video.viewCount, likeCount: video.likeCount, commentCount: video.commentCount ?? null,
     channelSubscriberCount: video.channelSubscriberCount, channelVideoCount: video.channelVideoCount,
     growth: video.growth ? {
       snapshotCount: video.growth.snapshotCount, deltaViews: video.growth.deltaViews,
@@ -992,7 +1061,7 @@ export function structuredSecondOpinionPrompt(
       channelOutlierRatio: video.growth.channelOutlierRatio, status: video.growth.status,
     } : null,
   }));
-  return (instruction + '\n\n' + JSON.stringify({ topic: cleanTopic, candidateConcept: cleanConcept, independentSources, youtubePlatformSignals })).slice(0, 8500);
+  return instruction + '\n\n' + JSON.stringify({ topic: cleanTopic, candidateConcept: cleanConcept, independentSources, youtubePlatformSignals });
 }
 export function parseStructuredSecondOpinion(content: string): StructuredSecondOpinion {
   const cleaned = content.trim()
@@ -1042,9 +1111,10 @@ export type InternalEngineReviewInput = {
   discrepancies?: readonly string[];
   recommendation?: { topic: string; concept: string };
   language?: 'fa' | 'en';
+  youtubeSignals?: readonly YouTubeSampleVideo[];
 };
 
-/** Privacy-bounded critique of processed local-engine output only. */
+/** Critique of processed local-engine output plus the complete YouTube platform sample. */
 export function internalEngineReviewPrompt(input: InternalEngineReviewInput): string {
   const fa = input.language === 'fa';
   const evidence = input.evidence.slice(0, 24).map((item, index) =>
@@ -1055,6 +1125,20 @@ export function internalEngineReviewPrompt(input: InternalEngineReviewInput): st
   const level = fa
     ? input.confidence.level === 'high' ? 'زیاد' : input.confidence.level === 'moderate' ? 'متوسط' : 'کم'
     : input.confidence.level;
+  const youtubePlatformSignals = (input.youtubeSignals ?? []).map((video) => ({
+    videoId: video.id, title: video.title, description: video.description,
+    channel: video.channel, publishedAt: video.publishedAt,
+    viewCount: video.viewCount, likeCount: video.likeCount,
+    commentCount: video.commentCount ?? null,
+    channelSubscriberCount: video.channelSubscriberCount, channelVideoCount: video.channelVideoCount,
+    growth: video.growth ? {
+      snapshotCount: video.growth.snapshotCount, deltaViews: video.growth.deltaViews,
+      viewsPerHour: video.growth.viewsPerHour, viewsPerDay: video.growth.viewsPerDay,
+      channelBaselineViewsPerDay: video.growth.channelBaselineViewsPerDay,
+      channelOutlierRatio: video.growth.channelOutlierRatio,
+      measuredAt: video.growth.measuredAt, status: video.growth.status,
+    } : null,
+  }));
   const payload = [
     (fa ? 'موضوع: ' : 'Topic: ') + input.topic.trim().slice(0, 180),
     ...(input.recommendation?.topic.trim() && input.recommendation.concept.trim()
@@ -1064,14 +1148,16 @@ export function internalEngineReviewPrompt(input: InternalEngineReviewInput): st
       : []),
     (fa ? 'خلاصه موتور داخلی: ' : 'Local engine summary: ') + input.summary.trim().slice(0, 1200),
     (fa ? 'شواهد بررسی‌شده:\n' : 'Processed evidence signals:\n') + (evidence.join('\n') || (fa ? 'شاهدی ارائه نشده است.' : 'No evidence signals supplied.')),
+    (fa ? 'سیگنال‌های کامل پلتفرمی YouTube:\n' : 'Complete YouTube platform signals:\n') +
+      (youtubePlatformSignals.length ? JSON.stringify(youtubePlatformSignals) : (fa ? 'نمونه‌ای ارائه نشده است.' : 'No YouTube sample supplied.')),
     (fa ? 'میزان اطمینان: ' : 'Local confidence: ') + level + ' — ' + input.confidence.reason.slice(0, 400),
     (fa ? 'مواردی که هنوز روشن نیستند:\n' : 'Research gaps:\n') + (gaps.join('\n') || (fa ? 'گزارشی ثبت نشده است.' : 'Not reported.')),
     (fa ? 'اختلاف‌های احتمالی منابع:\n' : 'Potential discrepancies:\n') + (discrepancies.join('\n') || (fa ? 'موردی ثبت نشده است.' : 'Not reported.')),
   ].join('\n\n');
   const instruction = fa
-    ? 'این بازبینی برای کمک به تصمیم‌گیری سازنده محتواست، نه نوشتن گزارش رسمی. فقط موضوع، خلاصه و شاخص‌های پردازش‌شده را می‌بینی؛ عنوان خام خبر و ویدئو، پیوندها و آمار تک‌تک موارد عمداً در اختیار تو نیستند. وانمود نکن منبعی را دیده‌ای که به تو داده نشده است. ایده را مستقل نقد کن و صرفاً حرف موتور داخلی را تأیید نکن. اول یکی از این سه تصمیم را انتخاب کن: «توسعه ایده»، «جمع‌آوری شواهد بیشتر» یا «تغییر زاویه». بعد حداکثر دو نکته مفید، یک ایراد مهم یا احتمال سوگیری نمونه، یک اقدام مشخص برای بررسی و مهم‌ترین داده مفقود را بگو. فقط وقتی درباره احتمال موفقیت صحبت کن که داده تاریخی کافی و واقعاً قابل مقایسه وجود داشته باشد؛ در غیر این صورت روشن بگو با اطلاعات فعلی نمی‌توان درصد قابل اتکایی داد. هیچ عدد، منبع یا رابطه علت‌ومعلولی نساز. بازدید خام را معادل تقاضا یا رشد نگیر. واقعیت، برداشت و چیزهایی را که هنوز نمی‌دانیم از هم جدا کن. با فارسی طبیعی، ساده و حرفه‌ای بنویس؛ جمله کوتاه باشد و خواننده مجبور نشود متن را دوباره بخواند. از لحن اداری، عبارت‌های ترجمه‌ای و اصطلاحات تخصصی بی‌توضیح دوری کن. فقط این بخش‌ها را بنویس: «تصمیم»، «یافته‌های مفید»، «نقد مخالف»، «اقدام بعدی»، «داده‌های مفقود»؛ هر بخش حداکثر دو جمله.'
-    : 'This is a decision review for a creator, not a general news digest. You receive only the editorial topic and aggregate local-engine indicators; raw headlines, video titles, descriptions, links and per-item statistics are intentionally excluded. Do not pretend to have seen individual sources or videos. Independently critique the proposed idea rather than endorsing the local engine. First choose exactly one action: Develop the concept, Gather more evidence, or Reframe the topic. Assess clarity, originality, production feasibility and assumptions about audience fit. Estimate a success-probability range only if the supplied evidence includes enough comparable historical outcomes and meaningful performance context; label it as conditional and state its assumptions. Otherwise say explicitly that no reliable percentage can be calculated from the available evidence and name the missing data. Never invent a number to fill the gap. Justify the decision using the supplied counts, never an invented score. Then give at most two useful findings, one important counterargument or sampling bias, one specific manual search or verification action, and the most important missing data. Separate facts, inferences and unknowns. Raw views are not growth, demand or future performance; do not infer growth rates, market competition or virality. Never invent sources, metrics, demand or causal links. Be concise and avoid generic explanations of YouTube or news feeds. Write in natural, clear language with short, direct sentences that a creator can understand on the first read; avoid stiff report language, translation-like phrasing and unexplained jargon. Return only these sections: Decision, Useful Findings, Adversarial Check, Next Action, Missing Data; no more than two sentences per section.';
-  return (instruction + '\n\n' + payload).slice(0, 10500);
+    ? 'این بازبینی برای کمک به تصمیم‌گیری سازنده محتواست، نه نوشتن گزارش رسمی. خلاصه موتور و نمونه کامل سیگنال‌های پلتفرمی YouTube در داده ورودی آمده‌اند. عنوان، توضیح، کانال، تاریخ، آمار عمومی و رشد اندازه‌گیری‌شده YouTube را برای ارزیابی روند و زاویه محتوا تحلیل کن، اما آن‌ها را استناد مستقل ناشر یا اثبات ادعاهای علمی/خبری تلقی نکن. ادعا نکن صفحه ویدئو یا منبع بیرونی را باز کرده‌ای یا محتوایی را دیده‌ای که در ورودی ارائه نشده است. ایده را مستقل نقد کن و صرفاً حرف موتور داخلی را تأیید نکن. اول یکی از این سه تصمیم را انتخاب کن: «توسعه ایده»، «جمع‌آوری شواهد بیشتر» یا «تغییر زاویه». بعد حداکثر دو نکته مفید، یک ایراد مهم یا احتمال سوگیری نمونه، یک اقدام مشخص برای بررسی و مهم‌ترین داده مفقود را بگو. فقط وقتی درباره احتمال موفقیت صحبت کن که داده تاریخی کافی و واقعاً قابل مقایسه وجود داشته باشد؛ در غیر این صورت روشن بگو با اطلاعات فعلی نمی‌توان درصد قابل اتکایی داد. هیچ عدد، منبع یا رابطه علت‌ومعلولی نساز. بازدید خام را معادل تقاضا یا رشد نگیر. واقعیت، برداشت و چیزهایی را که هنوز نمی‌دانیم از هم جدا کن. با فارسی طبیعی، ساده و حرفه‌ای بنویس؛ جمله کوتاه باشد و خواننده مجبور نشود متن را دوباره بخواند. از لحن اداری، عبارت‌های ترجمه‌ای و اصطلاحات تخصصی بی‌توضیح دوری کن. فقط این بخش‌ها را بنویس: «تصمیم»، «یافته‌های مفید»، «نقد مخالف»، «اقدام بعدی»، «داده‌های مفقود»؛ هر بخش حداکثر دو جمله.'
+    : 'This is a decision review for a creator, not a general news digest. You receive the processed local-engine output and the complete supplied YouTube sample. Analyze video titles, descriptions, channels, dates, public statistics and measured growth for platform-trend and content-angle assessment; never present them as independent publisher citations or proof of unrelated scientific/news claims. Do not claim to have opened external video or source pages or to have seen content that was not supplied. Independently critique the proposed idea rather than endorsing the local engine. First choose exactly one action: Develop the concept, Gather more evidence, or Reframe the topic. Assess clarity, originality, production feasibility and assumptions about audience fit. Estimate a success-probability range only if the supplied evidence includes enough comparable historical outcomes and meaningful performance context; label it as conditional and state its assumptions. Otherwise say explicitly that no reliable percentage can be calculated from the available evidence and name the missing data. Never invent a number to fill the gap. Justify the decision using the supplied counts, never an invented score. Then give at most two useful findings, one important counterargument or sampling bias, one specific manual search or verification action, and the most important missing data. Separate facts, inferences and unknowns. Raw views are not growth, demand or future performance; do not infer growth rates, market competition or virality. Never invent sources, metrics, demand or causal links. Be concise and avoid generic explanations of YouTube or news feeds. Write in natural, clear language with short, direct sentences that a creator can understand on the first read; avoid stiff report language, translation-like phrasing and unexplained jargon. Return only these sections: Decision, Useful Findings, Adversarial Check, Next Action, Missing Data; no more than two sentences per section.';
+  return instruction + '\n\n' + payload;
 }
 
 /** Stable YYYY-MM-DD key for the device's local calendar day; independent of locale formatting. */

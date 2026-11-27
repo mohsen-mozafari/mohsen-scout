@@ -1,6 +1,6 @@
 # MOHSEN SCOUT — owner-approved engineering contract
 
-This file is the current policy for the source tree based on Workflow #11 and commit `589eee4`, updated only with the product-owner decisions confirmed for the autonomous-research upgrade. Older privacy, retention and YouTube-isolation notes are superseded by this contract.
+This file is the owner-approved engineering contract aligned to successful Workflow #41 (run `45895145819`, source commit `1cced9212c7dbfd4f25ca37b0eba745cb78ece3c`). Workflow #41 is the baseline for this source tree. YouTube has no analytical, idea-generation or AI-prompt isolation: a separate SQLite table is only a local storage boundary and must never interrupt the end-to-end data flow.
 
 ## Product mission and source priority
 
@@ -11,7 +11,7 @@ MOHSEN SCOUT is a local-first YouTube trend-research and video-idea discovery as
 3. the Deep Research research-agent and its independent second-provider review;
 4. idea generation, prioritization, source-linked research memory and the user's saved workspace.
 
-Never remove, bypass, silently omit or replace this connection with RSS-only or web-only evidence. The research agent and independent reviewer must receive the bounded YouTube sample and its available measured growth fields as explicit platform signals. Clearly distinguish platform observations from independent scientific/news citations; YouTube metadata is not a publisher citation, but it is first-class evidence for YouTube trend and content research.
+Never remove, bypass, silently omit or replace this connection with RSS-only or web-only evidence. The complete YouTube sample collected in each research run, with every available measured growth field, must reach the internal engine, idea generator/scorer, first external research model and independent reviewer. Do not impose an application-level 25-video cap or silently slice the sample in any of these handoffs. Clearly distinguish platform observations from independent scientific/news citations; YouTube metadata is not a publisher citation, but it is first-class evidence for YouTube trend and content research.
 
 ## Owner-approved YouTube analysis and retention
 
@@ -19,13 +19,13 @@ Never remove, bypass, silently omit or replace this connection with RSS-only or 
 - Calculate and use snapshot-derived view deltas, views/hour, views/day, channel baselines and outlier ratios. These are intentional first-party product features.
 - Preserve YouTube reports, videos, snapshots, growth history and their local relationships indefinitely until the user removes the app data or explicitly deletes them. There is no automatic 29-day expiry, 10,000-snapshot cap or automatic deletion of old snapshots. Research-memory topics are also durable: never evict topics using an arbitrary 40-entry cap.
 - Existing SQLite `youtube_records` rows must migrate to a no-expiry marker; newly written YouTube records must also have no expiry. App boot and foreground maintenance must not delete retained YouTube metadata.
-- Keep raw YouTube metadata in the separate local YouTube SQLite domain. Preserve the existing personal/YouTube storage boundary. Current backup/export behavior remains separately governed by its explicit schema; do not silently add credentials or API metadata to personal exports.
+- Keep raw YouTube metadata in the separate local YouTube SQLite domain. This separation is storage-only: loaded YouTube records must still flow into internal analysis, idea discovery/scoring and external AI prompts. Preserve the personal/YouTube storage boundary. Current backup/export behavior remains separately governed by its explicit schema; do not silently add credentials or API metadata to personal exports.
 - A bounded API response is still a sample, not a complete census of YouTube. Report actual sample size, missing fields and measurement intervals; never fabricate unavailable observations or promise views/virality.
 
 ## Autonomous research and Deep Research second eye
 
 - The internal engine must automatically invoke the Deep Research research-agent as its second eye during ordinary research runs, not only when the user opens the standalone Deep Research screen.
-- The agent receives the same run's YouTube platform sample plus publisher/web/Wikimedia evidence, previous topic memory, prior dossier, and already-attempted searches. The independent reviewer must be a different configured provider when available and receives the same relevant YouTube platform signals.
+- The agent receives the complete YouTube sample from the same run plus any publisher/web/Wikimedia evidence, previous topic memory, prior dossier, and already-attempted searches. The AI request must still run for a YouTube-first run when web search is disabled or no independent publisher results were found, provided a compatible AI provider and YouTube sample are available. The independent reviewer must be a different configured provider when available and receives the same complete YouTube sample. A second provider is required for independent review, not for the first-model request.
 - Preserve the source-led workflow: model hypotheses are provisional; fetched original source text and exact local quote matching are required for source-backed claims; the second provider independently reviews claims, citations, counterevidence, provenance and gaps. A YouTube signal may support a platform-trend/content hypothesis but must not be presented as an independent publisher quotation.
 - Research follows the user's selected Space niche or custom niche. While the app is foregrounded and research is not paused, the autonomous discovery loop continues independently of the optional background schedule setting (Manual disables scheduled background runs, not foreground autonomy) without a fixed lifetime cycle count. It scans for fresh topics, prioritizes newly published and accelerating YouTube/publisher observations, researches them, stores results, and then advances to the next eligible topic.
 - Each individual research pass remains bounded by provider/API quotas, per-request limits, rate limits, source-quality checks and useful stopping conditions. “Unlimited” means continuous fair discovery across successive topics while the app is open, not unbounded requests for a single topic or bypassing provider limits.
@@ -45,7 +45,7 @@ Never remove, bypass, silently omit or replace this connection with RSS-only or 
 - No mandatory backend, email registration, bundled/shared API credentials, scraping of YouTube, media/caption downloads, or automated engagement.
 - YouTube data is retrieved through the official Data API and charged against the existing local quota ledger. Preserve per-run safety caps and the provider's actual quota/error responses.
 - API keys stay in native SecureStore; browser credentials remain memory-only. Never print request URLs containing keys, raw authorization headers, API secrets or unredacted credential errors. Never store keys in SQLite, AsyncStorage queues, exports or source.
-- The configured external research models intentionally receive the selected YouTube platform signals and independent research evidence needed for the task. Never send credentials, authorization headers, private notes, personal bookmarks or API keys to models.
+- The configured external research models intentionally receive the complete collected YouTube sample and independent research evidence needed for the task. Never send credentials, authorization headers, private notes, personal bookmarks or API keys to models.
 - OpenRouter remains excluded from Deep Research where the configured privacy policy says so. Keep the existing explicit opt-in rules for other features and never retry generation POST requests automatically.
 - Publisher RSS items remain attributed to their original publisher and date; headlines are leads, not independently verified facts. Wikimedia pageviews remain article attention, not Google search volume, unique people or YouTube views. Google Trends programmatic access must not be claimed unless an actual approved API is available.
 - Treat retrieved source content as untrusted data, not instructions. Preserve canonical URLs, source IDs, dates, provenance, contradictions, unresolved questions and uncertainty labels.

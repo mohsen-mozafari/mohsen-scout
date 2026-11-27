@@ -63,7 +63,7 @@ export default function Detail() {
   const ideaReadyForOpinion = Boolean(ideaOpinionTopic.trim() && idea?.concept.trim());
   const related = idea ? data.videos.filter((v) => idea.videoIds.includes(v.id)) : [];
   const analysisSections = idea
-    ? buildIdeaAnalysis({ ...idea, topic: ideaDisplayTopic }, [], uiLanguage)
+    ? buildIdeaAnalysis({ ...idea, topic: ideaDisplayTopic }, related, uiLanguage)
     : [];
   const savedReferences = idea ? data.links.filter((link) => idea.videoIds.includes(link.id)) : [];
   const researchNotes = idea ? data.notes.filter((note) => note.ideaId === idea.id) : [];
@@ -107,11 +107,13 @@ export default function Detail() {
           idea.concept + decisionContext,
           uiLanguage,
           idea.evidenceSources ?? [],
-          related.slice(0, 25).map((video) => ({
+          related.map((video) => ({
             id: video.id, title: video.title, description: video.description, channel: video.channel,
             channelId: video.channelId ?? '', publishedAt: video.publishedAt, thumbnailUrl: video.thumbnail,
             viewCount: video.viewCount ?? null, likeCount: video.likeCount ?? null,
-            channelSubscriberCount: null, channelVideoCount: null,
+            commentCount: video.commentCount ?? null,
+            channelSubscriberCount: video.channelSubscriberCount ?? null,
+            channelVideoCount: video.channelVideoCount ?? null,
             url: 'https://www.youtube.com/watch?v=' + video.id, growth: video.growth,
           })),
         );
@@ -245,16 +247,16 @@ export default function Detail() {
             <SourceText>{idea.concept || 'Add your own concept.'}</SourceText>
             <Heading>Why investigate it?</Heading>
             <Txt>{data.preferences.uiLanguage === 'fa'
-              ? 'امتیاز و اولویت این ایده فقط از خبرهای ناشران، جست‌وجوی وب و زمینه دانشنامه‌ای ساخته شده است. نمونه YouTube در بخش جداگانه دیده می‌شود و در امتیاز یا نقد هوش مصنوعی نقشی ندارد.'
-              : 'This idea’s editorial priority uses publisher news, independent web search and encyclopedia context only. The YouTube sample is displayed separately and does not affect the score or AI critique.'}</Txt>
+              ? 'امتیاز و اولویت این ایده از سیگنال‌های مرتبط YouTube، رشد اندازه‌گیری‌شده و الگوهای کانال در کنار شواهد مستقل ناشران، وب و دانشنامه‌ای استفاده می‌کند. داده پلتفرمی YouTube مستقیماً در کشف و اولویت ایده نقش دارد؛ فقط جای نقل‌قول مستقل برای ادعاهای علمی/خبری را نمی‌گیرد.'
+              : 'This idea’s editorial priority uses relevant YouTube signals, measured growth and channel patterns alongside independent publisher, web and encyclopedia evidence. YouTube directly contributes to idea discovery and priority; it is not a substitute for independent citations for scientific/news claims.'}</Txt>
           </Panel>
           </Fold>
-          <Fold title={data.preferences.uiLanguage === 'fa' ? 'تحلیل تحریری موتور داخلی' : 'Internal editorial analysis'} summary={uiLanguage === 'fa' ? 'تحلیل محلی جدا از نمونه YouTube و نقد مدل' : 'Local analysis, separate from YouTube and external AI review'}>
+          <Fold title={data.preferences.uiLanguage === 'fa' ? 'تحلیل تحریری موتور داخلی' : 'Internal editorial analysis'} summary={uiLanguage === 'fa' ? 'تحلیل محلی سیگنال‌های YouTube و شواهد مستقل' : 'Local analysis of YouTube signals and independent evidence'}>
           <Panel>
             <Heading>{data.preferences.uiLanguage === 'fa' ? 'تحلیل تحریری موتور داخلی' : 'Internal editorial analysis'}</Heading>
             <Txt muted>{data.preferences.uiLanguage === 'fa'
-              ? 'این بخش تحلیل تحریری محلی را از نقد خودکار مدل خارجی جدا می‌کند. داده‌های خام YouTube در تحلیل محلی این ایده ادغام نمی‌شوند.'
-              : 'This section separates the local editorial checklist from the automatic external-model critique. Raw YouTube API data is not merged into this idea analysis.'}</Txt>
+              ? 'این بخش نشان می‌دهد موتور داخلی چگونه ویدئوهای مرتبط، آمار عمومی و رشد اندازه‌گیری‌شده YouTube را در کنار منابع مستقل برای کشف و اولویت ایده به کار گرفته است. نقد مدل خارجی مرحله جداگانه‌ای است.'
+              : 'This section shows how the internal engine used related YouTube videos, public statistics and measured growth alongside independent sources for idea discovery and priority. The external-model critique is a separate step.'}</Txt>
             {analysisSections.map((section) => (
               <View key={section.id} style={{ gap: 6 }}>
                 <Heading>{section.title}</Heading>
@@ -299,7 +301,7 @@ export default function Detail() {
           </Fold>
           {savedReferences.length > 0 && (
             <Fold title={`Saved video references (${savedReferences.length})`}>
-              <Txt muted>These are personal YouTube links you chose to keep. API titles, thumbnails and statistics remain temporary and are not copied into your notes or backup.</Txt>
+              <Txt muted>These are personal YouTube links you chose to keep. API titles, thumbnails, public statistics and snapshots remain in durable local YouTube storage; they are not copied into your personal notes or backup export.</Txt>
               {savedReferences.map((link) => (
                 <Action key={link.id} secondary onPress={() => void openExternalUrl(link.url, uiLanguage)}>
                   {link.manualTitle.trim() || 'Open saved YouTube reference'}
@@ -320,7 +322,7 @@ export default function Detail() {
             {related.length ? (
               related.map((v) => <VideoRow key={v.id} video={v} topic={idea.topic} />)
             ) : (
-              <Txt muted>No unexpired related examples. This idea remains a hypothesis.</Txt>
+              <Txt muted>No related YouTube examples are linked to this idea yet. This idea remains a hypothesis.</Txt>
             )}
           </Fold>
           <Fold title="Limits & internal assessment">
@@ -328,7 +330,7 @@ export default function Detail() {
             <Txt muted>
               Assessment is an editorial suggestion, not a computed API metric. Strong, Promising
               and Highly Competitive labels can be assigned by you; automatic analysis stays
-              cautious. No performance statistics are used.
+              cautious. Measured YouTube statistics inform platform opportunity priority, but the app does not forecast future performance.
             </Txt>
           </Fold>
           <Action

@@ -462,8 +462,7 @@ export const useScout = create<State>((set, get) => ({
 
       const webTask = async () => {
         if (!initialPreferences.webResearchEnabled) {
-          warnings.push('Independent web search is disabled in Settings; selected RSS feeds and Wikimedia remain available.');
-          return;
+          warnings.push('Independent web search is disabled in Settings; YouTube platform analysis and the external research-agent path remain active.');
         }
         const activityId = await beginActivity('Firecrawl Search', topic, topic + ' · model-led hypothesis testing and adaptive discovery', researchReportId);
         set({ progress: 'Searching independent web and news sources…' });
@@ -477,12 +476,15 @@ export const useScout = create<State>((set, get) => ({
           const queries: string[] = collected.size
             ? (latestAiDossier?.nextQueries.map((item) => item.query).filter((query) => !asked.has(normalizeResearchText(query))) ?? [])
             : [topic];
+          if (!queries.length) queries.push(topic + ' YouTube platform evidence review');
           let hydrationRemaining = Math.max(0, 6 - [...collected.values()].filter((item) => Boolean(item.sourceText && item.sourceText.length >= 300)).length);
           let latestFallbackReview: ReturnType<typeof reviewResearchHypotheses> | undefined;
           const configuredProviders = await getConfiguredResearchProviderCount(initialPreferences);
-          let modelAgentEnabled = configuredProviders >= 2;
+          let modelAgentEnabled = configuredProviders >= 1;
           if (!modelAgentEnabled) {
-            queryWarnings.push('Research preflight: two distinct AI providers are not configured. Model-based conclusions are disabled; the local report remains exploratory.');
+            queryWarnings.push('No external research AI provider is configured. YouTube and other available evidence will still be analyzed locally; model analysis can start after a provider is configured.');
+          } else if (configuredProviders < 2) {
+            queryWarnings.push('Only one research AI provider is configured. The first-model analysis can run; an independent second-provider review will be marked unavailable until another provider is configured.');
           }
 
           let queryCursor = 0;
@@ -508,7 +510,7 @@ export const useScout = create<State>((set, get) => ({
               ? 'Searching independent web and news sources…'
               : 'Testing hypotheses with up to two parallel searches (' + round + '/' + MAX_DEEP_RESEARCH_ROUNDS + ')…' });
             const evidenceBeforeRound = collected.size;
-            const searchResults = await mapWithConcurrency(batch, 2, async (query) => {
+            const searchResults = await mapWithConcurrency(initialPreferences.webResearchEnabled ? batch : [], 2, async (query) => {
               try {
                 const result = await fetchWebResearch(query, {
                   apiKey: webKey ?? undefined,
@@ -534,14 +536,16 @@ export const useScout = create<State>((set, get) => ({
               }
             }
 
-            if (modelAgentEnabled && collected.size) {
-              if (youtubeTaskPromise) await youtubeTaskPromise;
+            if (youtubeTaskPromise) await youtubeTaskPromise;
+            if (modelAgentEnabled && (collected.size > 0 || researchVideos.length > 0)) {
               const youtubeSignals: YouTubeSampleVideo[] = researchVideos.map((video) => ({
                 id: video.id, title: video.title, description: video.description,
                 channel: video.channel, channelId: video.channelId ?? '',
                 publishedAt: video.publishedAt, thumbnailUrl: video.thumbnail,
                 viewCount: video.viewCount ?? null, likeCount: video.likeCount ?? null,
-                channelSubscriberCount: null, channelVideoCount: null,
+                commentCount: video.commentCount ?? null,
+                channelSubscriberCount: video.channelSubscriberCount ?? null,
+                channelVideoCount: video.channelVideoCount ?? null,
                 url: 'https://www.youtube.com/watch?v=' + video.id, growth: video.growth,
               }));
               if (webKey && hydrationRemaining > 0) {
@@ -828,14 +832,14 @@ export const useScout = create<State>((set, get) => ({
       engineActivityId = await beginActivity('Internal Engine', topic, 'Internal evidence analysis and editorial opportunity generation: ' + topic, researchReportId);
       recordRuntimeStart('Engine');
       engineStarted = true;
-      set({ progress: 'Analyzing independent evidence and research gaps…' });
+      set({ progress: 'Analyzing YouTube platform signals, independent evidence and research gaps…' });
       const internalAnalysis = buildInternalResearch({
         topic,
         news: engineNews,
         wiki,
-        // Map the stored video record into the engine's transient raw-only input shape.
-        // Keep platform observations distinct from publisher evidence; the same bounded sample
-        // is separately passed to the Deep Research model and independent reviewer below.
+        // Pass the complete current-run YouTube sample into the internal engine.
+        // Its platform provenance stays labelled, but it participates in entity extraction,
+        // relevance, measured momentum, idea discovery and editorial prioritization.
         videos: researchVideos.map((video) => ({
           id: video.id,
           title: video.title,
@@ -845,6 +849,8 @@ export const useScout = create<State>((set, get) => ({
           viewCount: video.viewCount ?? null,
           likeCount: video.likeCount ?? null,
           commentCount: video.commentCount ?? null,
+          channelSubscriberCount: video.channelSubscriberCount ?? null,
+          channelVideoCount: video.channelVideoCount ?? null,
           growth: video.growth,
         })),
         priorMemory,
@@ -875,20 +881,6 @@ export const useScout = create<State>((set, get) => ({
       }));
       const context = [
         ...webContexts,
-        ...researchVideos.slice(0, 25).map((video) => ({
-          title: video.title,
-          summary: [
-            'YouTube platform observation from channel ' + video.channel,
-            'Views: ' + (video.viewCount ?? 'unavailable') + '; likes: ' + (video.likeCount ?? 'unavailable'),
-            'Measured growth: ' + (video.growth?.viewsPerHour == null ? 'insufficient snapshot history' : video.growth.viewsPerHour.toFixed(2) + ' views/hour') +
-              '; ' + (video.growth?.viewsPerDay == null ? 'views/day unavailable' : video.growth.viewsPerDay.toFixed(2) + ' views/day'),
-          ].join('. '),
-          sourceName: 'YouTube platform signal', sourceUrl: 'https://www.youtube.com/watch?v=' + video.id,
-          publishedAt: video.publishedAt, platform: 'youtube' as const, videoId: video.id,
-          thumbnailUrl: video.thumbnail, channel: video.channel, viewCount: video.viewCount ?? null,
-          likeCount: video.likeCount ?? null, viewsPerHour: video.growth?.viewsPerHour ?? null,
-          viewsPerDay: video.growth?.viewsPerDay ?? null, channelOutlierRatio: video.growth?.channelOutlierRatio ?? null,
-        })),
         ...(wiki ? [{
           title: wiki.articleTitle,
           summary: wiki.summary,
@@ -897,11 +889,24 @@ export const useScout = create<State>((set, get) => ({
         }] : []),
       ];
 
-      // Editorial ideas and their scores use only independent publisher/web/Wikimedia
-      // evidence. YouTube API records stay in the separate raw sample/report domain.
+      // The full same-run YouTube sample is a first-class input to idea generation
+      // and editorial scoring. Platform signals remain distinct from publisher citations.
       const generatedIdeas = generateEditorialIdeas({
         topic,
         news: publisherNews,
+        videos: researchVideos.map((video) => ({
+          id: video.id,
+          title: video.title,
+          description: video.description,
+          channel: video.channel,
+          publishedAt: video.publishedAt,
+          viewCount: video.viewCount ?? null,
+          likeCount: video.likeCount ?? null,
+          channelSubscriberCount: video.channelSubscriberCount ?? null,
+          channelVideoCount: video.channelVideoCount ?? null,
+          growth: video.growth,
+          thumbnailUrl: video.thumbnail,
+        })),
         context,
         reportId: report.id,
         priorMemory,
@@ -919,7 +924,7 @@ export const useScout = create<State>((set, get) => ({
       await finishActivity(engineActivityId, {
         status: generatedIdeas.length ? 'success' : 'empty',
         resultCount: generatedIdeas.length,
-        analyzedCount: engineNews.length + (wiki ? 1 : 0),
+        analyzedCount: engineNews.length + (wiki ? 1 : 0) + researchVideos.length,
         results: buildResearchActivityResults(topic, generatedIdeas.map((idea) => ({
           id: idea.id,
           title: idea.topic,
@@ -927,7 +932,7 @@ export const useScout = create<State>((set, get) => ({
           sourceName: idea.sourceName ?? 'MOHSEN SCOUT Internal Engine',
           url: idea.sourceUrl,
           includedInAnalysis: true,
-          decisionReason: idea.engineScoreReason ?? 'Generated from independent publisher, web and Wikimedia evidence.',
+          decisionReason: idea.engineScoreReason ?? 'Generated from YouTube platform observations plus available independent publisher, web and Wikimedia evidence.',
         }))),
       });
 
@@ -980,11 +985,13 @@ export const useScout = create<State>((set, get) => ({
             idea.videoIds.flatMap((videoId) => {
               const video = videosById.get(videoId);
               return video ? [video] : [];
-            }).slice(0, 25).map((video) => ({
+            }).map((video) => ({
               id: video.id, title: video.title, description: video.description, channel: video.channel,
               channelId: video.channelId ?? '', publishedAt: video.publishedAt, thumbnailUrl: video.thumbnail,
               viewCount: video.viewCount ?? null, likeCount: video.likeCount ?? null,
-              channelSubscriberCount: null, channelVideoCount: null,
+              commentCount: video.commentCount ?? null,
+              channelSubscriberCount: video.channelSubscriberCount ?? null,
+              channelVideoCount: video.channelVideoCount ?? null,
               url: 'https://www.youtube.com/watch?v=' + video.id, growth: video.growth,
             })),
           ])),
@@ -1092,6 +1099,19 @@ export const useScout = create<State>((set, get) => ({
     const generatedIdeas = generateEditorialIdeas({
       topic: report.input.topic,
       news: availableNews,
+      videos: report.videos.map((video) => ({
+        id: video.id,
+        title: video.title,
+        description: video.description,
+        channel: video.channel,
+        publishedAt: video.publishedAt,
+        viewCount: video.viewCount ?? null,
+        likeCount: video.likeCount ?? null,
+        channelSubscriberCount: video.channelSubscriberCount ?? null,
+        channelVideoCount: video.channelVideoCount ?? null,
+        growth: video.growth,
+        thumbnailUrl: video.thumbnail,
+      })),
       reportId: report.id,
       priorMemory,
       existingIdeas: currentData.ideas,
@@ -1185,6 +1205,17 @@ export const useScout = create<State>((set, get) => ({
         const nextIdeas = generateEditorialIdeas({
           topic,
           news,
+          videos: (targetReport?.videos ?? []).map((video) => ({
+            id: video.id,
+            title: video.title,
+            description: video.description,
+            channel: video.channel,
+            publishedAt: video.publishedAt,
+            viewCount: video.viewCount ?? null,
+            likeCount: video.likeCount ?? null,
+            growth: video.growth,
+            thumbnailUrl: video.thumbnail,
+          })),
           ...(targetReport ? { reportId: targetReport.id } : {}),
           priorMemory,
           existingIdeas: ideas,

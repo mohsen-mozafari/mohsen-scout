@@ -2,6 +2,13 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { defaults } from '../lib/types';
 import {
+  internalEngineReviewPrompt,
+  opinionPrompt,
+  structuredSecondOpinionPrompt,
+  type YouTubeSampleVideo,
+} from '../lib/api';
+import {
+  buildIndependentReviewPrompt,
   buildResearchAgentPrompt,
   parseResearchAgentJson,
   parseResearchDossier,
@@ -72,6 +79,95 @@ void test('research prompt receives primary YouTube platform signals, growth and
   assert.ok(prompt.includes('Local engine found a new platform trend.'));
   assert.ok(prompt.includes('مشاهدات پلتفرمی‌اند'));
 });
+void test('the complete collected YouTube sample reaches both external research prompts without a 25-video cap', () => {
+  const youtubeSignals = Array.from({ length: 32 }, (_, index) => ({
+    id: 'mock-video-' + index,
+    title: 'MOCK complete YouTube sample marker ' + index,
+    description: 'MOCK description for complete sample item ' + index,
+    channel: 'MOCK channel ' + index,
+    channelId: 'UCmock' + index,
+    publishedAt: '2026-11-20T12:00:00.000Z',
+    thumbnailUrl: 'https://example.org/mock-' + index + '.jpg',
+    viewCount: 1000 + index,
+    likeCount: 50 + index,
+    commentCount: 5 + index,
+    channelSubscriberCount: 10000 + index,
+    channelVideoCount: 100 + index,
+    url: 'https://www.youtube.com/watch?v=abcdefghijk',
+    growth: {
+      snapshotCount: 2, deltaViews: 100 + index, viewsPerHour: 4 + index,
+      viewsPerDay: 96 + index, channelBaselineViewsPerDay: 80,
+      channelOutlierRatio: 1.2 + index / 100, measuredAt: 1795195200000, status: 'measured' as const,
+    },
+  }));
+  const input: ResearchAgentInput = {
+    topic: 'battery recycling',
+    evidence,
+    youtubeSignals,
+    preferences: defaults().preferences,
+  };
+  const firstPrompt = buildResearchAgentPrompt(input);
+  const dossier = parseResearchDossier({
+    hypotheses: [],
+    evidenceReviews: [],
+    nextQueries: [],
+    contradictions: [],
+    gaps: [],
+    conclusion: 'YouTube-only platform review fixture.',
+    confidence: 'low',
+    stoppingReason: 'Fixture used to validate full sample handoff.',
+  }, evidence, undefined, [], 'gemini', 'mock-model', 1795195200000);
+  const reviewPrompt = buildIndependentReviewPrompt(
+    'battery recycling', dossier, evidence, 'en', youtubeSignals,
+  );
+  assert.ok(firstPrompt.includes('MOCK complete YouTube sample marker 31'));
+  assert.ok(reviewPrompt.includes('MOCK complete YouTube sample marker 31'));
+  assert.ok(firstPrompt.includes('channelSubscriberCount'));
+  assert.ok(firstPrompt.includes('commentCount'));
+});
+
+void test('all second-opinion prompt helpers receive the complete YouTube sample', () => {
+  const youtubeSignals: YouTubeSampleVideo[] = Array.from({ length: 32 }, (_, index) => ({
+    id: 'sample-video-' + index,
+    title: 'MOCK second opinion full sample item ' + index,
+    description: 'MOCK full video description ' + index,
+    channel: 'MOCK channel ' + index,
+    channelId: 'UCsample' + index,
+    publishedAt: '2026-11-20T12:00:00.000Z',
+    thumbnailUrl: 'https://example.org/thumb-' + index + '.jpg',
+    viewCount: 5000 + index,
+    likeCount: 200 + index,
+    commentCount: 10 + index,
+    channelSubscriberCount: 10000 + index,
+    channelVideoCount: 500 + index,
+    url: 'https://www.youtube.com/watch?v=abcdefghijk',
+    growth: {
+      snapshotCount: 3, deltaViews: 300 + index, viewsPerHour: 12 + index,
+      viewsPerDay: 288 + index, channelBaselineViewsPerDay: 200,
+      channelOutlierRatio: 1.4 + index / 100, measuredAt: 1795195200000, status: 'measured',
+    },
+  }));
+  const structured = structuredSecondOpinionPrompt(
+    'battery recycling', 'A platform-aware concept', 'en', [], youtubeSignals,
+  );
+  const legacy = opinionPrompt(
+    'battery recycling', 'A platform-aware concept', '', 'en', youtubeSignals,
+  );
+  const internal = internalEngineReviewPrompt({
+    topic: 'battery recycling',
+    summary: 'Local engine summary',
+    evidence: [{ label: 'YouTube momentum', detail: 'Measured trend signals are available.' }],
+    confidence: { level: 'low', reason: 'Fixture only.' },
+    youtubeSignals,
+    language: 'en',
+  });
+  for (const prompt of [structured, legacy, internal]) {
+    assert.ok(prompt.includes('MOCK second opinion full sample item 31'));
+    assert.ok(prompt.includes('channelSubscriberCount'));
+    assert.ok(prompt.includes('commentCount'));
+  }
+});
+
 void test('research response parser accepts fenced JSON but rejects non-object payloads', () => {
   assert.deepEqual(parseResearchAgentJson('\x60\x60\x60json\n{"hypotheses":[]}\n\x60\x60\x60'), { hypotheses: [] });
   assert.throws(() => parseResearchAgentJson('[]'));

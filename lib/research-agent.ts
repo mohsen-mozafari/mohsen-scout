@@ -4,7 +4,6 @@ import {
   type SecondOpinionProviderConfig,
 } from './ai-gateway';
 import { getKey } from './vault';
-import { assessEvidenceProvenance } from './research-provenance';
 import { runWithResearchPriorityQueue, type ResearchPriority } from './research-concurrency';
 import type { Preferences, ResearchDossier, SecondOpinionProvider } from './types';
 import {
@@ -85,25 +84,16 @@ export async function runResearchAgent(input: ResearchAgentInput): Promise<Resea
     };
   }
 
-  // Do not spend model tokens on a dossier that cannot pass independent review.
-  // Original text is mandatory: search snippets and headlines are contextual leads only.
-  const distinctProviders = new Set(configs.map((config) => config.provider));
+  // A YouTube-first run is a valid research input even before independent web pages
+  // have been found. Start the first model when it has either a real YouTube sample
+  // or at least one fetched original source; the second provider remains an optional
+  // independent review and is never faked by reusing the first provider.
   const fullTextEvidence = input.evidence.filter((item) => Boolean(item.sourceText && item.sourceText.length >= 300));
-  const provenance = assessEvidenceProvenance(fullTextEvidence);
-  const preflightFailures: string[] = [];
-  if (distinctProviders.size < 2) {
-    preflightFailures.push('At least two distinct configured AI providers are required for cross-provider review.');
-  }
-  if (fullTextEvidence.length < 2) {
-    preflightFailures.push('At least two fetched original source texts are required; headlines and snippets are not claim-level evidence.');
-  }
-  if (provenance.publisherFamilyCount < 2) {
-    preflightFailures.push('Original text must come from at least two independent publisher families before model review starts.');
-  }
-  if (preflightFailures.length) {
+  const hasYouTubePlatformSignals = Boolean(input.youtubeSignals?.length);
+  if (!fullTextEvidence.length && !hasYouTubePlatformSignals) {
     return {
       attempts: [],
-      warnings: [...warnings, ...preflightFailures, 'The model researcher was not started. Local analysis remains exploratory and unverified.'],
+      warnings: [...warnings, 'No usable original source text or YouTube platform sample was supplied; the external research request was not started.'],
     };
   }
 

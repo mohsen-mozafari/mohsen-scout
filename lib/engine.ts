@@ -40,7 +40,8 @@ export type InternalResearchInput = {
   wiki?: Pick<WikiSignal, 'articleTitle' | 'language' | 'monthlyViews'>;
   videos?: readonly (Pick<
     YouTubeSampleVideo,
-    'id' | 'title' | 'channel' | 'publishedAt' | 'viewCount' | 'likeCount'
+    'id' | 'title' | 'channel' | 'publishedAt' | 'viewCount' | 'likeCount' |
+    'commentCount' | 'channelSubscriberCount' | 'channelVideoCount'
   > & Partial<Pick<YouTubeSampleVideo, 'description'>> & { growth?: YouTubeGrowth })[];
   feedback?: ResearchFeedbackProfile;
   language?: 'fa' | 'en';
@@ -353,7 +354,7 @@ export function buildInternalResearch(input: InternalResearchInput): InternalRes
       id: 'youtube-sample',
       label: text('YouTube sample', 'نمونه یوتیوب'),
       detail: youtubeSample.length
-        ? text('A raw YouTube API sample reached the internal engine as transient input through its isolated field and is intentionally excluded from scoring, summarization, source correlation and external model requests under the current project policy.', 'نمونه خام API یوتیوب از مسیر مستقل و بدون تحلیل به موتور رسیده است. طبق سیاست فعلی پروژه، این داده امتیازدهی، خلاصه، با منابع مستقل ترکیب یا به مدل بیرونی ارسال نمی‌شود.')
+        ? text('The supplied YouTube sample was evaluated by the internal engine, but no video passed the topic-relevance filter for this run. The original sample remains part of the report and is still available to the external research prompts.', 'نمونه دریافت‌شده YouTube در موتور داخلی بررسی شد، اما در این اجرا هیچ ویدئویی از فیلتر ارتباط با موضوع عبور نکرد. نمونه اصلی در گزارش باقی می‌ماند و به promptهای پژوهش خارجی نیز ارسال می‌شود.')
         : text('No YouTube API sample was supplied to this engine run. The raw sample remains available in its separate report view.', 'در این اجرای موتور نمونه‌ای از API یوتیوب دریافت نشد. نمونه خام در صفحه گزارش جداگانه در دسترس است.')
     });
   }
@@ -438,12 +439,12 @@ export function buildInternalResearch(input: InternalResearchInput): InternalRes
   const limitationsList = [
     ...(fa ? [
       'این موتور به‌صورت محلی و بر پایه شواهد بارگذاری‌شده در برنامه اجرا می‌شود و در این مرحله منبع تازه‌ای دریافت نمی‌کند.',
-      'داده‌های API یوتیوب به فیلد مستقل youtubeSample می‌رسند، اما وارد استخراج موجودیت، confidence یا نتیجه‌گیری این موتور نمی‌شوند.',
+      'داده‌های YouTube در تطبیق موضوع، استخراج موجودیت‌ها، رتبه‌بندی نمونه و تحلیل شتاب اندازه‌گیری‌شده وارد می‌شوند و برای تولید و اولویت‌بندی ایده‌ها نیز استفاده می‌شوند؛ فقط منبع مستقل ناشر یا اثبات ادعای علمی/خبری محسوب نمی‌شوند.',
       'زاویه‌های محتوایی فرضیه‌اند، نه یافته علمی و نه پیش‌بینی بازدید، رشد یا وایرال شدن.',
-      'پوشش ناشران و بازدید مقاله‌های ویکی‌مدیا زمینه مستقل هستند؛ نمونه خام YouTube فقط در مسیر دریافت جداگانه می‌ماند و در تحلیل و امتیازها دخالت ندارد.',
+      'شواهد ناشران و ویکی‌مدیا برای راستی‌آزمایی ادعاهای بیرونی جداگانه نگه داشته می‌شوند، اما داده‌های YouTube هم‌زمان در تحلیل پلتفرمی، کشف موضوع و امتیاز اولویت ایده دخالت دارند.',
     ] : [
       'This engine runs locally on evidence already loaded in the app; it does not fetch new sources.',
-      'YouTube metadata is analyzed as a platform observation for topic matching and entity extraction; it is not independent publisher evidence.',
+      'YouTube data contributes to topic matching, entity extraction, ranked platform observations, measured momentum, idea discovery and editorial priority; it is not an independent publisher citation or proof of unrelated scientific/news claims.',
       'Editorial angles are hypotheses, not scientific findings or predictions of views, growth or virality.',
       'Publisher coverage, Wikimedia pageviews and YouTube sample metrics are separate signal families. A single YouTube snapshot cannot establish temporal growth or market-wide demand.',
     ]),
@@ -648,16 +649,37 @@ export type IdeaAnalysisSection = {
 
 /**
  * A local editorial checklist from a saved Idea and already-linked local video
- * references. It performs no network, storage or AI calls and does not infer
- * demand, competition, growth or performance.
+ * references. It performs no network, storage or AI calls. It reports already
+ * measured YouTube platform statistics without forecasting future performance.
  */
 export function buildIdeaAnalysis(
   idea: Idea,
-  _relatedVideos: readonly Pick<YouTubeSampleVideo, 'id' | 'title' | 'channel' | 'publishedAt'>[],
+  relatedVideos: readonly (
+    Pick<YouTubeSampleVideo, 'id' | 'title' | 'channel' | 'publishedAt'> &
+    Partial<Pick<
+      YouTubeSampleVideo,
+      'viewCount' | 'likeCount' | 'commentCount' | 'channelSubscriberCount' | 'channelVideoCount' | 'growth'
+    >>
+  )[],
   language: 'fa' | 'en' = 'en',
 ): IdeaAnalysisSection[] {
   const fa = language === 'fa';
   const concept = idea.concept.trim();
+  const channelCount = new Set(relatedVideos.map((video) => video.channel).filter(Boolean)).size;
+  const videosWithViews = relatedVideos.filter((video) => video.viewCount != null).length;
+  const videosWithLikes = relatedVideos.filter((video) => video.likeCount != null).length;
+  const videosWithComments = relatedVideos.filter((video) => video.commentCount != null).length;
+  const measuredGrowthVideos = relatedVideos.filter((video) => video.growth?.status === 'measured').length;
+  const channelsWithSubscriberCounts = new Set(
+    relatedVideos.filter((video) => video.channelSubscriberCount != null).map((video) => video.channel),
+  ).size;
+  const youtubeBody = relatedVideos.length
+    ? (fa
+      ? relatedVideos.length + ' ویدئوی مرتبط از ' + channelCount + ' کانال به کشف و اولویت این ایده کمک کرده‌اند. آمار عمومی بازدید برای ' + videosWithViews + '، پسند برای ' + videosWithLikes + ' و نظر برای ' + videosWithComments + ' ویدئو در دسترس است؛ ' + measuredGrowthVideos + ' ویدئو سابقه snapshot کافی برای رشد اندازه‌گیری‌شده دارند. آمار تعداد مشترکان برای ' + channelsWithSubscriberCounts + ' کانال در دسترس است. این‌ها مشاهدات نمونه پلتفرم‌اند، نه پیش‌بینی بازدید آینده.'
+      : relatedVideos.length + ' relevant videos from ' + channelCount + ' channels informed this idea’s discovery and priority. Public view counts are available for ' + videosWithViews + ', likes for ' + videosWithLikes + ', and comments for ' + videosWithComments + ' videos; ' + measuredGrowthVideos + ' videos have enough snapshots for measured growth. Subscriber counts are available for ' + channelsWithSubscriberCounts + ' channels. These are platform-sample observations, not forecasts of future views.')
+    : (fa
+      ? 'هنوز ویدئوی YouTube به این ایده پیوند نشده است؛ بنابراین از شاخص YouTube برای این ایده نتیجه‌گیری نمی‌شود.'
+      : 'No YouTube videos are linked to this idea yet, so no YouTube platform metric is inferred for it.');
   const sources = (idea.evidenceSources ?? []).slice(0, 8);
   const sourceItems = sources.map((source) => source.sourceName + ' · ' + source.title);
   const gaps: string[] = [];
@@ -682,8 +704,8 @@ export function buildIdeaAnalysis(
         ? sources.length + ' منبع مستقل ناشر، وب یا دانشنامه‌ای به ایده پیوند شده است. این پیوندها مسیر بررسی ادعاها را نشان می‌دهند، اما به‌تنهایی راستی‌آزمایی یا اثبات تقاضای مخاطب نیستند.'
         : sources.length + ' independent publisher, web or encyclopedia source(s) are linked to this idea. They support source tracing but do not by themselves verify every claim or prove audience demand.')
     : (fa
-        ? 'هیچ منبع مستقلی به ایده پیوند نشده است. داده خام YouTube جداگانه نمایش داده می‌شود و در این تحلیل یا امتیاز دخالت ندارد.'
-        : 'No independent source is linked to this idea. Raw YouTube API data is displayed separately and is not used in this analysis or any score.');
+        ? 'هنوز منبع مستقل ناشر یا وب به این ایده پیوند نشده است. سیگنال‌های YouTube در کشف زاویه و اولویت تحریری دخالت داشته‌اند، اما برای راستی‌آزمایی ادعاهای علمی/خبری باید منبع مستقل اضافه شود.'
+        : 'No independent publisher or web source is linked to this idea yet. YouTube signals still informed discovery and editorial priority; add independent sources to verify scientific/news claims.');
   const nextSteps = fa
     ? [
         '۱. پرسش مرکزی و وعده آموزشی ایده را در یک جمله دقیق بنویس.',
@@ -704,6 +726,7 @@ export function buildIdeaAnalysis(
     : (fa ? 'برای این ایده هنوز توضیح محتوایی ثبت نشده است.' : 'No editorial concept is saved for this idea yet.');
   return [
     { id: 'core-framing', title: fa ? 'هسته ایده و زاویه فعلی' : 'Core idea and current angle', body: framing },
+    { id: 'youtube-platform-signals', title: fa ? 'نقش داده‌های YouTube در این ایده' : 'YouTube platform signals used for this idea', body: youtubeBody },
     { id: 'evidence-review', title: fa ? 'منابع مستقل پیوندشده' : 'Linked independent sources', body: evidenceBody, ...(sourceItems.length ? { items: sourceItems } : {}) },
     { id: 'research-gaps', title: fa ? 'چه چیزهایی هنوز ثابت نشده‌اند؟' : 'What remains unproven?', body: gaps.length ? gaps.map((gap) => '• ' + gap).join('\n') : (fa ? 'خلأ آشکار دیگری در داده‌های منبع ثبت‌شده دیده نشد؛ این به معنی راستی‌آزمایی کامل نیست.' : 'No additional gap was identified in the saved source data; this does not mean the idea is fully verified.') },
     { id: 'next-actions', title: fa ? 'اقدام‌های پیشنهادی برای پیشبرد ایده' : 'Practical next steps', body: nextSteps.join('\n') },

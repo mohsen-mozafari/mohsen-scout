@@ -337,13 +337,13 @@ export default function Discover() {
               busy={op.busy}
               onPress={() => void op.run(() => useScout.getState().analyze(report.id))}
             >
-              Analyze cached independent evidence
+              Analyze YouTube + independent evidence
             </Action>
           )}
           {report.analyzed && (
             <View style={{ gap: 14 }}>
               <Heading>Internal Engine · Evidence-linked ideas</Heading>
-              <Txt muted>The local engine creates ideas only when cached independent publisher evidence and saved research memory meet its evidence threshold. This analysis action does not turn YouTube search buckets, video titles or statistics into ideas. The sample stays separate; use “Connect this research” to attach the report and its temporary video references to a chosen idea.</Txt>
+              <Txt muted>The internal engine analyzes the complete YouTube sample for topic relevance, channel patterns and measured snapshot growth, then uses relevant YouTube signals in idea discovery and editorial priority alongside independent research. YouTube observations are first-class platform evidence, not independent publisher citations; factual scientific/news claims still need source verification. “Connect this research” attaches the saved report and its retained video references to an existing idea.</Txt>
               {reportIdeas.length ? reportIdeas.map((idea) => (
                 <Button
                   variant="secondary"
@@ -360,8 +360,8 @@ export default function Discover() {
               )) : (
                 <Txt muted>
                   {preferences.uiLanguage === 'fa'
-                    ? 'برای این گزارش ایدهٔ تازه‌ای با شواهد مستقل کافی ثبت نشده است. نمونهٔ YouTube همچنان در بخش ویدئوهای مرتبط قابل مشاهده است؛ برای تولید ایده، تحقیق مستقل ناشران و وب را از داشبورد تازه‌سازی کن.'
-                    : 'No new idea met the independent-evidence threshold for this report. The YouTube sample remains available below; refresh independent publisher and web research from the dashboard to generate evidence-backed ideas.'}
+                    ? 'برای این گزارش هنوز ایدهٔ متمایز و مرتبط کافی از نمونه YouTube و شواهد در دسترس ساخته نشده است. چند ویدئوی مرتبط، تفاوت کانال‌ها و snapshotهای رشد می‌توانند مستقیماً در کشف و اولویت ایده نقش داشته باشند؛ برای راستی‌آزمایی ادعاهای علمی/خبری، شواهد مستقل را هم بررسی کن.'
+                    : 'No sufficiently distinct, topic-relevant idea was generated from this run’s YouTube sample and available research. Relevant videos, channel patterns and measured snapshots contribute directly to discovery and priority; verify scientific/news claims with independent sources.'}
                 </Txt>
               )}
             </View>
