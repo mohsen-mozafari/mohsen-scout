@@ -476,6 +476,7 @@ export const useScout = create<State>((set, get) => ({
           const queries: string[] = collected.size
             ? (latestAiDossier?.nextQueries.map((item) => item.query).filter((query) => !asked.has(normalizeResearchText(query))) ?? [])
             : [topic];
+          if (!queries.length) queries.push(topic + ' YouTube platform evidence review');
           let hydrationRemaining = Math.max(0, 6 - [...collected.values()].filter((item) => Boolean(item.sourceText && item.sourceText.length >= 300)).length);
           let latestFallbackReview: ReturnType<typeof reviewResearchHypotheses> | undefined;
           const configuredProviders = await getConfiguredResearchProviderCount(initialPreferences);
@@ -831,7 +832,7 @@ export const useScout = create<State>((set, get) => ({
       engineActivityId = await beginActivity('Internal Engine', topic, 'Internal evidence analysis and editorial opportunity generation: ' + topic, researchReportId);
       recordRuntimeStart('Engine');
       engineStarted = true;
-      set({ progress: 'Analyzing independent evidence and research gaps…' });
+      set({ progress: 'Analyzing YouTube platform signals, independent evidence and research gaps…' });
       const internalAnalysis = buildInternalResearch({
         topic,
         news: engineNews,
