@@ -225,8 +225,9 @@ void test('publisher, YouTube, web and Wikimedia collection run concurrently and
   assert.match(store, /Promise\.all\(\[youtubeTaskPromise, feedTask\(\), webTask\(\), wikiTask\(\)\]\)/);
   assert.match(store, /if \(youtubeTaskPromise\) await youtubeTaskPromise/);
   assert.match(store, /youtubeSignals,/);
-  assert.match(store, /mapWithConcurrency\(batch, 2,/);
+  assert.match(store, /mapWithConcurrency\(initialPreferences\.webResearchEnabled \? batch : \[\], 2,/);
   assert.match(store, /runResearchAgentSerialized\(/);
+  assert.match(store, /internalEngineFindings,\s+evidence:/);
   assert.doesNotMatch(store, /youtubeSignals: finalSignals/);
   assert.match(deepResearch, /mapWithConcurrency\(plan\.queries, 2,/);
 });
