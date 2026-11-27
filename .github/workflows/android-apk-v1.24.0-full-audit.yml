@@ -1,9 +1,9 @@
-name: Build MOHSEN SCOUT APK v1.29.0 · Complete UI/UX audit and research workspace
+name: Build MOHSEN SCOUT APK v1.30.0 · Complete UI/UX audit and research workspace
 
 on:
   workflow_dispatch:
   push:
-    branches: [feature/v1.22.0-autonomous-researcher]
+    branches: [feature/v1.22.0-autonomous-researcher, feature/mohsen-scout-research-aab-2026-11-27]
     paths:
       - '.github/workflows/android-apk-v1.24.0-full-audit.yml'
       - 'app.config.ts'
@@ -20,7 +20,7 @@ on:
       - 'public/icons/**'
       - 'README_FA.md'
       - 'AGENTS.md'
-      - 'CHANGELOG_1.29.0.md'
+      - 'CHANGELOG_1.30.0.md'
 
 # Isolated deep-research candidate build. Default to read-only; only publishing receives write access.
 # Unified autonomous Deep Research and editorial opportunity build.
@@ -30,7 +30,7 @@ permissions:
 concurrency:
   # Do not let a stuck older build block the newest candidate. The release job
   # separately verifies that its commit is still the branch head before publishing.
-  group: mohsenscout-v1.29.0-${{ github.sha }}
+  group: mohsenscout-v1.30.0-${{ github.sha }}
   cancel-in-progress: false
 
 jobs:
@@ -129,6 +129,12 @@ jobs:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
         run: ./gradlew :app:assembleRelease --no-daemon -PreactNativeArchitectures=arm64-v8a
 
+      - name: Build release Android App Bundle
+        working-directory: android
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: ./gradlew :app:bundleRelease --no-daemon -PreactNativeArchitectures=arm64-v8a
+
       - name: Verify signed release APK
         run: $ANDROID_HOME/build-tools/37.0.0/apksigner verify --verbose --print-certs android/app/build/outputs/apk/release/app-release.apk
 
@@ -138,7 +144,7 @@ jobs:
           set -euo pipefail
           APK="android/app/build/outputs/apk/release/app-release.apk"
           BADGING="$("$ANDROID_HOME/build-tools/37.0.0/aapt" dump badging "$APK")"
-          echo "$BADGING" | grep -F "package: name='me.bilt.mohsenscout' versionCode='50' versionName='1.29.0'"
+          echo "$BADGING" | grep -F "package: name='me.bilt.mohsenscout' versionCode='51' versionName='1.30.0'"
           echo "$BADGING" | grep -F "native-code: 'arm64-v8a'"
           CERT_SHA="$("$ANDROID_HOME/build-tools/37.0.0/apksigner" verify --print-certs "$APK" | awk -F': ' '/certificate SHA-256 digest:/ {print tolower($NF); exit}')"
           EXPECTED_CERT_SHA="8e951f99da896948aa6af5fae37a6ae870c4263bde99ce942d3ef5fb507364de"
@@ -147,24 +153,49 @@ jobs:
             exit 1
           fi
 
+      - name: Verify signed release Android App Bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          AAB="android/app/build/outputs/bundle/release/app-release.aab"
+          META="android/app/build/outputs/bundle/release/output-metadata.json"
+          test -s "$AAB"
+          test -s "$META"
+          jq -e '.applicationId == "me.bilt.mohsenscout" and any(.elements[]; .versionCode == 51 and .versionName == "1.30.0")' "$META" >/dev/null
+          unzip -t "$AAB" >/dev/null
+          jarsigner -verify -verbose -certs "$AAB" > /tmp/mohsen-scout-aab-signature.txt 2>&1
+          grep -qi 'jar verified' /tmp/mohsen-scout-aab-signature.txt
+          CERT_SHA="$(keytool -printcert -jarfile "$AAB" | awk -F': ' '/SHA256:/ {gsub(/:/, "", $2); print tolower($2); exit}')"
+          EXPECTED_CERT_SHA="8e951f99da896948aa6af5fae37a6ae870c4263bde99ce942d3ef5fb507364de"
+          if [[ "$CERT_SHA" != "$EXPECTED_CERT_SHA" ]]; then
+            echo "::error::AAB signer certificate fingerprint mismatch."
+            exit 1
+          fi
+          echo "Verified signed Android App Bundle: $AAB" | tee -a "$GITHUB_STEP_SUMMARY"
+
       - name: Prepare versioned APK and checksum
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p dist
-          APK_NAME="MOHSEN-SCOUT-1.29.0-arm64.apk"
+          APK_NAME="MOHSEN-SCOUT-1.30.0-arm64.apk"
+          AAB_NAME="MOHSEN-SCOUT-1.30.0-arm64.aab"
           APK="dist/$APK_NAME"
+          AAB="dist/$AAB_NAME"
           cp android/app/build/outputs/apk/release/app-release.apk "$APK"
-          sha256sum "$APK" > dist/SHA256SUMS.txt
+          cp android/app/build/outputs/bundle/release/app-release.aab "$AAB"
+          sha256sum "$APK" "$AAB" > dist/SHA256SUMS.txt
           cat dist/SHA256SUMS.txt
           echo "APK SHA256: $(sha256sum "$APK" | awk '{print $1}')" >> "$GITHUB_STEP_SUMMARY"
+          echo "AAB SHA256: $(sha256sum "$AAB" | awk '{print $1}')" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload APK for release job
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: mohsen-scout-release-apk
+          name: mohsen-scout-release-artifacts
           path: |
-            dist/MOHSEN-SCOUT-1.29.0-arm64.apk
+            dist/MOHSEN-SCOUT-1.30.0-arm64.apk
+            dist/MOHSEN-SCOUT-1.30.0-arm64.aab
             dist/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 1
@@ -197,7 +228,7 @@ jobs:
         if: steps.freshness.outputs.skip != 'true'
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          name: mohsen-scout-release-apk
+          name: mohsen-scout-release-artifacts
           path: dist
 
       - name: Publish permanent GitHub Release asset and verify download
@@ -207,31 +238,38 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          TAG="v1.29.0"
-          ASSET="MOHSEN-SCOUT-1.29.0-arm64.apk"
-          APK="dist/$ASSET"
+          TAG="v1.30.0"
+          APK_ASSET="MOHSEN-SCOUT-1.30.0-arm64.apk"
+          AAB_ASSET="MOHSEN-SCOUT-1.30.0-arm64.aab"
+          APK="dist/$APK_ASSET"
+          AAB="dist/$AAB_ASSET"
           CHECKSUMS="dist/SHA256SUMS.txt"
 
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release upload "$TAG" "$APK" "$CHECKSUMS" --repo "$GITHUB_REPOSITORY" --clobber
+            gh release upload "$TAG" "$APK" "$AAB" "$CHECKSUMS" --repo "$GITHUB_REPOSITORY" --clobber
           else
             gh release create "$TAG" "$APK" "$CHECKSUMS" \
               --repo "$GITHUB_REPOSITORY" \
-              --title "MOHSEN SCOUT v1.29.0" \
+              --title "MOHSEN SCOUT v1.30.0" \
               --notes "Signed Android ARM64 release. SHA256 is included in SHA256SUMS.txt." \
               --target "$GITHUB_SHA"
           fi
 
           mkdir -p release-verification
-          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "$ASSET" --dir release-verification
-          LOCAL_SHA="$(sha256sum "$APK" | awk '{print $1}')"
-          DOWNLOADED_SHA="$(sha256sum "release-verification/$ASSET" | awk '{print $1}')"
-          if [[ "$LOCAL_SHA" != "$DOWNLOADED_SHA" ]]; then
-            echo "::error::Downloaded release asset SHA256 does not match the built APK."
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "$APK_ASSET" --pattern "$AAB_ASSET" --dir release-verification
+          LOCAL_APK_SHA="$(sha256sum "$APK" | awk '{print $1}')"
+          DOWNLOADED_APK_SHA="$(sha256sum "release-verification/$APK_ASSET" | awk '{print $1}')"
+          LOCAL_AAB_SHA="$(sha256sum "$AAB" | awk '{print $1}')"
+          DOWNLOADED_AAB_SHA="$(sha256sum "release-verification/$AAB_ASSET" | awk '{print $1}')"
+          if [[ "$LOCAL_APK_SHA" != "$DOWNLOADED_APK_SHA" || "$LOCAL_AAB_SHA" != "$DOWNLOADED_AAB_SHA" ]]; then
+            echo "::error::Downloaded APK or AAB does not match its built SHA256."
             exit 1
           fi
-          unzip -t "release-verification/$ASSET" >/dev/null
-          RELEASE_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/${ASSET}"
-          echo "Verified release APK: ${RELEASE_URL}" | tee -a "$GITHUB_STEP_SUMMARY"
-          echo "SHA256: ${LOCAL_SHA}" | tee -a "$GITHUB_STEP_SUMMARY"
-          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json url,tagName,assets
+          unzip -t "release-verification/$APK_ASSET" >/dev/null
+          unzip -t "release-verification/$AAB_ASSET" >/dev/null
+          jarsigner -verify "release-verification/$AAB_ASSET" >/dev/null 2>&1
+          echo "Verified release APK: https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/${APK_ASSET}" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "Verified release AAB: https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/${AAB_ASSET}" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "APK SHA256: ${LOCAL_APK_SHA}" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "AAB SHA256: ${LOCAL_AAB_SHA}" | tee -a "$GITHUB_STEP_SUMMARY"
+                    gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json url,tagName,assets

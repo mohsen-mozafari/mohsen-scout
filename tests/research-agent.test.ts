@@ -78,6 +78,17 @@ void test('research prompt receives primary YouTube platform signals, growth and
   assert.ok(prompt.includes('space science and exploration'));
   assert.ok(prompt.includes('Local engine found a new platform trend.'));
   assert.ok(prompt.includes('مشاهدات پلتفرمی‌اند'));
+  const reviewDossier = parseResearchDossier({
+    hypotheses: [], evidenceReviews: [], nextQueries: [], contradictions: [],
+    gaps: [], conclusion: 'Fixture only.', confidence: 'low', stoppingReason: 'Fixture only.',
+  }, evidence, undefined, [], 'gemini', 'mock-model', 1795195200000);
+  const independentPrompt = buildIndependentReviewPrompt(
+    input.topic, reviewDossier, evidence, 'en', input.youtubeSignals ?? [],
+    { researchNiche: input.researchNiche, internalEngineFindings: input.internalEngineFindings },
+  );
+  assert.ok(independentPrompt.includes('Local engine found a new platform trend.'));
+  assert.ok(independentPrompt.includes('Three related videos accelerated.'));
+  assert.ok(independentPrompt.includes('Independent primary data is missing.'));
 });
 void test('the complete collected YouTube sample reaches both external research prompts without a 25-video cap', () => {
   const youtubeSignals = Array.from({ length: 32 }, (_, index) => ({

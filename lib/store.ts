@@ -562,9 +562,44 @@ export const useScout = create<State>((set, get) => ({
                 (entry) => normalizeResearchText(entry.topic) === normalizeResearchText(topic),
               );
               recordRuntimeStart('AI');
+              // Give both research models the local engine's current same-run findings.
+              // These are investigative leads, not independent citations or proof.
+              const localEngineReview = buildInternalResearch({
+                topic,
+                news: [
+                  ...publisherNews.map((item) => ({
+                    title: item.title, summary: item.summary, sourceName: item.sourceName,
+                    sourceUrl: item.url, publishedAt: item.publishedAt, sourceId: item.sourceId,
+                  })),
+                  ...[...collected.values()].map((item) => ({
+                    title: item.title, summary: item.summary, sourceName: item.sourceName,
+                    sourceUrl: item.url, publishedAt: item.publishedAt ?? null,
+                    sourceId: 'web:' + item.sourceName,
+                  })),
+                ],
+                wiki,
+                videos: researchVideos.map((video) => ({
+                  id: video.id, title: video.title, description: video.description,
+                  channel: video.channel, publishedAt: video.publishedAt,
+                  viewCount: video.viewCount ?? null, likeCount: video.likeCount ?? null,
+                  commentCount: video.commentCount ?? null,
+                  channelSubscriberCount: video.channelSubscriberCount ?? null,
+                  channelVideoCount: video.channelVideoCount ?? null, growth: video.growth,
+                })),
+                priorMemory: currentResearchMemory,
+                language: initialPreferences.uiLanguage ?? 'fa',
+              });
+              const internalEngineFindings = {
+                summary: localEngineReview.summary,
+                keyFindings: localEngineReview.evidence.slice(0, 12).map((item) => item.label + ': ' + item.detail),
+                gaps: localEngineReview.intelligence.gaps,
+                verificationQuestions: localEngineReview.verificationQuestions,
+                potentialContradictions: localEngineReview.intelligence.potentialContradictions,
+              };
               const agent = await runResearchAgentSerialized({
                 topic,
                 researchNiche,
+                internalEngineFindings,
                 evidence: [...collected.values()],
                 youtubeSignals,
                 preferences: initialPreferences,
