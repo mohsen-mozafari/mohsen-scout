@@ -152,7 +152,8 @@ void test('local idea analysis explains evidence, gaps and next actions without 
     { id: 'v2', title: 'Webb telescope studies an exoplanet atmosphere', channel: 'Science Two', publishedAt: '2026-11-14T00:00:00Z' },
     { id: 'v3', title: 'James Webb Space Telescope spectroscopy explained', channel: 'Science Three', publishedAt: '2026-11-13T00:00:00Z' },
   ], 'en');
-  assert.equal(result.length, 4);
+  assert.equal(result.length, 5);
+  assert.ok(result.some((section) => section.id === 'youtube-platform-signals' && section.body.trim()));
   assert.ok(result.some((section) => section.id === 'evidence-review' && section.items?.length));
   assert.ok(result.some((section) => section.id === 'next-actions' && section.body.includes('primary documents')));
   assert.ok(result.every((section) => section.title.trim() && section.body.trim()));

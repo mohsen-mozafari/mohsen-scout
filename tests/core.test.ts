@@ -1466,11 +1466,12 @@ void test('Internal engine self-evaluation reports measured inputs, deduplicatio
   assert.ok(audit.openResearchQuestionCount > 0);
 });
 
-void test('AI second opinion requests a single structured multi-pass critique without external evidence', () => {
+void test('AI second opinion requests four quality checks with complete YouTube platform context', () => {
   const prompt = opinionPrompt('James Webb', 'Explain a verified observation.', 'Explore a beginner-friendly angle.', 'en');
   assert.match(prompt, /silently perform four quality passes/i);
   assert.match(prompt, /Do not reveal private reasoning/i);
-  assert.match(prompt, /Do not request, infer or analyze YouTube API data/i);
+  assert.match(prompt, /complete supplied YouTube sample/i);
+  assert.match(prompt, /Never present YouTube observations as independent publisher citations/i);
 });
 
 void test('Manual YouTube result sorting changes order for date, views, likes and title in both directions', () => {

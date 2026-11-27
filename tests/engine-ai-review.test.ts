@@ -31,7 +31,7 @@ void test('AI engine review prompt is grounded in aggregate local intelligence s
   assert.match(prompt, /no reliable percentage can be calculated from the available evidence/i);
   assert.match(prompt, /Never invent a number to fill the gap/i);
   assert.match(prompt, /aggregate local-engine indicators/i);
-  assert.match(prompt, /raw headlines, video titles, descriptions, links and per-item statistics are intentionally excluded/i);
+  assert.match(prompt, /Complete YouTube platform signals/i);
   assert.match(prompt, /Do not pretend to have seen individual sources or videos/i);
   assert.match(prompt, /do not infer growth rates, market competition or virality/i);
   assert.doesNotMatch(prompt, /https?:\/\//i);
