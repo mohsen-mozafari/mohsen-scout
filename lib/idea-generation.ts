@@ -23,6 +23,8 @@ export type IdeaGenerationVideo = {
   publishedAt?: string;
   viewCount?: number | null;
   likeCount?: number | null;
+  channelSubscriberCount?: number | null;
+  channelVideoCount?: number | null;
   growth?: YouTubeGrowth;
   thumbnailUrl?: string;
 };
@@ -540,6 +542,9 @@ export function generateEditorialIdeas(input: GenerateEditorialIdeasInput): Idea
       id: 'youtube:' + video.id,
       title: video.title,
       text: [video.title, video.description ?? '',
+        video.channel ? 'channel ' + video.channel : '',
+        video.channelSubscriberCount == null ? '' : 'channel subscribers ' + video.channelSubscriberCount,
+        video.channelVideoCount == null ? '' : 'channel videos ' + video.channelVideoCount,
         video.growth?.viewsPerHour == null ? '' : 'views per hour ' + video.growth.viewsPerHour,
         video.growth?.viewsPerDay == null ? '' : 'views per day ' + video.growth.viewsPerDay,
         video.growth?.channelOutlierRatio == null ? '' : 'channel outlier ratio ' + video.growth.channelOutlierRatio,
