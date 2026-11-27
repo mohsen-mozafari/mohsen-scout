@@ -270,8 +270,8 @@ void test('Ideas list deduplication preserves large histories and personal recor
   const largeHistory = Array.from({ length: 1500 }, (_, index) => ({
     ...seed,
     id: 'large-generated-' + index,
-    topic: 'Independent research opportunity topic ' + index + ' subject',
-    concept: 'Central question: what makes evidence sample ' + index + ' distinct?',
+    topic: 'qzxrecord' + index + 'zunari',
+    concept: 'Central question: axiom' + index + 'vortela',
   }));
   const personal = createManualIdea('Personal long-term project', 'A user-authored idea that must remain visible.', '', 'Germany', ['en']);
   const visible = deduplicateDisplayIdeas([...largeHistory, personal]);
