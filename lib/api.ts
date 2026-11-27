@@ -487,10 +487,44 @@ export async function searchYouTube(input: ResearchInput, options: YouTubeOption
         video.commentCount = stats?.commentCount && /^\d+$/.test(stats.commentCount) ? Number(stats.commentCount) : null;
       }
     } catch {
-      warnings.push('Video titles and dates were retrieved, but raw view/like counts could not be loaded. Sorting falls back to available fields.');
+      warnings.push('Video statistics could not be loaded for every video; unavailable counts remain null rather than being estimated.');
       break;
     }
   }
+
+  // Collect channel-level public statistics in quota-accounted batches.
+  // Missing or hidden channel metrics stay null; they are never inferred.
+  const channelStats = new Map<string, { subscribers: number | null; videos: number | null }>();
+  const channelIds = [...new Set(collected.map((video) => video.channelId).filter((id): id is string => Boolean(id)))];
+  for (let offset = 0; offset < channelIds.length; offset += 50) {
+    const batch = channelIds.slice(offset, offset + 50);
+    try {
+      const raw = await youtube('channels', {
+        part: 'statistics',
+        id: batch.join(','),
+        fields: 'items(id,statistics(subscriberCount,videoCount))',
+      }, options, 1);
+      const parsed = channelStatsSchema.safeParse(raw);
+      if (!parsed.success) throw new ApiError('YouTube channel statistics returned an invalid response.', 'invalid');
+      for (const item of parsed.data.items) {
+        const subscribers = item.statistics?.subscriberCount;
+        const videos = item.statistics?.videoCount;
+        channelStats.set(item.id, {
+          subscribers: subscribers && /^\d+$/.test(subscribers) ? Number(subscribers) : null,
+          videos: videos && /^\d+$/.test(videos) ? Number(videos) : null,
+        });
+      }
+    } catch {
+      warnings.push('Public channel statistics could not be loaded for every channel; unavailable counts remain null.');
+      break;
+    }
+  }
+  for (const video of collected) {
+    const metrics = video.channelId ? channelStats.get(video.channelId) : undefined;
+    video.channelSubscriberCount = metrics?.subscribers ?? null;
+    video.channelVideoCount = metrics?.videos ?? null;
+  }
+
   return {
     videos: collected,
     queries: searches.map((search) => [search.query, search.bucket, search.language || 'global'].join(' · ')),
