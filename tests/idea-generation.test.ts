@@ -334,6 +334,7 @@ void test('multiple YouTube platform signals can support a platform-aware idea w
   assert.ok(generated.length > 0);
   assert.ok(generated.every((idea) => idea.engineScoreBasis === 'platform-aware-v3'));
   assert.ok(generated.every((idea) => idea.videoIds.length >= 2));
+  assert.ok(generated.every((idea) => idea.concept.includes('multiple relevant YouTube Data API samples')));
   assert.ok(generated.every((idea) => !(idea.evidenceSources ?? []).some((source) => source.sourceUrl.includes('youtube.com'))));
 });
 void test('user-provided topic text alone is not treated as independent evidence', () => {
